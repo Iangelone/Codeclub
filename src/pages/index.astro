@@ -1,5 +1,25 @@
 ---
-import { ArrowLeft, ArrowRight, Minus, PanelLeft, Square, X } from "lucide-astro";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Bug,
+  Command,
+  Eye,
+  FilePlus,
+  FolderOpen,
+  HelpCircle,
+  Keyboard,
+  Minus,
+  PiggyBank,
+  PanelLeft,
+  Save,
+  Scissors,
+  Settings,
+  Square,
+  Terminal,
+  Undo2,
+  X,
+} from "lucide-astro";
 ---
 
 <html lang="es">
@@ -26,10 +46,44 @@ import { ArrowLeft, ArrowRight, Minus, PanelLeft, Square, X } from "lucide-astro
           <ArrowRight size={15} strokeWidth={1.8} />
         </button>
         <nav class="app-menu" aria-label="Application menu">
-          <button type="button">Archivo</button>
-          <button type="button">Editar</button>
-          <button type="button">Ver</button>
-          <button type="button">Ayuda</button>
+          <div class="menu-group">
+            <button type="button">Archivo</button>
+            <div class="dropdown-menu">
+              <a href="#"><FilePlus size={14} /> Nuevo archivo</a>
+              <a href="#"><FolderOpen size={14} /> Abrir carpeta</a>
+              <a href="#"><Save size={14} /> Guardar</a>
+              <a href="#"><Command size={14} /> Exportar</a>
+            </div>
+          </div>
+          <div class="menu-group">
+            <button type="button">Editar</button>
+            <div class="dropdown-menu">
+              <a href="#"><Undo2 size={14} /> Deshacer</a>
+              <a href="#"><ArrowRight size={14} /> Rehacer</a>
+              <a href="#"><Scissors size={14} /> Cortar</a>
+              <a href="#"><Settings size={14} /> Preferencias</a>
+            </div>
+          </div>
+          <div class="menu-group">
+            <button type="button">Ver</button>
+            <div class="dropdown-menu">
+              <a href="#"><PanelLeft size={14} /> Panel lateral</a>
+              <a href="#"><Terminal size={14} /> Terminal</a>
+              <a href="#"><Square size={14} /> Pantalla completa</a>
+              <a href="#"><Eye size={14} /> Apariencia</a>
+            </div>
+          </div>
+          <div class="menu-group help-group">
+            <button type="button">Ayuda</button>
+            <div class="dropdown-menu">
+              <a href="#"><HelpCircle size={14} /> Documentación</a>
+              <a href="#"><Keyboard size={14} /> Atajos</a>
+              <a href="#"><Bug size={14} /> Reportar problema</a>
+              <a href="https://ko-fi.com/codeclubide" target="_blank" rel="noreferrer">
+                <PiggyBank size={14} /> Donación
+              </a>
+            </div>
+          </div>
         </nav>
       </div>
       <div class="drag-area" data-tauri-drag-region></div>
@@ -164,6 +218,15 @@ import { ArrowLeft, ArrowRight, Minus, PanelLeft, Square, X } from "lucide-astro
     align-items: center;
     gap: 2px;
     margin-left: 4px;
+    height: 100%;
+    position: relative;
+  }
+
+  .menu-group {
+    position: relative;
+    height: 100%;
+    display: flex;
+    align-items: center;
   }
 
   .app-menu button {
@@ -175,6 +238,57 @@ import { ArrowLeft, ArrowRight, Minus, PanelLeft, Square, X } from "lucide-astro
   .app-menu button:hover {
     background: var(--color-surface-7);
   }
+
+  .dropdown-menu {
+    position: absolute;
+    top: 34px;
+    left: 0;
+    min-width: 210px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 8px;
+    border: 1px solid var(--color-surface-10);
+    border-radius: 8px;
+    background: rgba(18, 18, 18, 0.96);
+    box-shadow: 0 18px 54px rgba(0, 0, 0, 0.38);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-4px);
+    transition:
+      opacity 120ms ease,
+      transform 120ms ease;
+    z-index: 20;
+  }
+
+  .menu-group:hover .dropdown-menu,
+  .dropdown-menu:hover {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+
+  .dropdown-menu a {
+    display: flex;
+    min-height: 30px;
+    align-items: center;
+    gap: 9px;
+    border-radius: 7px;
+    padding: 0 10px;
+    color: #bdbdbd;
+    font-size: 12px;
+    text-decoration: none;
+  }
+
+  .dropdown-menu a:hover {
+    background: var(--color-surface-7);
+    color: #ffffff;
+  }
+
+  .dropdown-menu svg {
+    flex: 0 0 auto;
+  }
+
 
   .window-controls {
     display: grid;
