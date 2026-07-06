@@ -19,6 +19,7 @@
         "minHeight": 520,
         "decorations": false,
         "fullscreen": false,
+        "maximized": true,
         "transparent": true,
         "windowEffects": {
           "effects": ["mica"],
