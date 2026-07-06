@@ -1,0 +1,19 @@
+[package]
+name = "codeclub-desktop"
+version = "0.1.0"
+description = "Codeclub desktop app"
+authors = ["Codeclub"]
+edition = "2024"
+
+[lib]
+name = "codeclub_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5.1", features = [] }
+
+[dependencies]
+tauri = { version = "2.9.5", features = [] }
+tauri-plugin-opener = "2.5.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

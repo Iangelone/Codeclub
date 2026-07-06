@@ -1,0 +1,9 @@
+sub project/
+.agents/
+
+node_modules/
+dist/
+dist-ssr/
+.astro/
+src-tauri/target/
+bun.lockb
