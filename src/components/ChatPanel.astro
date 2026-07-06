@@ -26,7 +26,7 @@ const catalog = [
     </div>
     <div class="command-menu" data-command-menu>
       <div class="command-title" data-command-title>Seleccionar</div>
-      <input data-command-search type="text" placeholder="Buscar provider o model" aria-label="Buscar provider o model" />
+      <input data-command-search type="text" placeholder="Buscar proveedor o modelo" aria-label="Buscar proveedor o modelo" />
       <div class="command-list">
         {catalog.map((item) => (
           <button
@@ -38,7 +38,7 @@ const catalog = [
             data-provider={item.type === "model" ? item.providerId : item.id}
           >
             <span>{item.label}</span>
-            <small>{item.type}</small>
+            <small>{item.type === "provider" ? "proveedor" : "modelo"}</small>
           </button>
         ))}
       </div>
@@ -64,8 +64,8 @@ const catalog = [
 
     const openMenu = (kind: string) => {
       commandKind = kind;
-      if (commandTitle) commandTitle.textContent = kind === "provider" ? "Providers" : "Models";
-      if (searchInput) searchInput.placeholder = kind === "provider" ? "Buscar provider" : "Buscar modelo del provider activo";
+      if (commandTitle) commandTitle.textContent = kind === "provider" ? "Proveedores" : "Modelos";
+      if (searchInput) searchInput.placeholder = kind === "provider" ? "Buscar proveedor" : "Buscar modelo del proveedor activo";
       menu?.classList.add("is-open");
       if (searchInput) {
         searchInput.value = "";
@@ -86,8 +86,13 @@ const catalog = [
 
     chatInput?.addEventListener("input", () => {
       const value = chatInput.value.toLowerCase();
-      if (value.endsWith("/provider")) openMenu("provider");
-      if (value.endsWith("/model")) openMenu("model");
+      if (value.endsWith("/proveedor")) {
+        openMenu("provider");
+      } else if (value.endsWith("/modelo")) {
+        openMenu("model");
+      } else {
+        closeMenu();
+      }
     });
 
     searchInput?.addEventListener("input", filterItems);
@@ -114,7 +119,7 @@ const catalog = [
           modelText.textContent = item.dataset.label ?? "";
           panel.dataset.model = item.dataset.label ?? "";
         }
-        if (chatInput) chatInput.value = chatInput.value.replace(/\/(provider|model)$/i, "").trimStart();
+        if (chatInput) chatInput.value = chatInput.value.replace(/\/(proveedor|modelo)$/i, "").trimStart();
         closeMenu();
         chatInput?.focus();
       });
@@ -264,9 +269,12 @@ const catalog = [
   .command-list {
     display: grid;
     gap: 4px;
-    max-height: 180px;
+    max-height: 120px;
     overflow: auto;
     scrollbar-width: none;
+    mask-image: linear-gradient(to bottom, black 85%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black 85%, transparent 100%);
+    padding-bottom: 12px;
   }
 
   .command-list::-webkit-scrollbar {
