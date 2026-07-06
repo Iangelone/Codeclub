@@ -1,5 +1,5 @@
 ---
-import { ArrowLeft, ArrowRight, PanelLeft } from "lucide-astro";
+import { ArrowLeft, ArrowRight, Minus, PanelLeft, Square, X } from "lucide-astro";
 ---
 
 <html lang="es">
@@ -35,13 +35,13 @@ import { ArrowLeft, ArrowRight, PanelLeft } from "lucide-astro";
       <div class="drag-area" data-tauri-drag-region></div>
       <nav class="window-controls" aria-label="Window controls">
         <button id="minimize" type="button" aria-label="Minimize">
-          <span class="icon minimize-icon"></span>
+          <Minus size={14} strokeWidth={1.8} />
         </button>
         <button id="maximize" type="button" aria-label="Maximize">
-          <span class="icon maximize-icon"></span>
+          <Square size={12} strokeWidth={1.8} />
         </button>
         <button id="close" class="close" type="button" aria-label="Close">
-          <span class="icon close-icon"></span>
+          <X size={14} strokeWidth={1.8} />
         </button>
       </nav>
     </header>
@@ -192,6 +192,10 @@ import { ArrowLeft, ArrowRight, PanelLeft } from "lucide-astro";
     color: #d8d8d8;
   }
 
+  .window-controls svg {
+    display: block;
+  }
+
   .window-controls button:hover {
     background: var(--color-surface-7);
   }
@@ -201,44 +205,4 @@ import { ArrowLeft, ArrowRight, PanelLeft } from "lucide-astro";
     color: #ffffff;
   }
 
-  .icon {
-    position: relative;
-    width: 14px;
-    height: 14px;
-    color: currentColor;
-  }
-
-  .minimize-icon::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 2px;
-    height: 1px;
-    background: currentColor;
-  }
-
-  .maximize-icon {
-    box-sizing: border-box;
-    border: 1px solid currentColor;
-  }
-
-  .close-icon::before,
-  .close-icon::after {
-    content: "";
-    position: absolute;
-    top: 4px;
-    left: -1px;
-    width: 12px;
-    height: 1px;
-    background: currentColor;
-  }
-
-  .close-icon::before {
-    transform: rotate(45deg);
-  }
-
-  .close-icon::after {
-    transform: rotate(-45deg);
-  }
 </style>
