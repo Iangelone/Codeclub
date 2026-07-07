@@ -25,6 +25,15 @@ try {
       providerId: p.id
     }));
   });
+
+  // Agregar el proveedor "Custom" hardcodeado
+  fetchedProviders.push({
+    id: "custom",
+    label: "Custom",
+    shortLabel: "C",
+    doc: "",
+    api: ""
+  });
 } catch (e) {
   console.error("Error fetching models.dev catalog:", e);
 }

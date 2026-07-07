@@ -151,9 +151,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
         </form>
 
         <div className={`command-menu ${menuOpen ? 'is-open' : ''}`} style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 8px)', display: menuOpen ? 'grid' : 'none', gap: '8px', padding: '9px', border: '1px solid var(--color-surface-9, #2f2f2f)', borderRadius: '8px', background: 'rgba(18, 18, 18, 0.98)', boxShadow: '0 20px 58px rgba(0, 0, 0, 0.34)', zIndex: 10 }}>
-          <div className="command-title" style={{ color: 'rgba(216, 216, 216, 0.46)', fontSize: '12px', padding: '0 2px' }}>
-            {commandKind === 'provider' ? 'Proveedores' : 'Modelos'}
-          </div>
+
           <input
             ref={searchInputRef}
             type="text"
