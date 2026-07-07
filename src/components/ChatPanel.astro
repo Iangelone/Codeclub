@@ -301,48 +301,6 @@ const catalog = [
     }
   }
 
-  .terminal-minimized-badge {
-    position: absolute;
-    right: max(24px, calc((100% - min(600px, calc(100% - 64px))) / 2 + 4px));
-    bottom: 76px;
-    height: 24px;
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    padding: 0 9px;
-    border: 1px solid var(--color-surface-10, #2f2f2f);
-    border-bottom-color: transparent;
-    border-radius: 8px 8px 0 0;
-    background: rgba(22, 22, 22, 0.88);
-    backdrop-filter: blur(20px) saturate(1.28);
-    -webkit-backdrop-filter: blur(20px) saturate(1.28);
-    color: rgba(216, 216, 216, 0.62);
-    font-size: 12px;
-    line-height: 1;
-    white-space: nowrap;
-    cursor: pointer;
-    z-index: 45;
-    transition: color 120ms ease;
-  }
-
-  .terminal-minimized-badge:hover {
-    color: #eeeeee;
-    background: rgba(255, 255, 255, 0.055);
-  }
-
-  @media (max-width: 720px) {
-    .terminal-minimized-badge {
-      right: 24px;
-      bottom: 72px;
-    }
-  }
-
-  @media (max-height: 620px) {
-    .terminal-minimized-badge {
-      bottom: 66px;
-    }
-  }
-
   .braille-spinner {
     position: relative;
     color: #c7cbff;

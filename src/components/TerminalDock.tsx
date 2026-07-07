@@ -374,16 +374,6 @@ export default function TerminalDock() {
   };
 
   return (
-    <>{!isOpen && visibleTerminals.length > 0 && (
-      <button
-        className="terminal-minimized-badge"
-        onClick={() => setIsOpen(true)}
-        type="button"
-        aria-label={`${visibleTerminals.length} terminales activas`}
-      >
-        terminales {visibleTerminals.length}
-      </button>
-    )}
     <div className={`terminal-dock ${isOpen ? 'is-open' : ''}`} style={dockStyle}>
       <div className="terminal-stage">
         {activeTerminal ? (
@@ -464,6 +454,5 @@ export default function TerminalDock() {
         )}
       </div>
     </div>
-    </>
   );
 }
