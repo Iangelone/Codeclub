@@ -673,10 +673,8 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
         await appendToJsonl(assistantMessage);
       }
     } catch (error) {
-      console.error("Stream error:", error);
-      const message = formatDebugError(error);
+      console.error(formatDebugError(error));
       setAgentState('error');
-      // Delete the empty assistant message that was meant for streaming
       setMessages((prev) => {
         const updated = [...prev];
         if (updated.length > 0 && updated[updated.length - 1].content === '' && updated[updated.length - 1].role === 'assistant') {
@@ -684,7 +682,6 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
         }
         return updated;
       });
-      setInput(message);
     } finally {
       setIsStreaming(false);
       setAgentState((state) => state === 'error' ? 'error' : 'idle');
