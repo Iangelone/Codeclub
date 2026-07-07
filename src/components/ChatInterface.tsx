@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUp } from 'lucide-react';
+import { ArrowUp, Copy, RotateCcw } from 'lucide-react';
 import { streamText } from 'ai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 
@@ -7,6 +7,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
+  const [composerDocked, setComposerDocked] = useState(false);
   
   const [currentProvider, setCurrentProvider] = useState(defaultProvider);
   const [currentModel, setCurrentModel] = useState(defaultModel);
@@ -33,6 +34,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
       const chat = e.detail;
       setWorkspaceMode('chat');
       setActiveChat(chat);
+      setComposerDocked(false);
       setMessages([]);
       try {
         const { readTextFile, exists } = await import('@tauri-apps/plugin-fs');
@@ -42,6 +44,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
           const lines = content.split('\n').filter(l => l.trim() !== '');
           const parsed = lines.map(l => JSON.parse(l));
           setMessages(parsed);
+          setComposerDocked(parsed.length > 0);
         }
       } catch (err) {
         console.error("Error loading chat:", err);
@@ -265,6 +268,28 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
     }
   };
 
+  const writeChatJsonl = async (nextMessages) => {
+    if (!activeChat) return;
+    try {
+      const { writeTextFile, mkdir } = await import('@tauri-apps/plugin-fs');
+      const dir = `${activeChat.projectPath}/.codeclub/chats`;
+      const path = `${dir}/${activeChat.chatId}.jsonl`;
+      await mkdir(dir, { recursive: true });
+      await writeTextFile(path, nextMessages.map((msg) => JSON.stringify(msg)).join('\n') + '\n');
+      await logPersistence('rewrite_chat_history', 'ok', {
+        chatId: activeChat.chatId,
+        projectPath: activeChat.projectPath,
+        path,
+      });
+    } catch (e) {
+      await logPersistence('rewrite_chat_history', 'error', {
+        chatId: activeChat?.chatId,
+        projectPath: activeChat?.projectPath,
+        error: e?.message || String(e),
+      });
+    }
+  };
+
   const saveNote = async (content) => {
     if (!activeNote) return;
     try {
@@ -328,40 +353,32 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
     }
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!input.trim() || isStreaming) return;
-
-    if (/\/proveedor$/i.test(input.trim())) {
-      openCommandMenu('provider');
-      return;
-    }
-
-    if (/\/modelo$/i.test(input.trim())) {
-      openCommandMenu('model');
-      return;
-    }
-    
+  const sendMessage = async (content, baseMessages = messages, shouldRenameChat = messages.length === 0, replaceHistory = false) => {
     if (!activeChat) {
       window.dispatchEvent(new CustomEvent('codeclub:require-project'));
       return;
     }
 
-    if (messages.length === 0) {
-      let title = input.trim();
+    if (shouldRenameChat) {
+      let title = content.trim();
       if (title.length > 20) title = title.substring(0, 20) + '...';
       window.dispatchEvent(new CustomEvent('codeclub:rename-chat', {
         detail: { chatId: activeChat.chatId, newName: title, projectPath: activeChat.projectPath }
       }));
     }
 
-    const userMessage = { role: 'user', content: input };
-    const newMessages = [...messages, userMessage];
+    const userMessage = { role: 'user', content };
+    const newMessages = [...baseMessages, userMessage];
+    setComposerDocked(true);
     setMessages(newMessages);
     setInput('');
     setIsStreaming(true);
     
-    await appendToJsonl(userMessage);
+    if (replaceHistory) {
+      await writeChatJsonl(newMessages);
+    } else {
+      await appendToJsonl(userMessage);
+    }
 
     try {
       let apiKey = localStorage.getItem(`${currentProvider.id}_api_key`);
@@ -393,7 +410,12 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
         });
       }
       
-      await appendToJsonl({ role: 'assistant', content: assistantContent });
+      const assistantMessage = { role: 'assistant', content: assistantContent };
+      if (replaceHistory) {
+        await writeChatJsonl([...newMessages, assistantMessage]);
+      } else {
+        await appendToJsonl(assistantMessage);
+      }
     } catch (error) {
       console.error("Stream error:", error);
       // Delete the empty assistant message that was meant for streaming
@@ -408,6 +430,34 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
     } finally {
       setIsStreaming(false);
     }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!input.trim() || isStreaming) return;
+
+    if (/\/proveedor$/i.test(input.trim())) {
+      openCommandMenu('provider');
+      return;
+    }
+
+    if (/\/modelo$/i.test(input.trim())) {
+      openCommandMenu('model');
+      return;
+    }
+
+    await sendMessage(input.trim());
+  };
+
+  const handleCopyMessage = async (content) => {
+    await navigator.clipboard?.writeText(content);
+  };
+
+  const handleRetryMessage = async (messageIndex) => {
+    if (isStreaming) return;
+    const message = messages[messageIndex];
+    if (!message || message.role !== 'user') return;
+    await sendMessage(message.content, messages.slice(0, messageIndex), false, true);
   };
 
   if (workspaceMode === 'blank') {
@@ -451,26 +501,35 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
   }
 
   return (
-    <div className="chat-interface-container" style={{ width: 'min(600px, calc(100% - 64px))', display: 'grid', gap: '10px' }}>
+    <div className="chat-interface-container" style={{ width: 'min(600px, calc(100% - 64px))', height: 'min(720px, calc(100vh - 96px))', display: 'grid', gridTemplateRows: '1fr auto', gap: '10px', alignItems: 'end' }}>
       
       {/* Zona de mensajes */}
-      <div className="messages-area" style={{ maxHeight: '60vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1rem', paddingBottom: '1rem' }}>
+      <div className="messages-area" style={{ minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1rem', paddingBottom: '1rem', scrollbarWidth: 'none' }}>
         {messages.map((m, i) => (
-          <div key={i} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', background: m.role === 'user' ? 'var(--color-surface-7, #2c2c2c)' : 'transparent', padding: '8px 12px', borderRadius: '8px', color: '#eee', maxWidth: '80%' }}>
-            {m.content}
+          <div key={i} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '5px', maxWidth: '80%' }}>
+            <div style={{ background: m.role === 'user' ? 'var(--color-surface-7, #2c2c2c)' : 'transparent', padding: '8px 12px', borderRadius: '8px', color: '#eee' }}>
+              {m.content}
+            </div>
+            {m.role === 'user' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', opacity: 0.72 }}>
+                <button type="button" aria-label="Copiar mensaje" onClick={() => handleCopyMessage(m.content)} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: 'pointer' }}>
+                  <Copy size={13} strokeWidth={2} />
+                </button>
+                <button type="button" aria-label="Reintentar desde este mensaje" onClick={() => handleRetryMessage(i)} disabled={isStreaming} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: isStreaming ? 'not-allowed' : 'pointer' }}>
+                  <RotateCcw size={13} strokeWidth={2} />
+                </button>
+              </div>
+            )}
           </div>
         ))}
       </div>
 
-      <div className="chat-composer" style={{ position: 'relative', display: 'grid', gap: '10px' }}>
-        <div className="composer-status" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+      <div className="chat-composer" style={{ position: 'relative', display: 'grid', gap: '6px', transform: composerDocked ? 'translateY(18px)' : 'translateY(0)', transition: 'transform 420ms cubic-bezier(0.22, 1, 0.36, 1)' }}>
+        <div className="composer-status" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '8px', color: 'rgba(216, 216, 216, 0.42)', fontSize: '12px' }}>
           <span className="braille-spinner" aria-hidden="true" style={{ position: 'relative', color: '#c7cbff' }} />
-          <p style={{ margin: 0, color: 'rgba(216, 216, 216, 0.82)', fontSize: '16px' }}>
+          <span style={{ color: 'rgba(216, 216, 216, 0.82)' }}>
             {isStreaming ? "Generando..." : "Listo cuando tú lo estés."}
-          </p>
-        </div>
-        
-        <div className="selection-status" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: 'rgba(216, 216, 216, 0.42)', fontSize: '12px' }}>
+          </span>
           <span>{currentProvider?.label || 'Sin proveedor'}</span>
           <span style={{ color: 'rgba(216, 216, 216, 0.24)' }}>/</span>
           <span>{currentModel?.label || 'Sin modelo'}</span>
