@@ -797,16 +797,17 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
           </React.Fragment>
         ))}
         {pendingApprovals.map((approval) => (
-          <div key={approval.id} style={{ alignSelf: 'flex-start', display: 'grid', gap: '8px', maxWidth: '80%', border: '1px solid rgba(253, 230, 138, 0.18)', borderRadius: '8px', padding: '9px', background: 'rgba(253, 230, 138, 0.045)', color: '#eee', fontSize: '12px' }}>
-            <div style={{ display: 'grid', gap: '3px' }}>
-              <span style={{ color: 'rgba(238, 238, 238, 0.88)' }}>{approval.toolName}</span>
+          <div key={approval.id} style={{ alignSelf: 'flex-start', display: 'grid', gap: '6px', maxWidth: '80%', border: '1px solid rgba(253, 230, 138, 0.18)', borderRadius: '8px', padding: '10px', background: 'rgba(253, 230, 138, 0.045)', color: '#eee', fontSize: '12px' }}>
+            <div style={{ display: 'grid', gap: '4px' }}>
+              <span style={{ color: 'rgba(238, 238, 238, 0.88)', fontWeight: 600 }}>{approval.toolName}</span>
               <span style={{ color: 'rgba(216, 216, 216, 0.66)' }}>{approval.summary}</span>
+              <pre style={{ margin: 0, padding: '6px 8px', background: 'rgba(0,0,0,0.25)', borderRadius: '6px', fontSize: '11px', lineHeight: 1.4, overflow: 'auto', maxHeight: '120px', whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: '#d8d8d8' }}>{JSON.stringify(approval.input, null, 2)}</pre>
             </div>
             <div style={{ display: 'flex', gap: '6px' }}>
-              <button type="button" onClick={() => resolveToolApproval(approval.id, true)} style={{ minHeight: '26px', border: 0, borderRadius: '7px', padding: '0 9px', background: '#2c2c2c', color: '#ffffff', cursor: 'pointer', fontSize: '12px' }}>
+              <button type="button" onClick={() => resolveToolApproval(approval.id, true)} style={{ minHeight: '26px', border: 0, borderRadius: '7px', padding: '0 10px', background: '#2c2c2c', color: '#ffffff', cursor: 'pointer', fontSize: '12px' }}>
                 Aprobar
               </button>
-              <button type="button" onClick={() => resolveToolApproval(approval.id, false)} style={{ minHeight: '26px', border: 0, borderRadius: '7px', padding: '0 9px', background: 'transparent', color: 'rgba(216, 216, 216, 0.72)', cursor: 'pointer', fontSize: '12px' }}>
+              <button type="button" onClick={() => resolveToolApproval(approval.id, false)} style={{ minHeight: '26px', border: 0, borderRadius: '7px', padding: '0 10px', background: 'transparent', color: 'rgba(216, 216, 216, 0.72)', cursor: 'pointer', fontSize: '12px' }}>
                 Cancelar
               </button>
             </div>
