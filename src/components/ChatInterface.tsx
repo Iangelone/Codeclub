@@ -84,6 +84,29 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
     }
   };
 
+  const logPersistence = async (action, status, detail = {}) => {
+    const entry = {
+      at: new Date().toISOString(),
+      action,
+      status,
+      ...detail,
+    };
+
+    console.info("[codeclub:persist]", entry);
+
+    try {
+      const { readTextFile, writeTextFile, mkdir, exists } = await import('@tauri-apps/plugin-fs');
+      const { appLocalDataDir, join } = await import('@tauri-apps/api/path');
+      const appDataPath = await appLocalDataDir();
+      const logPath = await join(appDataPath, 'persistence-log.jsonl');
+      await mkdir(appDataPath, { recursive: true });
+      const previous = (await exists(logPath)) ? await readTextFile(logPath) : '';
+      await writeTextFile(logPath, `${previous}${JSON.stringify(entry)}\n`);
+    } catch (error) {
+      console.error("[codeclub:persist] log failed", error);
+    }
+  };
+
   const appendToJsonl = async (msg) => {
     if (!activeChat) return;
     try {
@@ -96,8 +119,20 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
       }
       content += JSON.stringify(msg) + '\n';
       await writeTextFile(path, content);
+      await logPersistence('append_chat_message', 'ok', {
+        role: msg.role,
+        chatId: activeChat.chatId,
+        projectPath: activeChat.projectPath,
+        path,
+      });
     } catch (e) {
       console.error("FS Append Error:", e);
+      await logPersistence('append_chat_message', 'error', {
+        role: msg.role,
+        chatId: activeChat?.chatId,
+        projectPath: activeChat?.projectPath,
+        error: e?.message || String(e),
+      });
     }
   };
 

@@ -136,13 +136,173 @@ import ChatPanel from "../components/ChatPanel.astro";
     </main>
 
     <script>
-      import { getCurrentWindow } from "@tauri-apps/api/window";
-
+      const initCodeclubApp = async () => {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
       const appWindow = getCurrentWindow();
       const sidebarButton = document.querySelector('[aria-label="Toggle sidebar"]');
       const leftPanel = document.querySelector(".left-panel");
       const createProject = document.querySelector("#create-project");
       const projectsList = document.querySelector(".projects-list");
+      const PROJECTS_INDEX = "projects.json";
+      const PROJECTS_BACKUP_INDEX = "projects.backup.json";
+      const PERSISTENCE_LOG = "persistence-log.jsonl";
+
+      const getAppDataFilePath = async (fileName) => {
+        const { join, appLocalDataDir } = await import("@tauri-apps/api/path");
+        return join(await appLocalDataDir(), fileName);
+      };
+
+      const logPersistence = async (action, status, detail = {}) => {
+        const entry = {
+          at: new Date().toISOString(),
+          action,
+          status,
+          ...detail,
+        };
+
+        console.info("[codeclub:persist]", entry);
+
+        try {
+          const { readTextFile, writeTextFile, mkdir, exists } = await import("@tauri-apps/plugin-fs");
+          const { appLocalDataDir } = await import("@tauri-apps/api/path");
+          const logPath = await getAppDataFilePath(PERSISTENCE_LOG);
+          await mkdir(await appLocalDataDir(), { recursive: true });
+          const previous = (await exists(logPath)) ? await readTextFile(logPath) : "";
+          await writeTextFile(logPath, `${previous}${JSON.stringify(entry)}\n`);
+        } catch (error) {
+          console.error("[codeclub:persist] log failed", error);
+        }
+      };
+
+      const startPersistenceSession = async () => {
+        try {
+          const { writeTextFile, mkdir } = await import("@tauri-apps/plugin-fs");
+          const { appLocalDataDir } = await import("@tauri-apps/api/path");
+          const logPath = await getAppDataFilePath(PERSISTENCE_LOG);
+          await mkdir(await appLocalDataDir(), { recursive: true });
+          await writeTextFile(logPath, "");
+        } catch (error) {
+          console.error("[codeclub:persist] session reset failed", error);
+        }
+
+        await logPersistence("app_start", "ok");
+      };
+
+      await startPersistenceSession();
+      await logPersistence("dom_ready", projectsList ? "ok" : "error", {
+        hasProjectsList: Boolean(projectsList),
+      });
+
+      const selectProject = (project) => {
+        projectsList?.querySelectorAll(".project-card").forEach((card) => {
+          card.classList.toggle("is-selected", card === project);
+        });
+        projectsList?.querySelectorAll(".chat-row").forEach((chat) => chat.classList.remove("is-active"));
+      };
+
+      const selectChat = (chat) => {
+        projectsList?.querySelectorAll(".project-card").forEach((card) => card.classList.remove("is-selected"));
+        projectsList?.querySelectorAll(".chat-row").forEach((row) => row.classList.remove("is-active"));
+        chat.classList.add("is-active");
+      };
+
+      const ensureProjectMeta = async (projectPath, name) => {
+        const { mkdir, exists, writeTextFile, readTextFile } = await import("@tauri-apps/plugin-fs");
+        const codeclubPath = `${projectPath}/.codeclub`;
+        const chatsPath = `${codeclubPath}/chats`;
+        const metaPath = `${codeclubPath}/meta.json`;
+
+        await mkdir(chatsPath, { recursive: true });
+
+        let metaData = {};
+        if (await exists(metaPath)) {
+          try {
+            metaData = JSON.parse(await readTextFile(metaPath));
+          } catch {
+            metaData = {};
+          }
+        }
+
+        await writeTextFile(
+          metaPath,
+          JSON.stringify({
+            ...metaData,
+            name,
+            path: projectPath,
+            created_at: metaData.created_at || new Date().toISOString(),
+            chats: Array.isArray(metaData.chats) ? metaData.chats : [],
+          }),
+        );
+        await logPersistence("save_project_meta", "ok", { name, projectPath, path: metaPath });
+      };
+
+      const saveProjectIndex = async (name, projectPath) => {
+        const { readTextFile, writeTextFile, mkdir, exists, BaseDirectory } = await import("@tauri-apps/plugin-fs");
+        const { appLocalDataDir } = await import("@tauri-apps/api/path");
+        let globalProjects = [];
+
+        await mkdir(await appLocalDataDir(), { recursive: true });
+
+        if (await exists(PROJECTS_INDEX, { baseDir: BaseDirectory.AppLocalData })) {
+          const data = await readTextFile(PROJECTS_INDEX, { baseDir: BaseDirectory.AppLocalData });
+          if (data) globalProjects = JSON.parse(data);
+        }
+
+        const existingProject = globalProjects.find((project) => project.path === projectPath);
+        if (existingProject) {
+          existingProject.name = name;
+        } else {
+          globalProjects.push({ name, path: projectPath });
+        }
+
+        const payload = JSON.stringify(globalProjects);
+        const absoluteIndexPath = await getAppDataFilePath(PROJECTS_INDEX);
+        const absoluteBackupPath = await getAppDataFilePath(PROJECTS_BACKUP_INDEX);
+        await writeTextFile(PROJECTS_INDEX, payload, { baseDir: BaseDirectory.AppLocalData });
+        await writeTextFile(absoluteBackupPath, payload);
+        await logPersistence("save_project_index", "ok", {
+          name,
+          projectPath,
+          count: globalProjects.length,
+          paths: [absoluteIndexPath, absoluteBackupPath],
+        });
+      };
+
+      const readProjectIndex = async () => {
+        const { readTextFile, exists, BaseDirectory } = await import("@tauri-apps/plugin-fs");
+        const candidates = [
+          { label: "AppLocalData", path: PROJECTS_INDEX, options: { baseDir: BaseDirectory.AppLocalData } },
+          { label: "absolute", path: await getAppDataFilePath(PROJECTS_INDEX) },
+          { label: "backup", path: await getAppDataFilePath(PROJECTS_BACKUP_INDEX) },
+        ];
+
+        for (const candidate of candidates) {
+          try {
+            if (await exists(candidate.path, candidate.options)) {
+              const data = await readTextFile(candidate.path, candidate.options);
+              const projects = data ? JSON.parse(data) : [];
+              await logPersistence("read_project_index", "ok", {
+                source: candidate.label,
+                path: candidate.path,
+                count: projects.length,
+              });
+              return projects;
+            }
+            await logPersistence("read_project_index", "missing", {
+              source: candidate.label,
+              path: candidate.path,
+            });
+          } catch (error) {
+            await logPersistence("read_project_index", "error", {
+              source: candidate.label,
+              path: candidate.path,
+              error: error?.message || String(error),
+            });
+          }
+        }
+
+        return [];
+      };
 
       const renameProject = (projectRow, projectName) => {
         if (projectRow.querySelector(".project-input")) return;
@@ -161,8 +321,17 @@ import ChatPanel from "../components/ChatPanel.astro";
           if (isDone) return;
           isDone = true;
           const nextName = input.value.trim();
-          projectName.textContent = nextName || previousName;
+          const finalName = nextName || previousName;
+          projectName.textContent = finalName;
           input.replaceWith(projectName);
+
+          const project = projectRow.closest(".project-card");
+          const projectPath = project?.dataset?.path;
+          if (projectPath && finalName !== previousName) {
+            ensureProjectMeta(projectPath, finalName).catch((error) => console.error("Error renaming project meta", error));
+            saveProjectIndex(finalName, projectPath).catch((error) => console.error("Error renaming project index", error));
+            logPersistence("rename_project", "ok", { from: previousName, to: finalName, projectPath }).catch(() => {});
+          }
         };
 
         input.addEventListener("keydown", (event) => {
@@ -180,6 +349,10 @@ import ChatPanel from "../components/ChatPanel.astro";
 
       if (document.body.classList.contains("has-sidebar")) {
         leftPanel?.classList.add("is-open");
+      }
+      if (leftPanel && !leftPanel.classList.contains("is-open")) {
+        document.body.classList.add("has-sidebar");
+        leftPanel.classList.add("is-open");
       }
 
       sidebarButton?.addEventListener("click", () => {
@@ -214,7 +387,6 @@ import ChatPanel from "../components/ChatPanel.astro";
 
           try {
             const { open } = await import('@tauri-apps/plugin-dialog');
-            const { mkdir, exists, BaseDirectory, writeTextFile, readTextFile } = await import('@tauri-apps/plugin-fs');
             
             const selectedPath = await open({
               directory: true,
@@ -227,34 +399,9 @@ import ChatPanel from "../components/ChatPanel.astro";
               return;
             }
 
-            // Create .codeclub directory inside the selected project
-            const codeclubPath = `${selectedPath}/.codeclub`;
-            const hasCodeclub = await exists(codeclubPath);
-            if (!hasCodeclub) {
-              await mkdir(codeclubPath);
-              await mkdir(`${codeclubPath}/chats`);
-              await writeTextFile(`${codeclubPath}/meta.json`, JSON.stringify({ name, path: selectedPath, created_at: new Date().toISOString(), chats: [] }));
-            }
-
-            // Save to global projects list via FS BaseDirectory
-            const appDataPath = 'projects.json';
-            let globalProjects = [];
-            try {
-              const { readTextFile, writeTextFile, mkdir, exists, BaseDirectory } = await import('@tauri-apps/plugin-fs');
-              
-              if (await exists(appDataPath, { baseDir: BaseDirectory.AppLocalData })) {
-                const data = await readTextFile(appDataPath, { baseDir: BaseDirectory.AppLocalData });
-                if (data) globalProjects = JSON.parse(data);
-              }
-              
-              if (!globalProjects.find(p => p.path === selectedPath)) {
-                globalProjects.push({ name, path: selectedPath });
-                if (!(await exists('', { baseDir: BaseDirectory.AppLocalData }))) {
-                  await mkdir('', { baseDir: BaseDirectory.AppLocalData, recursive: true });
-                }
-                await writeTextFile(appDataPath, JSON.stringify(globalProjects), { baseDir: BaseDirectory.AppLocalData });
-              }
-            } catch(e) { console.error("Error saving global projects", e); }
+            await ensureProjectMeta(selectedPath, name);
+            await saveProjectIndex(name, selectedPath);
+            await logPersistence("create_project", "ok", { name, projectPath: selectedPath });
 
             const project = document.createElement("div");
             project.className = "project-card";
@@ -276,7 +423,8 @@ import ChatPanel from "../components/ChatPanel.astro";
             projectRow.append(projectNameSpan, newChatBtn);
             projectRow.addEventListener("click", (e) => {
               if (e.target.closest('.project-new-chat-btn')) return;
-              project.classList.toggle("is-active");
+              selectProject(project);
+              project.classList.toggle("is-expanded");
             });
             projectRow.addEventListener("dblclick", () => {
               renameProject(projectRow, projectNameSpan);
@@ -294,14 +442,28 @@ import ChatPanel from "../components/ChatPanel.astro";
               try {
                 const { readTextFile, writeTextFile, exists } = await import('@tauri-apps/plugin-fs');
                 const metaPath = `${selectedPath}/.codeclub/meta.json`;
+                await ensureProjectMeta(selectedPath, name);
                 if (await exists(metaPath)) {
                   const metaContent = await readTextFile(metaPath);
                   const metaData = JSON.parse(metaContent);
                   if (!metaData.chats) metaData.chats = [];
                   metaData.chats.push({ id: chatId, name: 'Nuevo chat' });
                   await writeTextFile(metaPath, JSON.stringify(metaData));
+                  await logPersistence("create_chat", "ok", {
+                    chatId,
+                    projectPath: selectedPath,
+                    path: metaPath,
+                    count: metaData.chats.length,
+                  });
                 }
-              } catch(e) { console.error("Error saving chat meta", e); }
+              } catch(e) {
+                console.error("Error saving chat meta", e);
+                await logPersistence("create_chat", "error", {
+                  chatId,
+                  projectPath: selectedPath,
+                  error: e?.message || String(e),
+                });
+              }
 
               const newChat = document.createElement("button");
               newChat.className = "chat-row chat-item";
@@ -311,12 +473,11 @@ import ChatPanel from "../components/ChatPanel.astro";
               
               newChat.addEventListener("click", () => {
                 window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: { projectPath: selectedPath, chatId } }));
-                projectsList?.querySelectorAll(".chat-row").forEach(c => c.classList.remove("is-active"));
-                newChat.classList.add("is-active");
+                selectChat(newChat);
               });
 
               project.insertBefore(newChat, chatRow);
-              project.classList.add("is-active"); // Ensure project opens
+              project.classList.add("is-expanded");
               newChat.click();
             };
             
@@ -324,7 +485,8 @@ import ChatPanel from "../components/ChatPanel.astro";
             newChatBtn.addEventListener("click", createChatLogic);
 
             project.append(projectRow, chatRow);
-            project.classList.add("is-active");
+            project.classList.add("is-expanded");
+            selectProject(project);
             draft.replaceWith(project);
           } catch(err) {
             console.error(err);
@@ -358,13 +520,9 @@ import ChatPanel from "../components/ChatPanel.astro";
       // Load existing projects on startup
       const loadProjects = async () => {
         try {
-          const { exists, readTextFile, BaseDirectory } = await import('@tauri-apps/plugin-fs');
-          const appDataPath = 'projects.json';
-          
-          if (await exists(appDataPath, { baseDir: BaseDirectory.AppLocalData })) {
-            const data = await readTextFile(appDataPath, { baseDir: BaseDirectory.AppLocalData });
-            if (data) {
-              const globalProjects = JSON.parse(data);
+          const { exists, readTextFile } = await import('@tauri-apps/plugin-fs');
+          const globalProjects = await readProjectIndex();
+          await logPersistence("load_projects", "ok", { count: globalProjects.length });
             
             for (const proj of globalProjects) {
               const project = document.createElement("div");
@@ -398,7 +556,8 @@ import ChatPanel from "../components/ChatPanel.astro";
               
               projectRow.addEventListener("click", (e) => {
                 if (e.target.closest('.project-new-chat-btn')) return;
-                project.classList.toggle("is-active");
+                selectProject(project);
+                project.classList.toggle("is-expanded");
               });
               
               projectRow.addEventListener("dblclick", () => {
@@ -417,14 +576,28 @@ import ChatPanel from "../components/ChatPanel.astro";
                 try {
                   const { readTextFile, writeTextFile, exists } = await import('@tauri-apps/plugin-fs');
                   const metaPath = `${proj.path}/.codeclub/meta.json`;
+                  await ensureProjectMeta(proj.path, proj.name);
                   if (await exists(metaPath)) {
                     const metaContent = await readTextFile(metaPath);
                     const metaData = JSON.parse(metaContent);
                     if (!metaData.chats) metaData.chats = [];
                     metaData.chats.push({ id: chatId, name: 'Nuevo chat' });
                     await writeTextFile(metaPath, JSON.stringify(metaData));
+                    await logPersistence("create_chat", "ok", {
+                      chatId,
+                      projectPath: proj.path,
+                      path: metaPath,
+                      count: metaData.chats.length,
+                    });
                   }
-                } catch(e) { console.error("Error saving chat meta", e); }
+                } catch(e) {
+                  console.error("Error saving chat meta", e);
+                  await logPersistence("create_chat", "error", {
+                    chatId,
+                    projectPath: proj.path,
+                    error: e?.message || String(e),
+                  });
+                }
 
                 const newChat = document.createElement("button");
                 newChat.className = "chat-row chat-item";
@@ -434,18 +607,19 @@ import ChatPanel from "../components/ChatPanel.astro";
                 
                 newChat.addEventListener("click", () => {
                   window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: { projectPath: proj.path, chatId } }));
-                  projectsList?.querySelectorAll(".chat-row").forEach(c => c.classList.remove("is-active"));
-                  newChat.classList.add("is-active");
+                  selectChat(newChat);
                 });
 
                 project.insertBefore(newChat, chatRow);
-                project.classList.add("is-active");
+                project.classList.add("is-expanded");
                 newChat.click();
               };
               
               chatRow.addEventListener("click", createChatLogic);
               newChatBtn.addEventListener("click", createChatLogic);
               
+              project.append(projectRow);
+
               projectChats.forEach(chat => {
                 const existingChat = document.createElement("button");
                 existingChat.className = "chat-row chat-item";
@@ -455,23 +629,33 @@ import ChatPanel from "../components/ChatPanel.astro";
                 
                 existingChat.addEventListener("click", () => {
                   window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: { projectPath: proj.path, chatId: chat.id } }));
-                  projectsList?.querySelectorAll(".chat-row").forEach(c => c.classList.remove("is-active"));
-                  existingChat.classList.add("is-active");
+                  selectChat(existingChat);
                 });
                 project.append(existingChat);
+              });
+              await logPersistence("render_chats", "ok", {
+                name: proj.name,
+                projectPath: proj.path,
+                count: projectChats.length,
+                renderedCount: project.querySelectorAll(".chat-item").length,
               });
 
               project.append(chatRow);
               projectsList?.append(project);
+              await logPersistence("render_project", projectsList ? "ok" : "error", {
+                name: proj.name,
+                projectPath: proj.path,
+                hasProjectsList: Boolean(projectsList),
+                renderedCount: projectsList?.querySelectorAll(".project-card").length || 0,
+              });
             }
-          }
-        }
       } catch(e) {
         console.error("Error loading projects on startup", e);
+        await logPersistence("load_projects", "error", { error: e?.message || String(e) });
       }
     };
 
-      loadProjects();
+      await loadProjects();
 
       window.addEventListener("codeclub:rename-chat", async (e) => {
         const { chatId, newName, projectPath } = e.detail;
@@ -492,16 +676,32 @@ import ChatPanel from "../components/ChatPanel.astro";
                 if (chat) {
                   chat.name = newName;
                   await writeTextFile(metaPath, JSON.stringify(metaData));
+                  await logPersistence("rename_chat", "ok", { chatId, newName, projectPath, path: metaPath });
                 }
               }
             }
-          } catch(err) { console.error("Error renaming chat in meta", err); }
+          } catch(err) {
+            console.error("Error renaming chat in meta", err);
+            await logPersistence("rename_chat", "error", {
+              chatId,
+              newName,
+              projectPath,
+              error: err?.message || String(err),
+            });
+          }
         }
       });
 
       document.querySelector(".drag-area")?.addEventListener("dblclick", () => {
         appWindow.toggleMaximize();
       });
+      };
+
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", initCodeclubApp, { once: true });
+      } else {
+        initCodeclubApp();
+      }
     </script>
   </body>
 </html>
@@ -653,7 +853,7 @@ import ChatPanel from "../components/ChatPanel.astro";
   }
 
   .panel-actions button:hover,
-  :global(.project-row:hover:not(.is-active)),
+  :global(.project-row:hover),
   :global(.chat-row:hover:not(.is-active)),
   .sidebar-footer button:hover,
   .section-heading button:hover {
@@ -663,6 +863,9 @@ import ChatPanel from "../components/ChatPanel.astro";
   .projects-section {
     min-height: 0;
     padding: 10px;
+    overflow: hidden;
+    display: grid;
+    grid-template-rows: auto 1fr;
   }
 
   .section-heading {
@@ -699,12 +902,16 @@ import ChatPanel from "../components/ChatPanel.astro";
   .projects-list {
     margin-top: 4px;
     display: grid;
+    align-content: start;
     gap: 4px;
+    min-height: 0;
+    overflow-y: auto;
   }
 
   :global(.project-card) {
     display: grid;
     gap: 3px;
+    min-width: 0;
   }
 
   :global(.project-input-row) {
@@ -746,6 +953,11 @@ import ChatPanel from "../components/ChatPanel.astro";
 
   :global(.project-row) {
     background: transparent !important;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    color: #d8d8d8 !important;
+    opacity: 1 !important;
   }
 
   :global(.project-row:focus-visible),
@@ -761,12 +973,16 @@ import ChatPanel from "../components/ChatPanel.astro";
     display: none;
   }
 
-  :global(.project-card.is-active .project-row) {
-    background: #1c1c1c;
+  :global(.project-card.is-selected .project-row) {
+    background: #1c1c1c !important;
     color: #eeeeee;
   }
 
-  :global(.project-card.is-active .chat-row) {
+  :global(.project-card.is-selected .project-row:hover) {
+    background: #1e1e1e !important;
+  }
+
+  :global(.project-card.is-expanded .chat-row) {
     display: flex;
   }
 
