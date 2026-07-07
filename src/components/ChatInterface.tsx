@@ -4,6 +4,12 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import ReactMarkdown from 'react-markdown';
 import { createTools } from '../lib/engine/tools';
 import { runStream } from '../lib/engine/run';
+import { registerTelemetry } from 'ai';
+import { DevToolsTelemetry } from '@ai-sdk/devtools';
+
+if (typeof window !== 'undefined') {
+  registerTelemetry(DevToolsTelemetry());
+}
 
 const compactJsonExported = (value) => {
   try {
