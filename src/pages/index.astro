@@ -346,7 +346,7 @@ import ChatPanel from "../components/ChatPanel.astro";
         row.dataset[`${kind}Id`] = artifact.id;
         const icon = kind === "note"
           ? '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3h12l4 4v14H4z"/><path d="M16 3v5h5"/><path d="M8 13h8"/><path d="M8 17h6"/></svg>'
-          : '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg>';
+          : '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M4 10h16"/><path d="M10 3v18"/><path d="M15 10v11"/></svg>';
         row.innerHTML = `${icon}<span class="chat-title">${artifact.name}</span>`;
         row.addEventListener("click", () => {
           const detail = kind === "note"
@@ -372,8 +372,11 @@ import ChatPanel from "../components/ChatPanel.astro";
         title.replaceWith(input);
         input.focus();
         input.select();
+        let isDone = false;
 
         const finish = async (save = true) => {
+          if (isDone) return;
+          isDone = true;
           const nextName = input.value.trim() || previousName;
           const nextTitle = document.createElement("span");
           nextTitle.className = "chat-title";
@@ -392,11 +395,12 @@ import ChatPanel from "../components/ChatPanel.astro";
             if (item) {
               item.name = nextName;
               await writeTextFile(metaPath, JSON.stringify(metaData));
-              if (kind === "chat") {
-                window.dispatchEvent(new CustomEvent("codeclub:rename-chat", {
-                  detail: { chatId: row.dataset.itemId, newName: nextName, projectPath },
-                }));
-              }
+              window.dispatchEvent(new CustomEvent(`codeclub:renamed-${kind}`, {
+                detail: { itemId: row.dataset.itemId, name: nextName, projectPath },
+              }));
+              if (kind === "chat") window.dispatchEvent(new CustomEvent("codeclub:rename-chat", {
+                detail: { chatId: row.dataset.itemId, newName: nextName, projectPath },
+              }));
             }
           } catch (error) {
             console.error("Error renaming sidebar item", error);
@@ -407,7 +411,7 @@ import ChatPanel from "../components/ChatPanel.astro";
           if (event.key === "Enter") finish(true);
           if (event.key === "Escape") finish(false);
         });
-        input.addEventListener("blur", () => finish(true));
+        input.addEventListener("blur", () => finish(false));
       };
 
       const deleteSidebarTarget = async (target) => {
@@ -603,7 +607,7 @@ import ChatPanel from "../components/ChatPanel.astro";
             newTableBtn.className = "project-action-btn";
             newTableBtn.type = "button";
             newTableBtn.setAttribute("aria-label", "Crear tabla");
-            newTableBtn.innerHTML = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg>';
+            newTableBtn.innerHTML = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M4 10h16"/><path d="M10 3v18"/><path d="M15 10v11"/></svg>';
             const newNoteBtn = document.createElement("button");
             newNoteBtn.className = "project-action-btn";
             newNoteBtn.type = "button";
@@ -632,7 +636,7 @@ import ChatPanel from "../components/ChatPanel.astro";
             tableRow.className = "chat-row";
             tableRow.type = "button";
             tableRow.innerHTML =
-              '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg><span>Crear tabla</span>';
+              '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M4 10h16"/><path d="M10 3v18"/><path d="M15 10v11"/></svg><span>Crear tabla</span>';
             const noteRow = document.createElement("button");
             noteRow.className = "chat-row";
             noteRow.type = "button";
@@ -830,7 +834,7 @@ import ChatPanel from "../components/ChatPanel.astro";
               newTableBtn.className = "project-action-btn";
               newTableBtn.type = "button";
               newTableBtn.setAttribute("aria-label", "Crear tabla");
-              newTableBtn.innerHTML = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg>';
+              newTableBtn.innerHTML = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M4 10h16"/><path d="M10 3v18"/><path d="M15 10v11"/></svg>';
               const newNoteBtn = document.createElement("button");
               newNoteBtn.className = "project-action-btn";
               newNoteBtn.type = "button";
@@ -861,7 +865,7 @@ import ChatPanel from "../components/ChatPanel.astro";
               tableRow.className = "chat-row";
               tableRow.type = "button";
               tableRow.innerHTML =
-                '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg><span>Crear tabla</span>';
+                '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M4 10h16"/><path d="M10 3v18"/><path d="M15 10v11"/></svg><span>Crear tabla</span>';
               const noteRow = document.createElement("button");
               noteRow.className = "chat-row";
               noteRow.type = "button";
@@ -1010,6 +1014,34 @@ import ChatPanel from "../components/ChatPanel.astro";
               error: err?.message || String(err),
             });
           }
+        }
+      });
+
+      window.addEventListener("codeclub:rename-artifact", async (e) => {
+        const { kind, itemId, projectPath, name } = e.detail || {};
+        if (!["note", "table"].includes(kind) || !itemId || !projectPath || !name) return;
+
+        try {
+          const { readTextFile, writeTextFile, exists } = await import("@tauri-apps/plugin-fs");
+          const metaPath = `${projectPath}/.codeclub/meta.json`;
+          if (!(await exists(metaPath))) return;
+          const metaData = JSON.parse(await readTextFile(metaPath));
+          const collection = `${kind}s`;
+          const item = metaData[collection]?.find((entry) => entry.id === itemId);
+          if (!item) return;
+          item.name = name;
+          await writeTextFile(metaPath, JSON.stringify(metaData));
+
+          const row = document.querySelector(`.${kind}-item[data-project-path="${CSS.escape(projectPath)}"][data-item-id="${CSS.escape(itemId)}"]`);
+          const title = row?.querySelector(".chat-title");
+          if (title) title.textContent = name;
+          window.dispatchEvent(new CustomEvent(`codeclub:renamed-${kind}`, {
+            detail: { itemId, name, projectPath },
+          }));
+          await logPersistence(`rename_${kind}`, "ok", { itemId, projectPath, name });
+        } catch (error) {
+          console.error("Error renaming artifact", error);
+          await logPersistence(`rename_${kind}`, "error", { error: error?.message || String(error) });
         }
       });
 

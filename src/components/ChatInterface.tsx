@@ -18,6 +18,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
   const [workspaceMode, setWorkspaceMode] = useState('blank');
   const [activeNote, setActiveNote] = useState<{noteId: string, projectPath: string, name?: string} | null>(null);
   const [activeTable, setActiveTable] = useState<{tableId: string, projectPath: string, name?: string} | null>(null);
+  const [titleDraft, setTitleDraft] = useState('');
   const [noteContent, setNoteContent] = useState('');
   const [tableData, setTableData] = useState<string[][]>([]);
   const noteSaveTimer = useRef(null);
@@ -59,6 +60,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
       const note = e.detail;
       setWorkspaceMode('note');
       setActiveNote(note);
+      setTitleDraft(note.name || 'Nota');
       setActiveTable(null);
       try {
         const { readTextFile, exists } = await import('@tauri-apps/plugin-fs');
@@ -74,6 +76,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
       const table = e.detail;
       setWorkspaceMode('table');
       setActiveTable(table);
+      setTitleDraft(table.name || 'Tabla');
       setActiveNote(null);
       try {
         const { readTextFile, exists } = await import('@tauri-apps/plugin-fs');
@@ -95,6 +98,27 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
       window.removeEventListener('codeclub:open-table', handleOpenTable);
     };
   }, []);
+
+  useEffect(() => {
+    const handleRenamedNote = (e: any) => {
+      if (!activeNote || e.detail.itemId !== activeNote.noteId || e.detail.projectPath !== activeNote.projectPath) return;
+      setActiveNote({ ...activeNote, name: e.detail.name });
+      setTitleDraft(e.detail.name);
+    };
+
+    const handleRenamedTable = (e: any) => {
+      if (!activeTable || e.detail.itemId !== activeTable.tableId || e.detail.projectPath !== activeTable.projectPath) return;
+      setActiveTable({ ...activeTable, name: e.detail.name });
+      setTitleDraft(e.detail.name);
+    };
+
+    window.addEventListener('codeclub:renamed-note', handleRenamedNote);
+    window.addEventListener('codeclub:renamed-table', handleRenamedTable);
+    return () => {
+      window.removeEventListener('codeclub:renamed-note', handleRenamedNote);
+      window.removeEventListener('codeclub:renamed-table', handleRenamedTable);
+    };
+  }, [activeNote, activeTable]);
 
   useEffect(() => {
     if (input.endsWith('/proveedor')) {
@@ -234,6 +258,27 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
     tableSaveTimer.current = setTimeout(() => saveTable(nextTable), 350);
   };
 
+  const renameActiveArtifact = () => {
+    const artifact = workspaceMode === 'note' ? activeNote : activeTable;
+    if (!artifact) return;
+    const name = titleDraft.trim() || (workspaceMode === 'note' ? 'Nota' : 'Tabla');
+    const itemId = workspaceMode === 'note' ? artifact.noteId : artifact.tableId;
+    window.dispatchEvent(new CustomEvent('codeclub:rename-artifact', {
+      detail: { kind: workspaceMode, itemId, projectPath: artifact.projectPath, name },
+    }));
+  };
+
+  const handleTitleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.currentTarget.blur();
+      renameActiveArtifact();
+    }
+    if (e.key === 'Escape') {
+      setTitleDraft(workspaceMode === 'note' ? (activeNote?.name || 'Nota') : (activeTable?.name || 'Tabla'));
+      e.currentTarget.blur();
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!input.trim() || isStreaming) return;
@@ -316,8 +361,8 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
 
   if (workspaceMode === 'note') {
     return (
-      <div className="note-panel" style={{ width: 'min(760px, calc(100% - 64px))', height: 'min(720px, calc(100vh - 96px))', display: 'grid', gridTemplateRows: 'auto 1fr', gap: '14px' }}>
-        <input value={activeNote?.name || 'Nota'} readOnly style={{ border: 0, outline: 'none', background: 'transparent', color: '#eeeeee', fontSize: '28px', fontWeight: 600 }} />
+      <div className="note-panel" style={{ width: 'min(860px, calc(100% - 64px))', height: 'min(720px, calc(100vh - 96px))', display: 'grid', gridTemplateRows: 'auto 1fr', gap: '14px' }}>
+        <input value={titleDraft} onChange={(e) => setTitleDraft(e.target.value)} onKeyDown={handleTitleKeyDown} style={{ border: 0, outline: 'none', background: 'transparent', color: '#eeeeee', fontSize: '28px', fontWeight: 600 }} />
         <textarea value={noteContent} onChange={(e) => queueSaveNote(e.target.value)} placeholder="Escribí una nota..." style={{ resize: 'none', border: 0, outline: 'none', background: 'transparent', color: '#d8d8d8', fontSize: '14px', lineHeight: 1.7, fontFamily: 'inherit', overflow: 'auto', scrollbarWidth: 'none' }} />
       </div>
     );
@@ -326,7 +371,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
   if (workspaceMode === 'table') {
     return (
       <div className="table-panel" style={{ width: 'min(860px, calc(100% - 64px))', height: 'min(720px, calc(100vh - 96px))', display: 'grid', gridTemplateRows: 'auto 1fr', gap: '14px' }}>
-        <input value={activeTable?.name || 'Tabla'} readOnly style={{ border: 0, outline: 'none', background: 'transparent', color: '#eeeeee', fontSize: '28px', fontWeight: 600 }} />
+        <input value={titleDraft} onChange={(e) => setTitleDraft(e.target.value)} onKeyDown={handleTitleKeyDown} style={{ border: 0, outline: 'none', background: 'transparent', color: '#eeeeee', fontSize: '28px', fontWeight: 600 }} />
         <div style={{ overflow: 'auto', scrollbarWidth: 'none', border: '1px solid var(--color-surface-9, #2c2c2c)', borderRadius: '8px', background: '#121212' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <tbody>
