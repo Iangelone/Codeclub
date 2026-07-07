@@ -15,12 +15,20 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
   const [commandKind, setCommandKind] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeChat, setActiveChat] = useState<{chatId: string, projectPath: string} | null>(null);
+  const [workspaceMode, setWorkspaceMode] = useState('blank');
+  const [activeNote, setActiveNote] = useState<{noteId: string, projectPath: string, name?: string} | null>(null);
+  const [activeTable, setActiveTable] = useState<{tableId: string, projectPath: string, name?: string} | null>(null);
+  const [noteContent, setNoteContent] = useState('');
+  const [tableData, setTableData] = useState<string[][]>([]);
+  const noteSaveTimer = useRef(null);
+  const tableSaveTimer = useRef(null);
   const searchInputRef = useRef(null);
   const chatInputRef = useRef(null);
 
   useEffect(() => {
     const handleOpenChat = async (e: any) => {
       const chat = e.detail;
+      setWorkspaceMode('chat');
       setActiveChat(chat);
       setMessages([]);
       try {
@@ -38,6 +46,54 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
     };
     window.addEventListener('codeclub:open-chat', handleOpenChat);
     return () => window.removeEventListener('codeclub:open-chat', handleOpenChat);
+  }, []);
+
+  useEffect(() => {
+    const handleOpenBlank = () => {
+      setWorkspaceMode('blank');
+      setActiveNote(null);
+      setActiveTable(null);
+    };
+
+    const handleOpenNote = async (e: any) => {
+      const note = e.detail;
+      setWorkspaceMode('note');
+      setActiveNote(note);
+      setActiveTable(null);
+      try {
+        const { readTextFile, exists } = await import('@tauri-apps/plugin-fs');
+        const path = `${note.projectPath}/.codeclub/notes/${note.noteId}.md`;
+        setNoteContent((await exists(path)) ? await readTextFile(path) : '');
+      } catch (err) {
+        console.error("Error loading note:", err);
+        setNoteContent('');
+      }
+    };
+
+    const handleOpenTable = async (e: any) => {
+      const table = e.detail;
+      setWorkspaceMode('table');
+      setActiveTable(table);
+      setActiveNote(null);
+      try {
+        const { readTextFile, exists } = await import('@tauri-apps/plugin-fs');
+        const path = `${table.projectPath}/.codeclub/tables/${table.tableId}.json`;
+        const fallback = Array.from({ length: 8 }, () => Array.from({ length: 5 }, () => ''));
+        setTableData((await exists(path)) ? JSON.parse(await readTextFile(path)) : fallback);
+      } catch (err) {
+        console.error("Error loading table:", err);
+        setTableData(Array.from({ length: 8 }, () => Array.from({ length: 5 }, () => '')));
+      }
+    };
+
+    window.addEventListener('codeclub:open-blank', handleOpenBlank);
+    window.addEventListener('codeclub:open-note', handleOpenNote);
+    window.addEventListener('codeclub:open-table', handleOpenTable);
+    return () => {
+      window.removeEventListener('codeclub:open-blank', handleOpenBlank);
+      window.removeEventListener('codeclub:open-note', handleOpenNote);
+      window.removeEventListener('codeclub:open-table', handleOpenTable);
+    };
   }, []);
 
   useEffect(() => {
@@ -136,6 +192,48 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
     }
   };
 
+  const saveNote = async (content) => {
+    if (!activeNote) return;
+    try {
+      const { writeTextFile, mkdir } = await import('@tauri-apps/plugin-fs');
+      const dir = `${activeNote.projectPath}/.codeclub/notes`;
+      const path = `${dir}/${activeNote.noteId}.md`;
+      await mkdir(dir, { recursive: true });
+      await writeTextFile(path, content);
+      await logPersistence('save_note', 'ok', { noteId: activeNote.noteId, projectPath: activeNote.projectPath, path });
+    } catch (e) {
+      await logPersistence('save_note', 'error', { noteId: activeNote?.noteId, error: e?.message || String(e) });
+    }
+  };
+
+  const queueSaveNote = (content) => {
+    setNoteContent(content);
+    if (noteSaveTimer.current) clearTimeout(noteSaveTimer.current);
+    noteSaveTimer.current = setTimeout(() => saveNote(content), 350);
+  };
+
+  const saveTable = async (nextTable) => {
+    if (!activeTable) return;
+    try {
+      const { writeTextFile, mkdir } = await import('@tauri-apps/plugin-fs');
+      const dir = `${activeTable.projectPath}/.codeclub/tables`;
+      const path = `${dir}/${activeTable.tableId}.json`;
+      await mkdir(dir, { recursive: true });
+      await writeTextFile(path, JSON.stringify(nextTable));
+      await logPersistence('save_table', 'ok', { tableId: activeTable.tableId, projectPath: activeTable.projectPath, path });
+    } catch (e) {
+      await logPersistence('save_table', 'error', { tableId: activeTable?.tableId, error: e?.message || String(e) });
+    }
+  };
+
+  const updateTableCell = (rowIndex, columnIndex, value) => {
+    const nextTable = tableData.map((row) => [...row]);
+    nextTable[rowIndex][columnIndex] = value;
+    setTableData(nextTable);
+    if (tableSaveTimer.current) clearTimeout(tableSaveTimer.current);
+    tableSaveTimer.current = setTimeout(() => saveTable(nextTable), 350);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!input.trim() || isStreaming) return;
@@ -207,6 +305,46 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
       setIsStreaming(false);
     }
   };
+
+  if (workspaceMode === 'blank') {
+    return (
+      <div style={{ width: 'min(600px, calc(100% - 64px))', display: 'grid', placeItems: 'center', color: 'rgba(216, 216, 216, 0.42)', fontSize: '13px' }}>
+        Seleccioná un chat, nota o tabla
+      </div>
+    );
+  }
+
+  if (workspaceMode === 'note') {
+    return (
+      <div className="note-panel" style={{ width: 'min(760px, calc(100% - 64px))', height: 'min(720px, calc(100vh - 96px))', display: 'grid', gridTemplateRows: 'auto 1fr', gap: '14px' }}>
+        <input value={activeNote?.name || 'Nota'} readOnly style={{ border: 0, outline: 'none', background: 'transparent', color: '#eeeeee', fontSize: '28px', fontWeight: 600 }} />
+        <textarea value={noteContent} onChange={(e) => queueSaveNote(e.target.value)} placeholder="Escribí una nota..." style={{ resize: 'none', border: 0, outline: 'none', background: 'transparent', color: '#d8d8d8', fontSize: '14px', lineHeight: 1.7, fontFamily: 'inherit', overflow: 'auto', scrollbarWidth: 'none' }} />
+      </div>
+    );
+  }
+
+  if (workspaceMode === 'table') {
+    return (
+      <div className="table-panel" style={{ width: 'min(860px, calc(100% - 64px))', height: 'min(720px, calc(100vh - 96px))', display: 'grid', gridTemplateRows: 'auto 1fr', gap: '14px' }}>
+        <input value={activeTable?.name || 'Tabla'} readOnly style={{ border: 0, outline: 'none', background: 'transparent', color: '#eeeeee', fontSize: '28px', fontWeight: 600 }} />
+        <div style={{ overflow: 'auto', scrollbarWidth: 'none', border: '1px solid var(--color-surface-9, #2c2c2c)', borderRadius: '8px', background: '#121212' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            <tbody>
+              {tableData.map((row, rowIndex) => (
+                <tr key={rowIndex}>
+                  {row.map((cell, columnIndex) => (
+                    <td key={columnIndex} style={{ border: '1px solid #2b2b2b', padding: 0 }}>
+                      <input value={cell} onChange={(e) => updateTableCell(rowIndex, columnIndex, e.target.value)} style={{ width: '100%', minHeight: '36px', boxSizing: 'border-box', border: 0, outline: 'none', background: 'transparent', color: '#d8d8d8', padding: '0 10px', fontSize: '12px' }} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="chat-interface-container" style={{ width: 'min(600px, calc(100% - 64px))', display: 'grid', gap: '10px' }}>

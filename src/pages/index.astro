@@ -198,6 +198,7 @@ import ChatPanel from "../components/ChatPanel.astro";
           card.classList.toggle("is-selected", card === project);
         });
         projectsList?.querySelectorAll(".chat-row").forEach((chat) => chat.classList.remove("is-active"));
+        window.dispatchEvent(new CustomEvent("codeclub:open-blank"));
       };
 
       const selectChat = (chat) => {
@@ -210,9 +211,13 @@ import ChatPanel from "../components/ChatPanel.astro";
         const { mkdir, exists, writeTextFile, readTextFile } = await import("@tauri-apps/plugin-fs");
         const codeclubPath = `${projectPath}/.codeclub`;
         const chatsPath = `${codeclubPath}/chats`;
+        const notesPath = `${codeclubPath}/notes`;
+        const tablesPath = `${codeclubPath}/tables`;
         const metaPath = `${codeclubPath}/meta.json`;
 
         await mkdir(chatsPath, { recursive: true });
+        await mkdir(notesPath, { recursive: true });
+        await mkdir(tablesPath, { recursive: true });
 
         let metaData = {};
         if (await exists(metaPath)) {
@@ -231,6 +236,8 @@ import ChatPanel from "../components/ChatPanel.astro";
             path: projectPath,
             created_at: metaData.created_at || new Date().toISOString(),
             chats: Array.isArray(metaData.chats) ? metaData.chats : [],
+            notes: Array.isArray(metaData.notes) ? metaData.notes : [],
+            tables: Array.isArray(metaData.tables) ? metaData.tables : [],
           }),
         );
         await logPersistence("save_project_meta", "ok", { name, projectPath, path: metaPath });
@@ -302,6 +309,50 @@ import ChatPanel from "../components/ChatPanel.astro";
         }
 
         return [];
+      };
+
+      const createArtifactRow = (kind, artifact, projectPath) => {
+        const row = document.createElement("button");
+        row.className = `chat-row ${kind}-item`;
+        row.type = "button";
+        row.dataset[`${kind}Id`] = artifact.id;
+        const icon = kind === "note"
+          ? '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3h12l4 4v14H4z"/><path d="M16 3v5h5"/><path d="M8 13h8"/><path d="M8 17h6"/></svg>'
+          : '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg>';
+        row.innerHTML = `${icon}<span class="chat-title">${artifact.name}</span>`;
+        row.addEventListener("click", () => {
+          const detail = kind === "note"
+            ? { projectPath, noteId: artifact.id, name: artifact.name }
+            : { projectPath, tableId: artifact.id, name: artifact.name };
+          window.dispatchEvent(new CustomEvent(`codeclub:open-${kind}`, { detail }));
+          selectChat(row);
+        });
+        return row;
+      };
+
+      const createArtifact = async (kind, project, projectPath, projectName, beforeRow) => {
+        const id = Date.now().toString();
+        const name = kind === "note" ? "Nueva nota" : "Nueva tabla";
+        const collection = kind === "note" ? "notes" : "tables";
+        const extension = kind === "note" ? "md" : "json";
+        const initialContent = kind === "note" ? "" : JSON.stringify(Array.from({ length: 8 }, () => Array.from({ length: 5 }, () => "")));
+
+        await ensureProjectMeta(projectPath, projectName);
+        const { readTextFile, writeTextFile } = await import("@tauri-apps/plugin-fs");
+        const metaPath = `${projectPath}/.codeclub/meta.json`;
+        const filePath = `${projectPath}/.codeclub/${collection}/${id}.${extension}`;
+        const metaData = JSON.parse(await readTextFile(metaPath));
+        if (!Array.isArray(metaData[collection])) metaData[collection] = [];
+        const artifact = { id, name };
+        metaData[collection].push(artifact);
+        await writeTextFile(metaPath, JSON.stringify(metaData));
+        await writeTextFile(filePath, initialContent);
+        await logPersistence(`create_${kind}`, "ok", { id, projectPath, path: filePath });
+
+        const row = createArtifactRow(kind, artifact, projectPath);
+        project.insertBefore(row, beforeRow);
+        project.classList.add("is-expanded");
+        row.click();
       };
 
       const renameProject = (projectRow, projectName) => {
@@ -416,13 +467,28 @@ import ChatPanel from "../components/ChatPanel.astro";
             projectNameSpan.textContent = name;
             projectNameSpan.style.flex = "1"; // take remaining space
             
-            const newChatBtn = document.createElement("div");
-            newChatBtn.className = "project-new-chat-btn";
-            newChatBtn.innerHTML = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
+            const newChatBtn = document.createElement("button");
+            newChatBtn.className = "project-action-btn";
+            newChatBtn.type = "button";
+            newChatBtn.setAttribute("aria-label", "Crear chat");
+            newChatBtn.innerHTML = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3H5a2 2 0 0 0-2 2v14l4-4h12a2 2 0 0 0 2-2v-1"/><path d="M19 3v6"/><path d="M16 6h6"/></svg>';
+            const newTableBtn = document.createElement("button");
+            newTableBtn.className = "project-action-btn";
+            newTableBtn.type = "button";
+            newTableBtn.setAttribute("aria-label", "Crear tabla");
+            newTableBtn.innerHTML = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg>';
+            const newNoteBtn = document.createElement("button");
+            newNoteBtn.className = "project-action-btn";
+            newNoteBtn.type = "button";
+            newNoteBtn.setAttribute("aria-label", "Crear nota");
+            newNoteBtn.innerHTML = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3h12l4 4v14H4z"/><path d="M16 3v5h5"/><path d="M8 13h8"/><path d="M8 17h6"/></svg>';
+            const actionGroup = document.createElement("span");
+            actionGroup.className = "project-action-group";
+            actionGroup.append(newChatBtn, newTableBtn, newNoteBtn);
             
-            projectRow.append(projectNameSpan, newChatBtn);
+            projectRow.append(projectNameSpan, actionGroup);
             projectRow.addEventListener("click", (e) => {
-              if (e.target.closest('.project-new-chat-btn')) return;
+              if (e.target.closest('.project-action-btn')) return;
               selectProject(project);
               project.classList.toggle("is-expanded");
             });
@@ -435,6 +501,16 @@ import ChatPanel from "../components/ChatPanel.astro";
             chatRow.type = "button";
             chatRow.innerHTML =
               '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3H5a2 2 0 0 0-2 2v14l4-4h12a2 2 0 0 0 2-2v-1"/><path d="M19 3v6"/><path d="M16 6h6"/></svg><span>Crear chat</span>';
+            const tableRow = document.createElement("button");
+            tableRow.className = "chat-row";
+            tableRow.type = "button";
+            tableRow.innerHTML =
+              '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg><span>Crear tabla</span>';
+            const noteRow = document.createElement("button");
+            noteRow.className = "chat-row";
+            noteRow.type = "button";
+            noteRow.innerHTML =
+              '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3h12l4 4v14H4z"/><path d="M16 3v5h5"/><path d="M8 13h8"/><path d="M8 17h6"/></svg><span>Crear nota</span>';
             
             const createChatLogic = async () => {
               const chatId = Date.now().toString();
@@ -483,8 +559,12 @@ import ChatPanel from "../components/ChatPanel.astro";
             
             chatRow.addEventListener("click", createChatLogic);
             newChatBtn.addEventListener("click", createChatLogic);
+            tableRow.addEventListener("click", () => createArtifact("table", project, selectedPath, name, chatRow));
+            newTableBtn.addEventListener("click", () => createArtifact("table", project, selectedPath, name, chatRow));
+            noteRow.addEventListener("click", () => createArtifact("note", project, selectedPath, name, chatRow));
+            newNoteBtn.addEventListener("click", () => createArtifact("note", project, selectedPath, name, chatRow));
 
-            project.append(projectRow, chatRow);
+            project.append(projectRow, chatRow, tableRow, noteRow);
             project.classList.add("is-expanded");
             selectProject(project);
             draft.replaceWith(project);
@@ -535,12 +615,16 @@ import ChatPanel from "../components/ChatPanel.astro";
               projectRow.innerHTML =
                 '<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>';
               let projectChats = [];
+              let projectNotes = [];
+              let projectTables = [];
               try {
                 const metaPath = `${proj.path}/.codeclub/meta.json`;
                 if (await exists(metaPath)) {
                   const metaContent = await readTextFile(metaPath);
                   const metaData = JSON.parse(metaContent);
                   if (metaData.chats) projectChats = metaData.chats;
+                  if (metaData.notes) projectNotes = metaData.notes;
+                  if (metaData.tables) projectTables = metaData.tables;
                 }
               } catch(e) { console.error("Error reading meta for", proj.name, e); }
 
@@ -548,14 +632,29 @@ import ChatPanel from "../components/ChatPanel.astro";
               projectNameSpan.textContent = proj.name;
               projectNameSpan.style.flex = "1";
               
-              const newChatBtn = document.createElement("div");
-              newChatBtn.className = "project-new-chat-btn";
-              newChatBtn.innerHTML = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
+              const newChatBtn = document.createElement("button");
+              newChatBtn.className = "project-action-btn";
+              newChatBtn.type = "button";
+              newChatBtn.setAttribute("aria-label", "Crear chat");
+              newChatBtn.innerHTML = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3H5a2 2 0 0 0-2 2v14l4-4h12a2 2 0 0 0 2-2v-1"/><path d="M19 3v6"/><path d="M16 6h6"/></svg>';
+              const newTableBtn = document.createElement("button");
+              newTableBtn.className = "project-action-btn";
+              newTableBtn.type = "button";
+              newTableBtn.setAttribute("aria-label", "Crear tabla");
+              newTableBtn.innerHTML = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg>';
+              const newNoteBtn = document.createElement("button");
+              newNoteBtn.className = "project-action-btn";
+              newNoteBtn.type = "button";
+              newNoteBtn.setAttribute("aria-label", "Crear nota");
+              newNoteBtn.innerHTML = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3h12l4 4v14H4z"/><path d="M16 3v5h5"/><path d="M8 13h8"/><path d="M8 17h6"/></svg>';
+              const actionGroup = document.createElement("span");
+              actionGroup.className = "project-action-group";
+              actionGroup.append(newChatBtn, newTableBtn, newNoteBtn);
               
-              projectRow.append(projectNameSpan, newChatBtn);
+              projectRow.append(projectNameSpan, actionGroup);
               
               projectRow.addEventListener("click", (e) => {
-                if (e.target.closest('.project-new-chat-btn')) return;
+                if (e.target.closest('.project-action-btn')) return;
                 selectProject(project);
                 project.classList.toggle("is-expanded");
               });
@@ -569,6 +668,16 @@ import ChatPanel from "../components/ChatPanel.astro";
               chatRow.type = "button";
               chatRow.innerHTML =
                 '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3H5a2 2 0 0 0-2 2v14l4-4h12a2 2 0 0 0 2-2v-1"/><path d="M19 3v6"/><path d="M16 6h6"/></svg><span>Crear chat</span>';
+              const tableRow = document.createElement("button");
+              tableRow.className = "chat-row";
+              tableRow.type = "button";
+              tableRow.innerHTML =
+                '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg><span>Crear tabla</span>';
+              const noteRow = document.createElement("button");
+              noteRow.className = "chat-row";
+              noteRow.type = "button";
+              noteRow.innerHTML =
+                '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3h12l4 4v14H4z"/><path d="M16 3v5h5"/><path d="M8 13h8"/><path d="M8 17h6"/></svg><span>Crear nota</span>';
 
               const createChatLogic = async () => {
                 const chatId = Date.now().toString();
@@ -617,6 +726,10 @@ import ChatPanel from "../components/ChatPanel.astro";
               
               chatRow.addEventListener("click", createChatLogic);
               newChatBtn.addEventListener("click", createChatLogic);
+              tableRow.addEventListener("click", () => createArtifact("table", project, proj.path, proj.name, chatRow));
+              newTableBtn.addEventListener("click", () => createArtifact("table", project, proj.path, proj.name, chatRow));
+              noteRow.addEventListener("click", () => createArtifact("note", project, proj.path, proj.name, chatRow));
+              newNoteBtn.addEventListener("click", () => createArtifact("note", project, proj.path, proj.name, chatRow));
               
               project.append(projectRow);
 
@@ -633,6 +746,15 @@ import ChatPanel from "../components/ChatPanel.astro";
                 });
                 project.append(existingChat);
               });
+
+              projectNotes.forEach((note) => {
+                project.append(createArtifactRow("note", note, proj.path));
+              });
+
+              projectTables.forEach((table) => {
+                project.append(createArtifactRow("table", table, proj.path));
+              });
+
               await logPersistence("render_chats", "ok", {
                 name: proj.name,
                 projectPath: proj.path,
@@ -640,7 +762,7 @@ import ChatPanel from "../components/ChatPanel.astro";
                 renderedCount: project.querySelectorAll(".chat-item").length,
               });
 
-              project.append(chatRow);
+              project.append(chatRow, tableRow, noteRow);
               projectsList?.append(project);
               await logPersistence("render_project", projectsList ? "ok" : "error", {
                 name: proj.name,
@@ -776,9 +898,12 @@ import ChatPanel from "../components/ChatPanel.astro";
     grid-column: 1;
     min-width: 264px;
     width: 264px;
+    height: calc(100vh - 36px);
+    max-height: calc(100vh - 36px);
+    min-height: 0;
     overflow: hidden;
     display: grid;
-    grid-template-rows: auto 1fr auto;
+    grid-template-rows: auto minmax(0, 1fr) auto;
     border-top: 1px solid rgba(47, 47, 47, 1);
     border-right: 1px solid var(--color-surface-10);
     background: #161616;
@@ -822,6 +947,9 @@ import ChatPanel from "../components/ChatPanel.astro";
     display: grid;
     gap: 4px;
     border-top: 1px solid var(--color-surface-9);
+    background: #161616;
+    position: relative;
+    z-index: 2;
   }
 
   .panel-actions button,
@@ -862,10 +990,12 @@ import ChatPanel from "../components/ChatPanel.astro";
 
   .projects-section {
     min-height: 0;
-    padding: 10px;
+    max-height: 100%;
+    height: 100%;
+    padding: 10px 10px 0;
     overflow: hidden;
     display: grid;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .section-heading {
@@ -900,12 +1030,30 @@ import ChatPanel from "../components/ChatPanel.astro";
   }
 
   .projects-list {
-    margin-top: 4px;
+    margin-top: 0;
     display: grid;
     align-content: start;
     gap: 4px;
+    height: 100%;
     min-height: 0;
+    max-height: 100%;
     overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    padding-top: 4px;
+    padding-bottom: 0;
+  }
+
+  .projects-list::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+
+  .projects-list::after {
+    content: "";
+    display: block;
+    height: 56px;
   }
 
   :global(.project-card) {
@@ -991,7 +1139,15 @@ import ChatPanel from "../components/ChatPanel.astro";
     color: #eeeeee !important;
   }
 
-  :global(.project-new-chat-btn) {
+  :global(.project-action-group) {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+
+  :global(.project-action-btn) {
     opacity: 0;
     width: 24px;
     height: 24px;
@@ -1002,13 +1158,21 @@ import ChatPanel from "../components/ChatPanel.astro";
     color: #9f9f9f;
     transition: all 120ms ease;
     background: transparent;
+    border: 0;
+    padding: 0;
   }
 
-  :global(.project-row:hover .project-new-chat-btn) {
+  :global(.project-row:hover .project-action-group),
+  :global(.project-row:focus-within .project-action-group) {
     opacity: 1;
   }
 
-  :global(.project-new-chat-btn:hover) {
+  :global(.project-row:hover .project-action-btn),
+  :global(.project-row:focus-within .project-action-btn) {
+    opacity: 1;
+  }
+
+  :global(.project-action-btn:hover) {
     background: rgba(255, 255, 255, 0.1);
     color: #eeeeee;
   }
