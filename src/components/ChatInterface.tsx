@@ -14,6 +14,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
   const [menuOpen, setMenuOpen] = useState(false);
   const [commandKind, setCommandKind] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeCommandIndex, setActiveCommandIndex] = useState(0);
   const [activeChat, setActiveChat] = useState<{chatId: string, projectPath: string} | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState('blank');
   const [activeNote, setActiveNote] = useState<{noteId: string, projectPath: string, name?: string} | null>(null);
@@ -23,6 +24,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
   const [tableData, setTableData] = useState<string[][]>([]);
   const noteSaveTimer = useRef(null);
   const tableSaveTimer = useRef(null);
+  const commandMenuRef = useRef(null);
   const searchInputRef = useRef(null);
   const chatInputRef = useRef(null);
 
@@ -120,21 +122,13 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
     };
   }, [activeNote, activeTable]);
 
-  useEffect(() => {
-    if (input.endsWith('/proveedor')) {
-      setCommandKind('provider');
-      setMenuOpen(true);
-      setSearchQuery('');
-      setTimeout(() => searchInputRef.current?.focus(), 10);
-    } else if (input.endsWith('/modelo')) {
-      setCommandKind('model');
-      setMenuOpen(true);
-      setSearchQuery('');
-      setTimeout(() => searchInputRef.current?.focus(), 10);
-    } else {
-      setMenuOpen(false);
-    }
-  }, [input]);
+  const openCommandMenu = (kind) => {
+    setCommandKind(kind);
+    setMenuOpen(true);
+    setSearchQuery('');
+    setActiveCommandIndex(0);
+    setTimeout(() => commandMenuRef.current?.focus(), 10);
+  };
 
   const filteredCatalog = catalog.filter((item) => {
     const matchesKind = item.type === commandKind;
@@ -143,6 +137,28 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
     const matchesProvider = commandKind !== 'model' || item.providerId === currentProvider?.id;
     return matchesKind && matchesQuery && matchesProvider;
   });
+
+  useEffect(() => {
+    setActiveCommandIndex(0);
+  }, [commandKind, searchQuery]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const activeItem = commandMenuRef.current?.querySelector(`[data-command-index="${activeCommandIndex}"]`);
+    activeItem?.scrollIntoView({ block: 'nearest' });
+  }, [activeCommandIndex, menuOpen, filteredCatalog.length]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    const handlePointerDown = (event) => {
+      if (commandMenuRef.current?.contains(event.target)) return;
+      setMenuOpen(false);
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    return () => window.removeEventListener('pointerdown', handlePointerDown);
+  }, [menuOpen]);
 
   const handleItemClick = (item) => {
     if (item.type === 'provider') {
@@ -161,6 +177,39 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
     if (e.key === 'Escape') {
       setMenuOpen(false);
       chatInputRef.current?.focus();
+      return;
+    }
+
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter') {
+      handleCommandMenuKeyDown(e);
+    }
+  };
+
+  const handleCommandMenuKeyDown = (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      setMenuOpen(false);
+      chatInputRef.current?.focus();
+      return;
+    }
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (filteredCatalog.length === 0) return;
+      setActiveCommandIndex((index) => Math.min(index + 1, filteredCatalog.length - 1));
+      return;
+    }
+
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (filteredCatalog.length === 0) return;
+      setActiveCommandIndex((index) => Math.max(index - 1, 0));
+      return;
+    }
+
+    if (e.key === 'Enter' && filteredCatalog[activeCommandIndex]) {
+      e.preventDefault();
+      handleItemClick(filteredCatalog[activeCommandIndex]);
     }
   };
 
@@ -282,6 +331,16 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!input.trim() || isStreaming) return;
+
+    if (/\/proveedor$/i.test(input.trim())) {
+      openCommandMenu('provider');
+      return;
+    }
+
+    if (/\/modelo$/i.test(input.trim())) {
+      openCommandMenu('model');
+      return;
+    }
     
     if (!activeChat) {
       window.dispatchEvent(new CustomEvent('codeclub:require-project'));
@@ -423,6 +482,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onFocus={() => setMenuOpen(false)}
             placeholder="Preguntá, pedí código o describí una tarea"
             aria-label="Mensaje"
             style={{ appearance: 'none', minWidth: 0, border: 0, outline: 'none', background: 'transparent', color: '#eeeeee', fontSize: '12px', padding: '0 7px' }}
@@ -432,7 +492,13 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
           </button>
         </form>
 
-        <div className={`command-menu ${menuOpen ? 'is-open' : ''}`} style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 8px)', display: menuOpen ? 'grid' : 'none', gap: '8px', padding: '9px', border: '1px solid var(--color-surface-9, #2f2f2f)', borderRadius: '8px', background: '#121212', boxShadow: '0 20px 58px rgba(0, 0, 0, 0.34)', zIndex: 10 }}>
+        <div
+          ref={commandMenuRef}
+          tabIndex={-1}
+          onKeyDown={handleCommandMenuKeyDown}
+          className={`command-menu ${menuOpen ? 'is-open' : ''}`}
+          style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 8px)', display: menuOpen ? 'grid' : 'none', gap: '8px', padding: '9px', border: '1px solid var(--color-surface-9, #2f2f2f)', borderRadius: '8px', background: '#121212', boxShadow: '0 20px 58px rgba(0, 0, 0, 0.34)', zIndex: 10, outline: 'none' }}
+        >
 
           <input
             ref={searchInputRef}
@@ -444,14 +510,15 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
             style={{ height: '30px', padding: '0 8px', borderRadius: '7px', background: 'var(--color-surface-3, #1c1c1c)', fontSize: '12px', color: '#eeeeee', border: 'none', outline: 'none' }}
           />
           <div className="command-list" style={{ display: 'grid', gap: '4px', maxHeight: '120px', overflow: 'auto', scrollbarWidth: 'none', paddingBottom: '12px', maskImage: 'linear-gradient(to bottom, black 85%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to bottom, black 85%, transparent 100%)' }}>
-            {filteredCatalog.map((item) => (
+            {filteredCatalog.map((item, index) => (
               <button
                 key={item.id}
                 type="button"
+                data-command-index={index}
                 onClick={() => handleItemClick(item)}
-                style={{ minHeight: '32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', border: 0, borderRadius: '7px', background: 'transparent', color: 'rgba(238, 238, 238, 0.78)', fontSize: '12px', padding: '0 9px', textAlign: 'left', cursor: 'pointer' }}
-                onMouseOver={(e) => { e.currentTarget.style.background = 'var(--color-surface-7, #2c2c2c)'; e.currentTarget.style.color = '#ffffff'; }}
-                onMouseOut={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(238, 238, 238, 0.78)'; }}
+                onFocus={() => setActiveCommandIndex(index)}
+                onMouseEnter={() => setActiveCommandIndex(index)}
+                style={{ minHeight: '32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', border: 0, borderRadius: '7px', background: index === activeCommandIndex ? 'var(--color-surface-7, #2c2c2c)' : 'transparent', color: index === activeCommandIndex ? '#ffffff' : 'rgba(238, 238, 238, 0.78)', fontSize: '12px', padding: '0 9px', textAlign: 'left', cursor: 'pointer' }}
               >
                 <span>{item.label}</span>
                 <small style={{ color: 'rgba(216, 216, 216, 0.36)', fontSize: '11px' }}>
