@@ -501,10 +501,10 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
   }
 
   return (
-    <div className="chat-interface-container" style={{ width: 'min(860px, calc(100% - 64px))', height: 'min(720px, calc(100vh - 96px))', display: 'grid', gridTemplateRows: 'minmax(0, 1fr) auto', gap: '10px', overflow: 'visible', paddingBottom: composerDocked ? '18px' : 0 }}>
+    <div className="chat-interface-container" style={{ width: 'min(860px, calc(100% - 64px))', height: 'min(720px, calc(100vh - 96px))', display: 'grid', gridTemplateRows: composerDocked ? 'minmax(0, 1fr) auto' : '1fr', placeItems: composerDocked ? 'stretch' : 'center', gap: '10px', overflow: 'visible', paddingBottom: composerDocked ? '18px' : 0 }}>
       
       {/* Zona de mensajes */}
-      <div className="messages-area" style={{ minHeight: 0, height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1rem', paddingBottom: '10px', scrollbarWidth: 'none', overscrollBehavior: 'contain' }}>
+      <div className="messages-area" style={{ minHeight: 0, height: '100%', overflowY: 'auto', display: composerDocked ? 'flex' : 'none', flexDirection: 'column', gap: '1rem', paddingBottom: '10px', scrollbarWidth: 'none', overscrollBehavior: 'contain' }}>
         <div aria-hidden="true" style={{ flex: '1 0 auto' }} />
         {messages.map((m, i) => (
           <div key={i} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '5px', maxWidth: '80%' }}>
@@ -525,12 +525,24 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
         ))}
       </div>
 
-      <div className="chat-composer" style={{ width: 'min(600px, 100%)', justifySelf: 'center', position: 'relative', display: 'grid', gap: '6px', transform: composerDocked ? 'translateY(18px)' : 'translateY(0)', transition: 'transform 420ms cubic-bezier(0.22, 1, 0.36, 1)' }}>
-        <div className="composer-status" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '8px', color: 'rgba(216, 216, 216, 0.42)', fontSize: '12px' }}>
+      <div className="chat-composer" style={{ width: 'min(600px, 100%)', justifySelf: 'center', position: 'relative', display: 'grid', gap: '10px', transform: composerDocked ? 'translateY(18px)' : 'translateY(0)', transition: 'transform 420ms cubic-bezier(0.22, 1, 0.36, 1)' }}>
+        <div className="composer-status" style={{ display: 'flex', alignItems: 'center', justifyContent: composerDocked ? 'flex-start' : 'center', gap: '8px', color: composerDocked ? 'rgba(216, 216, 216, 0.42)' : undefined, fontSize: composerDocked ? '12px' : undefined }}>
           <span className="braille-spinner" aria-hidden="true" style={{ position: 'relative', color: '#c7cbff' }} />
-          <span style={{ color: 'rgba(216, 216, 216, 0.82)' }}>
-            {isStreaming ? "Generando..." : "Listo cuando tú lo estés."}
-          </span>
+          {composerDocked ? (
+            <span style={{ color: 'rgba(216, 216, 216, 0.82)' }}>{isStreaming ? "Generando..." : "Listo cuando tú lo estés."}</span>
+          ) : (
+            <p style={{ margin: 0, color: 'rgba(216, 216, 216, 0.82)', fontSize: '16px' }}>{isStreaming ? "Generando..." : "Listo cuando tú lo estés."}</p>
+          )}
+          {composerDocked && (
+            <>
+              <span>{currentProvider?.label || 'Sin proveedor'}</span>
+              <span style={{ color: 'rgba(216, 216, 216, 0.24)' }}>/</span>
+              <span>{currentModel?.label || 'Sin modelo'}</span>
+            </>
+          )}
+        </div>
+
+        <div className="selection-status" style={{ display: composerDocked ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: 'rgba(216, 216, 216, 0.42)', fontSize: '12px' }}>
           <span>{currentProvider?.label || 'Sin proveedor'}</span>
           <span style={{ color: 'rgba(216, 216, 216, 0.24)' }}>/</span>
           <span>{currentModel?.label || 'Sin modelo'}</span>
@@ -592,3 +604,4 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
     </div>
   );
 }
+
