@@ -135,7 +135,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
           <span>{currentModel?.label}</span>
         </div>
 
-        <form onSubmit={handleSubmit} className="composer-box" style={{ minHeight: '40px', display: 'grid', gridTemplateColumns: '1fr 28px', alignItems: 'center', gap: '4px', padding: '5px', border: '1px solid var(--color-surface-9, #2f2f2f)', borderRadius: '8px', background: 'rgba(18, 18, 18, 0.96)', boxShadow: '0 18px 52px rgba(0, 0, 0, 0.26)' }}>
+        <form onSubmit={handleSubmit} className="composer-box" style={{ minHeight: '40px', display: 'grid', gridTemplateColumns: '1fr 28px', alignItems: 'center', gap: '4px', padding: '5px', border: '1px solid var(--color-surface-9, #2f2f2f)', borderRadius: '8px', background: '#121212', boxShadow: '0 18px 52px rgba(0, 0, 0, 0.26)' }}>
           <input
             ref={chatInputRef}
             type="text"
@@ -150,7 +150,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
           </button>
         </form>
 
-        <div className={`command-menu ${menuOpen ? 'is-open' : ''}`} style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 8px)', display: menuOpen ? 'grid' : 'none', gap: '8px', padding: '9px', border: '1px solid var(--color-surface-9, #2f2f2f)', borderRadius: '8px', background: 'rgba(18, 18, 18, 0.98)', boxShadow: '0 20px 58px rgba(0, 0, 0, 0.34)', zIndex: 10 }}>
+        <div className={`command-menu ${menuOpen ? 'is-open' : ''}`} style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 8px)', display: menuOpen ? 'grid' : 'none', gap: '8px', padding: '9px', border: '1px solid var(--color-surface-9, #2f2f2f)', borderRadius: '8px', background: '#121212', boxShadow: '0 20px 58px rgba(0, 0, 0, 0.34)', zIndex: 10 }}>
 
           <input
             ref={searchInputRef}
