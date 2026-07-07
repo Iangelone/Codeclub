@@ -639,6 +639,8 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
         recordToolEvent,
         setAgentState,
         requestToolApproval,
+        provider,
+        modelId: currentModel.id,
       });
 
       const system = [

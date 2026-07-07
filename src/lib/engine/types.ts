@@ -11,6 +11,8 @@ export interface ToolContext {
   recordToolEvent: (name: string, input: any, output: any) => void;
   setAgentState: (state: string) => void;
   requestToolApproval: (opts: { toolName: string; input: any; summary: string }) => Promise<boolean>;
+  provider?: any;
+  modelId?: string;
 }
 
 export interface EngineCallbacks {
