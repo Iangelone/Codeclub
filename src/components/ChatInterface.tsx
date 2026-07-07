@@ -1,14 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ArrowUp, Copy, RotateCcw } from 'lucide-react';
-import { streamText } from 'ai';
+import { invoke } from '@tauri-apps/api/core';
+import { jsonSchema, stepCountIs, streamText, tool } from 'ai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 
 export default function ChatInterface({ catalog, defaultProvider, defaultModel }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
+  const [agentState, setAgentState] = useState('idle');
+  const [pendingApprovals, setPendingApprovals] = useState([]);
   const [composerDocked, setComposerDocked] = useState(false);
-  const spinnerState = 'idle';
   
   const [currentProvider, setCurrentProvider] = useState(defaultProvider);
   const [currentModel, setCurrentModel] = useState(defaultModel);
@@ -25,8 +27,19 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
   const [titleDraft, setTitleDraft] = useState('');
   const [noteContent, setNoteContent] = useState('');
   const [tableData, setTableData] = useState<string[][]>([]);
+  const agentStatusText = {
+    idle: "Listo cuando tú lo estés.",
+    streaming: "Pensando...",
+    tool_call: "Usando herramienta...",
+    approval: "Esperando aprobación...",
+    running: "Ejecutando...",
+    error: "Algo salió mal.",
+  }[agentState] || "Listo cuando tú lo estés.";
+  const isAgentBusy = ['streaming', 'tool_call', 'approval', 'running'].includes(agentState);
   const noteSaveTimer = useRef(null);
   const tableSaveTimer = useRef(null);
+  const approvalResolversRef = useRef(new Map());
+  const lastModelFetchRef = useRef(null);
   const commandMenuRef = useRef(null);
   const searchInputRef = useRef(null);
   const chatInputRef = useRef(null);
@@ -37,6 +50,9 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
       const chat = e.detail;
       setWorkspaceMode('chat');
       setActiveChat(chat);
+      setAgentState('idle');
+      setPendingApprovals([]);
+      approvalResolversRef.current.clear();
       setComposerDocked(false);
       setMessages([]);
       try {
@@ -60,6 +76,9 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
   useEffect(() => {
     const handleOpenBlank = () => {
       setWorkspaceMode('blank');
+      setAgentState('idle');
+      setPendingApprovals([]);
+      approvalResolversRef.current.clear();
       setActiveNote(null);
       setActiveTable(null);
     };
@@ -67,6 +86,9 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
     const handleOpenNote = async (e: any) => {
       const note = e.detail;
       setWorkspaceMode('note');
+      setAgentState('idle');
+      setPendingApprovals([]);
+      approvalResolversRef.current.clear();
       setActiveNote(note);
       setTitleDraft(note.name || 'Nota');
       setActiveTable(null);
@@ -83,6 +105,9 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
     const handleOpenTable = async (e: any) => {
       const table = e.detail;
       setWorkspaceMode('table');
+      setAgentState('idle');
+      setPendingApprovals([]);
+      approvalResolversRef.current.clear();
       setActiveTable(table);
       setTitleDraft(table.name || 'Tabla');
       setActiveNote(null);
@@ -157,7 +182,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
   useEffect(() => {
     if (!composerDocked) return;
     messagesEndRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
-  }, [messages, isStreaming, composerDocked]);
+  }, [messages, isStreaming, pendingApprovals, composerDocked]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -228,6 +253,234 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
       handleItemClick(filteredCatalog[activeCommandIndex]);
     }
   };
+
+  const compactJson = (value) => {
+    try {
+      return JSON.stringify(value).slice(0, 260);
+    } catch {
+      return String(value).slice(0, 260);
+    }
+  };
+
+  const clipDebug = (value, max = 20000) => {
+    const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+    if (!text) return '';
+    return text.length > max ? `${text.slice(0, max)}\n...[truncated ${text.length - max} chars]` : text;
+  };
+
+  const errorChain = (error) => {
+    const lines = [];
+    let current = error;
+    let depth = 0;
+    while (current && depth < 5) {
+      const name = current?.name || typeof current;
+      const message = current?.message || String(current);
+      lines.push(`${depth === 0 ? 'Error' : `Cause ${depth}`}: ${name}: ${message}`);
+      current = current?.cause;
+      depth += 1;
+    }
+    return lines.join('\n');
+  };
+
+  const formatDebugError = (error) => {
+    const fetch = lastModelFetchRef.current;
+    const sections = [errorChain(error)];
+
+    if (fetch) {
+      sections.push([
+        'Fetch:',
+        `${fetch.method} ${fetch.url}`,
+        fetch.requestBody ? `Request body:\n${clipDebug(fetch.requestBody)}` : 'Request body: <empty>',
+        fetch.status ? `Status: ${fetch.status} ${fetch.statusText || ''}`.trim() : null,
+        fetch.responseHeaders ? `Response headers:\n${clipDebug(fetch.responseHeaders)}` : null,
+        fetch.responseBody ? `Response body:\n${clipDebug(fetch.responseBody)}` : null,
+        fetch.transportError ? `Transport error:\n${fetch.transportError}` : null,
+      ].filter(Boolean).join('\n'));
+    }
+
+    return sections.filter(Boolean).join('\n\n');
+  };
+
+  const tauriModelFetch = async (input, init = {}) => {
+    const request = input instanceof Request ? new Request(input, init) : new Request(input, init);
+    const requestBody = ['GET', 'HEAD'].includes(request.method) ? undefined : await request.clone().text();
+    const fetchDebug = {
+      method: request.method,
+      url: request.url,
+      requestBody,
+    };
+    lastModelFetchRef.current = fetchDebug;
+
+    try {
+      const response = await invoke('codeclub_http_fetch', {
+        request: {
+          url: request.url,
+          method: request.method,
+          headers: Array.from(request.headers.entries()).map(([name, value]) => ({ name, value })),
+          body: requestBody || null,
+        },
+      });
+      const headers = new Headers((response.headers || []).map((header) => [header.name, header.value]));
+      lastModelFetchRef.current = {
+        ...fetchDebug,
+        status: response.status,
+        statusText: response.status_text,
+        responseHeaders: response.headers,
+        responseBody: response.body,
+      };
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.status_text,
+        headers,
+      });
+    } catch (error) {
+      lastModelFetchRef.current = {
+        ...fetchDebug,
+        transportError: error?.message || String(error),
+      };
+      throw error;
+    }
+  };
+
+  const resolveToolApproval = (approvalId, approved) => {
+    const resolver = approvalResolversRef.current.get(approvalId);
+    if (!resolver) return;
+    approvalResolversRef.current.delete(approvalId);
+    setPendingApprovals((items) => items.filter((item) => item.id !== approvalId));
+    resolver(approved);
+  };
+
+  const requestToolApproval = ({ toolName, input, summary }) => {
+    const approvalId = crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+    setAgentState('approval');
+    setPendingApprovals((items) => [
+      ...items,
+      { id: approvalId, toolName, input, summary: summary || compactJson(input) },
+    ]);
+
+    return new Promise((resolve) => {
+      approvalResolversRef.current.set(approvalId, resolve);
+    });
+  };
+
+  const createWorkspaceTools = (projectPath, recordToolEvent) => ({
+    listFiles: tool({
+      description: 'List project files in the active Codeclub workspace. Skips heavy folders.',
+      inputSchema: jsonSchema({
+        type: 'object',
+        properties: {
+          maxFiles: { type: 'number', description: 'Maximum files to return. Default 400.' },
+        },
+        additionalProperties: false,
+      }),
+      execute: async ({ maxFiles }) => {
+        setAgentState('tool_call');
+        const output = await invoke('codeclub_list_files', {
+          projectPath,
+          maxFiles: Math.min(Number(maxFiles) || 400, 1200),
+        });
+        recordToolEvent('listFiles', { maxFiles }, output);
+        return output;
+      },
+    }),
+    readFile: tool({
+      description: 'Read a UTF-8 text file from the active workspace using a relative path.',
+      inputSchema: jsonSchema({
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Relative file path inside the workspace.' },
+        },
+        required: ['path'],
+        additionalProperties: false,
+      }),
+      execute: async ({ path }) => {
+        setAgentState('tool_call');
+        const output = await invoke('codeclub_read_file', { projectPath, path });
+        recordToolEvent('readFile', { path }, String(output).slice(0, 1200));
+        return output;
+      },
+    }),
+    searchText: tool({
+      description: 'Search exact text in workspace files and return path, line, and preview.',
+      inputSchema: jsonSchema({
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Exact text to search for.' },
+          maxMatches: { type: 'number', description: 'Maximum matches. Default 80.' },
+        },
+        required: ['query'],
+        additionalProperties: false,
+      }),
+      execute: async ({ query, maxMatches }) => {
+        setAgentState('tool_call');
+        const output = await invoke('codeclub_search_text', {
+          projectPath,
+          query,
+          maxMatches: Math.min(Number(maxMatches) || 80, 200),
+        });
+        recordToolEvent('searchText', { query, maxMatches }, output);
+        return output;
+      },
+    }),
+    writeFile: tool({
+      description: 'Write full UTF-8 content to a relative workspace file. Requires user approval.',
+      inputSchema: jsonSchema({
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Relative file path inside the workspace.' },
+          content: { type: 'string', description: 'Complete file content to write.' },
+        },
+        required: ['path', 'content'],
+        additionalProperties: false,
+      }),
+      execute: async ({ path, content }) => {
+        const approved = await requestToolApproval({
+          toolName: 'writeFile',
+          input: { path, contentPreview: String(content).slice(0, 800) },
+          summary: `Escribir ${path}`,
+        });
+        if (!approved) {
+          recordToolEvent('writeFile', { path }, { denied: true });
+          return { ok: false, denied: true };
+        }
+        setAgentState('running');
+        await invoke('codeclub_write_file', { projectPath, path, content });
+        const output = { ok: true, path };
+        recordToolEvent('writeFile', { path }, output);
+        return output;
+      },
+    }),
+    runCommand: tool({
+      description: 'Run an allowlisted command in the active workspace. Requires user approval.',
+      inputSchema: jsonSchema({
+        type: 'object',
+        properties: {
+          command: { type: 'string', description: 'Allowed command: bun, npm, pnpm, node, git, cargo, python, rg.' },
+          args: { type: 'array', items: { type: 'string' }, description: 'Command arguments.' },
+        },
+        required: ['command', 'args'],
+        additionalProperties: false,
+      }),
+      execute: async ({ command, args }) => {
+        const approved = await requestToolApproval({
+          toolName: 'runCommand',
+          input: { command, args },
+          summary: `${command} ${(args || []).join(' ')}`.trim(),
+        });
+        if (!approved) {
+          recordToolEvent('runCommand', { command, args }, { denied: true });
+          return { ok: false, denied: true };
+        }
+        setAgentState('running');
+        const output = await invoke('codeclub_run_command', {
+          projectPath,
+          request: { command, args: Array.isArray(args) ? args : [] },
+        });
+        recordToolEvent('runCommand', { command, args }, output);
+        return output;
+      },
+    }),
+  });
 
   const logPersistence = async (action, status, detail = {}) => {
     const entry = {
@@ -386,6 +639,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
     setMessages(newMessages);
     setInput('');
     setIsStreaming(true);
+    setAgentState('streaming');
     
     if (replaceHistory) {
       await writeChatJsonl(newMessages);
@@ -394,6 +648,10 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
     }
 
     try {
+      if (!currentProvider || !currentModel) {
+        throw new Error('Elegí un proveedor y un modelo antes de enviar.');
+      }
+
       let apiKey = localStorage.getItem(`${currentProvider.id}_api_key`);
       
       if (!apiKey || apiKey === 'dummy-key') {
@@ -404,26 +662,74 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
         name: currentProvider.id,
         baseURL: currentProvider.api || 'https://api.openai.com/v1',
         apiKey,
-      });
-
-      const { textStream } = streamText({
-        model: provider(currentModel.id),
-        messages: newMessages,
+        fetch: tauriModelFetch,
       });
 
       let assistantContent = '';
-      setMessages([...newMessages, { role: 'assistant', content: '' }]);
+      let assistantTools = [];
+      const updateAssistantMessage = () => {
+        setMessages([...newMessages, { role: 'assistant', content: assistantContent, tools: assistantTools }]);
+      };
+      const recordToolEvent = (name, input, output) => {
+        assistantTools = [
+          ...assistantTools,
+          {
+            id: crypto.randomUUID?.() || `${Date.now()}-${assistantTools.length}`,
+            name,
+            input,
+            output,
+            at: new Date().toISOString(),
+          },
+        ];
+        updateAssistantMessage();
+      };
+      updateAssistantMessage();
 
-      for await (const chunk of textStream) {
-        assistantContent += chunk;
-        setMessages((prev) => {
-          const updated = [...prev];
-          updated[updated.length - 1] = { role: 'assistant', content: assistantContent };
-          return updated;
-        });
+      const result = streamText({
+        model: provider(currentModel.id),
+        system: [
+          'Sos el agente IDE de Codeclub.',
+          'Responde en español, breve y util.',
+          'Tenes herramientas para inspeccionar y modificar el workspace activo.',
+          'Usa listFiles, readFile y searchText antes de tocar codigo cuando falte contexto.',
+          'Para modificar archivos usa writeFile con el contenido completo del archivo.',
+          'Para comandos usa runCommand solo cuando aporte a la tarea.',
+          'Las acciones riesgosas piden aprobacion humana antes de ejecutarse.',
+        ].join(' '),
+        messages: newMessages.map(({ role, content }) => ({ role, content })),
+        tools: createWorkspaceTools(activeChat.projectPath, recordToolEvent),
+        stopWhen: stepCountIs(6),
+        timeout: {
+          totalMs: 90_000,
+          stepMs: 25_000,
+          chunkMs: 15_000,
+          toolMs: 30_000,
+        },
+      });
+
+      for await (const part of result.fullStream) {
+        if (part.type === 'text-delta') {
+          assistantContent += part.text;
+          updateAssistantMessage();
+          continue;
+        }
+
+        if (part.type === 'tool-call' || part.type === 'tool-input-start') {
+          setAgentState('tool_call');
+          continue;
+        }
+
+        if (part.type === 'tool-result') {
+          setAgentState('streaming');
+          continue;
+        }
+
+        if (part.type === 'error') {
+          throw part.error;
+        }
       }
       
-      const assistantMessage = { role: 'assistant', content: assistantContent };
+      const assistantMessage = { role: 'assistant', content: assistantContent, tools: assistantTools };
       if (replaceHistory) {
         await writeChatJsonl([...newMessages, assistantMessage]);
       } else {
@@ -431,6 +737,8 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
       }
     } catch (error) {
       console.error("Stream error:", error);
+      const message = formatDebugError(error);
+      setAgentState('error');
       // Delete the empty assistant message that was meant for streaming
       setMessages((prev) => {
         const updated = [...prev];
@@ -439,15 +747,16 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
         }
         return updated;
       });
-      setInput(error.message);
+      setInput(message);
     } finally {
       setIsStreaming(false);
+      setAgentState((state) => state === 'error' ? 'error' : 'idle');
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!input.trim() || isStreaming) return;
+    if (!input.trim() || isAgentBusy) return;
 
     if (credentialProvider) {
       localStorage.setItem(`${credentialProvider.id}_api_key`, input.trim());
@@ -474,7 +783,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
   };
 
   const handleRetryMessage = async (messageIndex) => {
-    if (isStreaming) return;
+    if (isAgentBusy) return;
     const message = messages[messageIndex];
     if (!message || message.role !== 'user') return;
     await sendMessage(message.content, messages.slice(0, messageIndex), false, true);
@@ -535,12 +844,23 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
               <div style={{ background: m.role === 'user' ? '#202020' : 'transparent', padding: '8px 12px', borderRadius: '8px', color: '#eee', fontSize: '14px' }}>
                 {m.content}
               </div>
+              {Array.isArray(m.tools) && m.tools.length > 0 && (
+                <div style={{ display: 'grid', gap: '5px', width: '100%' }}>
+                  {m.tools.map((event) => (
+                    <div key={event.id} style={{ display: 'grid', gap: '3px', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '7px', padding: '7px 8px', background: 'rgba(255, 255, 255, 0.025)', color: 'rgba(216, 216, 216, 0.66)', fontSize: '12px' }}>
+                      <span style={{ color: 'rgba(238, 238, 238, 0.82)' }}>{event.name}</span>
+                      <span>{compactJson(event.input)}</span>
+                      <span>{compactJson(event.output)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               {m.role === 'user' && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', opacity: 0.72 }}>
                   <button type="button" aria-label="Copiar mensaje" onClick={() => handleCopyMessage(m.content)} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: 'pointer' }}>
                     <Copy size={13} strokeWidth={2} />
                   </button>
-                  <button type="button" aria-label="Reintentar desde este mensaje" onClick={() => handleRetryMessage(i)} disabled={isStreaming} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: isStreaming ? 'not-allowed' : 'pointer' }}>
+                  <button type="button" aria-label="Reintentar desde este mensaje" onClick={() => handleRetryMessage(i)} disabled={isAgentBusy} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: isAgentBusy ? 'not-allowed' : 'pointer' }}>
                     <RotateCcw size={13} strokeWidth={2} />
                   </button>
                 </div>
@@ -548,16 +868,32 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
             </div>
           </React.Fragment>
         ))}
+        {pendingApprovals.map((approval) => (
+          <div key={approval.id} style={{ alignSelf: 'flex-start', display: 'grid', gap: '8px', maxWidth: '80%', border: '1px solid rgba(253, 230, 138, 0.18)', borderRadius: '8px', padding: '9px', background: 'rgba(253, 230, 138, 0.045)', color: '#eee', fontSize: '12px' }}>
+            <div style={{ display: 'grid', gap: '3px' }}>
+              <span style={{ color: 'rgba(238, 238, 238, 0.88)' }}>{approval.toolName}</span>
+              <span style={{ color: 'rgba(216, 216, 216, 0.66)' }}>{approval.summary}</span>
+            </div>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button type="button" onClick={() => resolveToolApproval(approval.id, true)} style={{ minHeight: '26px', border: 0, borderRadius: '7px', padding: '0 9px', background: '#2c2c2c', color: '#ffffff', cursor: 'pointer', fontSize: '12px' }}>
+                Aprobar
+              </button>
+              <button type="button" onClick={() => resolveToolApproval(approval.id, false)} style={{ minHeight: '26px', border: 0, borderRadius: '7px', padding: '0 9px', background: 'transparent', color: 'rgba(216, 216, 216, 0.72)', cursor: 'pointer', fontSize: '12px' }}>
+                Cancelar
+              </button>
+            </div>
+          </div>
+        ))}
         <div ref={messagesEndRef} aria-hidden="true" />
       </div>
 
       <div className="chat-composer" style={{ width: 'min(600px, 100%)', justifySelf: 'center', position: 'relative', display: 'grid', gap: '10px', transform: composerDocked ? 'translateY(18px)' : 'translateY(0)', transition: 'transform 420ms cubic-bezier(0.22, 1, 0.36, 1)' }}>
         <div className="composer-status" style={{ display: 'flex', alignItems: 'center', justifyContent: composerDocked ? 'flex-start' : 'center', gap: '8px', color: composerDocked ? 'rgba(216, 216, 216, 0.42)' : undefined, fontSize: composerDocked ? '12px' : undefined, transform: composerDocked && menuOpen ? 'translateY(-194px)' : 'translateY(0)', transition: 'transform 180ms ease', position: 'relative', zIndex: 11 }}>
-          <span className="braille-spinner" data-state={spinnerState} aria-hidden="true" style={{ position: 'relative' }} />
+          <span className="braille-spinner" data-state={agentState} aria-hidden="true" style={{ position: 'relative' }} />
           {composerDocked ? (
-            <span style={{ color: 'rgba(216, 216, 216, 0.82)' }}>{isStreaming ? "Generando..." : "Listo cuando tú lo estés."}</span>
+            <span style={{ color: 'rgba(216, 216, 216, 0.82)' }}>{agentStatusText}</span>
           ) : (
-            <p style={{ margin: 0, color: 'rgba(216, 216, 216, 0.82)', fontSize: '16px' }}>{isStreaming ? "Generando..." : "Listo cuando tú lo estés."}</p>
+            <p style={{ margin: 0, color: 'rgba(216, 216, 216, 0.82)', fontSize: '16px' }}>{agentStatusText}</p>
           )}
           {composerDocked && (
             <>
@@ -575,17 +911,23 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
         </div>
 
         <form onSubmit={handleSubmit} className="composer-box" style={{ minHeight: '40px', display: 'grid', gridTemplateColumns: '1fr 28px', alignItems: 'center', gap: '4px', padding: '5px', border: '1px solid var(--color-surface-9, #2f2f2f)', borderRadius: '8px', background: '#121212', boxShadow: '0 18px 52px rgba(0, 0, 0, 0.26)' }}>
-          <input
+          <textarea
             ref={chatInputRef}
-            type="text"
+            rows={1}
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                e.currentTarget.form?.requestSubmit();
+              }
+            }}
             onFocus={() => setMenuOpen(false)}
             placeholder={credentialProvider ? `Escribí tu credencial de ${credentialProvider.label || credentialProvider.id}` : "Preguntá, pedí código o describí una tarea"}
             aria-label="Mensaje"
-            style={{ appearance: 'none', minWidth: 0, border: 0, outline: 'none', background: 'transparent', color: '#eeeeee', fontSize: '12px', padding: '0 7px' }}
+            style={{ appearance: 'none', minWidth: 0, maxHeight: '120px', resize: 'none', border: 0, outline: 'none', background: 'transparent', color: '#eeeeee', fontSize: '12px', lineHeight: 1.4, padding: '4px 7px', fontFamily: 'inherit', overflow: 'auto', scrollbarWidth: 'none' }}
           />
-          <button type="submit" disabled={isStreaming} className="send-button" aria-label={credentialProvider ? "Guardar credencial" : "Enviar"} style={{ width: '28px', height: '28px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '7px', background: 'var(--color-surface-8, #2c2c2c)', color: '#ffffff', cursor: isStreaming ? 'not-allowed' : 'pointer' }}>
+          <button type="submit" disabled={isAgentBusy} className="send-button" aria-label={credentialProvider ? "Guardar credencial" : "Enviar"} style={{ width: '28px', height: '28px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '7px', background: 'var(--color-surface-8, #2c2c2c)', color: '#ffffff', cursor: isAgentBusy ? 'not-allowed' : 'pointer' }}>
             <ArrowUp size={15} strokeWidth={2} />
           </button>
         </form>

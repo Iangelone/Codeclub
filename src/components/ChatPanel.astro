@@ -40,6 +40,41 @@ const catalog = [
     animation: spinner-idle-color 5.6s ease-in-out infinite;
   }
 
+  .braille-spinner[data-state="streaming"] {
+    color: #7dd3fc;
+    text-shadow:
+      0 0 10px rgba(125, 211, 252, 0.42),
+      0 0 18px rgba(103, 232, 249, 0.18);
+  }
+
+  .braille-spinner[data-state="tool_call"] {
+    color: #86efac;
+    text-shadow:
+      0 0 10px rgba(134, 239, 172, 0.36),
+      0 0 18px rgba(45, 212, 191, 0.16);
+  }
+
+  .braille-spinner[data-state="approval"] {
+    color: #fde68a;
+    text-shadow:
+      0 0 10px rgba(253, 230, 138, 0.34),
+      0 0 18px rgba(251, 191, 36, 0.14);
+  }
+
+  .braille-spinner[data-state="running"] {
+    color: #d8b4fe;
+    text-shadow:
+      0 0 10px rgba(216, 180, 254, 0.38),
+      0 0 18px rgba(168, 85, 247, 0.16);
+  }
+
+  .braille-spinner[data-state="error"] {
+    color: #fca5a5;
+    text-shadow:
+      0 0 10px rgba(252, 165, 165, 0.34),
+      0 0 18px rgba(248, 113, 113, 0.14);
+  }
+
   .braille-spinner::before {
     content: "\280b";
     font-size: 18px;

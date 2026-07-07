@@ -23,7 +23,7 @@ AI-focused IDE made in Argentina. Open source, simple by design.
 - Bun: https://bun.com/docs - JavaScript runtime, package manager, and script runner.
 - Tauri 2: https://v2.tauri.app/ - Desktop window, native APIs, packaging, and Rust bridge.
 - Models.dev: https://models.dev/models/ - An open-source database of AI models.
-- AI SDK: https://ai-sdk.dev/docs/introduction - The TypeScript toolkit designed to help developers build AI-powered applications and agents with React, Next.js, Vue, Svelte, Node.js, and more.
+- AI SDK v7: https://ai-sdk.dev/docs/introduction - The TypeScript toolkit designed to help developers build AI-powered applications and agents with React, Next.js, Vue, Svelte, Node.js, and more.
 
 ## Commands
 
