@@ -205,46 +205,131 @@ import ChatPanel from "../components/ChatPanel.astro";
 
         const cancel = () => draft.remove();
 
-        const create = () => {
+        const create = async () => {
           const name = input.value.trim();
           if (!name) {
             cancel();
             return;
           }
 
-          const project = document.createElement("div");
-          project.className = "project-card";
+          try {
+            const { open } = await import('@tauri-apps/plugin-dialog');
+            const { mkdir, exists, BaseDirectory, writeTextFile, readTextFile } = await import('@tauri-apps/plugin-fs');
+            
+            const selectedPath = await open({
+              directory: true,
+              multiple: false,
+              title: "Seleccionar carpeta para el proyecto",
+            });
 
-          const projectRow = document.createElement("button");
-          projectRow.className = "project-row";
-          projectRow.type = "button";
-          projectRow.innerHTML =
-            '<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>';
-          const projectName = document.createElement("span");
-          projectName.textContent = name;
-          projectRow.append(projectName);
-          projectRow.addEventListener("click", () => {
-            projectsList
-              ?.querySelectorAll(".project-card")
-              .forEach((card) => card.classList.remove("is-active"));
+            if (!selectedPath) {
+              cancel();
+              return;
+            }
+
+            // Create .codeclub directory inside the selected project
+            const codeclubPath = `${selectedPath}/.codeclub`;
+            const hasCodeclub = await exists(codeclubPath);
+            if (!hasCodeclub) {
+              await mkdir(codeclubPath);
+              await mkdir(`${codeclubPath}/chats`);
+              await writeTextFile(`${codeclubPath}/meta.json`, JSON.stringify({ name, path: selectedPath, created_at: new Date().toISOString(), chats: [] }));
+            }
+
+            // Save to global projects list via FS BaseDirectory
+            const appDataPath = 'projects.json';
+            let globalProjects = [];
+            try {
+              const { readTextFile, writeTextFile, mkdir, exists, BaseDirectory } = await import('@tauri-apps/plugin-fs');
+              
+              if (await exists(appDataPath, { baseDir: BaseDirectory.AppLocalData })) {
+                const data = await readTextFile(appDataPath, { baseDir: BaseDirectory.AppLocalData });
+                if (data) globalProjects = JSON.parse(data);
+              }
+              
+              if (!globalProjects.find(p => p.path === selectedPath)) {
+                globalProjects.push({ name, path: selectedPath });
+                if (!(await exists('', { baseDir: BaseDirectory.AppLocalData }))) {
+                  await mkdir('', { baseDir: BaseDirectory.AppLocalData, recursive: true });
+                }
+                await writeTextFile(appDataPath, JSON.stringify(globalProjects), { baseDir: BaseDirectory.AppLocalData });
+              }
+            } catch(e) { console.error("Error saving global projects", e); }
+
+            const project = document.createElement("div");
+            project.className = "project-card";
+            project.dataset.path = selectedPath;
+
+            const projectRow = document.createElement("button");
+            projectRow.className = "project-row";
+            projectRow.type = "button";
+            projectRow.innerHTML =
+              '<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>';
+            const projectNameSpan = document.createElement("span");
+            projectNameSpan.textContent = name;
+            projectNameSpan.style.flex = "1"; // take remaining space
+            
+            const newChatBtn = document.createElement("div");
+            newChatBtn.className = "project-new-chat-btn";
+            newChatBtn.innerHTML = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
+            
+            projectRow.append(projectNameSpan, newChatBtn);
+            projectRow.addEventListener("click", (e) => {
+              if (e.target.closest('.project-new-chat-btn')) return;
+              project.classList.toggle("is-active");
+            });
+            projectRow.addEventListener("dblclick", () => {
+              renameProject(projectRow, projectNameSpan);
+            });
+
+            const chatRow = document.createElement("button");
+            chatRow.className = "chat-row";
+            chatRow.type = "button";
+            chatRow.innerHTML =
+              '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3H5a2 2 0 0 0-2 2v14l4-4h12a2 2 0 0 0 2-2v-1"/><path d="M19 3v6"/><path d="M16 6h6"/></svg><span>Crear chat</span>';
+            
+            const createChatLogic = async () => {
+              const chatId = Date.now().toString();
+              
+              try {
+                const { readTextFile, writeTextFile, exists } = await import('@tauri-apps/plugin-fs');
+                const metaPath = `${selectedPath}/.codeclub/meta.json`;
+                if (await exists(metaPath)) {
+                  const metaContent = await readTextFile(metaPath);
+                  const metaData = JSON.parse(metaContent);
+                  if (!metaData.chats) metaData.chats = [];
+                  metaData.chats.push({ id: chatId, name: 'Nuevo chat' });
+                  await writeTextFile(metaPath, JSON.stringify(metaData));
+                }
+              } catch(e) { console.error("Error saving chat meta", e); }
+
+              const newChat = document.createElement("button");
+              newChat.className = "chat-row chat-item";
+              newChat.type = "button";
+              newChat.dataset.chatId = chatId;
+              newChat.innerHTML = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="chat-title">Nuevo chat</span>';
+              
+              newChat.addEventListener("click", () => {
+                window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: { projectPath: selectedPath, chatId } }));
+                projectsList?.querySelectorAll(".chat-row").forEach(c => c.classList.remove("is-active"));
+                newChat.classList.add("is-active");
+              });
+
+              project.insertBefore(newChat, chatRow);
+              project.classList.add("is-active"); // Ensure project opens
+              newChat.click();
+            };
+            
+            chatRow.addEventListener("click", createChatLogic);
+            newChatBtn.addEventListener("click", createChatLogic);
+
+            project.append(projectRow, chatRow);
             project.classList.add("is-active");
-          });
-          projectRow.addEventListener("dblclick", () => {
-            renameProject(projectRow, projectName);
-          });
-
-          const chatRow = document.createElement("button");
-          chatRow.className = "chat-row";
-          chatRow.type = "button";
-          chatRow.innerHTML =
-            '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3H5a2 2 0 0 0-2 2v14l4-4h12a2 2 0 0 0 2-2v-1"/><path d="M19 3v6"/><path d="M16 6h6"/></svg><span>Crear chat</span>';
-
-          project.append(projectRow, chatRow);
-          projectsList
-            ?.querySelectorAll(".project-card")
-            .forEach((card) => card.classList.remove("is-active"));
-          project.classList.add("is-active");
-          draft.replaceWith(project);
+            draft.replaceWith(project);
+          } catch(err) {
+            console.error(err);
+            cancel();
+          }
         };
 
         input.addEventListener("keydown", (event) => {
@@ -263,6 +348,155 @@ import ChatPanel from "../components/ChatPanel.astro";
 
       document.querySelector("#close")?.addEventListener("click", () => {
         appWindow.close();
+      });
+
+      window.addEventListener("codeclub:require-project", () => {
+        const createBtn = document.querySelector("#create-project");
+        if (createBtn) createBtn.click();
+      });
+
+      // Load existing projects on startup
+      const loadProjects = async () => {
+        try {
+          const { exists, readTextFile, BaseDirectory } = await import('@tauri-apps/plugin-fs');
+          const appDataPath = 'projects.json';
+          
+          if (await exists(appDataPath, { baseDir: BaseDirectory.AppLocalData })) {
+            const data = await readTextFile(appDataPath, { baseDir: BaseDirectory.AppLocalData });
+            if (data) {
+              const globalProjects = JSON.parse(data);
+            
+            for (const proj of globalProjects) {
+              const project = document.createElement("div");
+              project.className = "project-card";
+              project.dataset.path = proj.path;
+
+              const projectRow = document.createElement("button");
+              projectRow.className = "project-row";
+              projectRow.type = "button";
+              projectRow.innerHTML =
+                '<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>';
+              let projectChats = [];
+              try {
+                const metaPath = `${proj.path}/.codeclub/meta.json`;
+                if (await exists(metaPath)) {
+                  const metaContent = await readTextFile(metaPath);
+                  const metaData = JSON.parse(metaContent);
+                  if (metaData.chats) projectChats = metaData.chats;
+                }
+              } catch(e) { console.error("Error reading meta for", proj.name, e); }
+
+              const projectNameSpan = document.createElement("span");
+              projectNameSpan.textContent = proj.name;
+              projectNameSpan.style.flex = "1";
+              
+              const newChatBtn = document.createElement("div");
+              newChatBtn.className = "project-new-chat-btn";
+              newChatBtn.innerHTML = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
+              
+              projectRow.append(projectNameSpan, newChatBtn);
+              
+              projectRow.addEventListener("click", (e) => {
+                if (e.target.closest('.project-new-chat-btn')) return;
+                project.classList.toggle("is-active");
+              });
+              
+              projectRow.addEventListener("dblclick", () => {
+                renameProject(projectRow, projectNameSpan);
+              });
+
+              const chatRow = document.createElement("button");
+              chatRow.className = "chat-row";
+              chatRow.type = "button";
+              chatRow.innerHTML =
+                '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3H5a2 2 0 0 0-2 2v14l4-4h12a2 2 0 0 0 2-2v-1"/><path d="M19 3v6"/><path d="M16 6h6"/></svg><span>Crear chat</span>';
+
+              const createChatLogic = async () => {
+                const chatId = Date.now().toString();
+                
+                try {
+                  const { readTextFile, writeTextFile, exists } = await import('@tauri-apps/plugin-fs');
+                  const metaPath = `${proj.path}/.codeclub/meta.json`;
+                  if (await exists(metaPath)) {
+                    const metaContent = await readTextFile(metaPath);
+                    const metaData = JSON.parse(metaContent);
+                    if (!metaData.chats) metaData.chats = [];
+                    metaData.chats.push({ id: chatId, name: 'Nuevo chat' });
+                    await writeTextFile(metaPath, JSON.stringify(metaData));
+                  }
+                } catch(e) { console.error("Error saving chat meta", e); }
+
+                const newChat = document.createElement("button");
+                newChat.className = "chat-row chat-item";
+                newChat.type = "button";
+                newChat.dataset.chatId = chatId;
+                newChat.innerHTML = `<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="chat-title">Nuevo chat</span>`;
+                
+                newChat.addEventListener("click", () => {
+                  window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: { projectPath: proj.path, chatId } }));
+                  projectsList?.querySelectorAll(".chat-row").forEach(c => c.classList.remove("is-active"));
+                  newChat.classList.add("is-active");
+                });
+
+                project.insertBefore(newChat, chatRow);
+                project.classList.add("is-active");
+                newChat.click();
+              };
+              
+              chatRow.addEventListener("click", createChatLogic);
+              newChatBtn.addEventListener("click", createChatLogic);
+              
+              projectChats.forEach(chat => {
+                const existingChat = document.createElement("button");
+                existingChat.className = "chat-row chat-item";
+                existingChat.type = "button";
+                existingChat.dataset.chatId = chat.id;
+                existingChat.innerHTML = `<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="chat-title">${chat.name || 'Nuevo chat'}</span>`;
+                
+                existingChat.addEventListener("click", () => {
+                  window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: { projectPath: proj.path, chatId: chat.id } }));
+                  projectsList?.querySelectorAll(".chat-row").forEach(c => c.classList.remove("is-active"));
+                  existingChat.classList.add("is-active");
+                });
+                project.append(existingChat);
+              });
+
+              project.append(chatRow);
+              projectsList?.append(project);
+            }
+          }
+        }
+      } catch(e) {
+        console.error("Error loading projects on startup", e);
+      }
+    };
+
+      loadProjects();
+
+      window.addEventListener("codeclub:rename-chat", async (e) => {
+        const { chatId, newName, projectPath } = e.detail;
+        const btn = document.querySelector(`.chat-item[data-chat-id="${chatId}"]`);
+        if (btn) {
+          const title = btn.querySelector('.chat-title');
+          if (title) title.textContent = newName;
+        }
+        if (projectPath) {
+          try {
+            const { readTextFile, writeTextFile, exists } = await import('@tauri-apps/plugin-fs');
+            const metaPath = `${projectPath}/.codeclub/meta.json`;
+            if (await exists(metaPath)) {
+              const metaContent = await readTextFile(metaPath);
+              const metaData = JSON.parse(metaContent);
+              if (metaData.chats) {
+                const chat = metaData.chats.find(c => c.id === chatId);
+                if (chat) {
+                  chat.name = newName;
+                  await writeTextFile(metaPath, JSON.stringify(metaData));
+                }
+              }
+            }
+          } catch(err) { console.error("Error renaming chat in meta", err); }
+        }
       });
 
       document.querySelector(".drag-area")?.addEventListener("dblclick", () => {
@@ -419,11 +653,11 @@ import ChatPanel from "../components/ChatPanel.astro";
   }
 
   .panel-actions button:hover,
-  :global(.project-row:hover),
-  :global(.chat-row:hover),
+  :global(.project-row:hover:not(.is-active)),
+  :global(.chat-row:hover:not(.is-active)),
   .sidebar-footer button:hover,
   .section-heading button:hover {
-    background: var(--color-surface-7);
+    background: rgba(255, 255, 255, 0.02) !important;
   }
 
   .projects-section {
@@ -528,11 +762,39 @@ import ChatPanel from "../components/ChatPanel.astro";
   }
 
   :global(.project-card.is-active .project-row) {
-    background: var(--color-surface-7) !important;
+    background: #1c1c1c;
+    color: #eeeeee;
   }
 
   :global(.project-card.is-active .chat-row) {
     display: flex;
+  }
+
+  :global(.chat-row.is-active) {
+    background: rgba(255, 255, 255, 0.05) !important;
+    color: #eeeeee !important;
+  }
+
+  :global(.project-new-chat-btn) {
+    opacity: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    color: #9f9f9f;
+    transition: all 120ms ease;
+    background: transparent;
+  }
+
+  :global(.project-row:hover .project-new-chat-btn) {
+    opacity: 1;
+  }
+
+  :global(.project-new-chat-btn:hover) {
+    background: rgba(255, 255, 255, 0.1);
+    color: #eeeeee;
   }
 
   .is-windows .topbar {

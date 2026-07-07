@@ -14,8 +14,31 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
   const [menuOpen, setMenuOpen] = useState(false);
   const [commandKind, setCommandKind] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeChat, setActiveChat] = useState<{chatId: string, projectPath: string} | null>(null);
   const searchInputRef = useRef(null);
   const chatInputRef = useRef(null);
+
+  useEffect(() => {
+    const handleOpenChat = async (e: any) => {
+      const chat = e.detail;
+      setActiveChat(chat);
+      setMessages([]);
+      try {
+        const { readTextFile, exists } = await import('@tauri-apps/plugin-fs');
+        const path = `${chat.projectPath}/.codeclub/chats/${chat.chatId}.jsonl`;
+        if (await exists(path)) {
+          const content = await readTextFile(path);
+          const lines = content.split('\n').filter(l => l.trim() !== '');
+          const parsed = lines.map(l => JSON.parse(l));
+          setMessages(parsed);
+        }
+      } catch (err) {
+        console.error("Error loading chat:", err);
+      }
+    };
+    window.addEventListener('codeclub:open-chat', handleOpenChat);
+    return () => window.removeEventListener('codeclub:open-chat', handleOpenChat);
+  }, []);
 
   useEffect(() => {
     if (input.endsWith('/proveedor')) {
@@ -61,20 +84,54 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
     }
   };
 
+  const appendToJsonl = async (msg) => {
+    if (!activeChat) return;
+    try {
+      const { writeTextFile, readTextFile, exists } = await import('@tauri-apps/plugin-fs');
+      const path = `${activeChat.projectPath}/.codeclub/chats/${activeChat.chatId}.jsonl`;
+      let content = '';
+      if (await exists(path)) {
+        content = await readTextFile(path);
+        if (content && !content.endsWith('\n')) content += '\n';
+      }
+      content += JSON.stringify(msg) + '\n';
+      await writeTextFile(path, content);
+    } catch (e) {
+      console.error("FS Append Error:", e);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!input.trim() || isStreaming) return;
     
+    if (!activeChat) {
+      window.dispatchEvent(new CustomEvent('codeclub:require-project'));
+      return;
+    }
+
+    if (messages.length === 0) {
+      let title = input.trim();
+      if (title.length > 20) title = title.substring(0, 20) + '...';
+      window.dispatchEvent(new CustomEvent('codeclub:rename-chat', {
+        detail: { chatId: activeChat.chatId, newName: title, projectPath: activeChat.projectPath }
+      }));
+    }
+
     const userMessage = { role: 'user', content: input };
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
     setInput('');
     setIsStreaming(true);
+    
+    await appendToJsonl(userMessage);
 
     try {
-      // Configuramos el provider dinámico basado en la selección
-      // NOTA: Se asume que el usuario ha configurado la clave API en localStorage o entorno.
-      const apiKey = localStorage.getItem(`${currentProvider.id}_api_key`) || 'dummy-key';
+      let apiKey = localStorage.getItem(`${currentProvider.id}_api_key`);
+      
+      if (!apiKey || apiKey === 'dummy-key') {
+        throw new Error(`API Key no configurada para ${currentProvider.label || currentProvider.id}. Por favor agregala en la configuración.`);
+      }
       
       const provider = createOpenAICompatible({
         name: currentProvider.id,
@@ -98,12 +155,19 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
           return updated;
         });
       }
+      
+      await appendToJsonl({ role: 'assistant', content: assistantContent });
     } catch (error) {
       console.error("Stream error:", error);
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: `Error: ${error.message}` }
-      ]);
+      // Delete the empty assistant message that was meant for streaming
+      setMessages((prev) => {
+        const updated = [...prev];
+        if (updated.length > 0 && updated[updated.length - 1].content === '' && updated[updated.length - 1].role === 'assistant') {
+          updated.pop();
+        }
+        return updated;
+      });
+      setInput(error.message);
     } finally {
       setIsStreaming(false);
     }
@@ -130,9 +194,9 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
         </div>
         
         <div className="selection-status" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: 'rgba(216, 216, 216, 0.42)', fontSize: '12px' }}>
-          <span>{currentProvider?.label}</span>
+          <span>{currentProvider?.label || 'Sin proveedor'}</span>
           <span style={{ color: 'rgba(216, 216, 216, 0.24)' }}>/</span>
-          <span>{currentModel?.label}</span>
+          <span>{currentModel?.label || 'Sin modelo'}</span>
         </div>
 
         <form onSubmit={handleSubmit} className="composer-box" style={{ minHeight: '40px', display: 'grid', gridTemplateColumns: '1fr 28px', alignItems: 'center', gap: '4px', padding: '5px', border: '1px solid var(--color-surface-9, #2f2f2f)', borderRadius: '8px', background: '#121212', boxShadow: '0 18px 52px rgba(0, 0, 0, 0.26)' }}>
