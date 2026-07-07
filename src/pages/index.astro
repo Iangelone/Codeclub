@@ -39,6 +39,11 @@ import ChatPanel from "../components/ChatPanel.astro";
         document.documentElement.classList.add("is-windows");
       }
     </script>
+    <script>
+      if (typeof process === 'undefined') {
+        window.process = { env: {}, cwd: () => '/', nextTick: (fn, ...a) => setTimeout(fn, 0, ...a), platform: 'browser', argv: [], version: '', browser: true };
+      }
+    </script>
   </head>
   <body class="has-sidebar">
     <header class="topbar">
