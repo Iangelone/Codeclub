@@ -60,13 +60,19 @@ Codeclub already uses AI SDK 7 packages:
 - `ai`
 - `@ai-sdk/react`
 - `@ai-sdk/openai-compatible`
-- `@ai-sdk/devtools` — telemetry + UI local en `localhost:4983`
 
-The AI engine is in `src/lib/engine/` — see [engine.md](engine.md) for architecture details.
-The model/provider catalog is in `src/lib/ai-catalog.ts` — see [models.md](models.md) for source docs.
+### DevTools
 
-The AI engine is in `src/lib/engine/` — see [engine.md](engine.md) for architecture details.
-The model/provider catalog is in `src/lib/ai-catalog.ts` — see [models.md](models.md) for source docs.
+`@ai-sdk/devtools` instalado con telemetry registrado desde `ChatInterface.tsx`.
+Correr `npx @ai-sdk/devtools` y abrir `http://localhost:4983` para inspeccionar llamadas AI SDK en vivo.
+
+### Engine
+
+El engine propio está en `src/lib/engine/` — ver [../engine/](../engine/).
+
+### Models
+
+El catálogo de modelos/proveedores está en `src/lib/ai-catalog.ts` — ver [../models/](../models/).
 
 Current chat usage is an IDE agent built on AI SDK Core:
 

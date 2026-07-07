@@ -8,8 +8,8 @@ The engine is the AI execution layer, separated from the React UI. Lives in `src
 |---|---|
 | `types.ts` | Shared types: `ToolEvent`, `ToolContext`, `EngineCallbacks` |
 | `tools.ts` | `createTools(ctx)` — 9 tools: workspace (5) + subagent + memory CRUD (3) |
-| `run.ts` | `runStream(params)` — AI SDK 7 `streamText` loop, returns assistant content |
-| `memory.ts` | `saveMemory`, `loadMemory`, `searchMemory`, `deleteMemory`, `deleteMemoriesByTag` — CRUD sobre `.codeclub/memory/{key}.json` |
+| `run.ts` | `runStream(params)` — AI SDK `streamText` loop, returns assistant content |
+| `memory.ts` | `saveMemory`, `loadMemory`, `searchMemory`, `deleteMemory`, `deleteMemoriesByTag` |
 
 ## Architecture
 
@@ -17,7 +17,7 @@ The engine is the AI execution layer, separated from the React UI. Lives in `src
 ChatInterface.tsx (orchestrator)
   ├── createTools({ projectPath, recordToolEvent, setAgentState, requestToolApproval })
   └── runStream({ model, system, messages, tools, callbacks })
-        └── streamText (AI SDK 7) — multi-step, max 6 steps, timeouts
+        └── streamText (AI SDK)
 ```
 
 ## Tools
@@ -34,23 +34,12 @@ ChatInterface.tsx (orchestrator)
 | `recall` | `searchMemory` | No | Busca por key o tag |
 | `forget` | `deleteMemory` | No | Elimina por key exacta |
 
-Cada tool recibe `ToolContext` que expone:
+Cada tool recibe `ToolContext`:
 - `projectPath`: workspace activo
 - `recordToolEvent`: callback para loggear eventos en el mensaje assistant
 - `setAgentState`: actualiza estado visual del agente
 - `requestToolApproval`: pausa y pide aprobación humana antes de ejecutar
 - `provider` / `modelId`: (opcional) para tools que spawnnean sub-agentes
-
-## Memoria
-
-Las tools `remember`, `recall`, `forget` persisten en `.codeclub/memory/{key}.json`.
-Cada entrada: `{ key, content, tags[], created_at, updated_at }`.
-Al borrar un chat/nota/tabla, se limpian automáticamente las memorias con tag `{kind}:{itemId}`.
-
-## DevTools
-
-`@ai-sdk/devtools` instalado. Telemetry registrado desde `ChatInterface.tsx`.
-Correr `npx @ai-sdk/devtools` y abrir `http://localhost:4983` para inspeccionar llamadas AI SDK en vivo.
 
 ## Engine Callbacks
 
@@ -60,10 +49,8 @@ Correr `npx @ai-sdk/devtools` y abrir `http://localhost:4983` para inspeccionar 
 - `onToolResult()` — cuando una tool retorna
 - `onError(error)` — opcional, si no se provee lanza el error
 
-## AI SDK Dependencies
+## Memory
 
-- `ai` — streamText, tool, jsonSchema, stepCountIs
-- `@ai-sdk/openai-compatible` — createOpenAICompatible para providers OpenAI-compatibles
-- `@ai-sdk/react` — useChat (no usado aún)
-
-Toda la comunicación HTTP con los modelos usa `fetch` via Tauri (`codeclub_http_fetch`) para exponer errores de red en lugar de errores opacos del webview.
+Las tools `remember`, `recall`, `forget` persisten en `.codeclub/memory/{key}.json`.
+Cada entrada: `{ key, content, tags[], created_at, updated_at }`.
+Al borrar un chat/nota/tabla, se limpian automáticamente las memorias con tag `{kind}:{itemId}` en `index.astro`.
