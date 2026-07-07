@@ -56,7 +56,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
   const [composerDocked, setComposerDocked] = useState(false);
   
   const initProvider = () => {
-    const saved = localStorage.getItem('codeclub_last_provider_id');
+    const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('codeclub_last_provider_id') : null;
     if (saved) {
       const found = catalog.find((p) => p.type === 'provider' && p.id === saved);
       if (found) return found;
@@ -64,7 +64,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
     return defaultProvider;
   };
   const initModel = () => {
-    const saved = localStorage.getItem('codeclub_last_model_id');
+    const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('codeclub_last_model_id') : null;
     if (saved) {
       const found = catalog.find((m) => m.type === 'model' && m.id === saved);
       if (found) return found;
@@ -900,7 +900,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
     <div className="chat-interface-container" style={{ width: 'min(860px, calc(100% - 64px))', height: 'min(720px, calc(100vh - 96px))', display: 'grid', gridTemplateRows: composerDocked ? 'minmax(0, 1fr) auto' : '1fr', placeItems: composerDocked ? 'stretch' : 'center', gap: '10px', overflow: 'visible', paddingBottom: composerDocked ? '18px' : 0 }}>
       
       {/* Zona de mensajes */}
-      <div className="messages-area" style={{ minHeight: 0, height: '100%', overflowY: 'auto', display: composerDocked ? 'flex' : 'none', flexDirection: 'column', gap: '1rem', paddingBottom: '10px', scrollbarWidth: 'none', overscrollBehavior: 'contain' }}>
+      <div className="messages-area" style={{ minHeight: 0, height: '100%', overflowY: 'auto', display: composerDocked ? 'flex' : 'none', flexDirection: 'column', gap: '6px', paddingBottom: '10px', overscrollBehavior: 'contain' }}>
         <div aria-hidden="true" style={{ flex: '1 0 auto' }} />
         {messages.map((m, i) => (
           <React.Fragment key={i}>
@@ -911,8 +911,8 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
               {m.role === 'assistant' && (
                 <MessageToolSummary tools={m.tools} isBusy={isAgentBusy && i === messages.length - 1} />
               )}
-              <div style={{ background: m.role === 'user' ? '#202020' : 'transparent', padding: '2px 8px', borderRadius: '8px', color: '#eee', fontSize: '14px', width: 'fit-content', maxWidth: '100%' }}>
-                <ReactMarkdown components={{ p: ({ children }) => <p style={{ margin: '2px 0' }}>{children}</p> }}>{m.content}</ReactMarkdown>
+              <div style={{ background: m.role === 'user' ? '#202020' : 'transparent', padding: '10px 14px', borderRadius: '10px', color: '#eee', fontSize: '14px', width: 'fit-content', maxWidth: '100%', lineHeight: 1.5 }}>
+                <ReactMarkdown components={{ p: ({ children }) => <p style={{ margin: 0 }}>{children}</p> }}>{m.content}</ReactMarkdown>
               </div>
               {m.role === 'user' && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', opacity: 0.72 }}>

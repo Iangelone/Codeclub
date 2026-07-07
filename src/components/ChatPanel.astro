@@ -92,6 +92,21 @@ const catalog = [
     87.5% { content: "\2827"; }
   }
 
+  .messages-area::-webkit-scrollbar {
+    width: 6px;
+  }
+  .messages-area::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .messages-area::-webkit-scrollbar-thumb {
+    background: #2f2f2f;
+    border-radius: 3px;
+  }
+  .messages-area {
+    scrollbar-width: thin;
+    scrollbar-color: #2f2f2f transparent;
+  }
+
   @keyframes spinner-idle-color {
     0%, 100% {
       color: #c7cbff;
