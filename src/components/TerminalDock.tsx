@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { PanelBottomClose, Plus } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -27,13 +28,6 @@ type TerminalSnapshot = {
   output: string;
 };
 
-type TerminalAnchorRect = {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-};
-
 const STORAGE_KEY = 'codeclub_terminal_tabs_v1';
 
 const shellOptions: { id: ShellKind; label: string }[] = [
@@ -43,6 +37,21 @@ const shellOptions: { id: ShellKind; label: string }[] = [
   { id: 'git-bash', label: 'Git Bash' },
   { id: 'wsl', label: 'WSL2' },
 ];
+
+const shellLabels: Record<string, string> = {
+  auto: 'Default',
+  powershell: 'PowerShell',
+  cmd: 'Command Prompt',
+  'git-bash': 'Git Bash',
+  wsl: 'WSL2',
+};
+
+const computeTerminalName = (shell: string, existing: TerminalInfo[]) => {
+  const base = shellLabels[shell] || shell;
+  const sameType = existing.filter((t) => t.shell === shell && !t.is_agent);
+  if (sameType.length === 0) return base;
+  return `${base} ${sameType.length + 1}`;
+};
 
 const readPersistedTerminals = () => {
   try {
@@ -65,15 +74,48 @@ const appendOutput = (map: Map<string, string>, id: string, data: string) => {
   map.set(id, next.length > 240_000 ? next.slice(next.length - 240_000) : next);
 };
 
+const MIN_HEIGHT = 180;
+const MAX_HEIGHT_FRACTION = 0.8;
+
+const POSITION_KEY = 'codeclub_terminal_pos';
+const HEIGHT_KEY = 'codeclub_terminal_height';
+
+const getInitialPosition = () => {
+  if (typeof window === 'undefined') return { x: 60, y: 60 };
+  try {
+    const saved = localStorage.getItem(POSITION_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (typeof parsed.x === 'number' && typeof parsed.y === 'number') return parsed;
+    }
+  } catch {}
+  const dockWidth = Math.min(760, window.innerWidth - 64);
+  const dockHeight = Math.min(360, Math.max(220, window.innerHeight * 0.36));
+  return {
+    x: Math.max(0, (window.innerWidth - dockWidth) / 2),
+    y: Math.max(0, (window.innerHeight - dockHeight) / 2),
+  };
+};
+
+const getInitialHeight = () => {
+  if (typeof window === 'undefined') return 300;
+  try {
+    const saved = localStorage.getItem(HEIGHT_KEY);
+    if (saved) {
+      const h = parseInt(saved, 10);
+      if (!isNaN(h) && h >= MIN_HEIGHT && h <= window.innerHeight * MAX_HEIGHT_FRACTION) return h;
+    }
+  } catch {}
+  return Math.min(360, Math.max(220, window.innerHeight * 0.36));
+};
+
 export default function TerminalDock() {
   const [terminals, setTerminals] = useState<TerminalInfo[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [shellMenuOpen, setShellMenuOpen] = useState(false);
   const [shellMenuPosition, setShellMenuPosition] = useState({ left: 0 });
-  const [dockStyle, setDockStyle] = useState<React.CSSProperties>({});
-  const [renamingId, setRenamingId] = useState<string | null>(null);
-  const [renameDraft, setRenameDraft] = useState('');
+  const [position, setPosition] = useState<{ x: number; y: number }>(getInitialPosition);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const barRef = useRef<HTMLDivElement | null>(null);
   const plusButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -87,6 +129,13 @@ export default function TerminalDock() {
   const outputRef = useRef(new Map<string, string>());
   const loadedRef = useRef(false);
   const restoredRef = useRef(false);
+  const [dockHeight, setDockHeight] = useState(getInitialHeight);
+  const dragRef = useRef({ isDragging: false, startX: 0, startY: 0, startPosX: 0, startPosY: 0 });
+  const positionRef = useRef(position);
+  positionRef.current = position;
+  const resizeRef = useRef({ isResizing: false, startY: 0, startHeight: 0 });
+  const dockHeightRef = useRef(dockHeight);
+  dockHeightRef.current = dockHeight;
 
   const visibleTerminals = terminals.filter((terminal) => !terminal.is_agent);
   const activeTerminal = visibleTerminals.find((terminal) => terminal.id === activeId) || null;
@@ -102,25 +151,111 @@ export default function TerminalDock() {
     return projectPath;
   };
 
-  const positionFromAnchor = (anchorRect?: TerminalAnchorRect) => {
-    if (!anchorRect) {
-      setDockStyle({});
-      return;
-    }
-
-    const panelRect = document.querySelector<HTMLElement>('.chat-panel')?.getBoundingClientRect();
-    if (!panelRect) return;
-
-    const dockHeight = Math.min(360, Math.max(220, window.innerHeight * 0.36));
-    const rawBottom = panelRect.bottom - anchorRect.top + 10;
-    const maxBottom = Math.max(72, panelRect.height - dockHeight - 12);
-    const left = anchorRect.left - panelRect.left + anchorRect.width / 2;
-
-    setDockStyle({
-      left: `${left}px`,
-      bottom: `${Math.min(rawBottom, maxBottom)}px`,
-    });
+  const persistPosition = () => {
+    try {
+      localStorage.setItem(POSITION_KEY, JSON.stringify(positionRef.current));
+    } catch {}
   };
+
+  const persistHeight = () => {
+    try {
+      localStorage.setItem(HEIGHT_KEY, String(dockHeightRef.current));
+    } catch {}
+  };
+
+  const clampPosition = (x: number, y: number) => {
+    const dockWidth = Math.min(760, window.innerWidth - 64);
+    const dockHeight = Math.min(360, Math.max(220, window.innerHeight * 0.36));
+    return {
+      x: Math.max(0, Math.min(x, window.innerWidth - dockWidth)),
+      y: Math.max(0, Math.min(y, window.innerHeight - dockHeight)),
+    };
+  };
+
+  const handleBarMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    dragRef.current = {
+      isDragging: true,
+      startX: e.clientX,
+      startY: e.clientY,
+      startPosX: position.x,
+      startPosY: position.y,
+    };
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!dragRef.current.isDragging) return;
+      setPosition(
+        clampPosition(
+          dragRef.current.startPosX + (e.clientX - dragRef.current.startX),
+          dragRef.current.startPosY + (e.clientY - dragRef.current.startY),
+        ),
+      );
+    };
+    const handleMouseUp = () => {
+      if (!dragRef.current.isDragging) return;
+      dragRef.current.isDragging = false;
+      persistPosition();
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizeRef.current.isResizing) return;
+      const maxHeight = window.innerHeight * MAX_HEIGHT_FRACTION;
+      const newHeight = Math.max(MIN_HEIGHT, Math.min(maxHeight, resizeRef.current.startHeight + (e.clientY - resizeRef.current.startY)));
+      setDockHeight(newHeight);
+    };
+    const handleMouseUp = () => {
+      if (!resizeRef.current.isResizing) return;
+      resizeRef.current.isResizing = false;
+      persistHeight();
+      fitRef.current?.fit?.();
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (shellMenuOpen) {
+          setShellMenuOpen(false);
+          return;
+        }
+        if (isOpen) {
+          e.stopPropagation();
+          setIsOpen(false);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [isOpen, shellMenuOpen]);
+
+  const shellMenuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!shellMenuOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (shellMenuRef.current && !shellMenuRef.current.contains(e.target as Node)) {
+        setShellMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [shellMenuOpen]);
 
   const disposeActiveTerminal = () => {
     terminalRef.current?.dispose?.();
@@ -230,7 +365,6 @@ export default function TerminalDock() {
         restoredRef.current = true;
         readPersistedTerminals().forEach((terminal) => {
           createTerminal(terminal.shell as ShellKind, {
-            name: terminal.name,
             cwd: terminal.cwd || detail.projectPath,
             open: false,
           }).catch(console.error);
@@ -245,7 +379,6 @@ export default function TerminalDock() {
         setIsOpen(false);
         return;
       }
-      positionFromAnchor(detail.anchorRect);
       if (detail.terminalId) setActiveId(detail.terminalId);
       setIsOpen((value) => {
         const next = detail.toggle ? !value : true;
@@ -315,6 +448,11 @@ export default function TerminalDock() {
     return () => window.removeEventListener('resize', onResize);
   }, [isOpen, activeId]);
 
+  // On close, save position
+  useEffect(() => {
+    if (!isOpen) persistPosition();
+  }, [isOpen]);
+
   const toggleShellMenu = () => {
     if (!resolveActiveProjectPath()) return;
     const rect = plusButtonRef.current?.getBoundingClientRect();
@@ -330,14 +468,15 @@ export default function TerminalDock() {
 
   const createTerminal = async (
     shell: ShellKind = 'powershell',
-    options: { name?: string; cwd?: string; isAgent?: boolean; open?: boolean } = {},
+    options: { cwd?: string; isAgent?: boolean; open?: boolean } = {},
   ) => {
     const projectPath = options.cwd || resolveActiveProjectPath();
     if (!options.isAgent && !projectPath) return null;
+    const name = computeTerminalName(shell, terminals);
     const terminal = await invoke<TerminalInfo>('codeclub_terminal_create', {
       request: {
         shell,
-        name: options.name,
+        name,
         cwd: options.cwd,
         projectPath: options.cwd ? undefined : projectPath || undefined,
         isAgent: Boolean(options.isAgent),
@@ -350,109 +489,117 @@ export default function TerminalDock() {
     return terminal;
   };
 
-  const renameTerminal = async (terminal: TerminalInfo) => {
-    if (!renameDraft.trim()) {
-      setRenamingId(null);
-      return;
-    }
-    const updated = await invoke<TerminalInfo>('codeclub_terminal_rename', {
-      id: terminal.id,
-      name: renameDraft.trim(),
-    });
-    setTerminals((items) => upsertTerminal(items, updated));
-    setRenamingId(null);
-  };
-
   const deleteTerminal = async (id: string) => {
+    const deleted = terminals.find((t) => t.id === id);
     await invoke('codeclub_terminal_delete', { id });
-    setTerminals((items) => {
-      const next = items.filter((item) => item.id !== id);
+    setTerminals((prev) => {
+      const next = prev.filter((item) => item.id !== id);
       if (activeId === id) setActiveId(next.find((item) => !item.is_agent)?.id || null);
       return next;
     });
     outputRef.current.delete(id);
+
+    if (deleted && !deleted.is_agent) {
+      const remaining = terminals
+        .filter((t) => t.shell === deleted.shell && t.id !== id && !t.is_agent)
+        .sort((a, b) => a.created_at.localeCompare(b.created_at));
+      const base = shellLabels[deleted.shell] || deleted.shell;
+      remaining.forEach(async (t, i) => {
+        const newName = i === 0 ? base : `${base} ${i + 1}`;
+        if (t.name !== newName) {
+          const updated = await invoke<TerminalInfo>('codeclub_terminal_rename', {
+            id: t.id,
+            name: newName,
+          });
+          setTerminals((items) => upsertTerminal(items, updated));
+        }
+      });
+    }
   };
 
-  return (
-    <div className={`terminal-dock ${isOpen ? 'is-open' : ''}`} style={dockStyle}>
-      <div className="terminal-stage">
-        {activeTerminal ? (
-          <div ref={hostRef} className="terminal-host" />
-        ) : (
-          <div className="terminal-empty">
-            <button type="button" onClick={() => createTerminal('auto')}>Crear terminal</button>
-          </div>
-        )}
-      </div>
-      <div ref={barRef} className="terminal-dock-bar">
-        <div className="terminal-tabs" role="tablist" aria-label="Terminales">
-          {visibleTerminals.map((terminal) => (
-            <button
-              key={terminal.id}
-              type="button"
-              className={`terminal-tab ${terminal.id === activeId ? 'is-active' : ''}`}
-              onClick={() => {
-                setActiveId(terminal.id);
-                setIsOpen(true);
-              }}
-              onDoubleClick={() => {
-                setRenamingId(terminal.id);
-                setRenameDraft(terminal.name);
-              }}
-            >
-              {renamingId === terminal.id ? (
-                <input
-                  value={renameDraft}
-                  onChange={(event) => setRenameDraft(event.target.value)}
-                  onBlur={() => renameTerminal(terminal)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') renameTerminal(terminal);
-                    if (event.key === 'Escape') setRenamingId(null);
-                  }}
-                  autoFocus
-                />
-              ) : (
-                <span>{terminal.name}</span>
-              )}
-              <b
-                aria-label="Cerrar terminal"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  deleteTerminal(terminal.id);
-                }}
-              >
-                x
-              </b>
-            </button>
-          ))}
-          <div className="terminal-new">
-            <button ref={plusButtonRef} type="button" className="terminal-new-tab" aria-label="Nueva terminal" onClick={toggleShellMenu}>
-              <Plus size={14} />
-            </button>
-          </div>
-        </div>
-        <div className="terminal-actions">
-          <button type="button" aria-label="Ocultar terminal" onClick={() => setIsOpen(false)}>
-            <PanelBottomClose size={14} />
-          </button>
-        </div>
-        {shellMenuOpen && (
-          <div className="terminal-shell-menu" style={{ left: shellMenuPosition.left }}>
-            {shellOptions.map((shell) => (
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <>
+      {isOpen && <div className="terminal-floating-backdrop" onClick={() => setIsOpen(false)} />}
+      <div
+        className={`terminal-floating ${isOpen ? 'is-open' : ''}`}
+        style={{
+          left: `${position.x}px`,
+          top: `${position.y}px`,
+          height: `${dockHeight}px`,
+        }}
+      >
+        <div
+          className="terminal-resize-handle"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            resizeRef.current = { isResizing: true, startY: e.clientY, startHeight: dockHeight };
+          }}
+        />
+        <div ref={barRef} className="terminal-floating-bar" onMouseDown={handleBarMouseDown}>
+          <div className="terminal-tabs" role="tablist" aria-label="Terminales">
+            {visibleTerminals.map((terminal) => (
               <button
-                key={shell.id}
+                key={terminal.id}
                 type="button"
+                className={`terminal-tab ${terminal.id === activeId ? 'is-active' : ''}`}
                 onClick={() => {
-                  createTerminal(shell.id);
-                  setShellMenuOpen(false);
+                  setActiveId(terminal.id);
+                  setIsOpen(true);
                 }}
               >
-                {shell.label}
+                <span>{terminal.name}</span>
+                <b
+                  aria-label="Cerrar terminal"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    deleteTerminal(terminal.id);
+                  }}
+                >
+                  x
+                </b>
               </button>
             ))}
+            <div className="terminal-new">
+              <button ref={plusButtonRef} type="button" className="terminal-new-tab" aria-label="Nueva terminal" onClick={toggleShellMenu}>
+                <Plus size={14} />
+              </button>
+            </div>
           </div>
-        )}
+          <div className="terminal-actions">
+            <button type="button" aria-label="Ocultar terminal" onClick={() => setIsOpen(false)}>
+              <PanelBottomClose size={14} />
+            </button>
+          </div>
+          {shellMenuOpen && (
+            <div ref={shellMenuRef} className="terminal-shell-menu" style={{ left: shellMenuPosition.left }}>
+              {shellOptions.map((shell) => (
+                <button
+                  key={shell.id}
+                  type="button"
+                  onClick={() => {
+                    createTerminal(shell.id);
+                    setShellMenuOpen(false);
+                  }}
+                >
+                  {shell.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="terminal-stage">
+          {activeTerminal ? (
+            <div ref={hostRef} className="terminal-host" />
+          ) : (
+            <div className="terminal-empty">
+              <button type="button" onClick={() => createTerminal('auto')}>Crear terminal</button>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </>,
+    document.body,
   );
 }
