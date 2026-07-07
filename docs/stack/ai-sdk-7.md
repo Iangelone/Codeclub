@@ -60,6 +60,10 @@ Codeclub already uses AI SDK 7 packages:
 - `ai`
 - `@ai-sdk/react`
 - `@ai-sdk/openai-compatible`
+- `@ai-sdk/devtools` — telemetry + UI local en `localhost:4983`
+
+The AI engine is in `src/lib/engine/` — see [engine.md](engine.md) for architecture details.
+The model/provider catalog is in `src/lib/ai-catalog.ts` — see [models.md](models.md) for source docs.
 
 The AI engine is in `src/lib/engine/` — see [engine.md](engine.md) for architecture details.
 The model/provider catalog is in `src/lib/ai-catalog.ts` — see [models.md](models.md) for source docs.
