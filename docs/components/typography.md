@@ -4,26 +4,37 @@
 
 Primary: `Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`
 
-Monospace (braille spinner only): `ui-monospace, "SFMono-Regular", Consolas, monospace`
+Monospace: `ui-monospace, "SFMono-Regular", Consolas, monospace`
 
 ## Font Sizes
 
+Core scale:
+
 | Size | Usage |
 |---|---|
-| `16px` | Composer status text ("Listo cuando tú lo estés.", "Generando..."). |
-| `12px` | All UI text: buttons, menus, dropdown items, sidebar labels, project rows, chat rows, input, command items, provider/model status. |
-| `11px` | Command item type label (`proveedor` / `modelo`). |
+| `28px` | Note and table titles. |
+| `16px` | Initial global chat status: "Listo cuando tu lo estes." / "Generando..." before the composer docks. |
+| `14px` | Chat message bubbles. |
+| `12px` | Normal UI text: sidebar, topbar, buttons, menus, inputs, command items, provider/model status, table cells. |
+
+Small exceptions:
+
+| Size | Usage |
+|---|---|
+| `13px` | Empty workspace hint: "Selecciona un chat, nota o tabla". |
+| `11px` | Command item type label: `proveedor` / `modelo`. |
 
 ## Font Weights
 
 | Weight | Usage |
 |---|---|
-| `400` (normal) | Body text, sidebar labels, section headings, all UI text. |
-| No bold weight used. | |
+| `600` | Note and table titles. |
+| `400` | Body text, sidebar labels, section headings, all normal UI text. |
 
 ## Line Height
 
 | Value | Usage |
 |---|---|
 | `1` | Braille spinner. |
-| Default (normal) | All other text. |
+| `1.7` | Note editor body. |
+| Default | All other text. |

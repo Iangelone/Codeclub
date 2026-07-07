@@ -30,9 +30,14 @@ const catalog = [
     font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
     line-height: 1;
     opacity: 0.78;
+    transition: color 620ms ease, text-shadow 620ms ease, opacity 620ms ease;
     text-shadow:
       0 0 10px rgba(123, 130, 255, 0.42),
       0 0 18px rgba(255, 117, 181, 0.18);
+  }
+
+  .braille-spinner[data-state="idle"] {
+    animation: spinner-idle-color 5.6s ease-in-out infinite;
   }
 
   .braille-spinner::before {
@@ -50,5 +55,44 @@ const catalog = [
     62.5% { content: "\2834"; }
     75% { content: "\2826"; }
     87.5% { content: "\2827"; }
+  }
+
+  @keyframes spinner-idle-color {
+    0%, 100% {
+      color: #c7cbff;
+      text-shadow:
+        0 0 10px rgba(123, 130, 255, 0.42),
+        0 0 18px rgba(255, 117, 181, 0.18);
+    }
+    16% {
+      color: #7dd3fc;
+      text-shadow:
+        0 0 10px rgba(125, 211, 252, 0.38),
+        0 0 18px rgba(103, 232, 249, 0.16);
+    }
+    32% {
+      color: #86efac;
+      text-shadow:
+        0 0 10px rgba(134, 239, 172, 0.32),
+        0 0 18px rgba(45, 212, 191, 0.14);
+    }
+    48% {
+      color: #fde68a;
+      text-shadow:
+        0 0 10px rgba(253, 230, 138, 0.28),
+        0 0 18px rgba(251, 191, 36, 0.12);
+    }
+    64% {
+      color: #f9a8d4;
+      text-shadow:
+        0 0 10px rgba(249, 168, 212, 0.32),
+        0 0 18px rgba(244, 114, 182, 0.14);
+    }
+    80% {
+      color: #d8b4fe;
+      text-shadow:
+        0 0 10px rgba(216, 180, 254, 0.34),
+        0 0 18px rgba(251, 113, 133, 0.14);
+    }
   }
 </style>

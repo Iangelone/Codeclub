@@ -8,9 +8,11 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [composerDocked, setComposerDocked] = useState(false);
+  const spinnerState = 'idle';
   
   const [currentProvider, setCurrentProvider] = useState(defaultProvider);
   const [currentModel, setCurrentModel] = useState(defaultModel);
+  const [credentialProvider, setCredentialProvider] = useState(null);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [commandKind, setCommandKind] = useState('');
@@ -28,6 +30,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
   const commandMenuRef = useRef(null);
   const searchInputRef = useRef(null);
   const chatInputRef = useRef(null);
+  const messagesEndRef = useRef(null);
 
   useEffect(() => {
     const handleOpenChat = async (e: any) => {
@@ -152,6 +155,11 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
   }, [activeCommandIndex, menuOpen, filteredCatalog.length]);
 
   useEffect(() => {
+    if (!composerDocked) return;
+    messagesEndRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
+  }, [messages, isStreaming, composerDocked]);
+
+  useEffect(() => {
     if (!menuOpen) return;
 
     const handlePointerDown = (event) => {
@@ -166,12 +174,17 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
   const handleItemClick = (item) => {
     if (item.type === 'provider') {
       setCurrentProvider(item);
+      setCredentialProvider(item);
+      setInput('');
       const firstModel = catalog.find((m) => m.type === 'model' && m.providerId === item.id);
       if (firstModel) setCurrentModel(firstModel);
     } else if (item.type === 'model') {
       setCurrentModel(item);
+      setCredentialProvider(null);
     }
-    setInput((prev) => prev.replace(/\/(proveedor|modelo)$/i, '').trimStart());
+    if (item.type !== 'provider') {
+      setInput((prev) => prev.replace(/\/(proveedor|modelo)$/i, '').trimStart());
+    }
     setMenuOpen(false);
     chatInputRef.current?.focus();
   };
@@ -436,6 +449,13 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
     e.preventDefault();
     if (!input.trim() || isStreaming) return;
 
+    if (credentialProvider) {
+      localStorage.setItem(`${credentialProvider.id}_api_key`, input.trim());
+      setCredentialProvider(null);
+      setInput('');
+      return;
+    }
+
     if (/\/proveedor$/i.test(input.trim())) {
       openCommandMenu('provider');
       return;
@@ -507,27 +527,33 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
       <div className="messages-area" style={{ minHeight: 0, height: '100%', overflowY: 'auto', display: composerDocked ? 'flex' : 'none', flexDirection: 'column', gap: '1rem', paddingBottom: '10px', scrollbarWidth: 'none', overscrollBehavior: 'contain' }}>
         <div aria-hidden="true" style={{ flex: '1 0 auto' }} />
         {messages.map((m, i) => (
-          <div key={i} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '5px', maxWidth: '80%' }}>
-            <div style={{ background: m.role === 'user' ? 'var(--color-surface-7, #2c2c2c)' : 'transparent', padding: '8px 12px', borderRadius: '8px', color: '#eee' }}>
-              {m.content}
-            </div>
-            {m.role === 'user' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', opacity: 0.72 }}>
-                <button type="button" aria-label="Copiar mensaje" onClick={() => handleCopyMessage(m.content)} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: 'pointer' }}>
-                  <Copy size={13} strokeWidth={2} />
-                </button>
-                <button type="button" aria-label="Reintentar desde este mensaje" onClick={() => handleRetryMessage(i)} disabled={isStreaming} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: isStreaming ? 'not-allowed' : 'pointer' }}>
-                  <RotateCcw size={13} strokeWidth={2} />
-                </button>
-              </div>
+          <React.Fragment key={i}>
+            {i > 0 && (
+              <div aria-hidden="true" style={{ alignSelf: 'stretch', borderTop: '1px solid rgba(255, 255, 255, 0.08)', margin: '14px 0' }} />
             )}
-          </div>
+            <div style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '5px', maxWidth: '80%' }}>
+              <div style={{ background: m.role === 'user' ? '#202020' : 'transparent', padding: '8px 12px', borderRadius: '8px', color: '#eee', fontSize: '14px' }}>
+                {m.content}
+              </div>
+              {m.role === 'user' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', opacity: 0.72 }}>
+                  <button type="button" aria-label="Copiar mensaje" onClick={() => handleCopyMessage(m.content)} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: 'pointer' }}>
+                    <Copy size={13} strokeWidth={2} />
+                  </button>
+                  <button type="button" aria-label="Reintentar desde este mensaje" onClick={() => handleRetryMessage(i)} disabled={isStreaming} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: isStreaming ? 'not-allowed' : 'pointer' }}>
+                    <RotateCcw size={13} strokeWidth={2} />
+                  </button>
+                </div>
+              )}
+            </div>
+          </React.Fragment>
         ))}
+        <div ref={messagesEndRef} aria-hidden="true" />
       </div>
 
       <div className="chat-composer" style={{ width: 'min(600px, 100%)', justifySelf: 'center', position: 'relative', display: 'grid', gap: '10px', transform: composerDocked ? 'translateY(18px)' : 'translateY(0)', transition: 'transform 420ms cubic-bezier(0.22, 1, 0.36, 1)' }}>
-        <div className="composer-status" style={{ display: 'flex', alignItems: 'center', justifyContent: composerDocked ? 'flex-start' : 'center', gap: '8px', color: composerDocked ? 'rgba(216, 216, 216, 0.42)' : undefined, fontSize: composerDocked ? '12px' : undefined }}>
-          <span className="braille-spinner" aria-hidden="true" style={{ position: 'relative', color: '#c7cbff' }} />
+        <div className="composer-status" style={{ display: 'flex', alignItems: 'center', justifyContent: composerDocked ? 'flex-start' : 'center', gap: '8px', color: composerDocked ? 'rgba(216, 216, 216, 0.42)' : undefined, fontSize: composerDocked ? '12px' : undefined, transform: composerDocked && menuOpen ? 'translateY(-194px)' : 'translateY(0)', transition: 'transform 180ms ease', position: 'relative', zIndex: 11 }}>
+          <span className="braille-spinner" data-state={spinnerState} aria-hidden="true" style={{ position: 'relative' }} />
           {composerDocked ? (
             <span style={{ color: 'rgba(216, 216, 216, 0.82)' }}>{isStreaming ? "Generando..." : "Listo cuando tú lo estés."}</span>
           ) : (
@@ -555,11 +581,11 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onFocus={() => setMenuOpen(false)}
-            placeholder="Preguntá, pedí código o describí una tarea"
+            placeholder={credentialProvider ? `Escribí tu credencial de ${credentialProvider.label || credentialProvider.id}` : "Preguntá, pedí código o describí una tarea"}
             aria-label="Mensaje"
             style={{ appearance: 'none', minWidth: 0, border: 0, outline: 'none', background: 'transparent', color: '#eeeeee', fontSize: '12px', padding: '0 7px' }}
           />
-          <button type="submit" disabled={isStreaming} className="send-button" aria-label="Enviar" style={{ width: '28px', height: '28px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '7px', background: 'var(--color-surface-8, #2c2c2c)', color: '#ffffff', cursor: isStreaming ? 'not-allowed' : 'pointer' }}>
+          <button type="submit" disabled={isStreaming} className="send-button" aria-label={credentialProvider ? "Guardar credencial" : "Enviar"} style={{ width: '28px', height: '28px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '7px', background: 'var(--color-surface-8, #2c2c2c)', color: '#ffffff', cursor: isStreaming ? 'not-allowed' : 'pointer' }}>
             <ArrowUp size={15} strokeWidth={2} />
           </button>
         </form>
@@ -569,7 +595,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
           tabIndex={-1}
           onKeyDown={handleCommandMenuKeyDown}
           className={`command-menu ${menuOpen ? 'is-open' : ''}`}
-          style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 8px)', display: menuOpen ? 'grid' : 'none', gap: '8px', padding: '9px', border: '1px solid var(--color-surface-9, #2f2f2f)', borderRadius: '8px', background: '#121212', boxShadow: '0 20px 58px rgba(0, 0, 0, 0.34)', zIndex: 10, outline: 'none' }}
+          style={{ position: 'absolute', left: 0, right: 0, top: composerDocked ? 'auto' : 'calc(100% + 8px)', bottom: composerDocked ? '58px' : 'auto', display: menuOpen ? 'grid' : 'none', gap: '8px', padding: '9px', border: '1px solid var(--color-surface-9, #2f2f2f)', borderRadius: '8px', background: composerDocked ? 'rgba(18, 18, 18, 0.72)' : '#121212', backdropFilter: composerDocked ? 'blur(18px) saturate(1.35)' : undefined, WebkitBackdropFilter: composerDocked ? 'blur(18px) saturate(1.35)' : undefined, boxShadow: '0 20px 58px rgba(0, 0, 0, 0.34)', zIndex: 10, outline: 'none' }}
         >
 
           <input
