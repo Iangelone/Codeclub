@@ -448,6 +448,25 @@ import ChatPanel from "../components/ChatPanel.astro";
             `${projectPath}/.codeclub/tables/${itemId}.json`;
           if (await exists(filePath)) await remove(filePath);
 
+          // Cleanup memories tagged with this deleted item
+          const memoryDir = `${projectPath}/.codeclub/memory`;
+          const memoryTag = `${kind}:${itemId}`;
+          if (await exists(memoryDir)) {
+            const { readDir } = await import("@tauri-apps/plugin-fs");
+            const memEntries = await readDir(memoryDir);
+            for (const memEntry of memEntries) {
+              if (!memEntry.name?.endsWith('.json')) continue;
+              const memPath = `${memoryDir}/${memEntry.name}`;
+              try {
+                const memContent = await readTextFile(memPath);
+                const mem = JSON.parse(memContent);
+                if (mem.tags?.includes(memoryTag)) {
+                  await remove(memPath);
+                }
+              } catch { /* skip corrupt entries */ }
+            }
+          }
+
           focusSiblingTarget(target, nextFocusDirection);
           target.remove();
           window.dispatchEvent(new CustomEvent("codeclub:open-blank"));

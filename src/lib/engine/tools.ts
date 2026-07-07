@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { jsonSchema, tool } from 'ai';
 import type { ToolContext } from './types';
 import { runStream } from './run';
+import { saveMemory, searchMemory, deleteMemory } from './memory';
 
 function createSubagentTools(ctx: { projectPath: string; recordToolEvent: (name: string, input: any, output: any) => void; setAgentState: (state: string) => void }) {
   const { projectPath, recordToolEvent, setAgentState } = ctx;
@@ -218,6 +219,59 @@ export function createTools(ctx: ToolContext) {
 
         recordToolEvent('subagent', { task }, { result });
         return result;
+      },
+    }),
+    remember: tool({
+      description: 'Save information to memory. Tags link memories to items (chat:abc, note:xyz, table:xyz). Duplicate keys update existing.',
+      inputSchema: jsonSchema({
+        type: 'object',
+        properties: {
+          key: { type: 'string', description: 'Unique memory key.' },
+          content: { type: 'string', description: 'Content to remember.' },
+          tags: { type: 'array', items: { type: 'string' }, description: 'Optional tags like ["chat:id", "preference"].' },
+        },
+        required: ['key', 'content'],
+        additionalProperties: false,
+      }),
+      execute: async ({ key, content, tags }) => {
+        setAgentState('tool_call');
+        await saveMemory(projectPath, key, content, tags || []);
+        recordToolEvent('remember', { key, tags }, { ok: true });
+        return { ok: true };
+      },
+    }),
+    recall: tool({
+      description: 'Retrieve memories by exact key or search by tag keyword. Returns matching entries.',
+      inputSchema: jsonSchema({
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Key or tag text to search.' },
+        },
+        required: ['query'],
+        additionalProperties: false,
+      }),
+      execute: async ({ query }) => {
+        setAgentState('tool_call');
+        const results = await searchMemory(projectPath, query);
+        recordToolEvent('recall', { query }, { count: results.length });
+        return results;
+      },
+    }),
+    forget: tool({
+      description: 'Delete a specific memory by its exact key.',
+      inputSchema: jsonSchema({
+        type: 'object',
+        properties: {
+          key: { type: 'string', description: 'Exact memory key to delete.' },
+        },
+        required: ['key'],
+        additionalProperties: false,
+      }),
+      execute: async ({ key }) => {
+        setAgentState('tool_call');
+        const ok = await deleteMemory(projectPath, key);
+        recordToolEvent('forget', { key }, { ok });
+        return { ok };
       },
     }),
   };
