@@ -9,6 +9,9 @@ export default defineConfig({
   },
   vite: {
     clearScreen: false,
+    define: {
+      'process.env': '{}',
+    },
     optimizeDeps: {
       include: ["@tauri-apps/api/window"],
     },
