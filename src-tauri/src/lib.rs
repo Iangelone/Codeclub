@@ -1,10 +1,14 @@
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::HashMap,
     fs,
+    io::{Read, Write},
     path::{Component, Path, PathBuf},
-    process::{Command, Stdio},
-    time::{Duration, Instant},
+    process::{Child, ChildStdin, Command, Stdio},
+    sync::{Arc, Mutex},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+use tauri::{AppHandle, Emitter, State};
 
 #[derive(Serialize)]
 struct FileEntry {
@@ -53,6 +57,253 @@ struct HttpFetchResponse {
     status_text: String,
     headers: Vec<HttpHeader>,
     body: String,
+}
+
+#[derive(Default)]
+struct TerminalRegistry {
+    sessions: Mutex<HashMap<String, TerminalSession>>,
+}
+
+struct TerminalSession {
+    info: TerminalInfo,
+    child: Arc<Mutex<Child>>,
+    stdin: Arc<Mutex<ChildStdin>>,
+    buffer: Arc<Mutex<String>>,
+    status: Arc<Mutex<String>>,
+}
+
+#[derive(Clone, Serialize)]
+struct TerminalInfo {
+    id: String,
+    name: String,
+    shell: String,
+    cwd: String,
+    is_agent: bool,
+    created_at: String,
+    status: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TerminalCreateRequest {
+    name: Option<String>,
+    shell: Option<String>,
+    cwd: Option<String>,
+    project_path: Option<String>,
+    is_agent: Option<bool>,
+}
+
+#[derive(Serialize)]
+struct TerminalSnapshot {
+    info: TerminalInfo,
+    output: String,
+}
+
+#[derive(Clone, Serialize)]
+struct TerminalOutputEvent {
+    id: String,
+    stream: String,
+    data: String,
+}
+
+#[derive(Clone, Serialize)]
+struct TerminalExitEvent {
+    id: String,
+    code: Option<i32>,
+}
+
+struct ShellSpec {
+    command: String,
+    args: Vec<String>,
+    label: String,
+}
+
+impl TerminalSession {
+    fn info(&self) -> TerminalInfo {
+        let mut info = self.info.clone();
+        info.status = self
+            .status
+            .lock()
+            .map(|status| status.clone())
+            .unwrap_or_else(|_| "unknown".into());
+        info
+    }
+}
+
+fn now_millis() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+}
+
+fn command_exists(command: &str) -> bool {
+    Command::new(command)
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok()
+}
+
+fn first_existing_path(paths: &[&str]) -> Option<String> {
+    paths
+        .iter()
+        .find(|path| Path::new(path).exists())
+        .map(|path| (*path).to_string())
+}
+
+fn resolve_shell(kind: Option<&str>) -> Result<ShellSpec, String> {
+    let kind = kind.unwrap_or("auto").to_ascii_lowercase();
+    match kind.as_str() {
+        "powershell" | "pwsh" => {
+            if command_exists("pwsh") {
+                Ok(ShellSpec {
+                    command: "pwsh".into(),
+                    args: vec!["-NoLogo".into(), "-NoExit".into()],
+                    label: "powershell".into(),
+                })
+            } else {
+                Ok(ShellSpec {
+                    command: "powershell.exe".into(),
+                    args: vec!["-NoLogo".into(), "-NoProfile".into(), "-NoExit".into()],
+                    label: "powershell".into(),
+                })
+            }
+        }
+        "git-bash" | "bash" => {
+            let command = first_existing_path(&[
+                r"C:\Program Files\Git\bin\bash.exe",
+                r"C:\Program Files\Git\usr\bin\bash.exe",
+                r"C:\Program Files (x86)\Git\bin\bash.exe",
+            ])
+            .unwrap_or_else(|| "bash.exe".into());
+
+            Ok(ShellSpec {
+                command,
+                args: vec!["--login".into(), "-i".into()],
+                label: "git-bash".into(),
+            })
+        }
+        "wsl" | "wsl2" => Ok(ShellSpec {
+            command: "wsl.exe".into(),
+            args: Vec::new(),
+            label: "wsl".into(),
+        }),
+        "cmd" => Ok(ShellSpec {
+            command: "cmd.exe".into(),
+            args: vec!["/Q".into()],
+            label: "cmd".into(),
+        }),
+        "auto" | "" => resolve_shell(Some("powershell")),
+        _ => Err("Shell no soportada.".into()),
+    }
+}
+
+fn resolve_terminal_cwd(request: &TerminalCreateRequest) -> Result<PathBuf, String> {
+    if let Some(cwd) = &request.cwd {
+        let path = PathBuf::from(cwd);
+        if path.exists() {
+            return path
+                .canonicalize()
+                .map_err(|error| format!("No se pudo resolver el cwd: {error}"));
+        }
+    }
+
+    if let Some(project_path) = &request.project_path {
+        return workspace_root(project_path);
+    }
+
+    std::env::current_dir().map_err(|error| format!("No se pudo resolver el cwd: {error}"))
+}
+
+fn append_terminal_buffer(buffer: &Arc<Mutex<String>>, data: &str) {
+    const MAX_BUFFER_CHARS: usize = 240_000;
+    if let Ok(mut buffer) = buffer.lock() {
+        buffer.push_str(data);
+        let char_count = buffer.chars().count();
+        if char_count > MAX_BUFFER_CHARS {
+            let trimmed: String = buffer
+                .chars()
+                .rev()
+                .take(MAX_BUFFER_CHARS)
+                .collect::<String>()
+                .chars()
+                .rev()
+                .collect();
+            *buffer = trimmed;
+        }
+    }
+}
+
+fn spawn_terminal_reader<R: Read + Send + 'static>(
+    mut reader: R,
+    id: String,
+    stream: &'static str,
+    app: AppHandle,
+    buffer: Arc<Mutex<String>>,
+) {
+    std::thread::spawn(move || {
+        let mut bytes = [0_u8; 4096];
+        loop {
+            match reader.read(&mut bytes) {
+                Ok(0) => break,
+                Ok(size) => {
+                    let data = String::from_utf8_lossy(&bytes[..size]).to_string();
+                    append_terminal_buffer(&buffer, &data);
+                    let _ = app.emit(
+                        "codeclub-terminal-output",
+                        TerminalOutputEvent {
+                            id: id.clone(),
+                            stream: stream.into(),
+                            data,
+                        },
+                    );
+                }
+                Err(_) => break,
+            }
+        }
+    });
+}
+
+fn spawn_terminal_monitor(
+    id: String,
+    child: Arc<Mutex<Child>>,
+    status: Arc<Mutex<String>>,
+    app: AppHandle,
+) {
+    std::thread::spawn(move || {
+        loop {
+            let exit_code = {
+                let Ok(mut child) = child.lock() else {
+                    return;
+                };
+
+                match child.try_wait() {
+                    Ok(Some(exit)) => Some(exit.code()),
+                    Ok(None) => None,
+                    Err(_) => Some(None),
+                }
+            };
+
+            if let Some(code) = exit_code {
+                if let Ok(mut status) = status.lock() {
+                    *status = "exited".into();
+                }
+                let _ = app.emit(
+                    "codeclub-terminal-exit",
+                    TerminalExitEvent {
+                        id: id.clone(),
+                        code,
+                    },
+                );
+                break;
+            }
+
+            std::thread::sleep(Duration::from_millis(500));
+        }
+    });
 }
 
 fn workspace_root(project_path: &str) -> Result<PathBuf, String> {
@@ -333,6 +584,210 @@ fn codeclub_run_command(
 }
 
 #[tauri::command]
+fn codeclub_terminal_list(state: State<'_, TerminalRegistry>) -> Result<Vec<TerminalInfo>, String> {
+    let sessions = state
+        .sessions
+        .lock()
+        .map_err(|_| "No se pudo leer terminales.".to_string())?;
+    Ok(sessions.values().map(TerminalSession::info).collect())
+}
+
+#[tauri::command]
+fn codeclub_terminal_create(
+    app: AppHandle,
+    state: State<'_, TerminalRegistry>,
+    request: TerminalCreateRequest,
+) -> Result<TerminalInfo, String> {
+    let is_agent = request.is_agent.unwrap_or(false);
+    let shell = resolve_shell(request.shell.as_deref())?;
+    let cwd = resolve_terminal_cwd(&request)?;
+    let id = format!("terminal-{}", now_millis());
+    let name = request.name.clone().unwrap_or_else(|| "Terminal".into());
+
+    let mut command = Command::new(&shell.command);
+    command
+        .args(&shell.args)
+        .current_dir(&cwd)
+        .env("TERM", "xterm-256color")
+        .env("COLORTERM", "truecolor")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("No se pudo iniciar la terminal: {error}"))?;
+    let stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "No se pudo abrir stdin de la terminal.".to_string())?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "No se pudo abrir stdout de la terminal.".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "No se pudo abrir stderr de la terminal.".to_string())?;
+
+    let child = Arc::new(Mutex::new(child));
+    let stdin = Arc::new(Mutex::new(stdin));
+    let buffer = Arc::new(Mutex::new(String::new()));
+    let status = Arc::new(Mutex::new("running".to_string()));
+    let info = TerminalInfo {
+        id: id.clone(),
+        name,
+        shell: shell.label,
+        cwd: cwd.to_string_lossy().to_string(),
+        is_agent,
+        created_at: now_millis().to_string(),
+        status: "running".into(),
+    };
+
+    spawn_terminal_reader(stdout, id.clone(), "stdout", app.clone(), buffer.clone());
+    spawn_terminal_reader(stderr, id.clone(), "stderr", app.clone(), buffer.clone());
+    spawn_terminal_monitor(id.clone(), child.clone(), status.clone(), app.clone());
+
+    {
+        let mut sessions = state
+            .sessions
+            .lock()
+            .map_err(|_| "No se pudo guardar la terminal.".to_string())?;
+        sessions.insert(
+            id,
+            TerminalSession {
+                info: info.clone(),
+                child,
+                stdin,
+                buffer,
+                status,
+            },
+        );
+    }
+
+    let _ = app.emit("codeclub-terminal-created", info.clone());
+    Ok(info)
+}
+
+#[tauri::command]
+fn codeclub_terminal_snapshot(
+    state: State<'_, TerminalRegistry>,
+    id: String,
+) -> Result<TerminalSnapshot, String> {
+    let sessions = state
+        .sessions
+        .lock()
+        .map_err(|_| "No se pudo leer terminales.".to_string())?;
+    let session = sessions
+        .get(&id)
+        .ok_or_else(|| "Terminal no encontrada.".to_string())?;
+    let output = session
+        .buffer
+        .lock()
+        .map(|buffer| buffer.clone())
+        .unwrap_or_default();
+    Ok(TerminalSnapshot {
+        info: session.info(),
+        output,
+    })
+}
+
+#[tauri::command]
+fn codeclub_terminal_write(
+    state: State<'_, TerminalRegistry>,
+    id: String,
+    data: String,
+) -> Result<(), String> {
+    let sessions = state
+        .sessions
+        .lock()
+        .map_err(|_| "No se pudo leer terminales.".to_string())?;
+    let session = sessions
+        .get(&id)
+        .ok_or_else(|| "Terminal no encontrada.".to_string())?;
+    if session.info().status != "running" {
+        return Err("La terminal no esta corriendo.".into());
+    }
+    let mut stdin = session
+        .stdin
+        .lock()
+        .map_err(|_| "No se pudo escribir en la terminal.".to_string())?;
+    stdin
+        .write_all(data.as_bytes())
+        .map_err(|error| format!("No se pudo escribir en la terminal: {error}"))?;
+    stdin
+        .flush()
+        .map_err(|error| format!("No se pudo enviar a la terminal: {error}"))
+}
+
+#[tauri::command]
+fn codeclub_terminal_rename(
+    app: AppHandle,
+    state: State<'_, TerminalRegistry>,
+    id: String,
+    name: String,
+) -> Result<TerminalInfo, String> {
+    let mut sessions = state
+        .sessions
+        .lock()
+        .map_err(|_| "No se pudo leer terminales.".to_string())?;
+    let session = sessions
+        .get_mut(&id)
+        .ok_or_else(|| "Terminal no encontrada.".to_string())?;
+    session.info.name = name.trim().chars().take(40).collect();
+    if session.info.name.is_empty() {
+        session.info.name = "Terminal".into();
+    }
+    let info = session.info();
+    let _ = app.emit("codeclub-terminal-updated", info.clone());
+    Ok(info)
+}
+
+#[tauri::command]
+fn codeclub_terminal_stop(
+    app: AppHandle,
+    state: State<'_, TerminalRegistry>,
+    id: String,
+) -> Result<TerminalInfo, String> {
+    let sessions = state
+        .sessions
+        .lock()
+        .map_err(|_| "No se pudo leer terminales.".to_string())?;
+    let session = sessions
+        .get(&id)
+        .ok_or_else(|| "Terminal no encontrada.".to_string())?;
+    if let Ok(mut child) = session.child.lock() {
+        let _ = child.kill();
+    }
+    if let Ok(mut status) = session.status.lock() {
+        *status = "stopped".into();
+    }
+    let info = session.info();
+    let _ = app.emit("codeclub-terminal-updated", info.clone());
+    Ok(info)
+}
+
+#[tauri::command]
+fn codeclub_terminal_delete(
+    app: AppHandle,
+    state: State<'_, TerminalRegistry>,
+    id: String,
+) -> Result<(), String> {
+    let mut sessions = state
+        .sessions
+        .lock()
+        .map_err(|_| "No se pudo leer terminales.".to_string())?;
+    let session = sessions
+        .remove(&id)
+        .ok_or_else(|| "Terminal no encontrada.".to_string())?;
+    if let Ok(mut child) = session.child.lock() {
+        let _ = child.kill();
+    }
+    let _ = app.emit("codeclub-terminal-deleted", id);
+    Ok(())
+}
+
+#[tauri::command]
 async fn codeclub_http_fetch(request: HttpFetchRequest) -> Result<HttpFetchResponse, String> {
     if !request.url.starts_with("https://") && !request.url.starts_with("http://") {
         return Err("URL HTTP invalida para el fetch del modelo.".into());
@@ -400,6 +855,7 @@ async fn codeclub_http_fetch(request: HttpFetchRequest) -> Result<HttpFetchRespo
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(TerminalRegistry::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
@@ -409,6 +865,13 @@ pub fn run() {
             codeclub_search_text,
             codeclub_write_file,
             codeclub_run_command,
+            codeclub_terminal_list,
+            codeclub_terminal_create,
+            codeclub_terminal_snapshot,
+            codeclub_terminal_write,
+            codeclub_terminal_rename,
+            codeclub_terminal_stop,
+            codeclub_terminal_delete,
             codeclub_http_fetch
         ])
         .run(tauri::generate_context!())

@@ -16,6 +16,7 @@ export default defineConfig({
       include: [
         "@tauri-apps/api/window",
         "@tauri-apps/api/core",
+        "@tauri-apps/api/event",
         "@tauri-apps/api/path",
         "@tauri-apps/plugin-fs",
         "@tauri-apps/plugin-dialog",

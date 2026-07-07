@@ -80,7 +80,7 @@ import ChatPanel from "../components/ChatPanel.astro";
             <button type="button">Ver</button>
             <div class="dropdown-menu">
               <a href="#"><PanelLeft size={14} /> Panel lateral</a>
-              <a href="#"><Terminal size={14} /> Terminal</a>
+              <a href="#" data-action="toggle-terminal"><Terminal size={14} /> Terminal</a>
               <a href="#"><Square size={14} /> Pantalla completa</a>
               <a href="#"><Eye size={14} /> Apariencia</a>
             </div>
@@ -203,6 +203,9 @@ import ChatPanel from "../components/ChatPanel.astro";
           card.classList.toggle("is-selected", card === project);
         });
         projectsList?.querySelectorAll(".chat-row").forEach((chat) => chat.classList.remove("is-active"));
+        window.dispatchEvent(new CustomEvent("codeclub:active-project", {
+          detail: { projectPath: project?.dataset.path, name: project?.dataset.name },
+        }));
         window.dispatchEvent(new CustomEvent("codeclub:open-blank"));
       };
 
@@ -1071,6 +1074,10 @@ import ChatPanel from "../components/ChatPanel.astro";
 
       document.querySelector(".drag-area")?.addEventListener("dblclick", () => {
         appWindow.toggleMaximize();
+      });
+      document.querySelector('[data-action="toggle-terminal"]')?.addEventListener("click", (event) => {
+        event.preventDefault();
+        window.dispatchEvent(new CustomEvent("codeclub:open-terminal-dock", { detail: { toggle: true } }));
       });
       };
 

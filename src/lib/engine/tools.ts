@@ -188,6 +188,66 @@ export function createTools(ctx: ToolContext) {
         return output;
       },
     }),
+    terminal: tool({
+      description: 'Create a persistent background terminal process. Optionally send one command to it after approval. It does not open a visible UI tab.',
+      inputSchema: jsonSchema({
+        type: 'object',
+        properties: {
+          shell: {
+            type: 'string',
+            enum: ['auto', 'powershell', 'git-bash', 'wsl', 'cmd'],
+            description: 'Terminal shell to start. Defaults to auto.',
+          },
+          command: {
+            type: 'string',
+            description: 'Optional command to type into the background terminal.',
+          },
+          name: {
+            type: 'string',
+            description: 'Optional process label for internal tracking.',
+          },
+        },
+        additionalProperties: false,
+      }),
+      execute: async ({ shell, command, name }) => {
+        if (command) {
+          const approved = await requestToolApproval({
+            toolName: 'terminal',
+            input: { shell: shell || 'auto', command },
+            summary: `Ejecutar en terminal background: ${String(command).slice(0, 80)}`,
+          });
+          if (!approved) {
+            recordToolEvent('terminal', { shell, command, name }, { denied: true });
+            return { ok: false, denied: true };
+          }
+        }
+
+        setAgentState('running');
+        const terminal = await invoke<any>('codeclub_terminal_create', {
+          request: {
+            projectPath,
+            shell: shell || 'auto',
+            name: name || 'Background',
+            isAgent: true,
+          },
+        });
+
+        if (command) {
+          const text = String(command).endsWith('\n') ? String(command) : `${command}\n`;
+          await invoke('codeclub_terminal_write', { id: terminal.id, data: text });
+        }
+
+        const output = {
+          ok: true,
+          id: terminal.id,
+          shell: terminal.shell,
+          background: true,
+          commandSent: Boolean(command),
+        };
+        recordToolEvent('terminal', { shell, command, name }, output);
+        return output;
+      },
+    }),
     subagent: tool({
       description: 'Spawn a research subagent to explore the codebase. Give it a clear task. Returns a summary.',
       inputSchema: jsonSchema({

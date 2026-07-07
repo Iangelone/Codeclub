@@ -1,15 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ArrowUp, Copy, RotateCcw, Coffee } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import ReactMarkdown from 'react-markdown';
 import { createTools } from '../lib/engine/tools';
 import { runStream } from '../lib/engine/run';
-import { registerTelemetry } from 'ai';
-import { DevToolsTelemetry } from '@ai-sdk/devtools';
-
-if (typeof window !== 'undefined') {
-  registerTelemetry(DevToolsTelemetry());
-}
 
 const compactJsonExported = (value) => {
   try {
@@ -60,25 +55,10 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
   const [agentState, setAgentState] = useState('idle');
   const [pendingApprovals, setPendingApprovals] = useState([]);
   const [composerDocked, setComposerDocked] = useState(false);
-  
-  const initProvider = () => {
-    const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('codeclub_last_provider_id') : null;
-    if (saved) {
-      const found = catalog.find((p) => p.type === 'provider' && p.id === saved);
-      if (found) return found;
-    }
-    return defaultProvider;
-  };
-  const initModel = () => {
-    const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('codeclub_last_model_id') : null;
-    if (saved) {
-      const found = catalog.find((m) => m.type === 'model' && m.id === saved);
-      if (found) return found;
-    }
-    return defaultModel;
-  };
-  const [currentProvider, setCurrentProvider] = useState(initProvider);
-  const [currentModel, setCurrentModel] = useState(initModel);
+
+  const [currentProvider, setCurrentProvider] = useState(defaultProvider);
+  const [currentModel, setCurrentModel] = useState(defaultModel);
+  const [settingsReady, setSettingsReady] = useState(false);
   const [credentialProvider, setCredentialProvider] = useState(null);
 
   const [menuOpen, setMenuOpen] = useState(false);
@@ -198,12 +178,27 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
   }, []);
 
   useEffect(() => {
-    if (currentProvider) localStorage.setItem('codeclub_last_provider_id', currentProvider.id);
-  }, [currentProvider]);
+    const savedProviderId = localStorage.getItem('codeclub_last_provider_id');
+    const savedModelId = localStorage.getItem('codeclub_last_model_id');
+    const savedProvider = savedProviderId
+      ? catalog.find((item) => item.type === 'provider' && item.id === savedProviderId)
+      : null;
+    const savedModel = savedModelId
+      ? catalog.find((item) => item.type === 'model' && item.id === savedModelId)
+      : null;
+
+    setCurrentProvider(savedProvider || defaultProvider);
+    setCurrentModel(savedModel || defaultModel);
+    setSettingsReady(true);
+  }, [catalog, defaultProvider, defaultModel]);
 
   useEffect(() => {
-    if (currentModel) localStorage.setItem('codeclub_last_model_id', currentModel.id);
-  }, [currentModel]);
+    if (settingsReady && currentProvider) localStorage.setItem('codeclub_last_provider_id', currentProvider.id);
+  }, [currentProvider, settingsReady]);
+
+  useEffect(() => {
+    if (settingsReady && currentModel) localStorage.setItem('codeclub_last_model_id', currentModel.id);
+  }, [currentModel, settingsReady]);
 
   useEffect(() => {
     const handleRenamedNote = (e: any) => {
@@ -656,6 +651,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
         'Usa listFiles, readFile y searchText antes de tocar codigo cuando falte contexto.',
         'Para modificar archivos usa writeFile con el contenido completo del archivo.',
         'Para comandos usa runCommand solo cuando aporte a la tarea.',
+        'Para procesos persistentes, servidores o trabajo interactivo usa la tool terminal; crea procesos background sin abrir UI.',
         'Las acciones riesgosas piden aprobacion humana antes de ejecutarse.',
       ].join(' ');
 
@@ -703,6 +699,23 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
     if (credentialProvider) {
       localStorage.setItem(`${credentialProvider.id}_api_key`, input.trim());
       setCredentialProvider(null);
+      setInput('');
+      return;
+    }
+
+    if (/^\/terminal$/i.test(input.trim())) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      window.dispatchEvent(new CustomEvent('codeclub:open-terminal-dock', {
+        detail: {
+          toggle: true,
+          anchorRect: {
+            left: rect.left,
+            top: rect.top,
+            width: rect.width,
+            height: rect.height,
+          },
+        },
+      }));
       setInput('');
       return;
     }
