@@ -1,4 +1,4 @@
-﻿---
+---
 import {
   ArrowLeft,
   ArrowRight,
@@ -38,7 +38,7 @@ import ChatPanel from "../components/ChatPanel.astro";
       }
     </script>
   </head>
-  <body>
+  <body class="has-sidebar">
     <header class="topbar">
       <div class="topbar-left">
         <button class="tool-button" type="button" aria-label="Toggle sidebar">
@@ -125,6 +125,9 @@ import ChatPanel from "../components/ChatPanel.astro";
         </div>
         <div class="projects-list" aria-label="Lista de proyectos"></div>
       </section>
+      <section class="sidebar-footer">
+        <button type="button"><Settings size={15} /> Ajustes</button>
+      </section>
     </aside>
     <main class="workspace" aria-label="Workspace">
       <ChatPanel />
@@ -172,6 +175,10 @@ import ChatPanel from "../components/ChatPanel.astro";
 
         input.addEventListener("blur", finish);
       };
+
+      if (document.body.classList.contains("has-sidebar")) {
+        leftPanel?.classList.add("is-open");
+      }
 
       sidebarButton?.addEventListener("click", () => {
         document.body.classList.toggle("has-sidebar");
@@ -335,12 +342,14 @@ import ChatPanel from "../components/ChatPanel.astro";
     width: 264px;
     overflow: hidden;
     display: grid;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: auto 1fr auto;
     border-top: 1px solid rgba(47, 47, 47, 1);
     border-right: 1px solid var(--color-surface-10);
     background: rgba(18, 18, 18, 0.98);
+    box-shadow: 12px 0 40px rgba(0, 0, 0, 0.25);
     transform: translateX(-100%);
     transition: transform 140ms ease;
+    z-index: 10;
   }
 
   .left-panel.is-open {
@@ -371,9 +380,17 @@ import ChatPanel from "../components/ChatPanel.astro";
     font-weight: 400;
   }
 
+  .sidebar-footer {
+    padding: 10px;
+    display: grid;
+    gap: 4px;
+    border-top: 1px solid var(--color-surface-9);
+  }
+
   .panel-actions button,
   :global(.project-row),
   :global(.chat-row),
+  .sidebar-footer button,
   .section-heading button {
     appearance: none !important;
     -webkit-appearance: none !important;
@@ -384,6 +401,7 @@ import ChatPanel from "../components/ChatPanel.astro";
 
   .panel-actions button,
   :global(.project-row),
+  .sidebar-footer button,
   :global(.chat-row) {
     min-height: 34px;
     display: flex;
@@ -399,6 +417,7 @@ import ChatPanel from "../components/ChatPanel.astro";
   .panel-actions button:hover,
   :global(.project-row:hover),
   :global(.chat-row:hover),
+  .sidebar-footer button:hover,
   .section-heading button:hover {
     background: var(--color-surface-7);
   }

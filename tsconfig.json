@@ -1,6 +1,8 @@
 {
   "extends": "astro/tsconfigs/strict",
   "compilerOptions": {
-    "types": ["@tauri-apps/api"]
+    "types": ["@tauri-apps/api"],
+    "jsx": "react-jsx",
+    "jsxImportSource": "react"
   }
 }
