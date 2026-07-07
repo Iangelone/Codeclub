@@ -61,24 +61,19 @@ Codeclub already uses AI SDK 7 packages:
 - `@ai-sdk/react`
 - `@ai-sdk/openai-compatible`
 
+The AI engine is in `src/lib/engine/` — see [engine.md](engine.md) for architecture details.
+The model/provider catalog is in `src/lib/ai-catalog.ts` — see [models.md](models.md) for source docs.
+
 Current chat usage is an IDE agent built on AI SDK Core:
 
-- `streamText` streams assistant text and tool events.
-- `tool` and `jsonSchema` define workspace tools.
+- `streamText` streams assistant text and tool events (wrapped in `runStream`).
+- `tool` and `jsonSchema` define workspace tools (in `tools.ts`).
 - `stepCountIs(6)` enables multi-step tool loops.
 - Tool execution is backed by Tauri commands.
 - Provider HTTP requests use a Tauri-backed fetch so desktop builds can surface status and response bodies instead of opaque WebView fetch errors.
 - Risky tools require explicit UI approval before running.
 - The composer spinner uses agent states: `idle`, `streaming`, `tool_call`, `approval`, `running`, and `error`.
 - Runtime errors are written back into the composer input with method, URL, request body, status, response headers, and response body for debugging.
-
-Implemented workspace tools:
-
-- `listFiles`: lists workspace files.
-- `readFile`: reads a UTF-8 workspace file.
-- `searchText`: searches exact text in workspace files.
-- `writeFile`: writes full file content after approval.
-- `runCommand`: runs an allowlisted command after approval.
 
 Harnesses and WorkflowAgent are not implemented yet.
 

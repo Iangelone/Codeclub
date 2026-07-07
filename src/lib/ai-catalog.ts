@@ -1,22 +1,25 @@
-// Live data from https://models.dev/api.json
-// Source docs: https://models.dev/models/ and https://models.dev/providers/
+// Live catalog fetched from https://models.dev/api.json
+// See https://models.dev/models/ and https://models.dev/providers/ for docs.
+// Each provider has a `models` object. Fallback: hardcoded "Custom" provider.
 
 let fetchedProviders: any[] = [];
 let fetchedModels: any[] = [];
 
 try {
   const providersRes = await fetch("https://models.dev/api.json");
+  // api.json shape: { [providerId]: { id, name, api, doc, models: { [modelId]: { id, name } } } }
   const apiData = await providersRes.json();
-  
+
+  // Map each provider entry — id, label, api base URL, doc URL, short label for UI.
   fetchedProviders = Object.values(apiData).map((p: any) => ({
     id: p.id,
     label: p.name,
-    api: p.api, // Guardamos la API custom si la tiene
+    api: p.api,
     shortLabel: p.name ? p.name.charAt(0) : "",
     doc: p.doc || ""
   }));
-  
-  // En api.json, cada provider tiene un objeto `models` con los modelos que soporta
+
+  // Flatten each provider's models into a flat list with providerId ref.
   fetchedModels = Object.values(apiData).flatMap((p: any) => {
     if (!p.models) return [];
     return Object.values(p.models).map((m: any) => ({
@@ -26,7 +29,7 @@ try {
     }));
   });
 
-  // Agregar el proveedor "Custom" hardcodeado
+  // Hardcoded "Custom" provider for user-defined OpenAI-compatible endpoints.
   fetchedProviders.push({
     id: "custom",
     label: "Custom",
