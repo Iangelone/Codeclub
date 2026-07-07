@@ -1,8 +1,51 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUp, Copy, RotateCcw } from 'lucide-react';
+import { ArrowUp, Copy, RotateCcw, Coffee } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { jsonSchema, stepCountIs, streamText, tool } from 'ai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
+import ReactMarkdown from 'react-markdown';
+
+const compactJsonExported = (value) => {
+  try {
+    return JSON.stringify(value).slice(0, 260);
+  } catch {
+    return String(value).slice(0, 260);
+  }
+};
+
+const MessageToolSummary = ({ tools, isBusy }) => {
+  const [copied, setCopied] = useState(false);
+  const toolCounts = {};
+  if (Array.isArray(tools)) {
+    tools.forEach(t => { toolCounts[t.name] = (toolCounts[t.name] || 0) + 1; });
+  }
+  const summaryStr = Object.entries(toolCounts).map(([k, v]) => `${k} x${v}`).join(', ');
+
+  if ((!tools || tools.length === 0) && !isBusy) return null;
+
+  const handleCopy = () => {
+    if (!Array.isArray(tools)) return;
+    const ops = tools.map(t => `[${t.name}] args: ${compactJsonExported(t.input)} result: ${compactJsonExported(t.output)}`);
+    navigator.clipboard?.writeText(ops.join('\n'));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1000);
+  };
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'rgba(216, 216, 216, 0.42)', marginBottom: '4px', marginLeft: '4px', width: '100%' }}>
+      <Coffee size={13} style={{ opacity: isBusy ? 0.7 : 0.4 }} />
+      <span>{isBusy ? "Agent is thinking and drinking a coffee..." : "Actividad reciente"}</span>
+      {summaryStr && (
+        <span 
+          onClick={handleCopy} 
+          style={{ cursor: 'pointer', marginLeft: '2px', color: 'inherit', userSelect: 'none' }}
+        >
+          {copied ? "Copiado" : summaryStr}
+        </span>
+      )}
+    </div>
+  );
+};
 
 export default function ChatInterface({ catalog, defaultProvider, defaultModel }) {
   const [messages, setMessages] = useState([]);
@@ -12,8 +55,24 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
   const [pendingApprovals, setPendingApprovals] = useState([]);
   const [composerDocked, setComposerDocked] = useState(false);
   
-  const [currentProvider, setCurrentProvider] = useState(defaultProvider);
-  const [currentModel, setCurrentModel] = useState(defaultModel);
+  const initProvider = () => {
+    const saved = localStorage.getItem('codeclub_last_provider_id');
+    if (saved) {
+      const found = catalog.find((p) => p.type === 'provider' && p.id === saved);
+      if (found) return found;
+    }
+    return defaultProvider;
+  };
+  const initModel = () => {
+    const saved = localStorage.getItem('codeclub_last_model_id');
+    if (saved) {
+      const found = catalog.find((m) => m.type === 'model' && m.id === saved);
+      if (found) return found;
+    }
+    return defaultModel;
+  };
+  const [currentProvider, setCurrentProvider] = useState(initProvider);
+  const [currentModel, setCurrentModel] = useState(initModel);
   const [credentialProvider, setCredentialProvider] = useState(null);
 
   const [menuOpen, setMenuOpen] = useState(false);
@@ -131,6 +190,14 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
       window.removeEventListener('codeclub:open-table', handleOpenTable);
     };
   }, []);
+
+  useEffect(() => {
+    if (currentProvider) localStorage.setItem('codeclub_last_provider_id', currentProvider.id);
+  }, [currentProvider]);
+
+  useEffect(() => {
+    if (currentModel) localStorage.setItem('codeclub_last_model_id', currentModel.id);
+  }, [currentModel]);
 
   useEffect(() => {
     const handleRenamedNote = (e: any) => {
@@ -841,20 +908,12 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
               <div aria-hidden="true" style={{ alignSelf: 'stretch', borderTop: '1px solid rgba(255, 255, 255, 0.08)', margin: '14px 0' }} />
             )}
             <div style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '5px', maxWidth: '80%' }}>
-              <div style={{ background: m.role === 'user' ? '#202020' : 'transparent', padding: '8px 12px', borderRadius: '8px', color: '#eee', fontSize: '14px' }}>
-                {m.content}
-              </div>
-              {Array.isArray(m.tools) && m.tools.length > 0 && (
-                <div style={{ display: 'grid', gap: '5px', width: '100%' }}>
-                  {m.tools.map((event) => (
-                    <div key={event.id} style={{ display: 'grid', gap: '3px', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '7px', padding: '7px 8px', background: 'rgba(255, 255, 255, 0.025)', color: 'rgba(216, 216, 216, 0.66)', fontSize: '12px' }}>
-                      <span style={{ color: 'rgba(238, 238, 238, 0.82)' }}>{event.name}</span>
-                      <span>{compactJson(event.input)}</span>
-                      <span>{compactJson(event.output)}</span>
-                    </div>
-                  ))}
-                </div>
+              {m.role === 'assistant' && (
+                <MessageToolSummary tools={m.tools} isBusy={isAgentBusy && i === messages.length - 1} />
               )}
+              <div style={{ background: m.role === 'user' ? '#202020' : 'transparent', padding: '2px 8px', borderRadius: '8px', color: '#eee', fontSize: '14px', width: 'fit-content', maxWidth: '100%' }}>
+                <ReactMarkdown components={{ p: ({ children }) => <p style={{ margin: '2px 0' }}>{children}</p> }}>{m.content}</ReactMarkdown>
+              </div>
               {m.role === 'user' && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', opacity: 0.72 }}>
                   <button type="button" aria-label="Copiar mensaje" onClick={() => handleCopyMessage(m.content)} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: 'pointer' }}>

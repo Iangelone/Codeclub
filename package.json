@@ -26,7 +26,8 @@
     "lucide-astro": "^0.556.0",
     "lucide-react": "^1.23.0",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react-dom": "^19.2.7",
+    "react-markdown": "^10.1.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",
