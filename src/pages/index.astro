@@ -207,6 +207,21 @@ import ChatPanel from "../components/ChatPanel.astro";
         chat.classList.add("is-active");
       };
 
+      const getSidebarTargets = () =>
+        Array.from(projectsList?.querySelectorAll(".project-row, .project-card.is-expanded .chat-row") || []);
+
+      const focusSidebarTarget = (target) => {
+        if (!target) return;
+        target.focus();
+        target.scrollIntoView({ block: "nearest" });
+      };
+
+      const focusSiblingTarget = (target, direction = 1) => {
+        const targets = getSidebarTargets();
+        const index = Math.max(0, targets.indexOf(target));
+        focusSidebarTarget(targets[Math.min(targets.length - 1, Math.max(0, index + direction))]);
+      };
+
       const ensureProjectMeta = async (projectPath, name) => {
         const { mkdir, exists, writeTextFile, readTextFile } = await import("@tauri-apps/plugin-fs");
         const codeclubPath = `${projectPath}/.codeclub`;
@@ -275,6 +290,15 @@ import ChatPanel from "../components/ChatPanel.astro";
         });
       };
 
+      const writeProjectIndex = async (projects) => {
+        const { writeTextFile, mkdir, BaseDirectory } = await import("@tauri-apps/plugin-fs");
+        const { appLocalDataDir } = await import("@tauri-apps/api/path");
+        await mkdir(await appLocalDataDir(), { recursive: true });
+        const payload = JSON.stringify(projects);
+        await writeTextFile(PROJECTS_INDEX, payload, { baseDir: BaseDirectory.AppLocalData });
+        await writeTextFile(await getAppDataFilePath(PROJECTS_BACKUP_INDEX), payload);
+      };
+
       const readProjectIndex = async () => {
         const { readTextFile, exists, BaseDirectory } = await import("@tauri-apps/plugin-fs");
         const candidates = [
@@ -315,6 +339,10 @@ import ChatPanel from "../components/ChatPanel.astro";
         const row = document.createElement("button");
         row.className = `chat-row ${kind}-item`;
         row.type = "button";
+        row.tabIndex = -1;
+        row.dataset.kind = kind;
+        row.dataset.itemId = artifact.id;
+        row.dataset.projectPath = projectPath;
         row.dataset[`${kind}Id`] = artifact.id;
         const icon = kind === "note"
           ? '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3h12l4 4v14H4z"/><path d="M16 3v5h5"/><path d="M8 13h8"/><path d="M8 17h6"/></svg>'
@@ -327,7 +355,103 @@ import ChatPanel from "../components/ChatPanel.astro";
           window.dispatchEvent(new CustomEvent(`codeclub:open-${kind}`, { detail }));
           selectChat(row);
         });
+        row.addEventListener("dblclick", () => renameSidebarItem(row));
         return row;
+      };
+
+      const renameSidebarItem = (row) => {
+        const kind = row.dataset.kind;
+        if (!kind || kind === "project" || row.querySelector(".project-input")) return;
+        const title = row.querySelector(".chat-title");
+        if (!title) return;
+        const previousName = title.textContent || "";
+        const input = document.createElement("input");
+        input.className = "project-input";
+        input.type = "text";
+        input.value = previousName;
+        title.replaceWith(input);
+        input.focus();
+        input.select();
+
+        const finish = async (save = true) => {
+          const nextName = input.value.trim() || previousName;
+          const nextTitle = document.createElement("span");
+          nextTitle.className = "chat-title";
+          nextTitle.textContent = save ? nextName : previousName;
+          input.replaceWith(nextTitle);
+          if (!save || nextName === previousName) return;
+
+          try {
+            const { readTextFile, writeTextFile, exists } = await import("@tauri-apps/plugin-fs");
+            const projectPath = row.dataset.projectPath;
+            const metaPath = `${projectPath}/.codeclub/meta.json`;
+            if (!(await exists(metaPath))) return;
+            const metaData = JSON.parse(await readTextFile(metaPath));
+            const collection = kind === "chat" ? "chats" : `${kind}s`;
+            const item = metaData[collection]?.find((entry) => entry.id === row.dataset.itemId);
+            if (item) {
+              item.name = nextName;
+              await writeTextFile(metaPath, JSON.stringify(metaData));
+              if (kind === "chat") {
+                window.dispatchEvent(new CustomEvent("codeclub:rename-chat", {
+                  detail: { chatId: row.dataset.itemId, newName: nextName, projectPath },
+                }));
+              }
+            }
+          } catch (error) {
+            console.error("Error renaming sidebar item", error);
+          }
+        };
+
+        input.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") finish(true);
+          if (event.key === "Escape") finish(false);
+        });
+        input.addEventListener("blur", () => finish(true));
+      };
+
+      const deleteSidebarTarget = async (target) => {
+        const kind = target.dataset.kind;
+        if (!kind) return;
+        const nextFocusDirection = 1;
+
+        try {
+          if (kind === "project") {
+            const project = target.closest(".project-card");
+            const projectPath = project?.dataset.path;
+            const projects = (await readProjectIndex()).filter((entry) => entry.path !== projectPath);
+            await writeProjectIndex(projects);
+            focusSiblingTarget(target, nextFocusDirection);
+            project?.remove();
+            window.dispatchEvent(new CustomEvent("codeclub:open-blank"));
+            await logPersistence("delete_project", "ok", { projectPath });
+            return;
+          }
+
+          const { readTextFile, writeTextFile, exists, remove } = await import("@tauri-apps/plugin-fs");
+          const projectPath = target.dataset.projectPath;
+          const itemId = target.dataset.itemId;
+          const metaPath = `${projectPath}/.codeclub/meta.json`;
+          if (!(await exists(metaPath))) return;
+          const metaData = JSON.parse(await readTextFile(metaPath));
+          const collection = kind === "chat" ? "chats" : `${kind}s`;
+          metaData[collection] = (metaData[collection] || []).filter((entry) => entry.id !== itemId);
+          await writeTextFile(metaPath, JSON.stringify(metaData));
+
+          const filePath =
+            kind === "chat" ? `${projectPath}/.codeclub/chats/${itemId}.jsonl` :
+            kind === "note" ? `${projectPath}/.codeclub/notes/${itemId}.md` :
+            `${projectPath}/.codeclub/tables/${itemId}.json`;
+          if (await exists(filePath)) await remove(filePath);
+
+          focusSiblingTarget(target, nextFocusDirection);
+          target.remove();
+          window.dispatchEvent(new CustomEvent("codeclub:open-blank"));
+          await logPersistence(`delete_${kind}`, "ok", { itemId, projectPath, path: filePath });
+        } catch (error) {
+          console.error("Error deleting sidebar target", error);
+          await logPersistence(`delete_${kind}`, "error", { error: error?.message || String(error) });
+        }
       };
 
       const createArtifact = async (kind, project, projectPath, projectName, beforeRow) => {
@@ -461,6 +585,9 @@ import ChatPanel from "../components/ChatPanel.astro";
             const projectRow = document.createElement("button");
             projectRow.className = "project-row";
             projectRow.type = "button";
+            projectRow.tabIndex = 0;
+            projectRow.dataset.kind = "project";
+            projectRow.dataset.projectPath = selectedPath;
             projectRow.innerHTML =
               '<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>';
             const projectNameSpan = document.createElement("span");
@@ -544,6 +671,10 @@ import ChatPanel from "../components/ChatPanel.astro";
               const newChat = document.createElement("button");
               newChat.className = "chat-row chat-item";
               newChat.type = "button";
+              newChat.tabIndex = -1;
+              newChat.dataset.kind = "chat";
+              newChat.dataset.itemId = chatId;
+              newChat.dataset.projectPath = selectedPath;
               newChat.dataset.chatId = chatId;
               newChat.innerHTML = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="chat-title">Nuevo chat</span>';
               
@@ -551,6 +682,7 @@ import ChatPanel from "../components/ChatPanel.astro";
                 window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: { projectPath: selectedPath, chatId } }));
                 selectChat(newChat);
               });
+              newChat.addEventListener("dblclick", () => renameSidebarItem(newChat));
 
               project.insertBefore(newChat, chatRow);
               project.classList.add("is-expanded");
@@ -597,6 +729,60 @@ import ChatPanel from "../components/ChatPanel.astro";
         if (createBtn) createBtn.click();
       });
 
+      projectsList?.addEventListener("keydown", async (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        if (target.classList.contains("project-input")) return;
+        const row = target.closest(".project-row, .chat-row");
+        if (!(row instanceof HTMLElement)) return;
+
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          focusSiblingTarget(row, 1);
+        }
+
+        if (event.key === "ArrowUp") {
+          event.preventDefault();
+          focusSiblingTarget(row, -1);
+        }
+
+        if (event.key === "ArrowRight") {
+          const project = row.closest(".project-card");
+          if (row.classList.contains("project-row") && project) {
+            event.preventDefault();
+            project.classList.add("is-expanded");
+          }
+        }
+
+        if (event.key === "ArrowLeft") {
+          const project = row.closest(".project-card");
+          if (row.classList.contains("project-row") && project) {
+            event.preventDefault();
+            project.classList.remove("is-expanded");
+          } else if (project) {
+            event.preventDefault();
+            focusSidebarTarget(project.querySelector(".project-row"));
+          }
+        }
+
+        if (event.key === "Enter") {
+          event.preventDefault();
+          row.click();
+        }
+
+        if (event.key === "Escape") {
+          event.preventDefault();
+          projectsList.querySelectorAll(".project-card").forEach((card) => card.classList.remove("is-selected"));
+          projectsList.querySelectorAll(".chat-row").forEach((item) => item.classList.remove("is-active"));
+          window.dispatchEvent(new CustomEvent("codeclub:open-blank"));
+        }
+
+        if (event.key === "Delete") {
+          event.preventDefault();
+          await deleteSidebarTarget(row);
+        }
+      });
+
       // Load existing projects on startup
       const loadProjects = async () => {
         try {
@@ -612,6 +798,9 @@ import ChatPanel from "../components/ChatPanel.astro";
               const projectRow = document.createElement("button");
               projectRow.className = "project-row";
               projectRow.type = "button";
+              projectRow.tabIndex = 0;
+              projectRow.dataset.kind = "project";
+              projectRow.dataset.projectPath = proj.path;
               projectRow.innerHTML =
                 '<svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>';
               let projectChats = [];
@@ -711,6 +900,10 @@ import ChatPanel from "../components/ChatPanel.astro";
                 const newChat = document.createElement("button");
                 newChat.className = "chat-row chat-item";
                 newChat.type = "button";
+                newChat.tabIndex = -1;
+                newChat.dataset.kind = "chat";
+                newChat.dataset.itemId = chatId;
+                newChat.dataset.projectPath = proj.path;
                 newChat.dataset.chatId = chatId;
                 newChat.innerHTML = `<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="chat-title">Nuevo chat</span>`;
                 
@@ -718,6 +911,7 @@ import ChatPanel from "../components/ChatPanel.astro";
                   window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: { projectPath: proj.path, chatId } }));
                   selectChat(newChat);
                 });
+                newChat.addEventListener("dblclick", () => renameSidebarItem(newChat));
 
                 project.insertBefore(newChat, chatRow);
                 project.classList.add("is-expanded");
@@ -737,6 +931,10 @@ import ChatPanel from "../components/ChatPanel.astro";
                 const existingChat = document.createElement("button");
                 existingChat.className = "chat-row chat-item";
                 existingChat.type = "button";
+                existingChat.tabIndex = -1;
+                existingChat.dataset.kind = "chat";
+                existingChat.dataset.itemId = chat.id;
+                existingChat.dataset.projectPath = proj.path;
                 existingChat.dataset.chatId = chat.id;
                 existingChat.innerHTML = `<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="chat-title">${chat.name || 'Nuevo chat'}</span>`;
                 
@@ -744,6 +942,7 @@ import ChatPanel from "../components/ChatPanel.astro";
                   window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: { projectPath: proj.path, chatId: chat.id } }));
                   selectChat(existingChat);
                 });
+                existingChat.addEventListener("dblclick", () => renameSidebarItem(existingChat));
                 project.append(existingChat);
               });
 
