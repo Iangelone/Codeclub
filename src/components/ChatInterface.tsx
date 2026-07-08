@@ -6,6 +6,41 @@ import ReactMarkdown from 'react-markdown';
 import { createTools } from '../lib/engine/tools';
 import { runStream } from '../lib/engine/run';
 
+const SPINNER_FRAMES = {
+  chat: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"],
+  table: ["⡀", "⡄", "⡆", "⡇", "⣇", "⣧", "⣷", "⣿", "⣷", "⣧", "⣇", "⡇", "⡆", "⡄", "⡀"],
+  note: ["⠤", "⠔", "⠒", "⠢", "⠤", "⠠", "⢀", "⡀", "⠄", "⠂", "⠐", "⠈"],
+  terminal: ["⡀", "⠄", "⠂", "⠁", "⠈", "⠐", "⠠", "⢀", "⠠", "⠐", "⠈", "⠁", "⠂", "⠄"]
+};
+
+const AnimatedBraille = ({ kind }: { kind: keyof typeof SPINNER_FRAMES }) => {
+  const [frame, setFrame] = useState(0);
+  const [isPaused, setIsPaused] = useState(true);
+  const spanRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    const btn = spanRef.current?.closest('button');
+    if (!btn) return;
+    const enter = () => setIsPaused(false);
+    const leave = () => setIsPaused(true);
+    btn.addEventListener('mouseenter', enter);
+    btn.addEventListener('mouseleave', leave);
+    return () => {
+      btn.removeEventListener('mouseenter', enter);
+      btn.removeEventListener('mouseleave', leave);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isPaused) return;
+    const frames = SPINNER_FRAMES[kind];
+    const timer = setInterval(() => setFrame((f) => (f + 1) % frames.length), 110);
+    return () => clearInterval(timer);
+  }, [kind, isPaused]);
+  
+  return <span ref={spanRef} className="font-mono text-[14px] leading-none text-[#2C2C2C]">{SPINNER_FRAMES[kind][frame]}</span>;
+};
+
 const compactJsonExported = (value) => {
   try {
     return JSON.stringify(value).slice(0, 260);
@@ -830,34 +865,33 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       };
 
       return (
-        <div style={{ width: 'min(300px, calc(100% - 64px))', display: 'flex', flexDirection: 'column', gap: '8px', color: '#d8d8d8', fontSize: '13px' }}>
+        <div className="flex flex-col gap-2 w-[min(300px,calc(100%-64px))] text-[#d8d8d8] text-[13px]">
           {(['chat', 'table', 'note'] as const).map((kind) => {
             const isExpanded = expandedMenu === kind;
             const items = projectMeta ? (projectMeta[kind === 'chat' ? 'chats' : `${kind}s`] || []) : [];
             const title = kind === 'chat' ? 'Chats' : kind === 'table' ? 'Tablas' : 'Notas';
             
             return (
-              <div key={kind} style={{ display: 'flex', flexDirection: 'column', background: '#121212', borderRadius: '8px', overflow: 'hidden' }}>
+              <div key={kind} className="flex flex-col bg-[var(--color-surface-1)] border border-[var(--color-surface-10)] rounded-xl overflow-hidden shadow-[0_4px_12px_rgba(0,0,0,0.2)]">
                 <button 
                   type="button" 
                   onClick={() => setExpandedMenu(isExpanded ? null : kind)}
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: isExpanded ? '#1a1a1a' : 'transparent', border: 'none', color: '#eeeeee', cursor: 'pointer', textAlign: 'left', width: '100%', transition: 'background 0.2s' }}
-                  onMouseEnter={e => { if (!isExpanded) e.currentTarget.style.background = '#161616'; }}
-                  onMouseLeave={e => { if (!isExpanded) e.currentTarget.style.background = 'transparent'; }}
+                  className={`flex items-center justify-between p-[12px_16px] border-0 text-[#eeeeee] cursor-pointer text-left w-full transition-colors duration-200 outline-none ${isExpanded ? 'bg-[var(--color-surface-4)]' : 'bg-transparent hover:bg-[var(--color-surface-3)]'}`}
                 >
-                  <span style={{ fontWeight: 500 }}>{title}</span>
-                  <span style={{ opacity: 0.4, fontSize: '11px' }}>{items.length}</span>
+                  <div className="flex items-center gap-3">
+                    <AnimatedBraille kind={kind} />
+                    <span className="font-medium">{title}</span>
+                  </div>
+                  <span className="opacity-40 text-[11px]">{items.length}</span>
                 </button>
                 {isExpanded && (
-                  <div style={{ display: 'flex', flexDirection: 'column', borderTop: '1px solid #1a1a1a', maxHeight: '250px', overflowY: 'auto', background: '#0e0e0e', scrollbarWidth: 'none' }}>
+                  <div className="flex flex-col border-t border-[var(--color-surface-10)] max-h-[250px] overflow-y-auto bg-[var(--color-surface-0)] [scrollbar-width:none]">
                     <button
                       type="button"
                       onClick={() => createNewArtifact(kind)}
-                      style={{ padding: '10px 16px', background: 'transparent', border: 'none', borderBottom: '1px solid #1a1a1a', color: '#a0a0a0', cursor: 'pointer', textAlign: 'left', width: '100%', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}
-                      onMouseEnter={e => e.currentTarget.style.color = '#eeeeee'}
-                      onMouseLeave={e => e.currentTarget.style.color = '#a0a0a0'}
+                      className="flex shrink-0 items-center gap-2 px-[16px] py-[10px] w-full bg-transparent border-0 border-b border-[var(--color-surface-8)] text-[#a0a0a0] cursor-pointer text-left text-xs transition-colors hover:text-[#eeeeee] hover:bg-[var(--color-surface-2)] outline-none"
                     >
-                      <span style={{ fontSize: '16px', lineHeight: 1 }}>+</span> Nuevo
+                      <span className="text-base leading-none">+</span> Nuevo
                     </button>
                     {items.map((item: any) => (
                       <button
@@ -879,9 +913,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
                             detail: { projectPath: activeProject.projectPath, [`${kind}Id`]: item.id, name: item.name }
                           }));
                         }}
-                        style={{ padding: '10px 16px', background: 'transparent', border: 'none', color: '#cfcfcf', cursor: 'pointer', textAlign: 'left', width: '100%', fontSize: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-                        onMouseEnter={e => e.currentTarget.style.background = '#1a1a1a'}
-                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                        className="block shrink-0 w-full px-[16px] py-[10px] bg-transparent border-0 text-[#cfcfcf] cursor-pointer text-left text-xs whitespace-nowrap overflow-hidden text-ellipsis transition-colors hover:bg-[var(--color-surface-4)] hover:text-[#ffffff] outline-none"
                       >
                         {item.name}
                       </button>
@@ -900,11 +932,12 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
                 detail: { toggle: true, anchorRect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height } }
               }));
             }}
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: '#121212', border: 'none', borderRadius: '8px', color: '#eeeeee', cursor: 'pointer', textAlign: 'left', width: '100%', transition: 'background 0.2s' }}
-            onMouseEnter={e => e.currentTarget.style.background = '#161616'}
-            onMouseLeave={e => e.currentTarget.style.background = '#121212'}
+            className="flex items-center justify-between p-[12px_16px] bg-[var(--color-surface-1)] hover:bg-[var(--color-surface-3)] border border-[var(--color-surface-10)] rounded-xl text-[#eeeeee] cursor-pointer text-left w-full transition-colors duration-200 outline-none shadow-[0_4px_12px_rgba(0,0,0,0.2)]"
           >
-            <span style={{ fontWeight: 500 }}>Terminal</span>
+            <div className="flex items-center gap-3">
+              <AnimatedBraille kind="terminal" />
+              <span className="font-medium">Terminal</span>
+            </div>
           </button>
         </div>
       );
