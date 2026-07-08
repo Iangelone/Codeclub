@@ -27,21 +27,28 @@ const getInitialSplit = (): number => {
 };
 
 export default function WorkspaceManager({ catalog, defaultProvider, defaultModel }) {
-  const [panelMode, setPanelMode] = useState<'single' | 'split'>(getInitialMode);
-  const [splitPercent, setSplitPercent] = useState(getInitialSplit);
+  const [panelMode, setPanelMode] = useState<'single' | 'split'>('single');
+  const [splitPercent, setSplitPercent] = useState(50);
   const [activePanel, setActivePanel] = useState<'left' | 'right'>('left');
+  const [mounted, setMounted] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isDragging = useRef(false);
 
+  useEffect(() => {
+    setPanelMode(getInitialMode());
+    setSplitPercent(getInitialSplit());
+    setMounted(true);
+  }, []);
+
   // Persist mode
   useEffect(() => {
-    localStorage.setItem(MODE_KEY, panelMode);
-  }, [panelMode]);
+    if (mounted) localStorage.setItem(MODE_KEY, panelMode);
+  }, [panelMode, mounted]);
 
   // Persist split
   useEffect(() => {
-    localStorage.setItem(SPLIT_KEY, String(splitPercent));
-  }, [splitPercent]);
+    if (mounted) localStorage.setItem(SPLIT_KEY, String(splitPercent));
+  }, [splitPercent, mounted]);
 
   // Listen for panel mode events from topbar
   useEffect(() => {
@@ -93,14 +100,49 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
     };
   }, []);
 
+  const leftStateRef = useRef<string | 'blank'>('blank');
+  const rightStateRef = useRef<string | 'blank'>('blank');
+
+  useEffect(() => {
+    const trackEvent = (panel: 'left' | 'right') => (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      const id = detail?.chatId || detail?.noteId || detail?.tableId;
+      const kind = e.type.split(':open-')[1];
+      const key = id ? `${kind}:${id}` : 'blank';
+      if (panel === 'left') leftStateRef.current = key;
+      else rightStateRef.current = key;
+    };
+    const names = ['chat', 'note', 'table', 'blank'];
+    const listeners = names.flatMap(kind => [
+      { name: `codeclub:panel-left:open-${kind}`, handler: trackEvent('left') },
+      { name: `codeclub:panel-right:open-${kind}`, handler: trackEvent('right') },
+    ]);
+    listeners.forEach(({ name, handler }) => window.addEventListener(name, handler));
+    return () => listeners.forEach(({ name, handler }) => window.removeEventListener(name, handler));
+  }, []);
+
   // Intercept sidebar events and route to active panel
   useEffect(() => {
     const routeEvent = (originalName: string) => (e: Event) => {
       const detail = (e as CustomEvent).detail;
-      const target = activePanel === 'left' ? 'left' : 'right';
+      const id = detail?.chatId || detail?.noteId || detail?.tableId;
+      const kind = originalName.replace('open-', '');
+      const key = id ? `${kind}:${id}` : 'blank';
+
+      let finalTarget = activePanel === 'left' ? 'left' : 'right';
+
+      if (key !== 'blank') {
+        if (leftStateRef.current === key) {
+          setActivePanel('left');
+          finalTarget = 'left';
+        } else if (rightStateRef.current === key && panelMode === 'split') {
+          setActivePanel('right');
+          finalTarget = 'right';
+        }
+      }
 
       // In single mode, always route to left
-      const panelTarget = panelMode === 'single' ? 'left' : target;
+      const panelTarget = panelMode === 'single' ? 'left' : finalTarget;
 
       window.dispatchEvent(new CustomEvent(`codeclub:panel-${panelTarget}:${originalName}`, {
         detail,

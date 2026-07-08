@@ -65,6 +65,9 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [commandKind, setCommandKind] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCommandIndex, setActiveCommandIndex] = useState(0);
+  const [activeProject, setActiveProject] = useState<{projectPath: string, name: string} | null>(null);
+  const [projectMeta, setProjectMeta] = useState<{chats: any[], notes: any[], tables: any[]} | null>(null);
+  const [expandedMenu, setExpandedMenu] = useState<'chat' | 'note' | 'table' | null>(null);
   const [activeChat, setActiveChat] = useState<{chatId: string, projectPath: string} | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState('blank');
   const [activeNote, setActiveNote] = useState<{noteId: string, projectPath: string, name?: string} | null>(null);
@@ -118,6 +121,45 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     window.addEventListener(eventName, handleOpenChat);
     return () => window.removeEventListener(eventName, handleOpenChat);
   }, [eventPrefix]);
+
+  useEffect(() => {
+    const handleActiveProject = (e: any) => {
+      setActiveProject(e.detail);
+      setWorkspaceMode('blank');
+      setExpandedMenu(null);
+    };
+    window.addEventListener('codeclub:active-project', handleActiveProject);
+
+    // Fallback para cuando el panel se monta después del evento (ej. split mode o recarga)
+    const selectedProject = document.querySelector<HTMLElement>('.project-card.is-selected');
+    if (selectedProject) {
+      const projectPath = selectedProject.dataset.path;
+      const name = selectedProject.querySelector('.project-row span')?.textContent || 'Proyecto';
+      if (projectPath) setActiveProject({ projectPath, name });
+    }
+
+    return () => window.removeEventListener('codeclub:active-project', handleActiveProject);
+  }, []);
+
+  useEffect(() => {
+    if (workspaceMode === 'blank' && activeProject) {
+      const loadMeta = async () => {
+        try {
+          const { readTextFile, exists } = await import('@tauri-apps/plugin-fs');
+          const path = `${activeProject.projectPath}/.codeclub/meta.json`;
+          if (await exists(path)) {
+            setProjectMeta(JSON.parse(await readTextFile(path)));
+          } else {
+            setProjectMeta(null);
+          }
+        } catch (e) {
+          console.error(e);
+          setProjectMeta(null);
+        }
+      };
+      loadMeta();
+    }
+  }, [workspaceMode, activeProject]);
 
   useEffect(() => {
     const handleOpenBlank = () => {
@@ -749,9 +791,117 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   };
 
   if (workspaceMode === 'blank') {
+    if (activeProject) {
+      const createNewArtifact = async (kind: 'chat' | 'note' | 'table') => {
+        const id = Date.now().toString();
+        const name = kind === 'chat' ? 'Nuevo chat' : kind === 'note' ? 'Nueva nota' : 'Nueva tabla';
+        const collection = kind === 'chat' ? 'chats' : `${kind}s`;
+        try {
+          const { readTextFile, writeTextFile, exists, mkdir } = await import('@tauri-apps/plugin-fs');
+          const metaPath = `${activeProject.projectPath}/.codeclub/meta.json`;
+          let metaData: any = { chats: [], notes: [], tables: [] };
+          if (await exists(metaPath)) {
+            metaData = JSON.parse(await readTextFile(metaPath));
+          } else {
+            await mkdir(`${activeProject.projectPath}/.codeclub`, { recursive: true });
+          }
+          if (!Array.isArray(metaData[collection])) metaData[collection] = [];
+          metaData[collection].push({ id, name });
+          await writeTextFile(metaPath, JSON.stringify(metaData));
+          
+          if (kind === 'chat') {
+            await mkdir(`${activeProject.projectPath}/.codeclub/chats`, { recursive: true });
+          } else if (kind === 'note') {
+            await mkdir(`${activeProject.projectPath}/.codeclub/notes`, { recursive: true });
+            await writeTextFile(`${activeProject.projectPath}/.codeclub/notes/${id}.md`, '');
+          } else if (kind === 'table') {
+            await mkdir(`${activeProject.projectPath}/.codeclub/tables`, { recursive: true });
+            await writeTextFile(`${activeProject.projectPath}/.codeclub/tables/${id}.json`, JSON.stringify(Array.from({ length: 8 }, () => Array.from({ length: 5 }, () => ""))));
+          }
+          
+          window.dispatchEvent(new CustomEvent(`codeclub:panel-${panelId}:open-${kind}`, {
+            detail: { projectPath: activeProject.projectPath, [`${kind}Id`]: id, name }
+          }));
+          
+          setProjectMeta(metaData);
+        } catch (e) {
+          console.error(e);
+        }
+      };
+
+      return (
+        <div style={{ width: 'min(300px, calc(100% - 64px))', display: 'flex', flexDirection: 'column', gap: '8px', color: '#d8d8d8', fontSize: '13px' }}>
+          {(['chat', 'table', 'note'] as const).map((kind) => {
+            const isExpanded = expandedMenu === kind;
+            const items = projectMeta ? (projectMeta[kind === 'chat' ? 'chats' : `${kind}s`] || []) : [];
+            const title = kind === 'chat' ? 'Chats' : kind === 'table' ? 'Tablas' : 'Notas';
+            
+            return (
+              <div key={kind} style={{ display: 'flex', flexDirection: 'column', background: '#121212', borderRadius: '8px', overflow: 'hidden' }}>
+                <button 
+                  type="button" 
+                  onClick={() => setExpandedMenu(isExpanded ? null : kind)}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: isExpanded ? '#1a1a1a' : 'transparent', border: 'none', color: '#eeeeee', cursor: 'pointer', textAlign: 'left', width: '100%', transition: 'background 0.2s' }}
+                  onMouseEnter={e => { if (!isExpanded) e.currentTarget.style.background = '#161616'; }}
+                  onMouseLeave={e => { if (!isExpanded) e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <span style={{ fontWeight: 500 }}>{title}</span>
+                  <span style={{ opacity: 0.4, fontSize: '11px' }}>{items.length}</span>
+                </button>
+                {isExpanded && (
+                  <div style={{ display: 'flex', flexDirection: 'column', borderTop: '1px solid #1a1a1a', maxHeight: '250px', overflowY: 'auto', background: '#0e0e0e', scrollbarWidth: 'none' }}>
+                    <button
+                      type="button"
+                      onClick={() => createNewArtifact(kind)}
+                      style={{ padding: '10px 16px', background: 'transparent', border: 'none', borderBottom: '1px solid #1a1a1a', color: '#a0a0a0', cursor: 'pointer', textAlign: 'left', width: '100%', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}
+                      onMouseEnter={e => e.currentTarget.style.color = '#eeeeee'}
+                      onMouseLeave={e => e.currentTarget.style.color = '#a0a0a0'}
+                    >
+                      <span style={{ fontSize: '16px', lineHeight: 1 }}>+</span> Nuevo
+                    </button>
+                    {items.map((item: any) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          window.dispatchEvent(new CustomEvent(`codeclub:open-${kind}`, {
+                            detail: { projectPath: activeProject.projectPath, [`${kind}Id`]: item.id, name: item.name }
+                          }));
+                        }}
+                        style={{ padding: '10px 16px', background: 'transparent', border: 'none', color: '#cfcfcf', cursor: 'pointer', textAlign: 'left', width: '100%', fontSize: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                        onMouseEnter={e => e.currentTarget.style.background = '#1a1a1a'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        {item.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          
+          <button 
+            type="button" 
+            onClick={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              window.dispatchEvent(new CustomEvent('codeclub:open-terminal-dock', {
+                detail: { toggle: true, anchorRect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height } }
+              }));
+            }}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: '#121212', border: 'none', borderRadius: '8px', color: '#eeeeee', cursor: 'pointer', textAlign: 'left', width: '100%', transition: 'background 0.2s' }}
+            onMouseEnter={e => e.currentTarget.style.background = '#161616'}
+            onMouseLeave={e => e.currentTarget.style.background = '#121212'}
+          >
+            <span style={{ fontWeight: 500 }}>Terminal</span>
+          </button>
+        </div>
+      );
+    }
+
     return (
       <div style={{ width: 'min(600px, calc(100% - 64px))', display: 'grid', placeItems: 'center', color: 'rgba(216, 216, 216, 0.42)', fontSize: '13px' }}>
-        Seleccioná un chat, nota o tabla
+        Seleccioná un proyecto
       </div>
     );
   }

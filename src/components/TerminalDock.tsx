@@ -110,6 +110,7 @@ const getInitialHeight = () => {
 };
 
 export default function TerminalDock() {
+  const [mounted, setMounted] = useState(false);
   const [terminals, setTerminals] = useState<TerminalInfo[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
@@ -182,6 +183,10 @@ export default function TerminalDock() {
       startPosY: position.y,
     };
   };
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -517,7 +522,7 @@ export default function TerminalDock() {
     }
   };
 
-  if (typeof document === 'undefined') return null;
+  if (!mounted || typeof document === 'undefined') return null;
   return createPortal(
     <>
       {isOpen && <div className="terminal-floating-backdrop" onClick={() => setIsOpen(false)} />}
