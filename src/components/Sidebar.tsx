@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { exists, readTextFile, writeTextFile, remove, readDir } from "@tauri-apps/plugin-fs";
 import { open } from "@tauri-apps/plugin-dialog";
 import { logPersistence } from "../lib/persistence";
@@ -18,7 +19,8 @@ import {
   Settings,
   MessageSquarePlus,
   Table as TableIconReact,
-  FileText
+  FileText,
+  MousePointer2
 } from "lucide-react";
 
 // --- Types ---
@@ -344,17 +346,7 @@ export default function Sidebar() {
                         onCommit={handleRenameCommit} onOpen={openArtifact} onDelete={handleDelete} onDragStart={onDragStart} />
                     ))}
 
-                    <div className="grid gap-[2px] mt-2 mb-1 border-t border-white/5 pt-2 ml-[12px] group-[.is-expanded]/card:grid hidden">
-                      <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/2 focus-visible:bg-[var(--color-surface-7)] focus-visible:outline-none text-[#d8d8d8]/50 hover:text-[#d8d8d8] transition-colors bg-transparent border-0 appearance-none" onClick={() => handleCreateArtifact(proj.path, proj.name, "chat")}>
-                        <MessageSquarePlus size={13} /><span>Nuevo chat</span>
-                      </button>
-                      <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/2 focus-visible:bg-[var(--color-surface-7)] focus-visible:outline-none text-[#d8d8d8]/50 hover:text-[#d8d8d8] transition-colors bg-transparent border-0 appearance-none" onClick={() => handleCreateArtifact(proj.path, proj.name, "table")}>
-                        <TableIconReact size={13} /><span>Nueva tabla</span>
-                      </button>
-                      <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/2 focus-visible:bg-[var(--color-surface-7)] focus-visible:outline-none text-[#d8d8d8]/50 hover:text-[#d8d8d8] transition-colors bg-transparent border-0 appearance-none" onClick={() => handleCreateArtifact(proj.path, proj.name, "note")}>
-                        <FileText size={13} /><span>Nueva nota</span>
-                      </button>
-                    </div>
+                    <CreateArtifactMenu projPath={proj.path} projName={proj.name} onCreate={handleCreateArtifact} />
                   </>
                 )}
               </div>
@@ -410,5 +402,58 @@ function ArtifactNode({
         <span>{item.name}</span>
       )}
     </button>
+  );
+}
+
+function CreateArtifactMenu({ projPath, projName, onCreate }: any) {
+  const [isOpen, setIsOpen] = useState(false);
+  const timeoutRef = useRef<any>(null);
+  const buttonRef = useRef<any>(null);
+  const [coords, setCoords] = useState({ top: 0, left: 0 });
+
+  const handleEnter = () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if (buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      setCoords({ top: rect.top - 8, left: rect.right + 8 });
+    }
+    setIsOpen(true);
+  };
+  const handleLeave = () => {
+    timeoutRef.current = setTimeout(() => setIsOpen(false), 150);
+  };
+  const handleClick = (kind: string) => {
+    setIsOpen(false);
+    onCreate(projPath, projName, kind);
+  };
+
+  const menu = typeof document !== "undefined" ? createPortal(
+    <div 
+      className={`fixed z-[100] min-w-[160px] flex flex-col gap-[3px] p-2 border border-[var(--color-surface-10)] rounded-lg bg-[rgba(18,18,18,0.96)] shadow-[0_18px_54px_rgba(0,0,0,0.38)] transition duration-150 origin-left ${isOpen ? 'opacity-100 scale-100 pointer-events-auto' : 'opacity-0 scale-95 pointer-events-none'}`}
+      style={{ top: coords.top, left: coords.left }}
+      onMouseEnter={handleEnter} 
+      onMouseLeave={handleLeave}
+    >
+      <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={(e) => { e.stopPropagation(); handleClick("chat"); }}>
+        <MessageSquarePlus size={13} /><span>Nuevo chat</span>
+      </button>
+      <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={(e) => { e.stopPropagation(); handleClick("table"); }}>
+        <TableIconReact size={13} /><span>Nueva tabla</span>
+      </button>
+      <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={(e) => { e.stopPropagation(); handleClick("note"); }}>
+        <FileText size={13} /><span>Nueva nota</span>
+      </button>
+    </div>,
+    document.body
+  ) : null;
+
+  return (
+    <div className="mt-2 mb-1 border-t border-white/5 pt-2 ml-[12px] group-[.is-expanded]/card:block hidden" onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
+      <button ref={buttonRef} className="min-h-[28px] w-full flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer text-[#d8d8d8]/50 hover:text-[#d8d8d8] hover:bg-white/2 transition-colors bg-transparent border-0 appearance-none">
+        <MousePointer2 size={13} />
+        <span>Crear nuevo...</span>
+      </button>
+      {menu}
+    </div>
   );
 }
