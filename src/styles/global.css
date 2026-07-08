@@ -82,7 +82,7 @@ body::before {
   z-index: 10;
 }
 
-.left-panel.is-open {
+body.has-sidebar .left-panel {
   transform: translateX(0);
 }
 
