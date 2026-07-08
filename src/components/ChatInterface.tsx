@@ -863,6 +863,17 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
                       <button
                         key={item.id}
                         type="button"
+                        draggable
+                        onDragStart={(e) => {
+                          document.body.classList.add("is-dragging-artifact");
+                          e.dataTransfer.effectAllowed = "move";
+                          const payload = JSON.stringify({ kind, id: item.id, name: item.name, projectPath: activeProject.projectPath });
+                          e.dataTransfer.setData("text/plain", payload);
+                          e.dataTransfer.setData("application/json", payload);
+                        }}
+                        onDragEnd={() => {
+                          document.body.classList.remove("is-dragging-artifact");
+                        }}
                         onClick={() => {
                           window.dispatchEvent(new CustomEvent(`codeclub:open-${kind}`, {
                             detail: { projectPath: activeProject.projectPath, [`${kind}Id`]: item.id, name: item.name }

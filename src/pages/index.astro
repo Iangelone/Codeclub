@@ -1,31 +1,7 @@
 ---
-import {
-  ArrowLeft,
-  ArrowRight,
-  Bug,
-  Columns2,
-  FolderPlus,
-  Command,
-  Eye,
-  FilePlus,
-  Folder,
-  FolderOpen,
-  HelpCircle,
-  Keyboard,
-  LayoutDashboard,
-  Minus,
-  Package,
-  PiggyBank,
-  PanelLeft,
-  Search,
-  Save,
-  Scissors,
-  Settings,
-  Square,
-  Terminal,
-  Undo2,
-  X,
-} from "lucide-astro";
+import "../styles/global.css";
+import Topbar from "../components/Topbar.astro";
+import Sidebar from "../components/Sidebar.astro";
 import ChatPanel from "../components/ChatPanel.astro";
 ---
 
@@ -47,112 +23,16 @@ import ChatPanel from "../components/ChatPanel.astro";
     </script>
   </head>
   <body class="has-sidebar">
-    <header class="topbar">
-      <div class="topbar-left">
-        <button class="tool-button" type="button" aria-label="Toggle sidebar">
-          <PanelLeft size={15} strokeWidth={1.8} />
-        </button>
-        <button class="tool-button" type="button" aria-label="Back">
-          <ArrowLeft size={15} strokeWidth={1.8} />
-        </button>
-        <button class="tool-button" type="button" aria-label="Forward">
-          <ArrowRight size={15} strokeWidth={1.8} />
-        </button>
-        <nav class="app-menu" aria-label="Application menu">
-          <div class="menu-group">
-            <button type="button">Archivo</button>
-            <div class="dropdown-menu">
-              <a href="#"><FilePlus size={14} /> Nuevo archivo</a>
-              <a href="#"><FolderOpen size={14} /> Abrir carpeta</a>
-              <a href="#"><Save size={14} /> Guardar</a>
-              <a href="#"><Command size={14} /> Exportar</a>
-            </div>
-          </div>
-          <div class="menu-group">
-            <button type="button">Editar</button>
-            <div class="dropdown-menu">
-              <a href="#"><Undo2 size={14} /> Deshacer</a>
-              <a href="#"><ArrowRight size={14} /> Rehacer</a>
-              <a href="#"><Scissors size={14} /> Cortar</a>
-              <a href="#"><Settings size={14} /> Preferencias</a>
-            </div>
-          </div>
-          <div class="menu-group">
-            <button type="button">Ver</button>
-            <div class="dropdown-menu">
-              <a href="#"><PanelLeft size={14} /> Panel lateral</a>
-              <a href="#" data-action="toggle-terminal"><Terminal size={14} /> Terminal</a>
-              <a href="#"><Square size={14} /> Pantalla completa</a>
-              <a href="#"><Eye size={14} /> Apariencia</a>
-            </div>
-          </div>
-          <div class="menu-group help-group">
-            <button type="button">Ayuda</button>
-            <div class="dropdown-menu">
-              <a href="#"><HelpCircle size={14} /> Documentación</a>
-              <a href="#"><Keyboard size={14} /> Atajos</a>
-              <a href="#"><Bug size={14} /> Reportar problema</a>
-              <a href="https://ko-fi.com/codeclubide" target="_blank" rel="noreferrer">
-                <PiggyBank size={14} /> Donación
-              </a>
-            </div>
-          </div>
-        </nav>
-      </div>
-      <div class="drag-area" data-tauri-drag-region></div>
-      <nav class="topbar-workspace-controls" aria-label="Workspace controls">
-        <button id="panel-single" class="workspace-ctrl is-active" type="button" aria-label="Panel simple">
-          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
-        </button>
-        <button id="panel-split" class="workspace-ctrl" type="button" aria-label="Panel doble">
-          <Columns2 size={14} strokeWidth={1.8} />
-        </button>
-        <button id="topbar-terminal" class="workspace-ctrl" type="button" aria-label="Terminal" data-action="toggle-terminal">
-          <Terminal size={14} strokeWidth={1.8} />
-        </button>
-      </nav>
-      <nav class="window-controls" aria-label="Window controls">
-        <button id="minimize" type="button" aria-label="Minimize">
-          <Minus size={14} strokeWidth={1.8} />
-        </button>
-        <button id="maximize" type="button" aria-label="Maximize">
-          <Square size={12} strokeWidth={1.8} />
-        </button>
-        <button id="close" class="close" type="button" aria-label="Close">
-          <X size={14} strokeWidth={1.8} />
-        </button>
-      </nav>
-    </header>
-    <aside class="left-panel" aria-label="Sidebar">
-      <section class="panel-actions">
-        <div class="sidebar-label"><LayoutDashboard size={14} /> Espacio de trabajo</div>
-        <button type="button">
-          <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 3H5a2 2 0 0 0-2 2v14l4-4h12a2 2 0 0 0 2-2v-1"></path>
-            <path d="M19 3v6"></path>
-            <path d="M16 6h6"></path>
-          </svg>
-          Nuevo chat
-        </button>
-        <button type="button"><Search size={15} /> Buscar</button>
-        <button type="button"><Package size={15} /> Complementos</button>
-      </section>
-      <section class="projects-section">
-        <div class="section-heading">
-          <span class="heading-title"><Folder size={14} /> Proyectos</span>
-          <button id="create-project" type="button" aria-label="Crear proyecto"><FolderPlus size={14} /></button>
-        </div>
-        <div class="projects-list" aria-label="Lista de proyectos"></div>
-      </section>
-      <section class="sidebar-footer">
-        <button type="button"><Settings size={15} /> Ajustes</button>
-      </section>
-    </aside>
+    <Topbar />
+    <Sidebar />
     <main class="workspace" aria-label="Workspace">
       <ChatPanel />
     </main>
 
     <script>
+      import { logPersistence, startPersistenceSession, getAppDataFilePath } from "../lib/persistence.ts";
+      import { ensureProjectMeta, saveProjectIndex, writeProjectIndex, readProjectIndex } from "../lib/projectManager.ts";
+
       const initCodeclubApp = async () => {
       const { getCurrentWindow } = await import("@tauri-apps/api/window");
       const appWindow = getCurrentWindow();
@@ -163,47 +43,7 @@ import ChatPanel from "../components/ChatPanel.astro";
       const PROJECTS_INDEX = "projects.json";
       const PROJECTS_BACKUP_INDEX = "projects.backup.json";
       const PERSISTENCE_LOG = "persistence-log.jsonl";
-
-      const getAppDataFilePath = async (fileName) => {
-        const { join, appLocalDataDir } = await import("@tauri-apps/api/path");
-        return join(await appLocalDataDir(), fileName);
-      };
-
-      const logPersistence = async (action, status, detail = {}) => {
-        const entry = {
-          at: new Date().toISOString(),
-          action,
-          status,
-          ...detail,
-        };
-
-        console.info("[codeclub:persist]", entry);
-
-        try {
-          const { readTextFile, writeTextFile, mkdir, exists } = await import("@tauri-apps/plugin-fs");
-          const { appLocalDataDir } = await import("@tauri-apps/api/path");
-          const logPath = await getAppDataFilePath(PERSISTENCE_LOG);
-          await mkdir(await appLocalDataDir(), { recursive: true });
-          const previous = (await exists(logPath)) ? await readTextFile(logPath) : "";
-          await writeTextFile(logPath, `${previous}${JSON.stringify(entry)}\n`);
-        } catch (error) {
-          console.error("[codeclub:persist] log failed", error);
-        }
-      };
-
-      const startPersistenceSession = async () => {
-        try {
-          const { writeTextFile, mkdir } = await import("@tauri-apps/plugin-fs");
-          const { appLocalDataDir } = await import("@tauri-apps/api/path");
-          const logPath = await getAppDataFilePath(PERSISTENCE_LOG);
-          await mkdir(await appLocalDataDir(), { recursive: true });
-          await writeTextFile(logPath, "");
-        } catch (error) {
-          console.error("[codeclub:persist] session reset failed", error);
-        }
-
-        await logPersistence("app_start", "ok");
-      };
+      // Persistencia migrada a src/lib/persistence.ts};
 
       await startPersistenceSession();
       await logPersistence("dom_ready", projectsList ? "ok" : "error", {
@@ -241,137 +81,52 @@ import ChatPanel from "../components/ChatPanel.astro";
         const index = Math.max(0, targets.indexOf(target));
         focusSidebarTarget(targets[Math.min(targets.length - 1, Math.max(0, index + direction))]);
       };
-
-      const ensureProjectMeta = async (projectPath, name) => {
-        const { mkdir, exists, writeTextFile, readTextFile } = await import("@tauri-apps/plugin-fs");
-        const codeclubPath = `${projectPath}/.codeclub`;
-        const chatsPath = `${codeclubPath}/chats`;
-        const notesPath = `${codeclubPath}/notes`;
-        const tablesPath = `${codeclubPath}/tables`;
-        const metaPath = `${codeclubPath}/meta.json`;
-
-        await mkdir(chatsPath, { recursive: true });
-        await mkdir(notesPath, { recursive: true });
-        await mkdir(tablesPath, { recursive: true });
-
-        let metaData = {};
-        if (await exists(metaPath)) {
-          try {
-            metaData = JSON.parse(await readTextFile(metaPath));
-          } catch {
-            metaData = {};
-          }
-        }
-
-        await writeTextFile(
-          metaPath,
-          JSON.stringify({
-            ...metaData,
-            name,
-            path: projectPath,
-            created_at: metaData.created_at || new Date().toISOString(),
-            chats: Array.isArray(metaData.chats) ? metaData.chats : [],
-            notes: Array.isArray(metaData.notes) ? metaData.notes : [],
-            tables: Array.isArray(metaData.tables) ? metaData.tables : [],
-          }),
-        );
-        await logPersistence("save_project_meta", "ok", { name, projectPath, path: metaPath });
-      };
-
-      const saveProjectIndex = async (name, projectPath) => {
-        const { readTextFile, writeTextFile, mkdir, exists, BaseDirectory } = await import("@tauri-apps/plugin-fs");
-        const { appLocalDataDir } = await import("@tauri-apps/api/path");
-        let globalProjects = [];
-
-        await mkdir(await appLocalDataDir(), { recursive: true });
-
-        if (await exists(PROJECTS_INDEX, { baseDir: BaseDirectory.AppLocalData })) {
-          const data = await readTextFile(PROJECTS_INDEX, { baseDir: BaseDirectory.AppLocalData });
-          if (data) globalProjects = JSON.parse(data);
-        }
-
-        const existingProject = globalProjects.find((project) => project.path === projectPath);
-        if (existingProject) {
-          existingProject.name = name;
-        } else {
-          globalProjects.push({ name, path: projectPath });
-        }
-
-        const payload = JSON.stringify(globalProjects);
-        const absoluteIndexPath = await getAppDataFilePath(PROJECTS_INDEX);
-        const absoluteBackupPath = await getAppDataFilePath(PROJECTS_BACKUP_INDEX);
-        await writeTextFile(PROJECTS_INDEX, payload, { baseDir: BaseDirectory.AppLocalData });
-        await writeTextFile(absoluteBackupPath, payload);
-        await logPersistence("save_project_index", "ok", {
-          name,
-          projectPath,
-          count: globalProjects.length,
-          paths: [absoluteIndexPath, absoluteBackupPath],
-        });
-      };
-
-      const writeProjectIndex = async (projects) => {
-        const { writeTextFile, mkdir, BaseDirectory } = await import("@tauri-apps/plugin-fs");
-        const { appLocalDataDir } = await import("@tauri-apps/api/path");
-        await mkdir(await appLocalDataDir(), { recursive: true });
-        const payload = JSON.stringify(projects);
-        await writeTextFile(PROJECTS_INDEX, payload, { baseDir: BaseDirectory.AppLocalData });
-        await writeTextFile(await getAppDataFilePath(PROJECTS_BACKUP_INDEX), payload);
-      };
-
-      const readProjectIndex = async () => {
-        const { readTextFile, exists, BaseDirectory } = await import("@tauri-apps/plugin-fs");
-        const candidates = [
-          { label: "AppLocalData", path: PROJECTS_INDEX, options: { baseDir: BaseDirectory.AppLocalData } },
-          { label: "absolute", path: await getAppDataFilePath(PROJECTS_INDEX) },
-          { label: "backup", path: await getAppDataFilePath(PROJECTS_BACKUP_INDEX) },
-        ];
-
-        for (const candidate of candidates) {
-          try {
-            if (await exists(candidate.path, candidate.options)) {
-              const data = await readTextFile(candidate.path, candidate.options);
-              const projects = data ? JSON.parse(data) : [];
-              await logPersistence("read_project_index", "ok", {
-                source: candidate.label,
-                path: candidate.path,
-                count: projects.length,
-              });
-              return projects;
-            }
-            await logPersistence("read_project_index", "missing", {
-              source: candidate.label,
-              path: candidate.path,
-            });
-          } catch (error) {
-            await logPersistence("read_project_index", "error", {
-              source: candidate.label,
-              path: candidate.path,
-              error: error?.message || String(error),
-            });
-          }
-        }
-
-        return [];
-      };
+      // Project Manager migrado a src/lib/projectManager.ts};
 
       const createArtifactRow = (kind, artifact, projectPath) => {
         const row = document.createElement("button");
-        row.className = `chat-row ${kind}-item`;
+        row.className = kind === "chat" ? "chat-row chat-item" : `chat-row ${kind}-item`;
         row.type = "button";
         row.tabIndex = -1;
+        row.draggable = true;
         row.dataset.kind = kind;
         row.dataset.itemId = artifact.id;
         row.dataset.projectPath = projectPath;
         row.dataset[`${kind}Id`] = artifact.id;
-        const icon = kind === "note"
-          ? '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3h12l4 4v14H4z"/><path d="M16 3v5h5"/><path d="M8 13h8"/><path d="M8 17h6"/></svg>'
-          : '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M4 10h16"/><path d="M10 3v18"/><path d="M15 10v11"/></svg>';
+
+        row.addEventListener("dragstart", (e) => {
+          document.body.classList.add("is-dragging-artifact");
+          if (e.dataTransfer) {
+            e.dataTransfer.effectAllowed = "move";
+            const payload = JSON.stringify({ kind, id: artifact.id, name: artifact.name, projectPath });
+            e.dataTransfer.setData("text/plain", payload);
+            e.dataTransfer.setData("application/json", payload);
+            
+            const preview = document.createElement("div");
+            preview.className = "drag-preview";
+            preview.textContent = artifact.name || "Nuevo elemento";
+            document.body.appendChild(preview);
+            e.dataTransfer.setDragImage(preview, 0, 0);
+            setTimeout(() => preview.remove(), 0);
+          }
+        });
+
+        row.addEventListener("dragend", () => {
+          document.body.classList.remove("is-dragging-artifact");
+        });
+
+        let icon = "";
+        if (kind === "note") {
+          icon = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3h12l4 4v14H4z"/><path d="M16 3v5h5"/><path d="M8 13h8"/><path d="M8 17h6"/></svg>';
+        } else if (kind === "chat") {
+          icon = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+        } else {
+          icon = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M4 10h16"/><path d="M10 3v18"/><path d="M15 10v11"/></svg>';
+        }
+        
         row.innerHTML = `${icon}<span class="chat-title">${artifact.name}</span>`;
         row.addEventListener("click", () => {
-          const detail = kind === "note"
-            ? { projectPath, noteId: artifact.id, name: artifact.name }
-            : { projectPath, tableId: artifact.id, name: artifact.name };
+          const detail = { projectPath, [`${kind}Id`]: artifact.id, name: artifact.name };
           window.dispatchEvent(new CustomEvent(`codeclub:open-${kind}`, { detail }));
           selectChat(row);
         });
@@ -711,21 +466,7 @@ import ChatPanel from "../components/ChatPanel.astro";
                 });
               }
 
-              const newChat = document.createElement("button");
-              newChat.className = "chat-row chat-item";
-              newChat.type = "button";
-              newChat.tabIndex = -1;
-              newChat.dataset.kind = "chat";
-              newChat.dataset.itemId = chatId;
-              newChat.dataset.projectPath = selectedPath;
-              newChat.dataset.chatId = chatId;
-              newChat.innerHTML = '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="chat-title">Nuevo chat</span>';
-              
-              newChat.addEventListener("click", () => {
-                window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: { projectPath: selectedPath, chatId } }));
-                selectChat(newChat);
-              });
-              newChat.addEventListener("dblclick", () => renameSidebarItem(newChat));
+              const newChat = createArtifactRow("chat", { id: chatId, name: "Nuevo chat" }, selectedPath);
 
               project.insertBefore(newChat, chatRow);
               project.classList.add("is-expanded");
@@ -940,21 +681,7 @@ import ChatPanel from "../components/ChatPanel.astro";
                   });
                 }
 
-                const newChat = document.createElement("button");
-                newChat.className = "chat-row chat-item";
-                newChat.type = "button";
-                newChat.tabIndex = -1;
-                newChat.dataset.kind = "chat";
-                newChat.dataset.itemId = chatId;
-                newChat.dataset.projectPath = proj.path;
-                newChat.dataset.chatId = chatId;
-                newChat.innerHTML = `<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="chat-title">Nuevo chat</span>`;
-                
-                newChat.addEventListener("click", () => {
-                  window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: { projectPath: proj.path, chatId } }));
-                  selectChat(newChat);
-                });
-                newChat.addEventListener("dblclick", () => renameSidebarItem(newChat));
+                const newChat = createArtifactRow("chat", { id: chatId, name: "Nuevo chat" }, proj.path);
 
                 project.insertBefore(newChat, chatRow);
                 project.classList.add("is-expanded");
@@ -971,21 +698,7 @@ import ChatPanel from "../components/ChatPanel.astro";
               project.append(projectRow);
 
               projectChats.forEach(chat => {
-                const existingChat = document.createElement("button");
-                existingChat.className = "chat-row chat-item";
-                existingChat.type = "button";
-                existingChat.tabIndex = -1;
-                existingChat.dataset.kind = "chat";
-                existingChat.dataset.itemId = chat.id;
-                existingChat.dataset.projectPath = proj.path;
-                existingChat.dataset.chatId = chat.id;
-                existingChat.innerHTML = `<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="chat-title">${chat.name || 'Nuevo chat'}</span>`;
-                
-                existingChat.addEventListener("click", () => {
-                  window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: { projectPath: proj.path, chatId: chat.id } }));
-                  selectChat(existingChat);
-                });
-                existingChat.addEventListener("dblclick", () => renameSidebarItem(existingChat));
+                const existingChat = createArtifactRow("chat", { id: chat.id, name: chat.name || 'Nuevo chat' }, proj.path);
                 project.append(existingChat);
               });
 
@@ -1127,582 +840,3 @@ import ChatPanel from "../components/ChatPanel.astro";
   </body>
 </html>
 
-<style>
-  :root {
-    --color-bg: #111111;
-    --color-surface-0: #101010;
-    --color-surface-1: #121212;
-    --color-surface-2: #161616;
-    --color-surface-3: #191919;
-    --color-surface-4: #1a1a1a;
-    --color-surface-5: #1c1c1c;
-    --color-surface-6: #1e1e1e;
-    --color-surface-7: #202020;
-    --color-surface-8: #2b2b2b;
-    --color-surface-9: #2c2c2c;
-    --color-surface-10: #2f2f2f;
-  }
-
-  html,
-  body {
-    margin: 0;
-    min-width: 320px;
-    min-height: 100vh;
-    background: transparent;
-    color: #dedede;
-    font-family:
-      Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-      sans-serif;
-    overflow: hidden;
-  }
-
-  body {
-    display: grid;
-    grid-template-rows: 36px 1fr;
-    grid-template-columns: 0 1fr;
-    transition: grid-template-columns 140ms ease;
-  }
-
-  body.has-sidebar {
-    grid-template-columns: 264px 1fr;
-  }
-
-  button {
-    appearance: none;
-    -webkit-appearance: none;
-    font: inherit;
-    cursor: pointer;
-  }
-
-  .topbar {
-    grid-column: 1 / -1;
-    height: 36px;
-    display: grid;
-    grid-template-columns: auto 1fr auto 138px;
-    background: rgba(17, 17, 17, 0.48);
-    border-bottom: 1px solid rgba(47, 47, 47, 1);
-    user-select: none;
-  }
-
-  body::before {
-    content: "";
-    position: fixed;
-    inset: 36px 0 0;
-    background: var(--color-bg);
-    z-index: -1;
-  }
-
-  .left-panel {
-    grid-row: 2;
-    grid-column: 1;
-    min-width: 264px;
-    width: 264px;
-    height: calc(100vh - 36px);
-    max-height: calc(100vh - 36px);
-    min-height: 0;
-    overflow: hidden;
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr) auto;
-    border-top: 1px solid rgba(47, 47, 47, 1);
-    border-right: 1px solid var(--color-surface-10);
-    background: #161616;
-    box-shadow: 12px 0 40px rgba(0, 0, 0, 0.25);
-    transform: translateX(-100%);
-    transition: transform 140ms ease;
-    z-index: 10;
-  }
-
-  .left-panel.is-open {
-    transform: translateX(0);
-  }
-
-  .workspace {
-    grid-row: 2;
-    grid-column: 2;
-    min-width: 0;
-    min-height: 0;
-    background: transparent;
-  }
-
-  .panel-actions {
-    display: grid;
-    gap: 4px;
-    padding: 10px;
-  }
-
-  .sidebar-label {
-    height: 24px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 0;
-    color: #9f9f9f;
-    font-size: 12px;
-    font-weight: 400;
-  }
-
-  .sidebar-footer {
-    padding: 10px;
-    display: grid;
-    gap: 4px;
-    border-top: 1px solid var(--color-surface-9);
-    background: #161616;
-    position: relative;
-    z-index: 2;
-  }
-
-  .panel-actions button,
-  :global(.project-row),
-  :global(.chat-row),
-  .sidebar-footer button,
-  .section-heading button {
-    appearance: none !important;
-    -webkit-appearance: none !important;
-    border: 0 !important;
-    background: transparent !important;
-    color: #d8d8d8 !important;
-  }
-
-  .panel-actions button,
-  :global(.project-row),
-  .sidebar-footer button,
-  :global(.chat-row) {
-    min-height: 34px;
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    border-radius: 7px;
-    padding: 0 10px;
-    font-size: 12px !important;
-    font-family: inherit !important;
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .panel-actions button:hover,
-  :global(.project-row:hover),
-  :global(.chat-row:hover:not(.is-active)),
-  .sidebar-footer button:hover,
-  .section-heading button:hover {
-    background: rgba(255, 255, 255, 0.02) !important;
-  }
-
-  .projects-section {
-    min-height: 0;
-    max-height: 100%;
-    height: 100%;
-    padding: 10px 10px 0;
-    overflow: hidden;
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
-  }
-
-  .section-heading {
-    height: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    color: #9f9f9f;
-    font-size: 12px;
-    font-weight: 400;
-  }
-
-  .heading-title {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .section-heading button {
-    width: 28px;
-    height: 28px;
-    display: grid;
-    place-items: center;
-    border-radius: 6px;
-    opacity: 0;
-    transition: opacity 120ms ease;
-  }
-
-  .section-heading:hover button,
-  .section-heading button:focus-visible {
-    opacity: 1;
-  }
-
-  .projects-list {
-    margin-top: 0;
-    display: grid;
-    align-content: start;
-    gap: 4px;
-    height: 100%;
-    min-height: 0;
-    max-height: 100%;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-    padding-top: 4px;
-    padding-bottom: 0;
-  }
-
-  .projects-list::-webkit-scrollbar {
-    width: 0;
-    height: 0;
-  }
-
-  .projects-list::after {
-    content: "";
-    display: block;
-    height: 56px;
-  }
-
-  :global(.project-card) {
-    display: grid;
-    gap: 3px;
-    min-width: 0;
-  }
-
-  :global(.project-input-row) {
-    min-height: 34px;
-    box-sizing: border-box;
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    padding: 0 10px;
-    color: #cfcfcf;
-  }
-
-  :global(.project-input) {
-    appearance: none;
-    -webkit-appearance: none;
-    min-width: 0;
-    width: 100%;
-    height: 22px;
-    box-sizing: border-box;
-    border: 0;
-    background: transparent;
-    color: #d8d8d8;
-    caret-color: #d8d8d8;
-    font: inherit;
-    font-size: 12px;
-    outline: none;
-    padding: 0;
-    box-shadow: none;
-  }
-
-  :global(.project-input:focus) {
-    background: transparent;
-    box-shadow: none;
-  }
-
-  :global(.project-input::placeholder) {
-    color: #8f8f8f;
-  }
-
-  :global(.project-row) {
-    background: transparent !important;
-    width: 100%;
-    min-width: 0;
-    box-sizing: border-box;
-    color: #d8d8d8 !important;
-    opacity: 1 !important;
-  }
-
-  :global(.project-row:focus-visible),
-  :global(.chat-row:focus-visible) {
-    background: var(--color-surface-7) !important;
-    outline: none;
-  }
-
-  :global(.chat-row) {
-    margin-left: 12px;
-    color: rgba(216, 216, 216, 0.62) !important;
-    opacity: 0.72;
-    display: none;
-  }
-
-  :global(.project-card.is-selected .project-row) {
-    background: #1c1c1c !important;
-    color: #eeeeee;
-  }
-
-  :global(.project-card.is-selected .project-row:hover) {
-    background: #1e1e1e !important;
-  }
-
-  :global(.project-card.is-expanded .chat-row) {
-    display: flex;
-  }
-
-  :global(.chat-row.is-active) {
-    background: rgba(255, 255, 255, 0.05) !important;
-    color: #eeeeee !important;
-  }
-
-  :global(.project-action-group) {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    opacity: 0;
-    transition: opacity 120ms ease;
-  }
-
-  :global(.project-action-btn) {
-    opacity: 0;
-    width: 24px;
-    height: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 4px;
-    color: #9f9f9f;
-    transition: all 120ms ease;
-    background: transparent;
-    border: 0;
-    padding: 0;
-  }
-
-  :global(.project-row:hover .project-action-group),
-  :global(.project-row:focus-within .project-action-group) {
-    opacity: 1;
-  }
-
-  :global(.project-row:hover .project-action-btn),
-  :global(.project-row:focus-within .project-action-btn) {
-    opacity: 1;
-  }
-
-  :global(.project-action-btn:hover) {
-    background: rgba(255, 255, 255, 0.1);
-    color: #eeeeee;
-  }
-
-  .is-windows .topbar {
-    background: rgba(17, 17, 17, 0.48);
-  }
-
-  @supports not (backdrop-filter: blur(1px)) {
-    body::before {
-      background: var(--color-bg);
-    }
-  }
-
-  @supports not (backdrop-filter: blur(1px)) {
-    .topbar {
-      background: var(--color-bg);
-    }
-  }
-
-  .drag-area {
-    min-width: 0;
-    height: 100%;
-  }
-
-  .topbar-left {
-    display: flex;
-    align-items: center;
-    height: 100%;
-    padding-left: 6px;
-  }
-
-  .tool-button,
-  .app-menu button {
-    height: 28px;
-    border: 0;
-    border-radius: 6px;
-    background: transparent;
-    color: #d8d8d8;
-  }
-
-  .tool-button {
-    width: 30px;
-    display: grid;
-    place-items: center;
-  }
-
-  .app-menu {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    margin-left: 4px;
-    height: 100%;
-    position: relative;
-  }
-
-  .menu-group {
-    position: relative;
-    height: 100%;
-    display: flex;
-    align-items: center;
-  }
-
-  .app-menu button {
-    padding: 0 9px;
-    font-size: 12px;
-  }
-
-  .tool-button:hover,
-  .app-menu button:hover {
-    background: var(--color-surface-7);
-  }
-
-  .dropdown-menu {
-    position: absolute;
-    top: 34px;
-    left: 0;
-    min-width: 210px;
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    padding: 8px;
-    border: 1px solid var(--color-surface-10);
-    border-radius: 8px;
-    background: rgba(18, 18, 18, 0.96);
-    box-shadow: 0 18px 54px rgba(0, 0, 0, 0.38);
-    opacity: 0;
-    pointer-events: none;
-    transform: translateY(-4px);
-    transition:
-      opacity 120ms ease,
-      transform 120ms ease;
-    z-index: 20;
-  }
-
-  .menu-group:hover .dropdown-menu,
-  .dropdown-menu:hover {
-    opacity: 1;
-    pointer-events: auto;
-    transform: translateY(0);
-  }
-
-  .dropdown-menu a {
-    display: flex;
-    min-height: 30px;
-    align-items: center;
-    gap: 9px;
-    border-radius: 7px;
-    padding: 0 10px;
-    color: #bdbdbd;
-    font-size: 12px;
-    text-decoration: none;
-  }
-
-  .dropdown-menu a:hover {
-    background: var(--color-surface-7);
-    color: #ffffff;
-  }
-
-  .dropdown-menu svg {
-    flex: 0 0 auto;
-  }
-
-
-  .window-controls {
-    display: grid;
-    grid-template-columns: repeat(3, 46px);
-  }
-
-  .window-controls button {
-    width: 46px;
-    height: 36px;
-    display: grid;
-    place-items: center;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    color: #d8d8d8;
-  }
-
-  .window-controls svg {
-    display: block;
-  }
-
-  .window-controls button:hover {
-    background: var(--color-surface-7);
-  }
-
-  .window-controls .close:hover {
-    background: #c42b1c;
-    color: #ffffff;
-  }
-
-  .topbar-workspace-controls {
-    display: flex;
-    align-items: center;
-    gap: 1px;
-    padding: 0 4px;
-  }
-
-  .workspace-ctrl {
-    width: 30px;
-    height: 28px;
-    display: grid;
-    place-items: center;
-    border: 0;
-    border-radius: 6px;
-    background: transparent;
-    color: rgba(216, 216, 216, 0.52);
-    transition: background 120ms ease, color 120ms ease;
-    cursor: pointer;
-  }
-
-  .workspace-ctrl:hover {
-    background: var(--color-surface-7);
-    color: #d8d8d8;
-  }
-
-  .workspace-ctrl.is-active {
-    background: var(--color-surface-6);
-    color: #eeeeee;
-  }
-
-  .workspace-divider {
-    width: 1px;
-    height: 100%;
-    position: relative;
-    cursor: col-resize;
-    z-index: 5;
-  }
-
-  .workspace-divider-line {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: -2px;
-    right: -2px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .workspace-divider-line::after {
-    content: '';
-    width: 1px;
-    height: 100%;
-    background: var(--color-surface-10);
-    transition: background 120ms ease, width 120ms ease;
-  }
-
-  .workspace-divider:hover .workspace-divider-line::after {
-    width: 3px;
-    border-radius: 2px;
-    background: rgba(255, 255, 255, 0.14);
-  }
-
-  .workspace-pane {
-    position: relative;
-  }
-
-  .workspace-pane.is-active-pane::after {
-    content: '';
-    position: absolute;
-    bottom: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 32px;
-    height: 2px;
-    border-radius: 1px;
-    background: rgba(255, 255, 255, 0.08);
-    pointer-events: none;
-  }
-
-</style>

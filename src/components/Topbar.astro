@@ -1,0 +1,101 @@
+---
+import {
+  ArrowLeft,
+  ArrowRight,
+  Bug,
+  Columns2,
+  Command,
+  Eye,
+  FilePlus,
+  FolderOpen,
+  HelpCircle,
+  Keyboard,
+  Minus,
+  PiggyBank,
+  PanelLeft,
+  Save,
+  Scissors,
+  Settings,
+  Square,
+  Terminal,
+  Undo2,
+  X,
+} from "lucide-astro";
+---
+
+<header class="topbar">
+  <div class="topbar-left">
+    <button class="tool-button" type="button" aria-label="Toggle sidebar">
+      <PanelLeft size={15} strokeWidth={1.8} />
+    </button>
+    <button class="tool-button" type="button" aria-label="Back">
+      <ArrowLeft size={15} strokeWidth={1.8} />
+    </button>
+    <button class="tool-button" type="button" aria-label="Forward">
+      <ArrowRight size={15} strokeWidth={1.8} />
+    </button>
+    <nav class="app-menu" aria-label="Application menu">
+      <div class="menu-group">
+        <button type="button">Archivo</button>
+        <div class="dropdown-menu">
+          <a href="#"><FilePlus size={14} /> Nuevo archivo</a>
+          <a href="#"><FolderOpen size={14} /> Abrir carpeta</a>
+          <a href="#"><Save size={14} /> Guardar</a>
+          <a href="#"><Command size={14} /> Exportar</a>
+        </div>
+      </div>
+      <div class="menu-group">
+        <button type="button">Editar</button>
+        <div class="dropdown-menu">
+          <a href="#"><Undo2 size={14} /> Deshacer</a>
+          <a href="#"><ArrowRight size={14} /> Rehacer</a>
+          <a href="#"><Scissors size={14} /> Cortar</a>
+          <a href="#"><Settings size={14} /> Preferencias</a>
+        </div>
+      </div>
+      <div class="menu-group">
+        <button type="button">Ver</button>
+        <div class="dropdown-menu">
+          <a href="#"><PanelLeft size={14} /> Panel lateral</a>
+          <a href="#" data-action="toggle-terminal"><Terminal size={14} /> Terminal</a>
+          <a href="#"><Square size={14} /> Pantalla completa</a>
+          <a href="#"><Eye size={14} /> Apariencia</a>
+        </div>
+      </div>
+      <div class="menu-group help-group">
+        <button type="button">Ayuda</button>
+        <div class="dropdown-menu">
+          <a href="#"><HelpCircle size={14} /> Documentación</a>
+          <a href="#"><Keyboard size={14} /> Atajos</a>
+          <a href="#"><Bug size={14} /> Reportar problema</a>
+          <a href="https://ko-fi.com/codeclubide" target="_blank" rel="noreferrer">
+            <PiggyBank size={14} /> Donación
+          </a>
+        </div>
+      </div>
+    </nav>
+  </div>
+  <div class="drag-area" data-tauri-drag-region></div>
+  <nav class="topbar-workspace-controls" aria-label="Workspace controls">
+    <button id="panel-single" class="workspace-ctrl is-active" type="button" aria-label="Panel simple">
+      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+    </button>
+    <button id="panel-split" class="workspace-ctrl" type="button" aria-label="Panel doble">
+      <Columns2 size={14} strokeWidth={1.8} />
+    </button>
+    <button id="topbar-terminal" class="workspace-ctrl" type="button" aria-label="Terminal" data-action="toggle-terminal">
+      <Terminal size={14} strokeWidth={1.8} />
+    </button>
+  </nav>
+  <nav class="window-controls" aria-label="Window controls">
+    <button id="minimize" type="button" aria-label="Minimize">
+      <Minus size={14} strokeWidth={1.8} />
+    </button>
+    <button id="maximize" type="button" aria-label="Maximize">
+      <Square size={12} strokeWidth={1.8} />
+    </button>
+    <button id="close" class="close" type="button" aria-label="Close">
+      <X size={14} strokeWidth={1.8} />
+    </button>
+  </nav>
+</header>

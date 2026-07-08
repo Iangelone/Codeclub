@@ -1,0 +1,21 @@
+type Listener<T> = (val: T) => void;
+
+function createStore<T>(initialValue: T) {
+  let value = initialValue;
+  const listeners = new Set<Listener<T>>();
+
+  return {
+    get: () => value,
+    set: (newValue: T) => {
+      value = newValue;
+      listeners.forEach((l) => l(value));
+    },
+    subscribe: (listener: Listener<T>) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+}
+
+export const activeProjectStore = createStore<{ projectPath?: string; name?: string }>({});
+export const activeChatStore = createStore<{ id?: string; kind?: string }>({});

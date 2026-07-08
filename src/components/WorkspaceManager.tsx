@@ -30,6 +30,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
   const [panelMode, setPanelMode] = useState<'single' | 'split'>('single');
   const [splitPercent, setSplitPercent] = useState(50);
   const [activePanel, setActivePanel] = useState<'left' | 'right'>('left');
+  const [dragOverPanel, setDragOverPanel] = useState<'left' | 'right' | null>(null);
   const [mounted, setMounted] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isDragging = useRef(false);
@@ -167,6 +168,87 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
     ? `${splitPercent}% 1px ${100 - splitPercent}%`
     : '1fr';
 
+  const handleDragOver = (e: React.DragEvent, panel: 'left' | 'right') => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverPanel !== panel) setDragOverPanel(panel);
+  };
+
+  const handleDragEnter = (e: React.DragEvent, panel: 'left' | 'right') => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDragLeave = (e: React.DragEvent, panel: 'left' | 'right') => {
+    e.preventDefault();
+    const related = e.relatedTarget as Node | null;
+    if (!e.currentTarget.contains(related)) {
+      setDragOverPanel(null);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent, panel: 'left' | 'right') => {
+    e.preventDefault();
+    setDragOverPanel(null);
+    try {
+      let data = e.dataTransfer.getData('application/json');
+      if (!data) data = e.dataTransfer.getData('text/plain');
+      if (!data) return;
+      const payload = JSON.parse(data);
+      const { kind, id, name, projectPath } = payload;
+      const key = `${kind}:${id}`;
+
+      setActivePanel(panel);
+
+      const otherPanel = panel === 'left' ? 'right' : 'left';
+      const otherRef = panel === 'left' ? rightStateRef : leftStateRef;
+      if (otherRef.current === key && panelMode === 'split') {
+        window.dispatchEvent(new CustomEvent(`codeclub:panel-${otherPanel}:open-blank`, { detail: {} }));
+      }
+
+      window.dispatchEvent(new CustomEvent(`codeclub:panel-${panel}:open-${kind}`, {
+        detail: { projectPath, [`${kind}Id`]: id, name }
+      }));
+    } catch (err) {
+      console.error("Drop failed:", err);
+    }
+  };
+
+  const DropOverlay = ({ show }: { show: boolean }) => {
+    if (!show) return null;
+    return (
+      <div style={{
+        position: 'absolute',
+        inset: '12px',
+        background: 'rgba(255, 255, 255, 0.03)',
+        backdropFilter: 'blur(8px)',
+        borderRadius: '16px',
+        border: '1px solid rgba(255, 255, 255, 0.1)',
+        display: 'grid',
+        placeItems: 'center',
+        zIndex: 100,
+        pointerEvents: 'none',
+        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)'
+      }}>
+        <div style={{
+          background: 'rgba(0, 0, 0, 0.4)',
+          padding: '12px 24px',
+          borderRadius: '30px',
+          color: '#eeeeee',
+          fontSize: '14px',
+          fontWeight: 500,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          border: '1px solid rgba(255, 255, 255, 0.05)'
+        }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          Soltar para abrir
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div
       ref={containerRef}
@@ -186,14 +268,20 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
       <div
         className={`workspace-pane ${activePanel === 'left' ? 'is-active-pane' : ''}`}
         onClick={() => setActivePanel('left')}
+        onDragEnter={(e) => handleDragEnter(e, 'left')}
+        onDragOver={(e) => handleDragOver(e, 'left')}
+        onDragLeave={(e) => handleDragLeave(e, 'left')}
+        onDrop={(e) => handleDrop(e, 'left')}
         style={{
           minWidth: 0,
           minHeight: 0,
           overflow: 'hidden',
           display: 'grid',
           placeItems: 'center',
+          position: 'relative',
         }}
       >
+        <DropOverlay show={dragOverPanel === 'left'} />
         <ChatInterface
           catalog={catalog}
           defaultProvider={defaultProvider}
@@ -218,14 +306,20 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
         <div
           className={`workspace-pane ${activePanel === 'right' ? 'is-active-pane' : ''}`}
           onClick={() => setActivePanel('right')}
+          onDragEnter={(e) => handleDragEnter(e, 'right')}
+          onDragOver={(e) => handleDragOver(e, 'right')}
+          onDragLeave={(e) => handleDragLeave(e, 'right')}
+          onDrop={(e) => handleDrop(e, 'right')}
           style={{
             minWidth: 0,
             minHeight: 0,
             overflow: 'hidden',
             display: 'grid',
             placeItems: 'center',
+            position: 'relative',
           }}
         >
+          <DropOverlay show={dragOverPanel === 'right'} />
           <ChatInterface
             catalog={catalog}
             defaultProvider={defaultProvider}
