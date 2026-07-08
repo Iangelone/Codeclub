@@ -11,20 +11,13 @@ const catalog = [
 ];
 ---
 
-<section class="chat-panel" aria-label="Chat">
+<section class="relative min-w-0 min-h-full grid place-items-center overflow-hidden" aria-label="Chat">
   <WorkspaceManager client:load catalog={catalog} defaultProvider={defaultProvider} defaultModel={defaultModel} />
   <TerminalDock client:load />
 </section>
 
 <style is:global>
-  .chat-panel {
-    position: relative;
-    min-width: 0;
-    min-height: 100%;
-    display: grid;
-    place-items: center;
-    overflow: hidden;
-  }
+
 
   .terminal-floating-backdrop {
     position: fixed;

@@ -235,7 +235,6 @@ export default function Sidebar() {
     e.dataTransfer.setData("application/codeclub-sidebar-item", dragData);
     e.dataTransfer.effectAllowed = "copyMove";
     
-    // Create drag preview
     const preview = document.createElement("div");
     preview.className = "drag-preview";
     preview.textContent = item.name;
@@ -244,26 +243,28 @@ export default function Sidebar() {
     setTimeout(() => preview.remove(), 0);
   };
 
+  const topButtonClass = "min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer bg-transparent border-0 text-[#d8d8d8] hover:bg-white/2 appearance-none";
+
   return (
-    <div className="left-panel">
-      <section className="panel-actions">
-        <div className="sidebar-label"><LayoutDashboard size={14} /> Espacio de trabajo</div>
-        <button type="button"><MessageSquarePlus size={15} /> Nuevo chat</button>
-        <button type="button"><Search size={15} /> Buscar</button>
-        <button type="button"><Package size={15} /> Complementos</button>
+    <div className="row-start-2 col-start-1 min-w-[264px] w-[264px] h-[calc(100vh-36px)] max-h-[calc(100vh-36px)] min-h-0 overflow-hidden grid grid-rows-[auto_minmax(0,1fr)_auto] border-t border-[rgba(47,47,47,1)] border-r border-[var(--color-surface-10)] bg-[#161616] shadow-[12px_0_40px_rgba(0,0,0,0.25)] -translate-x-full transition-transform duration-140 ease-out z-10 group-[.has-sidebar]:translate-x-0">
+      <section className="grid gap-1 p-[10px]">
+        <div className="h-[24px] flex items-center gap-[6px] p-0 text-[#9f9f9f] text-xs font-normal"><LayoutDashboard size={14} /> Espacio de trabajo</div>
+        <button className={topButtonClass} type="button"><MessageSquarePlus size={15} /> Nuevo chat</button>
+        <button className={topButtonClass} type="button"><Search size={15} /> Buscar</button>
+        <button className={topButtonClass} type="button"><Package size={15} /> Complementos</button>
       </section>
-      <section className="projects-section">
-        <div className="section-heading">
-          <span className="heading-title"><Folder size={14} /> Proyectos</span>
-          <button id="create-project" type="button" onClick={() => setCreatingProject(true)} aria-label="Crear proyecto"><FolderPlus size={14} /></button>
+      <section className="min-h-0 max-h-full h-full p-[10px_10px_0] overflow-hidden grid grid-rows-[auto_minmax(0,1fr)]">
+        <div className="h-[24px] flex items-center justify-between text-[#9f9f9f] text-xs font-normal group/heading">
+          <span className="flex items-center gap-[6px]"><Folder size={14} /> Proyectos</span>
+          <button className="w-[28px] h-[28px] grid place-items-center rounded-md opacity-0 transition-opacity duration-120 group-hover/heading:opacity-100 focus-visible:opacity-100 bg-transparent border-0 text-[#d8d8d8] hover:bg-white/2 appearance-none" id="create-project" type="button" onClick={() => setCreatingProject(true)} aria-label="Crear proyecto"><FolderPlus size={14} /></button>
         </div>
         
-        <div className="projects-list">
+        <div className="mt-0 grid content-start gap-1 h-full min-h-0 max-h-full overflow-y-auto overscroll-contain pt-1 pb-0 after:content-[''] after:block after:h-[56px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {creatingProject && (
-            <div className="project-input-row">
-              <FolderIcon />
+            <div className="min-h-[34px] box-border flex items-center gap-[9px] px-[10px] text-[#cfcfcf]">
+              <Folder size={14} />
               <input
-                className="project-input"
+                className="appearance-none min-w-0 w-full h-[22px] box-border border-0 bg-transparent text-[#d8d8d8] caret-[#d8d8d8] text-xs outline-none p-0 shadow-none placeholder:text-[#8f8f8f] focus:bg-transparent focus:shadow-none"
                 type="text"
                 autoFocus
                 placeholder="Nombre del proyecto"
@@ -284,9 +285,9 @@ export default function Sidebar() {
             const isRenaming = renamingItemId === `proj-${proj.path}`;
 
             return (
-              <div key={proj.path} className={`project-card ${isSelected ? "is-selected" : ""} ${isExpanded ? "is-expanded" : ""}`}>
+              <div key={proj.path} className={`grid gap-[3px] min-w-0 group/card ${isSelected ? "is-selected" : ""} ${isExpanded ? "is-expanded" : ""}`}>
                 <div
-                  className="project-row"
+                  className="min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer bg-transparent w-full min-w-0 box-border text-[#d8d8d8] hover:bg-white/2 focus-visible:bg-[var(--color-surface-7)] focus-visible:outline-none group-[.is-selected]/card:bg-[#1c1c1c] group-[.is-selected]/card:text-[#eeeeee] group-[.is-selected]/card:hover:bg-[#1e1e1e] group/prow outline-none appearance-none border-0"
                   tabIndex={0}
                   onClick={() => { selectProject(proj.path, proj.name); toggleProject(proj.path); }}
                   onDoubleClick={() => { setRenamingItemId(`proj-${proj.path}`); setRenameInput(proj.name); }}
@@ -301,7 +302,7 @@ export default function Sidebar() {
                   <Folder size={14} />
                   {isRenaming ? (
                     <input
-                      className="project-input"
+                      className="appearance-none min-w-0 w-full h-[22px] box-border border-0 bg-[var(--color-surface-9)] text-[#d8d8d8] caret-[#d8d8d8] text-xs outline-none p-0 shadow-none placeholder:text-[#8f8f8f] rounded-md"
                       autoFocus
                       value={renameInput}
                       onChange={(e) => setRenameInput(e.target.value)}
@@ -315,10 +316,10 @@ export default function Sidebar() {
                   ) : (
                     <span style={{ flex: 1 }}>{proj.name}</span>
                   )}
-                  <span className="project-action-group">
-                    <button className="project-action-btn" onClick={(e) => { e.stopPropagation(); handleCreateArtifact(proj.path, proj.name, "chat"); }}><MessageSquarePlus size={14} /></button>
-                    <button className="project-action-btn" onClick={(e) => { e.stopPropagation(); handleCreateArtifact(proj.path, proj.name, "table"); }}><TableIconReact size={14} /></button>
-                    <button className="project-action-btn" onClick={(e) => { e.stopPropagation(); handleCreateArtifact(proj.path, proj.name, "note"); }}><FileText size={14} /></button>
+                  <span className="flex items-center gap-[2px] opacity-0 transition-opacity duration-120 group-hover/prow:opacity-100 group-focus-within/prow:opacity-100">
+                    <button className="w-[24px] h-[24px] flex items-center justify-center rounded-[4px] text-[#9f9f9f] transition-all duration-120 bg-transparent border-0 p-0 hover:bg-white/10 hover:text-[#eeeeee] opacity-100 appearance-none" onClick={(e) => { e.stopPropagation(); handleCreateArtifact(proj.path, proj.name, "chat"); }}><MessageSquarePlus size={14} /></button>
+                    <button className="w-[24px] h-[24px] flex items-center justify-center rounded-[4px] text-[#9f9f9f] transition-all duration-120 bg-transparent border-0 p-0 hover:bg-white/10 hover:text-[#eeeeee] opacity-100 appearance-none" onClick={(e) => { e.stopPropagation(); handleCreateArtifact(proj.path, proj.name, "table"); }}><TableIconReact size={14} /></button>
+                    <button className="w-[24px] h-[24px] flex items-center justify-center rounded-[4px] text-[#9f9f9f] transition-all duration-120 bg-transparent border-0 p-0 hover:bg-white/10 hover:text-[#eeeeee] opacity-100 appearance-none" onClick={(e) => { e.stopPropagation(); handleCreateArtifact(proj.path, proj.name, "note"); }}><FileText size={14} /></button>
                   </span>
                 </div>
 
@@ -330,7 +331,7 @@ export default function Sidebar() {
                         renaming={renamingItemId === `chat-${chat.id}`} setRenaming={setRenamingItemId} renameInput={renameInput} setRenameInput={setRenameInput}
                         onCommit={handleRenameCommit} onOpen={openArtifact} onDelete={handleDelete} onDragStart={onDragStart} />
                     ))}
-                    <button className="chat-row" style={{display: 'flex'}} onClick={() => handleCreateArtifact(proj.path, proj.name, "chat")}>
+                    <button className="min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/2 focus-visible:bg-[var(--color-surface-7)] focus-visible:outline-none ml-[12px] text-[#d8d8d8]/62 opacity-72 hidden group-[.is-expanded]/card:flex bg-transparent border-0 appearance-none" onClick={() => handleCreateArtifact(proj.path, proj.name, "chat")}>
                       <MessageSquarePlus size={14} /><span>Crear chat</span>
                     </button>
 
@@ -339,7 +340,7 @@ export default function Sidebar() {
                         renaming={renamingItemId === `table-${table.id}`} setRenaming={setRenamingItemId} renameInput={renameInput} setRenameInput={setRenameInput}
                         onCommit={handleRenameCommit} onOpen={openArtifact} onDelete={handleDelete} onDragStart={onDragStart} />
                     ))}
-                    <button className="chat-row" style={{display: 'flex'}} onClick={() => handleCreateArtifact(proj.path, proj.name, "table")}>
+                    <button className="min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/2 focus-visible:bg-[var(--color-surface-7)] focus-visible:outline-none ml-[12px] text-[#d8d8d8]/62 opacity-72 hidden group-[.is-expanded]/card:flex bg-transparent border-0 appearance-none" onClick={() => handleCreateArtifact(proj.path, proj.name, "table")}>
                       <TableIconReact size={14} /><span>Crear tabla</span>
                     </button>
 
@@ -348,7 +349,7 @@ export default function Sidebar() {
                         renaming={renamingItemId === `note-${note.id}`} setRenaming={setRenamingItemId} renameInput={renameInput} setRenameInput={setRenameInput}
                         onCommit={handleRenameCommit} onOpen={openArtifact} onDelete={handleDelete} onDragStart={onDragStart} />
                     ))}
-                    <button className="chat-row" style={{display: 'flex'}} onClick={() => handleCreateArtifact(proj.path, proj.name, "note")}>
+                    <button className="min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/2 focus-visible:bg-[var(--color-surface-7)] focus-visible:outline-none ml-[12px] text-[#d8d8d8]/62 opacity-72 hidden group-[.is-expanded]/card:flex bg-transparent border-0 appearance-none" onClick={() => handleCreateArtifact(proj.path, proj.name, "note")}>
                       <FileText size={14} /><span>Crear nota</span>
                     </button>
                   </>
@@ -359,8 +360,8 @@ export default function Sidebar() {
         </div>
       </section>
       
-      <section className="sidebar-footer">
-        <button type="button">
+      <section className="p-[10px] grid gap-1 border-t border-[var(--color-surface-9)] bg-[#161616] relative z-[2]">
+        <button className="min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer bg-transparent border-0 text-[#d8d8d8] hover:bg-white/2 appearance-none" type="button">
           <Settings size={15} /> Ajustes
         </button>
       </section>
@@ -379,8 +380,7 @@ function ArtifactNode({
 
   return (
     <button
-      className={`chat-row chat-item ${kind}-item ${isActive ? "is-active" : ""}`}
-      style={{display: 'flex'}}
+      className={`min-h-[34px] items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/2 focus-visible:bg-[var(--color-surface-7)] focus-visible:outline-none ml-[12px] text-[#d8d8d8]/62 opacity-72 hidden group-[.is-expanded]/card:flex bg-transparent border-0 appearance-none outline-none ${isActive ? "bg-white/5 text-[#eeeeee]" : ""}`}
       draggable
       onDragStart={(e) => onDragStart(e, kind, item, project.path, project.name)}
       onClick={() => onOpen(kind, item.id, item.name, project.path, project.name)}
@@ -392,7 +392,7 @@ function ArtifactNode({
       <Icon size={14} />
       {renaming ? (
         <input
-          className="project-input"
+          className="appearance-none min-w-0 w-full h-[22px] box-border border-0 bg-[var(--color-surface-9)] text-[#d8d8d8] caret-[#d8d8d8] text-xs outline-none p-0 shadow-none placeholder:text-[#8f8f8f] rounded-md"
           autoFocus
           value={renameInput}
           onChange={(e) => setRenameInput(e.target.value)}
@@ -404,7 +404,7 @@ function ArtifactNode({
           onClick={(e) => e.stopPropagation()}
         />
       ) : (
-        <span className="chat-title">{item.name}</span>
+        <span>{item.name}</span>
       )}
     </button>
   );

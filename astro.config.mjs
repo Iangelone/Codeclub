@@ -1,6 +1,8 @@
 import { defineConfig } from "astro/config";
 import react from "@astrojs/react";
 
+import tailwindcss from "@tailwindcss/vite";
+
 export default defineConfig({
   output: "static",
   integrations: [react()],
@@ -9,9 +11,11 @@ export default defineConfig({
   },
   vite: {
     clearScreen: false,
+
     define: {
       'process.env': '{}',
     },
+
     optimizeDeps: {
       include: [
         "@tauri-apps/api/window",
@@ -22,5 +26,7 @@ export default defineConfig({
         "@tauri-apps/plugin-dialog",
       ],
     },
+
+    plugins: [tailwindcss()],
   },
 });
