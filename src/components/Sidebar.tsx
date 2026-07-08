@@ -331,27 +331,30 @@ export default function Sidebar() {
                         renaming={renamingItemId === `chat-${chat.id}`} setRenaming={setRenamingItemId} renameInput={renameInput} setRenameInput={setRenameInput}
                         onCommit={handleRenameCommit} onOpen={openArtifact} onDelete={handleDelete} onDragStart={onDragStart} />
                     ))}
-                    <button className="min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/2 focus-visible:bg-[var(--color-surface-7)] focus-visible:outline-none ml-[12px] text-[#d8d8d8]/62 opacity-72 hidden group-[.is-expanded]/card:flex bg-transparent border-0 appearance-none" onClick={() => handleCreateArtifact(proj.path, proj.name, "chat")}>
-                      <MessageSquarePlus size={14} /><span>Crear chat</span>
-                    </button>
 
                     {proj.tables.map((table) => (
                       <ArtifactNode key={table.id} kind="table" item={table} project={proj} isActive={activeArtifactId === table.id}
                         renaming={renamingItemId === `table-${table.id}`} setRenaming={setRenamingItemId} renameInput={renameInput} setRenameInput={setRenameInput}
                         onCommit={handleRenameCommit} onOpen={openArtifact} onDelete={handleDelete} onDragStart={onDragStart} />
                     ))}
-                    <button className="min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/2 focus-visible:bg-[var(--color-surface-7)] focus-visible:outline-none ml-[12px] text-[#d8d8d8]/62 opacity-72 hidden group-[.is-expanded]/card:flex bg-transparent border-0 appearance-none" onClick={() => handleCreateArtifact(proj.path, proj.name, "table")}>
-                      <TableIconReact size={14} /><span>Crear tabla</span>
-                    </button>
 
                     {proj.notes.map((note) => (
                       <ArtifactNode key={note.id} kind="note" item={note} project={proj} isActive={activeArtifactId === note.id}
                         renaming={renamingItemId === `note-${note.id}`} setRenaming={setRenamingItemId} renameInput={renameInput} setRenameInput={setRenameInput}
                         onCommit={handleRenameCommit} onOpen={openArtifact} onDelete={handleDelete} onDragStart={onDragStart} />
                     ))}
-                    <button className="min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/2 focus-visible:bg-[var(--color-surface-7)] focus-visible:outline-none ml-[12px] text-[#d8d8d8]/62 opacity-72 hidden group-[.is-expanded]/card:flex bg-transparent border-0 appearance-none" onClick={() => handleCreateArtifact(proj.path, proj.name, "note")}>
-                      <FileText size={14} /><span>Crear nota</span>
-                    </button>
+
+                    <div className="grid gap-[2px] mt-2 mb-1 border-t border-white/5 pt-2 ml-[12px] group-[.is-expanded]/card:grid hidden">
+                      <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/2 focus-visible:bg-[var(--color-surface-7)] focus-visible:outline-none text-[#d8d8d8]/50 hover:text-[#d8d8d8] transition-colors bg-transparent border-0 appearance-none" onClick={() => handleCreateArtifact(proj.path, proj.name, "chat")}>
+                        <MessageSquarePlus size={13} /><span>Nuevo chat</span>
+                      </button>
+                      <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/2 focus-visible:bg-[var(--color-surface-7)] focus-visible:outline-none text-[#d8d8d8]/50 hover:text-[#d8d8d8] transition-colors bg-transparent border-0 appearance-none" onClick={() => handleCreateArtifact(proj.path, proj.name, "table")}>
+                        <TableIconReact size={13} /><span>Nueva tabla</span>
+                      </button>
+                      <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/2 focus-visible:bg-[var(--color-surface-7)] focus-visible:outline-none text-[#d8d8d8]/50 hover:text-[#d8d8d8] transition-colors bg-transparent border-0 appearance-none" onClick={() => handleCreateArtifact(proj.path, proj.name, "note")}>
+                        <FileText size={13} /><span>Nueva nota</span>
+                      </button>
+                    </div>
                   </>
                 )}
               </div>
