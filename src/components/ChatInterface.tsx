@@ -48,7 +48,7 @@ const MessageToolSummary = ({ tools, isBusy }) => {
   );
 };
 
-export default function ChatInterface({ catalog, defaultProvider, defaultModel }) {
+export default function ChatInterface({ catalog, defaultProvider, defaultModel, panelId = 'left', eventPrefix = 'codeclub' }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
@@ -114,9 +114,10 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
         console.error("Error loading chat:", err);
       }
     };
-    window.addEventListener('codeclub:open-chat', handleOpenChat);
-    return () => window.removeEventListener('codeclub:open-chat', handleOpenChat);
-  }, []);
+    const eventName = `${eventPrefix}:open-chat`;
+    window.addEventListener(eventName, handleOpenChat);
+    return () => window.removeEventListener(eventName, handleOpenChat);
+  }, [eventPrefix]);
 
   useEffect(() => {
     const handleOpenBlank = () => {
@@ -167,15 +168,18 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel }
       }
     };
 
-    window.addEventListener('codeclub:open-blank', handleOpenBlank);
-    window.addEventListener('codeclub:open-note', handleOpenNote);
-    window.addEventListener('codeclub:open-table', handleOpenTable);
+    const blankEvent = `${eventPrefix}:open-blank`;
+    const noteEvent = `${eventPrefix}:open-note`;
+    const tableEvent = `${eventPrefix}:open-table`;
+    window.addEventListener(blankEvent, handleOpenBlank);
+    window.addEventListener(noteEvent, handleOpenNote);
+    window.addEventListener(tableEvent, handleOpenTable);
     return () => {
-      window.removeEventListener('codeclub:open-blank', handleOpenBlank);
-      window.removeEventListener('codeclub:open-note', handleOpenNote);
-      window.removeEventListener('codeclub:open-table', handleOpenTable);
+      window.removeEventListener(blankEvent, handleOpenBlank);
+      window.removeEventListener(noteEvent, handleOpenNote);
+      window.removeEventListener(tableEvent, handleOpenTable);
     };
-  }, []);
+  }, [eventPrefix]);
 
   useEffect(() => {
     const savedProviderId = localStorage.getItem('codeclub_last_provider_id');

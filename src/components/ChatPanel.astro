@@ -1,5 +1,5 @@
 ---
-import ChatInterface from "./ChatInterface.tsx";
+import WorkspaceManager from "./WorkspaceManager.tsx";
 import TerminalDock from "./TerminalDock.tsx";
 import { models, providers } from "../lib/ai-catalog";
 
@@ -12,7 +12,7 @@ const catalog = [
 ---
 
 <section class="chat-panel" aria-label="Chat">
-  <ChatInterface client:load catalog={catalog} defaultProvider={defaultProvider} defaultModel={defaultModel} />
+  <WorkspaceManager client:load catalog={catalog} defaultProvider={defaultProvider} defaultModel={defaultModel} />
   <TerminalDock client:load />
 </section>
 
