@@ -12,10 +12,9 @@ import {
 
 import {
   Folder,
+  FolderOpen,
   FolderPlus,
-  LayoutDashboard,
-  Package,
-  Search,
+  Library,
   Settings,
   MessageSquarePlus,
   Table as TableIconReact,
@@ -245,23 +244,15 @@ export default function Sidebar() {
     setTimeout(() => preview.remove(), 0);
   };
 
-  const topButtonClass = "min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer bg-transparent border-0 text-[#d8d8d8] hover:bg-white/2 appearance-none";
-
   return (
-    <div className="row-start-2 col-start-1 min-w-[264px] w-[264px] h-[calc(100vh-36px)] max-h-[calc(100vh-36px)] min-h-0 overflow-hidden grid grid-rows-[auto_minmax(0,1fr)_auto] border-t border-[rgba(47,47,47,1)] border-r border-[var(--color-surface-10)] bg-[#161616] shadow-[12px_0_40px_rgba(0,0,0,0.25)] -translate-x-full transition-transform duration-140 ease-out z-10 group-[.has-sidebar]:translate-x-0">
-      <section className="grid gap-1 p-[10px]">
-        <div className="h-[24px] flex items-center gap-[6px] p-0 text-[#9f9f9f] text-xs font-normal"><LayoutDashboard size={14} /> Espacio de trabajo</div>
-        <button className={topButtonClass} type="button"><MessageSquarePlus size={15} /> Nuevo chat</button>
-        <button className={topButtonClass} type="button"><Search size={15} /> Buscar</button>
-        <button className={topButtonClass} type="button"><Package size={15} /> Complementos</button>
-      </section>
-      <section className="min-h-0 max-h-full h-full p-[10px_10px_0] overflow-hidden grid grid-rows-[auto_minmax(0,1fr)]">
-        <div className="h-[24px] flex items-center justify-between text-[#9f9f9f] text-xs font-normal group/heading">
-          <span className="flex items-center gap-[6px]"><Folder size={14} /> Proyectos</span>
+    <div className="row-start-2 col-start-1 min-w-[264px] w-[264px] h-[calc(100vh-36px)] min-h-0 overflow-hidden flex flex-col border-t border-[rgba(47,47,47,1)] border-r border-[var(--color-surface-10)] bg-[#161616] shadow-[12px_0_40px_rgba(0,0,0,0.25)] -translate-x-full transition-transform duration-140 ease-out z-10 group-[.has-sidebar]:translate-x-0">
+      <section className="min-h-0 flex-1 flex flex-col p-[10px_10px_0] overflow-hidden">
+        <div className="h-[24px] shrink-0 flex items-center justify-between text-[#9f9f9f] text-xs font-normal group/heading">
+          <span className="flex items-center gap-[6px]"><Library size={14} /> Proyectos</span>
           <button className="w-[28px] h-[28px] grid place-items-center rounded-md opacity-0 transition-opacity duration-120 group-hover/heading:opacity-100 focus-visible:opacity-100 bg-transparent border-0 text-[#d8d8d8] hover:bg-white/2 appearance-none" id="create-project" type="button" onClick={() => setCreatingProject(true)} aria-label="Crear proyecto"><FolderPlus size={14} /></button>
         </div>
         
-        <div className="mt-0 grid content-start gap-1 h-full min-h-0 max-h-full overflow-y-auto overscroll-contain pt-1 pb-0 after:content-[''] after:block after:h-[56px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="mt-0 flex-1 min-h-0 flex flex-col gap-1 overflow-y-auto overscroll-contain pt-1 pb-[56px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {creatingProject && (
             <div className="min-h-[34px] box-border flex items-center gap-[9px] px-[10px] text-[#cfcfcf]">
               <Folder size={14} />
@@ -287,7 +278,7 @@ export default function Sidebar() {
             const isRenaming = renamingItemId === `proj-${proj.path}`;
 
             return (
-              <div key={proj.path} className={`grid gap-[3px] min-w-0 group/card ${isSelected ? "is-selected" : ""} ${isExpanded ? "is-expanded" : ""}`}>
+              <div key={proj.path} className={`flex flex-col gap-[3px] min-w-0 group/card ${isSelected ? "is-selected" : ""} ${isExpanded ? "is-expanded" : ""}`}>
                 <div
                   className="min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer bg-transparent w-full min-w-0 box-border text-[#d8d8d8] hover:bg-white/2 focus-visible:bg-[var(--color-surface-7)] focus-visible:outline-none group-[.is-selected]/card:bg-[#1c1c1c] group-[.is-selected]/card:text-[#eeeeee] group-[.is-selected]/card:hover:bg-[#1e1e1e] group/prow outline-none appearance-none border-0"
                   tabIndex={0}
@@ -301,7 +292,7 @@ export default function Sidebar() {
                     }
                   }}
                 >
-                  <Folder size={14} />
+                  {isExpanded ? <FolderOpen size={14} className="shrink-0" /> : <Folder size={14} className="shrink-0" />}
                   {isRenaming ? (
                     <input
                       className="appearance-none min-w-0 w-full h-[22px] box-border border-0 bg-[var(--color-surface-9)] text-[#d8d8d8] caret-[#d8d8d8] text-xs outline-none p-0 shadow-none placeholder:text-[#8f8f8f] rounded-md"
@@ -316,7 +307,7 @@ export default function Sidebar() {
                       onClick={(e) => e.stopPropagation()}
                     />
                   ) : (
-                    <span style={{ flex: 1 }}>{proj.name}</span>
+                    <span className="min-w-0 flex-1 truncate">{proj.name}</span>
                   )}
                   <span className="flex items-center gap-[2px] opacity-0 transition-opacity duration-120 group-hover/prow:opacity-100 group-focus-within/prow:opacity-100">
                     <button className="w-[24px] h-[24px] flex items-center justify-center rounded-[4px] text-[#9f9f9f] transition-all duration-120 bg-transparent border-0 p-0 hover:bg-white/10 hover:text-[#eeeeee] opacity-100 appearance-none" onClick={(e) => { e.stopPropagation(); handleCreateArtifact(proj.path, proj.name, "chat"); }}><MessageSquarePlus size={14} /></button>
@@ -355,7 +346,7 @@ export default function Sidebar() {
         </div>
       </section>
       
-      <section className="p-[10px] grid gap-1 border-t border-[var(--color-surface-9)] bg-[#161616] relative z-[2]">
+      <section className="shrink-0 flex flex-col gap-1 p-[10px] border-t border-[var(--color-surface-9)] bg-[#161616] relative z-[2]">
         <button className="min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer bg-transparent border-0 text-[#d8d8d8] hover:bg-white/2 appearance-none" type="button">
           <Settings size={15} /> Ajustes
         </button>
