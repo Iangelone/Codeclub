@@ -16,10 +16,12 @@ import {
   FolderPlus,
   Library,
   Settings,
+  MessageSquare,
   MessageSquarePlus,
-  Table as TableIconReact,
+  Table2 as TableIconReact,
   FileText,
-  MousePointer2
+  MousePointer2,
+  Trash2
 } from "lucide-react";
 
 // --- Types ---
@@ -42,6 +44,13 @@ export default function Sidebar() {
   const [newProjectName, setNewProjectName] = useState("");
   const [renamingItemId, setRenamingItemId] = useState<string | null>(null);
   const [renameInput, setRenameInput] = useState("");
+  const [projectMenu, setProjectMenu] = useState<{
+    path: string;
+    name: string;
+    top: number;
+    left: number;
+  } | null>(null);
+  const projectMenuRef = useRef<HTMLDivElement | null>(null);
 
   const loadProjects = async () => {
     try {
@@ -74,6 +83,7 @@ export default function Sidebar() {
     loadProjects();
     const handleIndexed = () => loadProjects();
     const handleRequire = () => setCreatingProject(true);
+    window.dispatchEvent(new CustomEvent("codeclub:project-selection-changed", { detail: { selected: false } }));
     
     window.addEventListener("codeclub:project-indexed", handleIndexed);
     window.addEventListener("codeclub:require-project", handleRequire);
@@ -82,6 +92,25 @@ export default function Sidebar() {
       window.removeEventListener("codeclub:require-project", handleRequire);
     };
   }, []);
+
+  useEffect(() => {
+    if (!projectMenu) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (projectMenuRef.current?.contains(event.target as Node)) return;
+      setProjectMenu(null);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setProjectMenu(null);
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [projectMenu]);
 
   const toggleProject = (path: string) => {
     setExpandedProjects((prev) => {
@@ -220,7 +249,25 @@ export default function Sidebar() {
 
   const selectProject = (path: string, name: string) => {
     setSelectedProjectId(path);
+    window.dispatchEvent(new CustomEvent("codeclub:project-selection-changed", {
+      detail: { selected: true, projectPath: path, projectName: name },
+    }));
     window.dispatchEvent(new CustomEvent("codeclub:active-project", { detail: { projectPath: path, projectName: name } }));
+  };
+
+  const openProjectMenu = (e: React.MouseEvent, project: ProjectData) => {
+    e.preventDefault();
+    setProjectMenu({ path: project.path, name: project.name, top: e.clientY, left: e.clientX });
+  };
+
+  const handleSidebarClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    if (target.closest("[data-sidebar-item], button, input")) return;
+    setSelectedProjectId(null);
+    setActiveArtifactId(null);
+    window.dispatchEvent(new CustomEvent("codeclub:project-selection-changed", { detail: { selected: false } }));
+    window.dispatchEvent(new CustomEvent("codeclub:panel-mode", { detail: { mode: "single" } }));
+    window.dispatchEvent(new CustomEvent("codeclub:panel-left:open-blank", { detail: {} }));
   };
 
   const openArtifact = (kind: string, id: string, name: string, projectPath: string, projectName: string) => {
@@ -245,7 +292,7 @@ export default function Sidebar() {
   };
 
   return (
-    <div className="row-start-2 col-start-1 min-w-[264px] w-[264px] h-[calc(100vh-36px)] min-h-0 overflow-hidden flex flex-col border-t border-[rgba(47,47,47,1)] border-r border-[var(--color-surface-10)] bg-[#161616] shadow-[12px_0_40px_rgba(0,0,0,0.25)] -translate-x-full transition-transform duration-140 ease-out z-10 group-[.has-sidebar]:translate-x-0">
+    <div className="row-start-2 col-start-1 min-w-[264px] w-[264px] h-[calc(100vh-36px)] min-h-0 overflow-hidden flex flex-col border-t border-[rgba(47,47,47,1)] border-r border-[var(--color-surface-10)] bg-[#161616] shadow-[12px_0_40px_rgba(0,0,0,0.25)] -translate-x-full transition-transform duration-140 ease-out z-10 group-[.has-sidebar]:translate-x-0" onClick={handleSidebarClick}>
       <section className="min-h-0 flex-1 flex flex-col p-[10px_10px_0] overflow-hidden">
         <div className="h-[24px] shrink-0 flex items-center justify-between text-[#9f9f9f] text-xs font-normal group/heading">
           <span className="flex items-center gap-[6px]"><Library size={14} /> Proyectos</span>
@@ -280,9 +327,11 @@ export default function Sidebar() {
             return (
               <div key={proj.path} className={`flex flex-col gap-[3px] min-w-0 group/card ${isSelected ? "is-selected" : ""} ${isExpanded ? "is-expanded" : ""}`}>
                 <div
+                  data-sidebar-item
                   className="min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer bg-transparent w-full min-w-0 box-border text-[#d8d8d8] hover:bg-white/2 focus-visible:bg-[var(--color-surface-7)] focus-visible:outline-none group-[.is-selected]/card:bg-[#1c1c1c] group-[.is-selected]/card:text-[#eeeeee] group-[.is-selected]/card:hover:bg-[#1e1e1e] group/prow outline-none appearance-none border-0"
                   tabIndex={0}
                   onClick={() => { selectProject(proj.path, proj.name); toggleProject(proj.path); }}
+                  onContextMenu={(e) => openProjectMenu(e, proj)}
                   onDoubleClick={() => { setRenamingItemId(`proj-${proj.path}`); setRenameInput(proj.name); }}
                   onKeyDown={(e) => {
                     if (e.key === "Delete") handleDelete("project", proj.path, proj.path);
@@ -345,6 +394,26 @@ export default function Sidebar() {
           })}
         </div>
       </section>
+
+      {projectMenu && typeof document !== "undefined" && createPortal(
+        <div
+          ref={projectMenuRef}
+          className="fixed z-[100] min-w-[170px] flex flex-col gap-[3px] p-2 border border-[var(--color-surface-10)] rounded-lg bg-[rgba(18,18,18,0.96)] shadow-[0_18px_54px_rgba(0,0,0,0.38)]"
+          style={{ top: projectMenu.top, left: projectMenu.left }}
+          onClick={() => setProjectMenu(null)}
+        >
+          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => { selectProject(projectMenu.path, projectMenu.name); toggleProject(projectMenu.path); }}>
+            {expandedProjects.has(projectMenu.path) ? <Folder size={13} /> : <FolderOpen size={13} />}<span>{expandedProjects.has(projectMenu.path) ? "Cerrar" : "Abrir"}</span>
+          </button>
+          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => { setRenamingItemId(`proj-${projectMenu.path}`); setRenameInput(projectMenu.name); }}>
+            <FileText size={13} /><span>Renombrar</span>
+          </button>
+          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => handleDelete("project", projectMenu.path, projectMenu.path)}>
+            <Trash2 size={13} /><span>Eliminar</span>
+          </button>
+        </div>,
+        document.body
+      )}
       
       <section className="shrink-0 flex flex-col gap-1 p-[10px] border-t border-[var(--color-surface-9)] bg-[#161616] relative z-[2]">
         <button className="min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer bg-transparent border-0 text-[#d8d8d8] hover:bg-white/2 appearance-none" type="button">
@@ -362,7 +431,7 @@ function ArtifactNode({
   renaming, setRenaming, renameInput, setRenameInput,
   onCommit, onOpen, onDelete, onDragStart
 }: any) {
-  const Icon = kind === "chat" ? MessageSquarePlus : kind === "table" ? TableIconReact : FileText;
+  const Icon = kind === "chat" ? MessageSquare : kind === "table" ? TableIconReact : FileText;
 
   return (
     <button

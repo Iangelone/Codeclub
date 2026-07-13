@@ -38,8 +38,31 @@ import ChatPanel from "../components/ChatPanel.astro";
         document.querySelector('#close')?.addEventListener('click', () => { appWindow.close(); });
         document.querySelector('.drag-area')?.addEventListener('dblclick', () => { appWindow.toggleMaximize(); });
         
+        let hasProjectSelection = false;
+        const projectRequiredControls = document.querySelectorAll('[data-project-required]');
+        const updateProjectContext = (enabled) => {
+          hasProjectSelection = enabled;
+          projectRequiredControls.forEach((control) => {
+            const element = control;
+            if ('disabled' in element) element.disabled = !enabled;
+            element.setAttribute('aria-disabled', String(!enabled));
+            element.classList.toggle('opacity-35', !enabled);
+            element.classList.toggle('cursor-not-allowed', !enabled);
+            element.classList.toggle('pointer-events-none', !enabled && element.tagName !== 'BUTTON');
+          });
+          if (!enabled) {
+            window.dispatchEvent(new CustomEvent('codeclub:panel-mode', { detail: { mode: 'single' } }));
+          }
+        };
+
+        window.addEventListener('codeclub:project-selection-changed', (event) => {
+          updateProjectContext(event.detail?.selected === true);
+        });
+        updateProjectContext(false);
+
         document.querySelectorAll('[data-action="toggle-terminal"]').forEach((el) => {
           el.addEventListener('click', (event) => {
+            if (!hasProjectSelection) return;
             event.preventDefault();
             window.dispatchEvent(new CustomEvent('codeclub:open-terminal-dock', { detail: { toggle: true } }));
           });
@@ -56,6 +79,7 @@ import ChatPanel from "../components/ChatPanel.astro";
           updatePanelButtons('single');
         });
         panelSplitBtn?.addEventListener('click', () => {
+          if (!hasProjectSelection) return;
           window.dispatchEvent(new CustomEvent('codeclub:panel-mode', { detail: { mode: 'split' } }));
           updatePanelButtons('split');
         });

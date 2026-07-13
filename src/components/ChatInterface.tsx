@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUp, Copy, RotateCcw, Coffee } from 'lucide-react';
+import { ArrowUpRight, Copy, FileText, MessageSquare, RotateCcw, Table2, Terminal, Coffee, FolderTree, GitCompare, Plus } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
+import { open } from '@tauri-apps/plugin-dialog';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import ReactMarkdown from 'react-markdown';
 import { createTools } from '../lib/engine/tools';
@@ -86,6 +87,7 @@ const MessageToolSummary = ({ tools, isBusy }) => {
 export default function ChatInterface({ catalog, defaultProvider, defaultModel, panelId = 'left', eventPrefix = 'codeclub' }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
+  const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [agentState, setAgentState] = useState('idle');
   const [pendingApprovals, setPendingApprovals] = useState([]);
@@ -158,6 +160,22 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   }, [eventPrefix]);
 
   useEffect(() => {
+    const handlers = (['diff', 'folders'] as const).map((kind) => {
+      const eventName = `${eventPrefix}:open-${kind}`;
+      const handler = (e: any) => {
+        setWorkspaceMode(kind);
+        setActiveProject((current) => current || (e.detail?.projectPath ? {
+          projectPath: e.detail.projectPath,
+          name: e.detail.projectName || 'Proyecto',
+        } : null));
+      };
+      window.addEventListener(eventName, handler);
+      return { eventName, handler };
+    });
+    return () => handlers.forEach(({ eventName, handler }) => window.removeEventListener(eventName, handler));
+  }, [eventPrefix]);
+
+  useEffect(() => {
     const handleActiveProject = (e: any) => {
       setActiveProject(e.detail);
       setWorkspaceMode('blank');
@@ -197,8 +215,13 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   }, [workspaceMode, activeProject]);
 
   useEffect(() => {
-    const handleOpenBlank = () => {
+    const handleOpenBlank = (event: Event) => {
+      const preserveProject = (event as CustomEvent).detail?.preserveProject === true;
       setWorkspaceMode('blank');
+      if (!preserveProject) {
+        setActiveProject(null);
+        setProjectMeta(null);
+      }
       setAgentState('idle');
       setPendingApprovals([]);
       approvalResolversRef.current.clear();
@@ -669,6 +692,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     setComposerDocked(true);
     setMessages(newMessages);
     setInput('');
+    if (chatInputRef.current) chatInputRef.current.style.height = '22px';
     setIsStreaming(true);
     setAgentState('streaming');
     
@@ -733,6 +757,8 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
         'Para modificar archivos usa writeFile con el contenido completo del archivo.',
         'Para comandos usa runCommand solo cuando aporte a la tarea.',
         'Para procesos persistentes, servidores o trabajo interactivo usa la tool terminal; crea procesos background sin abrir UI.',
+        'Usa createPlan, updatePlan, todo y getTaskStatus para organizar tareas de programacion.',
+        'Usa askUser solo cuando falte una decision importante; devuelve una solicitud estructurada sin asumir la respuesta.',
         'Las acciones riesgosas piden aprobacion humana antes de ejecutarse.',
       ].join(' ');
 
@@ -775,7 +801,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!input.trim() || isAgentBusy) return;
+    if ((!input.trim() && attachedFiles.length === 0) || isAgentBusy) return;
 
     if (credentialProvider) {
       localStorage.setItem(`${credentialProvider.id}_api_key`, input.trim());
@@ -811,7 +837,11 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       return;
     }
 
-    await sendMessage(input.trim());
+    const attachmentContext = attachedFiles.length > 0
+      ? `\n\nArchivos añadidos:\n${attachedFiles.map((file) => `- ${file}`).join('\n')}`
+      : '';
+    await sendMessage(`${input.trim() || 'Revisá los archivos añadidos.'}${attachmentContext}`);
+    setAttachedFiles([]);
   };
 
   const handleCopyMessage = async (content) => {
@@ -823,6 +853,21 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     const message = messages[messageIndex];
     if (!message || message.role !== 'user') return;
     await sendMessage(message.content, messages.slice(0, messageIndex), false, true);
+  };
+
+  const handleAttachFiles = async () => {
+    try {
+      const selected = await open({
+        multiple: true,
+        directory: false,
+        title: 'Añadir archivos al chat',
+      });
+      if (!selected) return;
+      const files = Array.isArray(selected) ? selected : [selected];
+      setAttachedFiles((current) => [...new Set([...current, ...files])]);
+    } catch (error) {
+      console.error('Error seleccionando archivos:', error);
+    }
   };
 
   if (workspaceMode === 'blank') {
@@ -864,6 +909,12 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
         }
       };
 
+      const openProjectPanel = (kind: 'diff' | 'folders') => {
+        window.dispatchEvent(new CustomEvent(`codeclub:open-${kind}`, {
+          detail: { projectPath: activeProject.projectPath, projectName: activeProject.name },
+        }));
+      };
+
       return (
         <div className="flex flex-col gap-2 w-[min(300px,calc(100%-64px))] text-[#d8d8d8] text-[13px]">
           {(['chat', 'table', 'note'] as const).map((kind) => {
@@ -879,7 +930,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
                   className={`flex items-center justify-between p-[12px_16px] border-0 text-[#eeeeee] cursor-pointer text-left w-full transition-colors duration-200 outline-none ${isExpanded ? 'bg-[var(--color-surface-4)]' : 'bg-transparent hover:bg-[var(--color-surface-3)]'}`}
                 >
                   <div className="flex items-center gap-3">
-                    <AnimatedBraille kind={kind} />
+                    {kind === 'chat' ? <MessageSquare size={16} /> : kind === 'table' ? <Table2 size={16} /> : <FileText size={16} />}
                     <span className="font-medium">{title}</span>
                   </div>
                   <span className="opacity-40 text-[11px]">{items.length}</span>
@@ -923,6 +974,23 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
               </div>
             );
           })}
+
+          {(['diff', 'folders'] as const).map((kind) => {
+            const title = kind === 'diff' ? 'Cambios' : 'Carpetas';
+            return (
+              <button
+                key={kind}
+                type="button"
+                onClick={() => openProjectPanel(kind)}
+                className="flex items-center justify-between rounded-xl border border-[var(--color-surface-10)] bg-[var(--color-surface-1)] p-[12px_16px] text-left text-[#eeeeee] shadow-[0_4px_12px_rgba(0,0,0,0.2)] outline-none transition-colors duration-200 hover:bg-[var(--color-surface-3)]"
+              >
+                <div className="flex items-center gap-3">
+                  {kind === 'diff' ? <GitCompare size={16} /> : <FolderTree size={16} />}
+                  <span className="font-medium">{title}</span>
+                </div>
+              </button>
+            );
+          })}
           
           <button 
             type="button" 
@@ -935,7 +1003,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
             className="flex items-center justify-between p-[12px_16px] bg-[var(--color-surface-1)] hover:bg-[var(--color-surface-3)] border border-[var(--color-surface-10)] rounded-xl text-[#eeeeee] cursor-pointer text-left w-full transition-colors duration-200 outline-none shadow-[0_4px_12px_rgba(0,0,0,0.2)]"
           >
             <div className="flex items-center gap-3">
-              <AnimatedBraille kind="terminal" />
+              <Terminal size={16} />
               <span className="font-medium">Terminal</span>
             </div>
           </button>
@@ -980,6 +1048,10 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
         </div>
       </div>
     );
+  }
+
+  if (workspaceMode === 'diff' || workspaceMode === 'folders') {
+    return <ProjectPanelView kind={workspaceMode} projectPath={activeProject?.projectPath} />;
   }
 
   return (
@@ -1056,12 +1128,33 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
           <span>{currentModel?.label || 'Sin modelo'}</span>
         </div>
 
-        <form onSubmit={handleSubmit} className="composer-box" style={{ minHeight: '40px', display: 'grid', gridTemplateColumns: '1fr 28px', alignItems: 'center', gap: '4px', padding: '5px', border: '1px solid var(--color-surface-9, #2f2f2f)', borderRadius: '8px', background: '#121212', boxShadow: '0 18px 52px rgba(0, 0, 0, 0.26)' }}>
+        <form onSubmit={handleSubmit} className="composer-box" style={{ minHeight: '40px', display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 6px 5px 12px', border: '1px solid var(--color-surface-9, #2f2f2f)', borderRadius: '22px', background: '#121212', boxShadow: '0 18px 52px rgba(0, 0, 0, 0.26)' }}>
+          <button type="button" onClick={handleAttachFiles} className="text-white/40 hover:text-white transition-colors" aria-label="Añadir archivos" style={{ flex: '0 0 28px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, background: 'transparent', cursor: 'pointer' }}>
+            <Plus size={18} strokeWidth={2} />
+          </button>
+          {attachedFiles.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setAttachedFiles([])}
+              className="shrink-0 bg-[var(--color-surface-3)] text-[#bdbdbd] hover:bg-[var(--color-surface-7)] hover:text-[#eeeeee] transition-colors"
+              aria-label="Quitar archivos añadidos"
+              title="Quitar archivos añadidos"
+              style={{ minHeight: '24px', display: 'flex', alignItems: 'center', padding: '0 9px', border: '1px solid var(--color-surface-8, #2b2b2b)', borderRadius: '999px', fontSize: '11px', cursor: 'pointer' }}
+            >
+              Añadido {attachedFiles.length}
+            </button>
+          )}
           <textarea
             ref={chatInputRef}
             rows={1}
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onInput={(e) => {
+              const target = e.currentTarget;
+              target.style.height = 'auto';
+              target.style.height = `${Math.min(target.scrollHeight, 58)}px`;
+              target.style.overflowY = target.scrollHeight > 58 ? 'auto' : 'hidden';
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -1071,10 +1164,10 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
             onFocus={() => setMenuOpen(false)}
             placeholder={credentialProvider ? `Escribí tu credencial de ${credentialProvider.label || credentialProvider.id}` : "Preguntá, pedí código o describí una tarea"}
             aria-label="Mensaje"
-            style={{ appearance: 'none', minWidth: 0, maxHeight: '120px', resize: 'none', border: 0, outline: 'none', background: 'transparent', color: '#eeeeee', fontSize: '12px', lineHeight: 1.4, padding: '4px 7px', fontFamily: 'inherit', overflow: 'auto', scrollbarWidth: 'none' }}
+            style={{ appearance: 'none', flex: '1 1 auto', minWidth: 0, width: '100%', height: '22px', maxHeight: '58px', alignSelf: 'center', resize: 'none', border: 0, outline: 'none', background: 'transparent', color: '#eeeeee', fontSize: '12px', lineHeight: 1.4, padding: '4px 10px 4px 0', fontFamily: 'inherit', overflowY: 'hidden', scrollbarWidth: 'none' }}
           />
-          <button type="submit" disabled={isAgentBusy} className="send-button" aria-label={credentialProvider ? "Guardar credencial" : "Enviar"} style={{ width: '28px', height: '28px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '7px', background: 'var(--color-surface-8, #2c2c2c)', color: '#ffffff', cursor: isAgentBusy ? 'not-allowed' : 'pointer' }}>
-            <ArrowUp size={15} strokeWidth={2} />
+          <button type="submit" disabled={isAgentBusy} className="send-button text-white/35 hover:text-white transition-colors" aria-label={credentialProvider ? "Guardar credencial" : "Enviar"} style={{ flex: '0 0 36px', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, borderRadius: '50%', background: 'transparent', cursor: isAgentBusy ? 'not-allowed' : 'pointer' }}>
+            <ArrowUpRight size={18} strokeWidth={2} />
           </button>
         </form>
 
@@ -1114,6 +1207,66 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
             ))}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ProjectPanelView({ kind, projectPath }: { kind: 'diff' | 'folders'; projectPath?: string }) {
+  const [loading, setLoading] = useState(true);
+  const [folders, setFolders] = useState<Array<{ path: string; kind: string }>>([]);
+  const [diff, setDiff] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      if (!projectPath) return;
+      setLoading(true);
+      try {
+        if (kind === 'folders') {
+          const entries = await invoke<Array<{ path: string; kind: string }>>('codeclub_list_files', {
+            projectPath,
+            maxFiles: 400,
+          });
+          if (!cancelled) setFolders(entries);
+        } else {
+          const result = await invoke<{ stdout: string; stderr: string }>('codeclub_run_command', {
+            projectPath,
+            request: { command: 'git', args: ['diff', '--stat'] },
+          });
+          if (!cancelled) setDiff(result.stdout || result.stderr || 'Sin cambios pendientes.');
+        }
+      } catch (error) {
+        if (!cancelled) setDiff(`No se pudo cargar ${kind}: ${String(error)}`);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [kind, projectPath]);
+
+  return (
+    <div className="flex h-[min(720px,calc(100vh-96px))] w-[min(860px,calc(100%-64px))] min-w-0 flex-col gap-3 text-[#d8d8d8]">
+      <div className="flex items-center gap-2 text-sm text-[#eeeeee]">
+        {kind === 'folders' ? <FolderTree size={16} /> : <GitCompare size={16} />}
+        <span>{kind === 'folders' ? 'Carpetas' : 'Cambios'}</span>
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-[var(--color-surface-8)] bg-[var(--color-surface-1)] p-3 text-xs [scrollbar-width:none]">
+        {loading ? (
+          <span className="text-[#8f8f8f]">Cargando...</span>
+        ) : kind === 'folders' ? (
+          <div className="flex flex-col gap-1">
+            {folders.map((entry) => (
+              <div key={`${entry.kind}-${entry.path}`} className="flex items-center gap-2 rounded-md px-2 py-1 text-[#bdbdbd] hover:bg-[var(--color-surface-3)]">
+                {entry.kind === 'directory' ? <FolderTree size={13} /> : <span className="w-[13px] text-center text-[#777777]">·</span>}
+                <span className="truncate">{entry.path}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <pre className="m-0 whitespace-pre-wrap font-mono leading-5 text-[#bdbdbd]">{diff || 'Sin cambios pendientes.'}</pre>
+        )}
       </div>
     </div>
   );

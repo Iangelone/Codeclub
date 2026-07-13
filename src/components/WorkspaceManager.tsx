@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import ChatInterface from './ChatInterface.tsx';
+import PanelDock from './PanelDock.tsx';
 
 const SPLIT_KEY = 'codeclub_panel_split';
 const MODE_KEY = 'codeclub_panel_mode';
@@ -30,6 +31,8 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
   const [panelMode, setPanelMode] = useState<'single' | 'split'>('single');
   const [splitPercent, setSplitPercent] = useState(50);
   const [activePanel, setActivePanel] = useState<'left' | 'right'>('left');
+  const [panelsSwapped, setPanelsSwapped] = useState(false);
+  const [panelStates, setPanelStates] = useState({ left: 'blank', right: 'blank' });
   const [dragOverPanel, setDragOverPanel] = useState<'left' | 'right' | null>(null);
   const [mounted, setMounted] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -62,6 +65,15 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
 
     window.addEventListener('codeclub:panel-mode', handlePanelMode);
     return () => window.removeEventListener('codeclub:panel-mode', handlePanelMode);
+  }, []);
+
+  useEffect(() => {
+    const handleProjectSelection = (e: Event) => {
+      if ((e as CustomEvent).detail?.selected !== true) setPanelMode('single');
+    };
+
+    window.addEventListener('codeclub:project-selection-changed', handleProjectSelection);
+    return () => window.removeEventListener('codeclub:project-selection-changed', handleProjectSelection);
   }, []);
 
   // Broadcast current mode for topbar icon sync
@@ -109,11 +121,12 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
       const detail = (e as CustomEvent).detail;
       const id = detail?.chatId || detail?.noteId || detail?.tableId;
       const kind = e.type.split(':open-')[1];
-      const key = id ? `${kind}:${id}` : 'blank';
+      const key = id ? `${kind}:${id}` : kind === 'blank' ? 'blank' : kind;
       if (panel === 'left') leftStateRef.current = key;
       else rightStateRef.current = key;
+      setPanelStates((current) => ({ ...current, [panel]: key }));
     };
-    const names = ['chat', 'note', 'table', 'blank'];
+    const names = ['chat', 'note', 'table', 'diff', 'folders', 'blank'];
     const listeners = names.flatMap(kind => [
       { name: `codeclub:panel-left:open-${kind}`, handler: trackEvent('left') },
       { name: `codeclub:panel-right:open-${kind}`, handler: trackEvent('right') },
@@ -128,7 +141,13 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
       const detail = (e as CustomEvent).detail;
       const id = detail?.chatId || detail?.noteId || detail?.tableId;
       const kind = originalName.replace('open-', '');
-      const key = id ? `${kind}:${id}` : 'blank';
+      const key = id ? `${kind}:${id}` : kind === 'blank' ? 'blank' : kind;
+
+      if (key === 'blank' && panelMode === 'split') {
+        window.dispatchEvent(new CustomEvent('codeclub:panel-left:open-blank', { detail }));
+        window.dispatchEvent(new CustomEvent('codeclub:panel-right:open-blank', { detail }));
+        return;
+      }
 
       let finalTarget = activePanel === 'left' ? 'left' : 'right';
 
@@ -214,6 +233,16 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
     }
   };
 
+  const handleDockHome = () => {
+    window.dispatchEvent(new CustomEvent(`codeclub:panel-${activePanel}:open-blank`, {
+      detail: { preserveProject: true },
+    }));
+  };
+
+  const handleSwapPanels = () => setPanelsSwapped((swapped) => !swapped);
+
+  const isDockVisible = panelStates[activePanel] !== 'blank';
+
   const DropOverlay = ({ show }: { show: boolean }) => {
     if (!show) return null;
     return (
@@ -256,14 +285,30 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
       style={{
         width: '100%',
         height: '100%',
-        display: 'grid',
-        gridTemplateColumns: gridColumns,
-        transition: isDragging.current ? 'none' : 'grid-template-columns 280ms cubic-bezier(0.22, 1, 0.36, 1)',
+        display: 'flex',
+        flexDirection: 'column',
         overflow: 'hidden',
         minWidth: 0,
         minHeight: 0,
+        position: 'relative',
       }}
     >
+      <PanelDock
+        onHome={handleDockHome}
+        visible={isDockVisible}
+        showSwap={panelMode === 'split'}
+        onSwap={handleSwapPanels}
+      />
+
+      <div
+        className="min-h-0 min-w-0 flex-1"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: gridColumns,
+          transition: isDragging.current ? 'none' : 'grid-template-columns 280ms cubic-bezier(0.22, 1, 0.36, 1)',
+          overflow: 'hidden',
+        }}
+      >
       {/* Left panel (always visible) */}
       <div
         className={`workspace-pane ${activePanel === 'left' ? 'is-active-pane' : ''}`}
@@ -279,6 +324,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
           display: 'grid',
           placeItems: 'center',
           position: 'relative',
+          order: panelsSwapped ? 3 : 1,
         }}
       >
         <DropOverlay show={dragOverPanel === 'left'} />
@@ -296,6 +342,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
         <div
           className="workspace-divider"
           onMouseDown={handleDividerMouseDown}
+          style={{ order: 2 }}
         >
           <div className="workspace-divider-line" />
         </div>
@@ -317,6 +364,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
             display: 'grid',
             placeItems: 'center',
             position: 'relative',
+            order: panelsSwapped ? 1 : 3,
           }}
         >
           <DropOverlay show={dragOverPanel === 'right'} />
@@ -329,6 +377,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
           />
         </div>
       )}
+      </div>
     </div>
   );
 }

@@ -78,6 +78,8 @@ struct TerminalInfo {
     name: String,
     shell: String,
     cwd: String,
+    #[serde(rename = "projectPath")]
+    project_path: Option<String>,
     is_agent: bool,
     created_at: String,
     status: String,
@@ -639,6 +641,7 @@ fn codeclub_terminal_create(
         name,
         shell: shell.label,
         cwd: cwd.to_string_lossy().to_string(),
+        project_path: request.project_path.clone(),
         is_agent,
         created_at: now_millis().to_string(),
         status: "running".into(),

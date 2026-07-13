@@ -3,6 +3,7 @@ import { jsonSchema, tool } from 'ai';
 import type { ToolContext } from './types';
 import { runStream } from './run';
 import { saveMemory, searchMemory, deleteMemory } from './memory';
+import { createId, readAgentState, writeAgentState, type TaskStatus } from './planning';
 
 function createSubagentTools(ctx: { projectPath: string; recordToolEvent: (name: string, input: any, output: any) => void; setAgentState: (state: string) => void }) {
   const { projectPath, recordToolEvent, setAgentState } = ctx;
@@ -128,6 +129,132 @@ export function createTools(ctx: ToolContext) {
         });
         recordToolEvent('searchText', { query, maxMatches }, output);
         return output;
+      },
+    }),
+    askUser: tool({
+      description: 'Request clarification from the user when an important decision is missing. Returns a pending request; it does not answer for the user.',
+      inputSchema: jsonSchema({
+        type: 'object',
+        properties: {
+          question: { type: 'string', description: 'Clear question for the user.' },
+          options: { type: 'array', items: { type: 'string' }, description: 'Optional answer choices.' },
+          context: { type: 'string', description: 'Optional reason why the answer is needed.' },
+        },
+        required: ['question'],
+        additionalProperties: false,
+      }),
+      execute: async ({ question, options, context }) => {
+        setAgentState('tool_call');
+        const output = { status: 'awaiting_user', question, options: options || [], context: context || null };
+        recordToolEvent('askUser', { question, options, context }, output);
+        return output;
+      },
+    }),
+    createPlan: tool({
+      description: 'Create a persistent implementation plan for the active project.',
+      inputSchema: jsonSchema({
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: 'Plan title.' },
+          steps: { type: 'array', items: { type: 'string' }, description: 'Ordered implementation steps.' },
+        },
+        required: ['title', 'steps'],
+        additionalProperties: false,
+      }),
+      execute: async ({ title, steps }) => {
+        setAgentState('tool_call');
+        const now = new Date().toISOString();
+        const plan = {
+          id: createId('plan'),
+          title,
+          status: 'pending' as TaskStatus,
+          steps: (steps || []).map((step: string) => ({ id: createId('step'), title: step, status: 'pending' as TaskStatus })),
+          createdAt: now,
+          updatedAt: now,
+        };
+        const state = await readAgentState(projectPath);
+        state.plan = plan;
+        await writeAgentState(projectPath, state);
+        recordToolEvent('createPlan', { title, steps }, plan);
+        return plan;
+      },
+    }),
+    updatePlan: tool({
+      description: 'Update the active implementation plan or one of its steps.',
+      inputSchema: jsonSchema({
+        type: 'object',
+        properties: {
+          planId: { type: 'string', description: 'Optional plan ID. Defaults to the active plan.' },
+          title: { type: 'string', description: 'Optional new plan title.' },
+          status: { type: 'string', enum: ['pending', 'in_progress', 'completed', 'blocked'] },
+          stepId: { type: 'string', description: 'Optional step ID to update.' },
+          stepStatus: { type: 'string', enum: ['pending', 'in_progress', 'completed', 'blocked'] },
+        },
+        additionalProperties: false,
+      }),
+      execute: async ({ planId, title, status, stepId, stepStatus }) => {
+        setAgentState('tool_call');
+        const state = await readAgentState(projectPath);
+        if (!state.plan || (planId && state.plan.id !== planId)) return { ok: false, error: 'No se encontró el plan indicado.' };
+        if (title) state.plan.title = title;
+        if (status) state.plan.status = status as TaskStatus;
+        if (stepId && stepStatus) {
+          const step = state.plan.steps.find((item) => item.id === stepId);
+          if (!step) return { ok: false, error: 'No se encontró el paso indicado.' };
+          step.status = stepStatus as TaskStatus;
+        }
+        state.plan.updatedAt = new Date().toISOString();
+        await writeAgentState(projectPath, state);
+        recordToolEvent('updatePlan', { planId, title, status, stepId, stepStatus }, state.plan);
+        return state.plan;
+      },
+    }),
+    todo: tool({
+      description: 'Manage persistent TODO items for the active project.',
+      inputSchema: jsonSchema({
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['add', 'update', 'remove', 'clear', 'list'] },
+          id: { type: 'string' },
+          title: { type: 'string' },
+          description: { type: 'string' },
+          status: { type: 'string', enum: ['pending', 'in_progress', 'completed', 'blocked'] },
+        },
+        required: ['action'],
+        additionalProperties: false,
+      }),
+      execute: async ({ action, id, title, description, status }) => {
+        setAgentState('tool_call');
+        const state = await readAgentState(projectPath);
+        if (action === 'add' && title) {
+          const now = new Date().toISOString();
+          state.todos.push({ id: createId('todo'), title, description, status: (status || 'pending') as TaskStatus, createdAt: now, updatedAt: now });
+        } else if (action === 'update' && id) {
+          const todo = state.todos.find((item) => item.id === id);
+          if (!todo) return { ok: false, error: 'No se encontró el TODO indicado.' };
+          if (title) todo.title = title;
+          if (description !== undefined) todo.description = description;
+          if (status) todo.status = status as TaskStatus;
+          todo.updatedAt = new Date().toISOString();
+        } else if (action === 'remove' && id) {
+          state.todos = state.todos.filter((item) => item.id !== id);
+        } else if (action === 'clear') {
+          state.todos = [];
+        }
+        await writeAgentState(projectPath, state);
+        const output = { ok: true, todos: state.todos };
+        recordToolEvent('todo', { action, id, title, description, status }, output);
+        return output;
+      },
+    }),
+    getTaskStatus: tool({
+      description: 'Read the current implementation plan and TODO items for the active project.',
+      inputSchema: jsonSchema({ type: 'object', properties: {}, additionalProperties: false }),
+      execute: async () => {
+        setAgentState('tool_call');
+        const state = await readAgentState(projectPath);
+        recordToolEvent('getTaskStatus', {}, state);
+        return state;
       },
     }),
     writeFile: tool({

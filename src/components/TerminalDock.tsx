@@ -12,6 +12,7 @@ type TerminalInfo = {
   name: string;
   shell: ShellKind | string;
   cwd: string;
+  projectPath?: string;
   is_agent: boolean;
   created_at: string;
   status: string;
@@ -112,6 +113,7 @@ const getInitialHeight = () => {
 export default function TerminalDock() {
   const [mounted, setMounted] = useState(false);
   const [terminals, setTerminals] = useState<TerminalInfo[]>([]);
+  const [activeProjectPath, setActiveProjectPath] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [shellMenuOpen, setShellMenuOpen] = useState(false);
@@ -138,18 +140,11 @@ export default function TerminalDock() {
   const dockHeightRef = useRef(dockHeight);
   dockHeightRef.current = dockHeight;
 
-  const visibleTerminals = terminals.filter((terminal) => !terminal.is_agent);
+  const visibleTerminals = terminals.filter((terminal) => !terminal.is_agent && terminal.projectPath === activeProjectPath);
   const activeTerminal = visibleTerminals.find((terminal) => terminal.id === activeId) || null;
 
   const resolveActiveProjectPath = () => {
-    if (activeProjectPathRef.current) return activeProjectPathRef.current;
-
-    const selectedProject = document.querySelector<HTMLElement>('.project-card.is-selected');
-    const activeRow = document.querySelector<HTMLElement>('.chat-row.is-active');
-    const projectPath = selectedProject?.dataset.path || activeRow?.dataset.projectPath || null;
-
-    if (projectPath) activeProjectPathRef.current = projectPath;
-    return projectPath;
+    return activeProjectPathRef.current;
   };
 
   const persistPosition = () => {
@@ -343,6 +338,16 @@ export default function TerminalDock() {
   }, [visibleTerminals.length]);
 
   useEffect(() => {
+    if (!activeProjectPath) {
+      setActiveId(null);
+      return;
+    }
+    if (!visibleTerminals.some((terminal) => terminal.id === activeId)) {
+      setActiveId(visibleTerminals[0]?.id || null);
+    }
+  }, [activeProjectPath, terminals]);
+
+  useEffect(() => {
     if (!loadedRef.current) return;
     const payload = terminals
       .filter((terminal) => !terminal.is_agent)
@@ -351,6 +356,7 @@ export default function TerminalDock() {
         name,
         shell,
         cwd,
+        projectPath,
         is_agent,
         created_at,
         status,
@@ -365,16 +371,31 @@ export default function TerminalDock() {
       const detail = (event as CustomEvent).detail || {};
       if (!detail.projectPath) return;
       activeProjectPathRef.current = detail.projectPath;
+      setActiveProjectPath(detail.projectPath);
 
       if (!restoredRef.current) {
         restoredRef.current = true;
         readPersistedTerminals().forEach((terminal) => {
           createTerminal(terminal.shell as ShellKind, {
             cwd: terminal.cwd || detail.projectPath,
+            projectPath: terminal.projectPath || detail.projectPath,
             open: false,
           }).catch(console.error);
         });
       }
+    };
+
+    const handleProjectSelection = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      if (detail.selected === true && detail.projectPath) {
+        activeProjectPathRef.current = detail.projectPath;
+        setActiveProjectPath(detail.projectPath);
+        return;
+      }
+      activeProjectPathRef.current = null;
+      setActiveProjectPath(null);
+      setActiveId(null);
+      setIsOpen(false);
     };
 
     const openTerminalDock = (event: Event) => {
@@ -429,6 +450,7 @@ export default function TerminalDock() {
     };
 
     window.addEventListener('codeclub:active-project', setProjectPath);
+    window.addEventListener('codeclub:project-selection-changed', handleProjectSelection);
     window.addEventListener('codeclub:open-chat', setProjectPath);
     window.addEventListener('codeclub:open-note', setProjectPath);
     window.addEventListener('codeclub:open-table', setProjectPath);
@@ -438,6 +460,7 @@ export default function TerminalDock() {
     return () => {
       cleanups.forEach((cleanup) => cleanup());
       window.removeEventListener('codeclub:active-project', setProjectPath);
+      window.removeEventListener('codeclub:project-selection-changed', handleProjectSelection);
       window.removeEventListener('codeclub:open-chat', setProjectPath);
       window.removeEventListener('codeclub:open-note', setProjectPath);
       window.removeEventListener('codeclub:open-table', setProjectPath);
@@ -473,7 +496,7 @@ export default function TerminalDock() {
 
   const createTerminal = async (
     shell: ShellKind = 'powershell',
-    options: { cwd?: string; isAgent?: boolean; open?: boolean } = {},
+    options: { cwd?: string; projectPath?: string; isAgent?: boolean; open?: boolean } = {},
   ) => {
     const projectPath = options.cwd || resolveActiveProjectPath();
     if (!options.isAgent && !projectPath) return null;
@@ -483,7 +506,7 @@ export default function TerminalDock() {
         shell,
         name,
         cwd: options.cwd,
-        projectPath: options.cwd ? undefined : projectPath || undefined,
+        projectPath: options.projectPath || (options.cwd ? undefined : projectPath || undefined),
         isAgent: Boolean(options.isAgent),
       },
     });

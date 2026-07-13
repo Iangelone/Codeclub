@@ -7,7 +7,7 @@ The engine is the AI execution layer, separated from the React UI. Lives in `src
 | File | Purpose |
 |---|---|
 | `types.ts` | Shared types: `ToolEvent`, `ToolContext`, `EngineCallbacks` |
-| `tools.ts` | `createTools(ctx)` — 9 tools: workspace (5) + subagent + memory CRUD (3) |
+| `tools.ts` | `createTools(ctx)` — 15 tools: workspace, planning, subagent y memory CRUD |
 | `run.ts` | `runStream(params)` — AI SDK `streamText` loop, returns assistant content |
 | `memory.ts` | `saveMemory`, `loadMemory`, `searchMemory`, `deleteMemory`, `deleteMemoriesByTag` |
 
@@ -33,6 +33,11 @@ ChatInterface.tsx (orchestrator)
 | `remember` | `saveMemory` | No | Guarda en `.codeclub/memory/{key}.json` |
 | `recall` | `searchMemory` | No | Busca por key o tag |
 | `forget` | `deleteMemory` | No | Elimina por key exacta |
+| `askUser` | Solicitud estructurada | No | Devuelve una pregunta pendiente sin UI |
+| `createPlan` | `.codeclub/agent-state.json` | No | Crea un plan persistente |
+| `updatePlan` | `.codeclub/agent-state.json` | No | Actualiza plan o paso |
+| `todo` | `.codeclub/agent-state.json` | No | CRUD de TODOs persistentes |
+| `getTaskStatus` | `.codeclub/agent-state.json` | No | Lee plan y TODOs actuales |
 
 Cada tool recibe `ToolContext`:
 - `projectPath`: workspace activo
