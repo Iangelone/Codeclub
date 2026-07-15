@@ -351,7 +351,7 @@ export default function TerminalDock() {
     if (!loadedRef.current) return;
     const payload = terminals
       .filter((terminal) => !terminal.is_agent)
-      .map(({ id, name, shell, cwd, is_agent, created_at, status }) => ({
+      .map(({ id, name, shell, cwd, projectPath, is_agent, created_at, status }) => ({
         id,
         name,
         shell,

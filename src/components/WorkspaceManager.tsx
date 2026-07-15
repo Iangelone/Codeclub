@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { exists, readTextFile } from '@tauri-apps/plugin-fs';
 import ChatInterface from './ChatInterface.tsx';
 import PanelDock from './PanelDock.tsx';
 
@@ -33,6 +34,8 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
   const [activePanel, setActivePanel] = useState<'left' | 'right'>('left');
   const [panelsSwapped, setPanelsSwapped] = useState(false);
   const [panelStates, setPanelStates] = useState({ left: 'blank', right: 'blank' });
+  const [selectedProject, setSelectedProject] = useState<{ projectPath: string; projectName?: string } | null>(null);
+  const [recentChats, setRecentChats] = useState<Array<{ id: string; name: string }>>([]);
   const [dragOverPanel, setDragOverPanel] = useState<'left' | 'right' | null>(null);
   const [mounted, setMounted] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -43,6 +46,36 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
     setSplitPercent(getInitialSplit());
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadRecentChats = async () => {
+      if (!selectedProject?.projectPath) {
+        setRecentChats([]);
+        return;
+      }
+      setRecentChats([]);
+      try {
+        const path = `${selectedProject.projectPath}/.codeclub/meta.json`;
+        if (!(await exists(path))) return;
+        const meta = JSON.parse(await readTextFile(path));
+        if (!cancelled) setRecentChats((meta.chats || []).slice(-3).reverse());
+      } catch {
+        if (!cancelled) setRecentChats([]);
+      }
+    };
+    loadRecentChats();
+    const refresh = () => loadRecentChats();
+    window.addEventListener('codeclub:project-indexed', refresh);
+    window.addEventListener('codeclub:renamed-chat', refresh);
+    window.addEventListener('codeclub:project-meta-changed', refresh);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('codeclub:project-indexed', refresh);
+      window.removeEventListener('codeclub:renamed-chat', refresh);
+      window.removeEventListener('codeclub:project-meta-changed', refresh);
+    };
+  }, [selectedProject]);
 
   // Persist mode
   useEffect(() => {
@@ -69,7 +102,13 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
 
   useEffect(() => {
     const handleProjectSelection = (e: Event) => {
-      if ((e as CustomEvent).detail?.selected !== true) setPanelMode('single');
+      const detail = (e as CustomEvent).detail || {};
+      if (detail.selected === true && detail.projectPath) {
+        setSelectedProject({ projectPath: detail.projectPath, projectName: detail.projectName });
+      } else {
+        setSelectedProject(null);
+        setPanelMode('single');
+      }
     };
 
     window.addEventListener('codeclub:project-selection-changed', handleProjectSelection);
@@ -149,7 +188,9 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
         return;
       }
 
-      let finalTarget = activePanel === 'left' ? 'left' : 'right';
+      let finalTarget = detail.sourcePanel === 'left' || detail.sourcePanel === 'right'
+        ? detail.sourcePanel
+        : activePanel === 'left' ? 'left' : 'right';
 
       if (key !== 'blank') {
         if (leftStateRef.current === key) {
@@ -169,7 +210,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
       }));
     };
 
-    const events = ['open-chat', 'open-note', 'open-table', 'open-blank'];
+    const events = ['open-chat', 'open-note', 'open-table', 'open-diff', 'open-folders', 'open-blank'];
     const handlers = events.map((name) => {
       const handler = routeEvent(name);
       window.addEventListener(`codeclub:${name}`, handler);
@@ -241,6 +282,18 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
 
   const handleSwapPanels = () => setPanelsSwapped((swapped) => !swapped);
 
+  const handleDockChat = (chat: { id: string; name: string }) => {
+    window.dispatchEvent(new CustomEvent('codeclub:open-chat', {
+      detail: {
+        chatId: chat.id,
+        name: chat.name,
+        projectPath: selectedProject?.projectPath,
+        projectName: selectedProject?.projectName,
+        sourcePanel: activePanel,
+      },
+    }));
+  };
+
   const isDockVisible = panelStates[activePanel] !== 'blank';
 
   const DropOverlay = ({ show }: { show: boolean }) => {
@@ -298,6 +351,8 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
         visible={isDockVisible}
         showSwap={panelMode === 'split'}
         onSwap={handleSwapPanels}
+        recentChats={recentChats}
+        onOpenChat={handleDockChat}
       />
 
       <div
@@ -334,6 +389,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
           defaultModel={defaultModel}
           panelId="left"
           eventPrefix="codeclub:panel-left"
+          selectedProject={selectedProject}
         />
       </div>
 
@@ -374,6 +430,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
             defaultModel={defaultModel}
             panelId="right"
             eventPrefix="codeclub:panel-right"
+            selectedProject={selectedProject}
           />
         </div>
       )}
