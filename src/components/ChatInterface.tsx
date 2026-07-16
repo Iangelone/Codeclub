@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUpRight, ChevronDown, ChevronRight, Copy, FileCode2, FileText, MessageSquare, RotateCcw, Table2, Terminal, Coffee, Folder, FolderTree, GitCompare, Plus, RefreshCw } from 'lucide-react';
+import { ArrowUpRight, ChevronDown, ChevronRight, Copy, FileCode2, FileText, MessageSquare, RotateCcw, Search, Table2, Terminal, Coffee, Folder, FolderTree, GitCompare, Plus, RefreshCw, X } from 'lucide-react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, indentWithTab } from '@codemirror/commands';
@@ -93,9 +93,10 @@ const MessageToolSummary = ({ tools, isBusy }) => {
   );
 };
 
-export default function ChatInterface({ catalog, defaultProvider, defaultModel, panelId = 'left', eventPrefix = 'codeclub', selectedProject }) {
+export default function ChatInterface({ catalog, defaultProvider, defaultModel, panelId = 'left', eventPrefix = 'codeclub', selectedProject, blockedPanelState = 'blank' }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
+  const [avatarColor, setAvatarColor] = useState(() => typeof window !== 'undefined' ? localStorage.getItem('codeclub_avatar_color') || '#3b6bb5' : '#3b6bb5');
   const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [agentState, setAgentState] = useState('idle');
@@ -108,6 +109,12 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [settingsReady, setSettingsReady] = useState(false);
   const [credentialProvider, setCredentialProvider] = useState(null);
 
+  useEffect(() => {
+    const handleProfileChange = (event) => setAvatarColor(event.detail?.color || '#3b6bb5');
+    window.addEventListener('codeclub:profile-changed', handleProfileChange);
+    return () => window.removeEventListener('codeclub:profile-changed', handleProfileChange);
+  }, []);
+
   const [menuOpen, setMenuOpen] = useState(false);
   const [commandKind, setCommandKind] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -115,6 +122,12 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [activeProject, setActiveProject] = useState<{projectPath: string, name: string} | null>(() => selectedProject ? { projectPath: selectedProject.projectPath, name: selectedProject.projectName || 'Proyecto' } : null);
   const [projectMeta, setProjectMeta] = useState<{chats: any[], notes: any[], tables: any[]} | null>(null);
   const [expandedMenu, setExpandedMenu] = useState<'chat' | 'note' | 'table' | null>(null);
+  const [creatingArtifactKind, setCreatingArtifactKind] = useState<'chat' | 'note' | 'table' | null>(null);
+  const [newArtifactName, setNewArtifactName] = useState('');
+  const [artifactSearch, setArtifactSearch] = useState<Record<string, string>>({});
+  const [recentArtifactIds, setRecentArtifactIds] = useState<Record<string, string[]>>({});
+  const [terminalCount, setTerminalCount] = useState(0);
+  const [changeCount, setChangeCount] = useState(0);
   const [activeChat, setActiveChat] = useState<{chatId: string, projectPath: string} | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState('blank');
   const [activeNote, setActiveNote] = useState<{noteId: string, projectPath: string, name?: string} | null>(null);
@@ -139,18 +152,117 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const searchInputRef = useRef(null);
   const chatInputRef = useRef(null);
   const messagesEndRef = useRef(null);
+  const restoredProjectRef = useRef('');
+
+  const panelMemoryKey = (projectPath: string) => `codeclub:last-panel:${panelId}:${encodeURIComponent(projectPath)}`;
+
+  const rememberPanel = (kind: 'chat' | 'note' | 'table' | 'diff' | 'folders', detail: any) => {
+    if (!detail?.projectPath) return;
+    localStorage.setItem(panelMemoryKey(detail.projectPath), JSON.stringify({ kind, detail }));
+  };
+
+  const rememberRecentArtifact = (kind: 'chat' | 'note' | 'table', detail: any) => {
+    if (!detail?.projectPath || !detail?.[`${kind}Id`]) return;
+    const key = `${detail.projectPath}:${kind}`;
+    const storageKey = `codeclub:recent-artifacts:${kind}:${encodeURIComponent(detail.projectPath)}`;
+    setRecentArtifactIds((current) => {
+      const ids = [detail[`${kind}Id`], ...(current[key] || [])].filter((id, index, all) => all.indexOf(id) === index).slice(0, 3);
+      localStorage.setItem(storageKey, JSON.stringify(ids));
+      return { ...current, [key]: ids };
+    });
+  };
+
+  const getRecentArtifactIds = (kind: 'chat' | 'note' | 'table', projectPath: string) => {
+    const key = `${projectPath}:${kind}`;
+    if (recentArtifactIds[key]) return recentArtifactIds[key];
+    try {
+      return JSON.parse(localStorage.getItem(`codeclub:recent-artifacts:${kind}:${encodeURIComponent(projectPath)}`) || '[]');
+    } catch {
+      return [];
+    }
+  };
+
+  const restoreLastPanel = async (project: any) => {
+    if (!project?.projectPath || restoredProjectRef.current === project.projectPath) return;
+    restoredProjectRef.current = project.projectPath;
+    try {
+      const raw = localStorage.getItem(panelMemoryKey(project.projectPath));
+      if (!raw) {
+        setWorkspaceMode('blank');
+        return;
+      }
+      const saved = JSON.parse(raw);
+      if (saved.kind === 'diff' || saved.kind === 'folders') {
+        window.dispatchEvent(new CustomEvent(`${eventPrefix}:open-${saved.kind}`, { detail: saved.detail }));
+        return;
+      }
+      const { readTextFile, exists } = await import('@tauri-apps/plugin-fs');
+      const metaPath = `${project.projectPath}/.codeclub/meta.json`;
+      if (!(await exists(metaPath))) throw new Error('Proyecto sin metadatos');
+      const meta = JSON.parse(await readTextFile(metaPath));
+      const collection = saved.kind === 'chat' ? 'chats' : `${saved.kind}s`;
+      const idKey = saved.kind === 'chat' ? 'chatId' : saved.kind === 'note' ? 'noteId' : 'tableId';
+      const item = (meta[collection] || []).find((entry: any) => entry.id === saved.detail?.[idKey]);
+      if (!item) throw new Error('Panel anterior inexistente');
+      window.dispatchEvent(new CustomEvent(`${eventPrefix}:open-${saved.kind}`, {
+        detail: { ...saved.detail, name: item.name, projectName: project.projectName || project.name },
+      }));
+    } catch {
+      localStorage.removeItem(panelMemoryKey(project.projectPath));
+      setWorkspaceMode('blank');
+    }
+  };
 
   useEffect(() => {
     composerDockedRef.current = composerDocked;
   }, [composerDocked]);
 
   useEffect(() => {
-    setActiveProject(selectedProject ? { projectPath: selectedProject.projectPath, name: selectedProject.projectName || 'Proyecto' } : null);
+    setActiveProject((current) => {
+      if (!selectedProject) return null;
+      if (current?.projectPath === selectedProject.projectPath) return current;
+      return { projectPath: selectedProject.projectPath, name: selectedProject.projectName || 'Proyecto' };
+    });
+    if (selectedProject) restoreLastPanel(selectedProject);
   }, [selectedProject]);
+
+  useEffect(() => {
+    const handleTerminalCount = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      if (!activeProject?.projectPath || detail.projectPath === activeProject.projectPath) {
+        setTerminalCount(detail.projectPath ? detail.count || 0 : 0);
+      }
+    };
+    window.addEventListener('codeclub:terminal-count-changed', handleTerminalCount);
+    return () => window.removeEventListener('codeclub:terminal-count-changed', handleTerminalCount);
+  }, [activeProject]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadChangeCount = async () => {
+      if (!activeProject?.projectPath) {
+        setChangeCount(0);
+        return;
+      }
+      try {
+        const result = await invoke<{ stdout?: string }>('codeclub_run_command', {
+          projectPath: activeProject.projectPath,
+          request: { command: 'git', args: ['status', '--short'] },
+        });
+        if (!cancelled) setChangeCount((result.stdout || '').split('\n').filter(Boolean).length);
+      } catch {
+        if (!cancelled) setChangeCount(0);
+      }
+    };
+    loadChangeCount();
+    return () => { cancelled = true; };
+  }, [activeProject]);
 
   useEffect(() => {
     const handleOpenChat = async (e: any) => {
       const chat = e.detail;
+      rememberPanel('chat', chat);
+      rememberRecentArtifact('chat', chat);
       setWorkspaceMode('chat');
       setActiveChat(chat);
       setAgentState('idle');
@@ -182,6 +294,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     const handlers = (['diff', 'folders'] as const).map((kind) => {
       const eventName = `${eventPrefix}:open-${kind}`;
       const handler = (e: any) => {
+        rememberPanel(kind, e.detail);
         setWorkspaceMode(kind);
         setActiveProject(e.detail?.projectPath ? {
           projectPath: e.detail.projectPath,
@@ -196,9 +309,9 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
 
   useEffect(() => {
     const handleActiveProject = (e: any) => {
-      setActiveProject(e.detail);
-      setWorkspaceMode('blank');
+      setActiveProject((current) => current?.projectPath === e.detail?.projectPath ? current : e.detail);
       setExpandedMenu(null);
+      restoreLastPanel(e.detail);
     };
     window.addEventListener('codeclub:active-project', handleActiveProject);
 
@@ -238,6 +351,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       const preserveProject = (event as CustomEvent).detail?.preserveProject === true;
       setWorkspaceMode('blank');
       if (!preserveProject) {
+        restoredProjectRef.current = '';
         setActiveProject(null);
         setProjectMeta(null);
       }
@@ -250,6 +364,8 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
 
     const handleOpenNote = async (e: any) => {
       const note = e.detail;
+      rememberPanel('note', note);
+      rememberRecentArtifact('note', note);
       setWorkspaceMode('note');
       setAgentState('idle');
       setPendingApprovals([]);
@@ -269,6 +385,8 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
 
     const handleOpenTable = async (e: any) => {
       const table = e.detail;
+      rememberPanel('table', table);
+      rememberRecentArtifact('table', table);
       setWorkspaceMode('table');
       setAgentState('idle');
       setPendingApprovals([]);
@@ -891,9 +1009,14 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
 
   if (workspaceMode === 'blank') {
     if (activeProject) {
-      const createNewArtifact = async (kind: 'chat' | 'note' | 'table') => {
+      const createNewArtifact = async (kind: 'chat' | 'note' | 'table', customName: string) => {
+        if (!customName.trim()) {
+          setCreatingArtifactKind(null);
+          setNewArtifactName('');
+          return;
+        }
         const id = Date.now().toString();
-        const name = kind === 'chat' ? 'Nuevo chat' : kind === 'note' ? 'Nueva nota' : 'Nueva tabla';
+        const name = customName.trim();
         const collection = kind === 'chat' ? 'chats' : `${kind}s`;
         try {
           const { readTextFile, writeTextFile, exists, mkdir } = await import('@tauri-apps/plugin-fs');
@@ -923,47 +1046,76 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
           }));
           
           setProjectMeta(metaData);
+          setCreatingArtifactKind(null);
+          setNewArtifactName('');
         } catch (e) {
           console.error(e);
         }
       };
 
-      const openProjectPanel = (kind: 'diff' | 'folders') => {
+      const openProjectPanel = (kind: 'diff') => {
         window.dispatchEvent(new CustomEvent(`codeclub:open-${kind}`, {
           detail: { projectPath: activeProject.projectPath, projectName: activeProject.name, sourcePanel: panelId },
         }));
       };
 
       return (
-        <div className="flex flex-col gap-2 w-[min(300px,calc(100%-64px))] text-[#d8d8d8] text-[13px]">
+        <div className="flex flex-col gap-2 w-[min(300px,calc(100%-64px))] text-[#d8d8d8] text-[13px]" style={{ fontWeight: 400 }}>
           {(['chat', 'table', 'note'] as const).map((kind) => {
             const isExpanded = expandedMenu === kind;
+            const isChatsBlocked = kind === 'chat' && blockedPanelState.startsWith('chat:');
             const items = projectMeta ? (projectMeta[kind === 'chat' ? 'chats' : `${kind}s`] || []) : [];
             const title = kind === 'chat' ? 'Chats' : kind === 'table' ? 'Tablas' : 'Notas';
+            const query = artifactSearch[kind] || '';
+            const recentItems = getRecentArtifactIds(kind, activeProject.projectPath)
+              .map((id) => items.find((item: any) => item.id === id))
+              .filter(Boolean);
+            const visibleItems = (query
+              ? items.filter((item: any) => item.name.toLowerCase().includes(query.toLowerCase()))
+              : recentItems.length ? recentItems : items.slice(-3).reverse()
+            ).slice(0, 3);
             
             return (
               <div key={kind} className="flex flex-col bg-[var(--color-surface-1)] border border-[var(--color-surface-10)] rounded-xl overflow-hidden shadow-[0_4px_12px_rgba(0,0,0,0.2)]">
                 <button 
                   type="button" 
-                  onClick={() => setExpandedMenu(isExpanded ? null : kind)}
-                  className={`flex items-center justify-between p-[12px_16px] border-0 text-[#eeeeee] cursor-pointer text-left w-full transition-colors duration-200 outline-none ${isExpanded ? 'bg-[var(--color-surface-4)]' : 'bg-transparent hover:bg-[var(--color-surface-3)]'}`}
+                  onClick={() => { if (!isChatsBlocked) setExpandedMenu(isExpanded ? null : kind); }}
+                  disabled={isChatsBlocked}
+                  className={`flex items-center justify-between p-[12px_16px] border-0 text-left w-full transition-colors duration-200 outline-none ${isChatsBlocked ? 'cursor-not-allowed text-[#555555]' : `cursor-pointer text-[#eeeeee] ${isExpanded ? 'bg-[var(--color-surface-4)]' : 'bg-transparent hover:bg-[var(--color-surface-3)]'}`}`}
                 >
                   <div className="flex items-center gap-3">
-                    {kind === 'chat' ? <MessageSquare size={16} /> : kind === 'table' ? <Table2 size={16} /> : <FileText size={16} />}
-                    <span className="font-medium">{title}</span>
+                    {kind === 'chat' ? <MessageSquare size={16} strokeWidth={1.5} /> : kind === 'table' ? <Table2 size={16} strokeWidth={1.5} /> : <FileText size={16} strokeWidth={1.5} />}
+                    <span className="font-normal" style={{ fontWeight: 400 }}>{title}</span>
                   </div>
                   <span className="opacity-40 text-[11px]">{items.length}</span>
                 </button>
                 {isExpanded && (
                   <div className="flex flex-col border-t border-[var(--color-surface-10)] max-h-[250px] overflow-y-auto bg-[var(--color-surface-0)] [scrollbar-width:none]">
-                    <button
-                      type="button"
-                      onClick={() => createNewArtifact(kind)}
-                      className="flex shrink-0 items-center gap-2 px-[16px] py-[10px] w-full bg-transparent border-0 border-b border-[var(--color-surface-8)] text-[#a0a0a0] cursor-pointer text-left text-xs transition-colors hover:text-[#eeeeee] hover:bg-[var(--color-surface-2)] outline-none"
-                    >
-                      <span className="text-base leading-none">+</span> Nuevo
-                    </button>
-                    {items.map((item: any) => (
+                    <label className="flex shrink-0 items-center gap-2 h-[34px] w-full border-b border-[var(--color-surface-8)] px-[12px] text-[#777777]">
+                      <Search size={14} strokeWidth={1.6} />
+                      <input
+                        type="text"
+                        value={query}
+                        onChange={(e) => setArtifactSearch((current) => ({ ...current, [kind]: e.target.value }))}
+                        placeholder={`Buscar ${title.toLowerCase()}`}
+                        className="min-w-0 flex-1 border-0 bg-transparent text-xs text-[#d8d8d8] outline-none placeholder:text-[#777777]"
+                      />
+                      {query && (
+                        <button
+                          type="button"
+                          aria-label="Limpiar búsqueda"
+                          onClick={() => setArtifactSearch((current) => ({ ...current, [kind]: '' }))}
+                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-0 bg-transparent p-0 text-[#777777] hover:bg-[var(--color-surface-5)] hover:text-[#eeeeee]"
+                        >
+                          <X size={13} strokeWidth={1.8} />
+                        </button>
+                      )}
+                    </label>
+                    {visibleItems.map((item: any) => {
+                      const isBlocked = kind === 'chat'
+                        ? blockedPanelState.startsWith('chat:')
+                        : blockedPanelState === `${kind}:${item.id}`;
+                      return (
                       <button
                         key={item.id}
                         type="button"
@@ -979,23 +1131,27 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
                           document.body.classList.remove("is-dragging-artifact");
                         }}
                         onClick={() => {
+                          if (isBlocked) return;
+                          rememberRecentArtifact(kind, { projectPath: activeProject.projectPath, [`${kind}Id`]: item.id });
                           window.dispatchEvent(new CustomEvent(`codeclub:open-${kind}`, {
                             detail: { projectPath: activeProject.projectPath, [`${kind}Id`]: item.id, name: item.name }
                           }));
                         }}
-                        className="block shrink-0 w-full px-[16px] py-[10px] bg-transparent border-0 text-[#cfcfcf] cursor-pointer text-left text-xs whitespace-nowrap overflow-hidden text-ellipsis transition-colors hover:bg-[var(--color-surface-4)] hover:text-[#ffffff] outline-none"
+                        disabled={isBlocked}
+                        className={`block shrink-0 w-full px-[16px] py-[10px] bg-transparent border-0 text-left text-xs whitespace-nowrap overflow-hidden text-ellipsis transition-colors outline-none ${isBlocked ? 'cursor-not-allowed text-[#555555]' : 'cursor-pointer text-[#cfcfcf] hover:bg-[var(--color-surface-4)] hover:text-[#ffffff]'}`}
                       >
                         {item.name}
                       </button>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
             );
           })}
 
-          {(['diff', 'folders'] as const).map((kind) => {
-            const title = kind === 'diff' ? 'Cambios' : 'Carpetas';
+          {(['diff'] as const).map((kind) => {
+            const title = 'Cambios';
             return (
               <button
                 key={kind}
@@ -1003,10 +1159,11 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
                 onClick={() => openProjectPanel(kind)}
                 className="flex items-center justify-between rounded-xl border border-[var(--color-surface-10)] bg-[var(--color-surface-1)] p-[12px_16px] text-left text-[#eeeeee] shadow-[0_4px_12px_rgba(0,0,0,0.2)] outline-none transition-colors duration-200 hover:bg-[var(--color-surface-3)]"
               >
-                <div className="flex items-center gap-3">
-                  {kind === 'diff' ? <GitCompare size={16} /> : <FolderTree size={16} />}
-                  <span className="font-medium">{title}</span>
-                </div>
+                  <div className="flex items-center gap-3">
+                    {kind === 'diff' ? <GitCompare size={16} strokeWidth={1.5} /> : <FolderTree size={16} strokeWidth={1.5} />}
+                    <span className="font-normal" style={{ fontWeight: 400 }}>{title}</span>
+                  </div>
+                <span className="opacity-40 text-[11px]">{changeCount}</span>
               </button>
             );
           })}
@@ -1022,9 +1179,10 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
             className="flex items-center justify-between p-[12px_16px] bg-[var(--color-surface-1)] hover:bg-[var(--color-surface-3)] border border-[var(--color-surface-10)] rounded-xl text-[#eeeeee] cursor-pointer text-left w-full transition-colors duration-200 outline-none shadow-[0_4px_12px_rgba(0,0,0,0.2)]"
           >
             <div className="flex items-center gap-3">
-              <Terminal size={16} />
-              <span className="font-medium">Terminal</span>
+              <Terminal size={16} strokeWidth={1.5} />
+              <span className="font-normal" style={{ fontWeight: 400 }}>Terminal</span>
             </div>
+            <span className="opacity-40 text-[11px]">{terminalCount}</span>
           </button>
         </div>
       );
@@ -1151,7 +1309,8 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
           <button type="button" onClick={handleAttachFiles} className="text-white/40 hover:text-white transition-colors" aria-label="Añadir archivos" style={{ flex: '0 0 40px', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--color-surface-9, #2f2f2f)', borderRadius: '50%', background: '#121212', boxShadow: '0 18px 52px rgba(0, 0, 0, 0.26)', cursor: 'pointer' }}>
             <Plus size={18} strokeWidth={2} />
           </button>
-          <form onSubmit={handleSubmit} className="composer-box" style={{ minHeight: '40px', flex: '1 1 auto', minWidth: 0, display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 6px 5px 12px', border: '1px solid var(--color-surface-9, #2f2f2f)', borderRadius: '22px', background: '#121212', boxShadow: '0 18px 52px rgba(0, 0, 0, 0.26)' }}>
+          <div className="composer-box" style={{ '--avatar-color': avatarColor, minHeight: '40px', flex: '1 1 auto', minWidth: 0, padding: '1.5px', borderRadius: '22px', background: 'var(--color-surface-9, #2f2f2f)', boxShadow: '0 18px 52px rgba(0, 0, 0, 0.26)' } as React.CSSProperties}>
+          <form onSubmit={handleSubmit} className="composer-box-inner" style={{ minHeight: '40px', width: '100%', minWidth: 0, display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 6px 5px 12px', border: 0, borderRadius: '20px', background: '#121212' }}>
           {false && (
           <button type="button" onClick={handleAttachFiles} className="text-white/40 hover:text-white transition-colors" aria-label="Añadir archivos" style={{ flex: '0 0 28px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, background: 'transparent', cursor: 'pointer' }}>
             <Plus size={18} strokeWidth={2} />
@@ -1195,6 +1354,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
             <ArrowUpRight size={18} strokeWidth={2} />
           </button>
           </form>
+          </div>
         </div>
 
         <div
@@ -1296,9 +1456,9 @@ function ProjectFoldersView({ projectPath }: { projectPath?: string }) {
     setLoading(true);
     setLoadError('');
     try {
-      const result = await invoke<ProjectFileEntry[]>('codeclub_list_files', { projectPath, maxFiles: 800 });
+    const result = await invoke<ProjectFileEntry[]>('codeclub_list_files', { projectPath, maxFiles: 1200 });
       setEntries(result);
-      setExpanded(new Set(result.filter((entry) => entry.kind === 'directory' && !entry.path.includes('/')).map((entry) => entry.path)));
+      setExpanded(new Set(result.filter((entry) => entry.kind === 'directory').map((entry) => entry.path)));
     } catch (error) { setEntries([]); setLoadError(String(error)); } finally { setLoading(false); }
   };
 
@@ -1350,9 +1510,9 @@ function AppleFoldersView({ projectPath }: { projectPath?: string }) {
     if (!projectPath) return;
     setLoading(true); setError('');
     try {
-      const result = await invoke<ProjectFileEntry[]>('codeclub_list_files', { projectPath, maxFiles: 800 });
+    const result = await invoke<ProjectFileEntry[]>('codeclub_list_files', { projectPath, maxFiles: 1200 });
       setEntries(result);
-      setExpanded(new Set(result.filter((entry) => entry.kind === 'directory' && !entry.path.includes('/')).map((entry) => entry.path)));
+      setExpanded(new Set(result.filter((entry) => entry.kind === 'directory').map((entry) => entry.path)));
     } catch (reason) { setEntries([]); setError(String(reason)); } finally { setLoading(false); }
   };
 
@@ -1363,10 +1523,21 @@ function AppleFoldersView({ projectPath }: { projectPath?: string }) {
     catch (reason) { setSelectedContent(`No se pudo abrir el archivo: ${String(reason)}`); }
     setSelectedPath(path);
   };
-  const renderTree = (nodes: FileTreeNode[], depth = 0): React.ReactNode => nodes.map((node) => {
-    const isOpen = expanded.has(node.path);
-    return <React.Fragment key={node.path}><button type="button" onClick={() => node.kind === 'directory' ? setExpanded((current) => { const next = new Set(current); next.has(node.path) ? next.delete(node.path) : next.add(node.path); return next; }) : openFile(node.path)} className={`flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-[12px] transition-colors ${selectedPath === node.path ? 'bg-[var(--color-surface-7)] text-[#eeeeee]' : 'text-[#bdbdbd] hover:bg-[var(--color-surface-3)]'}`} style={{ paddingLeft: `${8 + depth * 14}px` }}>{node.kind === 'directory' ? (isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />) : <span className="w-[13px]" />}{node.kind === 'directory' ? <Folder size={14} className="text-[#a89b72]" /> : <FileCode2 size={14} className="text-[#777777]" />}<span className="min-w-0 flex-1 truncate">{node.name}</span>{node.extension && <span className="text-[10px] text-[#666666]">{node.extension}</span>}</button>{node.kind === 'directory' && isOpen && renderTree(node.children, depth + 1)}</React.Fragment>;
-  });
+  const renderFlat = (items: ProjectFileEntry[]): React.ReactNode => items
+    .slice()
+    .sort((a, b) => a.path.localeCompare(b.path))
+    .map((entry) => (
+      <button
+        key={`${entry.kind}-${entry.path}`}
+        type="button"
+        onClick={() => entry.kind !== 'directory' && openFile(entry.path)}
+        className={`flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-[12px] transition-colors ${selectedPath === entry.path ? 'bg-[var(--color-surface-7)] text-[#eeeeee]' : 'text-[#bdbdbd] hover:bg-[var(--color-surface-3)]'}`}
+      >
+        {entry.kind === 'directory' ? <Folder size={14} className="shrink-0 text-[#a89b72]" /> : <FileCode2 size={14} className="shrink-0 text-[#777777]" />}
+        <span className="min-w-0 flex-1 truncate">{entry.path}</span>
+      </button>
+    ));
+  const renderTree = (_nodes: FileTreeNode[]): React.ReactNode => renderFlat(entries);
   const tree = buildFileTree(entries);
   const selectedParts = selectedPath.split('/').filter(Boolean);
   return <div className={`flex h-full w-full min-w-0 flex-col overflow-hidden text-[#d8d8d8] [&>div>aside>div:first-child]:hidden ${tree.length ? '' : '[&>div>aside]:hidden'}`}>

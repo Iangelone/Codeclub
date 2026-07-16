@@ -192,6 +192,16 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
         ? detail.sourcePanel
         : activePanel === 'left' ? 'left' : 'right';
 
+      // Al abrir desde la sidebar, usar primero un panel vacío.
+      if (!detail.sourcePanel && panelMode === 'split') {
+        const activeState = activePanel === 'left' ? leftStateRef.current : rightStateRef.current;
+        if (kind === 'chat' && activeState.startsWith('chat:')) {
+          // Los chats nuevos reemplazan el chat del panel activo.
+          finalTarget = activePanel;
+        } else if (leftStateRef.current === 'blank') finalTarget = 'left';
+        else if (rightStateRef.current === 'blank') finalTarget = 'right';
+      }
+
       if (key !== 'blank') {
         if (leftStateRef.current === key) {
           setActivePanel('left');
@@ -204,6 +214,16 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
 
       // In single mode, always route to left
       const panelTarget = panelMode === 'single' ? 'left' : finalTarget;
+      if (panelMode === 'split') setActivePanel(panelTarget);
+
+      if (kind === 'chat' && panelMode === 'split') {
+        const targetState = panelTarget === 'left' ? leftStateRef.current : rightStateRef.current;
+        const otherPanel = panelTarget === 'left' ? 'right' : 'left';
+        const otherState = panelTarget === 'left' ? rightStateRef.current : leftStateRef.current;
+        if (otherState.startsWith('chat:') && targetState !== key) {
+          window.dispatchEvent(new CustomEvent(`codeclub:panel-${otherPanel}:open-blank`, { detail: { preserveProject: true } }));
+        }
+      }
 
       window.dispatchEvent(new CustomEvent(`codeclub:panel-${panelTarget}:${originalName}`, {
         detail,
@@ -366,7 +386,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
       >
       {/* Left panel (always visible) */}
       <div
-        className={`workspace-pane ${activePanel === 'left' ? 'is-active-pane' : ''}`}
+        className={`workspace-pane acrylic-panel ${activePanel === 'left' ? 'is-active-pane' : ''}`}
         onClick={() => setActivePanel('left')}
         onDragEnter={(e) => handleDragEnter(e, 'left')}
         onDragOver={(e) => handleDragOver(e, 'left')}
@@ -390,6 +410,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
           panelId="left"
           eventPrefix="codeclub:panel-left"
           selectedProject={selectedProject}
+          blockedPanelState={panelMode === 'split' ? panelStates.right : 'blank'}
         />
       </div>
 
@@ -407,7 +428,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
       {/* Right panel (only in split mode) */}
       {panelMode === 'split' && (
         <div
-          className={`workspace-pane ${activePanel === 'right' ? 'is-active-pane' : ''}`}
+          className={`workspace-pane acrylic-panel ${activePanel === 'right' ? 'is-active-pane' : ''}`}
           onClick={() => setActivePanel('right')}
           onDragEnter={(e) => handleDragEnter(e, 'right')}
           onDragOver={(e) => handleDragOver(e, 'right')}
@@ -431,6 +452,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
             panelId="right"
             eventPrefix="codeclub:panel-right"
             selectedProject={selectedProject}
+            blockedPanelState={panelStates.left}
           />
         </div>
       )}

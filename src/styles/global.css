@@ -15,6 +15,36 @@
   --color-surface-10: #2f2f2f;
 }
 
+html,
+body {
+  background-color: #111111;
+}
+
+body {
+  background-image: linear-gradient(rgba(10, 10, 10, 0.52), rgba(10, 10, 10, 0.52)), url('/unsplash.jpg');
+  background-position: center;
+  background-size: cover;
+  background-attachment: fixed;
+}
+
+body::before {
+  background: transparent;
+  pointer-events: none;
+}
+
+.acrylic-panel {
+  background: rgba(22, 22, 22, 0.48);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.28), inset 0 1px rgba(255, 255, 255, 0.055);
+  backdrop-filter: blur(22px) saturate(1.25);
+  -webkit-backdrop-filter: blur(22px) saturate(1.25);
+}
+
+.composer-box:focus-within {
+  background: var(--avatar-color) !important;
+  box-shadow: 0 0 18px var(--avatar-color), 0 18px 52px rgba(0, 0, 0, 0.26);
+}
+
 .workspace-divider {
   width: 1px;
   height: 100%;

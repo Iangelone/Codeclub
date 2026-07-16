@@ -335,7 +335,10 @@ export default function TerminalDock() {
 
   useEffect(() => {
     visibleTerminalCountRef.current = visibleTerminals.length;
-  }, [visibleTerminals.length]);
+    window.dispatchEvent(new CustomEvent('codeclub:terminal-count-changed', {
+      detail: { projectPath: activeProjectPath, count: visibleTerminals.length },
+    }));
+  }, [activeProjectPath, visibleTerminals.length]);
 
   useEffect(() => {
     if (!activeProjectPath) {

@@ -449,6 +449,13 @@ fn codeclub_list_files(
 }
 
 #[tauri::command]
+fn codeclub_get_username() -> String {
+    std::env::var("USERNAME")
+        .or_else(|_| std::env::var("USER"))
+        .unwrap_or_else(|_| "Usuario".into())
+}
+
+#[tauri::command]
 fn codeclub_read_file(project_path: String, path: String) -> Result<String, String> {
     let full_path = safe_workspace_path(&project_path, &path)?;
     let metadata =
@@ -864,6 +871,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             codeclub_list_files,
+            codeclub_get_username,
             codeclub_read_file,
             codeclub_search_text,
             codeclub_write_file,

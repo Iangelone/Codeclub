@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { exists, readTextFile, writeTextFile, remove, readDir } from "@tauri-apps/plugin-fs";
 import { open } from "@tauri-apps/plugin-dialog";
 import { logPersistence } from "../lib/persistence";
+import SettingsModal from "./SettingsModal";
 import {
   readProjectIndex,
   writeProjectIndex,
@@ -20,12 +21,14 @@ import {
   MessageSquarePlus,
   Table2 as TableIconReact,
   FileText,
+  FileCode2,
   MousePointer2,
   Trash2
 } from "lucide-react";
 
 // --- Types ---
 type Artifact = { id: string; name: string };
+type StructureEntry = { path: string; isDirectory: boolean };
 type ProjectData = {
   name: string;
   path: string;
@@ -37,11 +40,17 @@ type ProjectData = {
 export default function Sidebar() {
   const [projects, setProjects] = useState<ProjectData[]>([]);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
+  const [expandedStructures, setExpandedStructures] = useState<Set<string>>(new Set());
+  const [openStructureDirectories, setOpenStructureDirectories] = useState<Set<string>>(new Set());
+  const [structureFiles, setStructureFiles] = useState<Record<string, StructureEntry[]>>({});
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [activeArtifactId, setActiveArtifactId] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const [creatingProject, setCreatingProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
+  const [creatingArtifact, setCreatingArtifact] = useState<{ projectPath: string; projectName: string; kind: "chat" | "note" | "table" } | null>(null);
+  const [newArtifactName, setNewArtifactName] = useState("");
   const [renamingItemId, setRenamingItemId] = useState<string | null>(null);
   const [renameInput, setRenameInput] = useState("");
   const [projectMenu, setProjectMenu] = useState<{
@@ -148,6 +157,59 @@ export default function Sidebar() {
     });
   };
 
+  const readStructure = async (directory: string, prefix = ''): Promise<StructureEntry[]> => {
+    const result: StructureEntry[] = [];
+    for (const entry of await readDir(directory)) {
+      const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+      result.push({ path: relativePath, isDirectory: entry.isDirectory });
+      if (entry.isDirectory) {
+        result.push(...await readStructure(`${directory}/${entry.name}`, relativePath));
+      }
+    }
+    return result.sort((a, b) => a.path.localeCompare(b.path));
+  };
+
+  const toggleStructure = async (project: ProjectData) => {
+    selectProject(project.path, project.name);
+    if (!structureFiles[project.path]) {
+      try {
+        const files = await readStructure(project.path);
+        setStructureFiles((current) => ({ ...current, [project.path]: files }));
+      } catch (error) {
+        console.error("Error leyendo la estructura", error);
+        setStructureFiles((current) => ({ ...current, [project.path]: [] }));
+      }
+    }
+    setExpandedStructures((current) => {
+      const next = new Set(current);
+      next.has(project.path) ? next.delete(project.path) : next.add(project.path);
+      return next;
+    });
+  };
+
+  const toggleStructureDirectory = (projectPath: string, entryPath: string) => {
+    const key = `${projectPath}:${entryPath}`;
+    setOpenStructureDirectories((current) => {
+      const next = new Set(current);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+
+  const isStructureEntryVisible = (projectPath: string, entryPath: string) => {
+    const parts = entryPath.split('/');
+    return parts.slice(0, -1).every((_, index) => openStructureDirectories.has(`${projectPath}:${parts.slice(0, index + 1).join('/')}`));
+  };
+
+  const isLastVisibleDescendant = (projectPath: string, entryPath: string, entries: StructureEntry[]) => {
+    const openFolders = entries.filter((entry) => entry.isDirectory && openStructureDirectories.has(`${projectPath}:${entry.path}`));
+    const endingFolders = openFolders.filter((folder) => {
+      const descendants = entries.filter((entry) => entry.path.startsWith(`${folder.path}/`) && isStructureEntryVisible(projectPath, entry.path));
+      return descendants.length > 0 && descendants[descendants.length - 1].path === entryPath;
+    });
+    return endingFolders.some((folder) => !endingFolders.some((other) => other.path.startsWith(`${folder.path}/`)));
+  };
+
   const notifyProjectMetaChanged = (projectPath: string) => {
     window.dispatchEvent(new CustomEvent("codeclub:project-meta-changed", { detail: { projectPath } }));
   };
@@ -179,9 +241,30 @@ export default function Sidebar() {
     }
   };
 
-  const handleCreateArtifact = async (projectPath: string, projectName: string, kind: "chat" | "note" | "table") => {
+  const startArtifactCreation = (projectPath: string, projectName: string, kind: "chat" | "note" | "table") => {
+    setProjectMenu(null);
+    setArtifactMenu(null);
+    setCreatingArtifact({ projectPath, projectName, kind });
+    setNewArtifactName("");
+    setExpandedProjects((current) => new Set(current).add(projectPath));
+  };
+
+  const finishArtifactCreation = async () => {
+    if (!creatingArtifact || !newArtifactName.trim()) {
+      setCreatingArtifact(null);
+      setNewArtifactName("");
+      return;
+    }
+    const pending = creatingArtifact;
+    const name = newArtifactName.trim();
+    setCreatingArtifact(null);
+    setNewArtifactName("");
+    await handleCreateArtifact(pending.projectPath, pending.projectName, pending.kind, name);
+  };
+
+  const handleCreateArtifact = async (projectPath: string, projectName: string, kind: "chat" | "note" | "table", customName?: string) => {
     const id = Date.now().toString();
-    const name = kind === "note" ? "Nueva nota" : kind === "table" ? "Nueva tabla" : "Nuevo chat";
+    const name = customName || (kind === "note" ? "Nueva nota" : kind === "table" ? "Nueva tabla" : "Nuevo chat");
     const collection = kind === "chat" ? "chats" : `${kind}s`;
     const extension = kind === "note" ? "md" : kind === "table" ? "json" : "jsonl"; // chats don't strictly use files like this yet, but keeping structure
     
@@ -205,6 +288,7 @@ export default function Sidebar() {
       setExpandedProjects(prev => new Set(prev).add(projectPath));
       loadProjects();
       notifyProjectMetaChanged(projectPath);
+      openArtifact(kind, id, name, projectPath, projectName);
     } catch (e) {
       console.error("Error creating artifact", e);
     }
@@ -371,9 +455,13 @@ export default function Sidebar() {
                   tabIndex={0}
                   onClick={() => { selectProject(proj.path, proj.name); toggleProject(proj.path); }}
                   onContextMenu={(e) => openProjectMenu(e, proj)}
-                  onDoubleClick={() => { setRenamingItemId(`proj-${proj.path}`); setRenameInput(proj.name); }}
                   onKeyDown={(e) => {
                     if (e.key === "Delete") handleDelete("project", proj.path, proj.path);
+                    if (e.key === "F2") {
+                      e.preventDefault();
+                      setRenamingItemId(`proj-${proj.path}`);
+                      setRenameInput(proj.name);
+                    }
                     if (e.key === "Enter" || e.key === " ") {
                       selectProject(proj.path, proj.name);
                       toggleProject(proj.path);
@@ -398,15 +486,33 @@ export default function Sidebar() {
                     <span className="min-w-0 flex-1 truncate">{proj.name}</span>
                   )}
                   <span className="flex items-center gap-[2px] opacity-0 transition-opacity duration-120 group-hover/prow:opacity-100 group-focus-within/prow:opacity-100">
-                    <button className="w-[24px] h-[24px] flex items-center justify-center rounded-[4px] text-[#9f9f9f] transition-all duration-120 bg-transparent border-0 p-0 hover:bg-white/10 hover:text-[#eeeeee] opacity-100 appearance-none" onClick={(e) => { e.stopPropagation(); handleCreateArtifact(proj.path, proj.name, "chat"); }}><MessageSquarePlus size={14} /></button>
-                    <button className="w-[24px] h-[24px] flex items-center justify-center rounded-[4px] text-[#9f9f9f] transition-all duration-120 bg-transparent border-0 p-0 hover:bg-white/10 hover:text-[#eeeeee] opacity-100 appearance-none" onClick={(e) => { e.stopPropagation(); handleCreateArtifact(proj.path, proj.name, "table"); }}><TableIconReact size={14} /></button>
-                    <button className="w-[24px] h-[24px] flex items-center justify-center rounded-[4px] text-[#9f9f9f] transition-all duration-120 bg-transparent border-0 p-0 hover:bg-white/10 hover:text-[#eeeeee] opacity-100 appearance-none" onClick={(e) => { e.stopPropagation(); handleCreateArtifact(proj.path, proj.name, "note"); }}><FileText size={14} /></button>
+                    <button className="w-[24px] h-[24px] flex items-center justify-center rounded-[4px] text-[#9f9f9f] transition-all duration-120 bg-transparent border-0 p-0 hover:bg-white/10 hover:text-[#eeeeee] opacity-100 appearance-none" onClick={(e) => { e.stopPropagation(); startArtifactCreation(proj.path, proj.name, "chat"); }}><MessageSquarePlus size={14} /></button>
+                    <button className="w-[24px] h-[24px] flex items-center justify-center rounded-[4px] text-[#9f9f9f] transition-all duration-120 bg-transparent border-0 p-0 hover:bg-white/10 hover:text-[#eeeeee] opacity-100 appearance-none" onClick={(e) => { e.stopPropagation(); startArtifactCreation(proj.path, proj.name, "table"); }}><TableIconReact size={14} /></button>
+                    <button className="w-[24px] h-[24px] flex items-center justify-center rounded-[4px] text-[#9f9f9f] transition-all duration-120 bg-transparent border-0 p-0 hover:bg-white/10 hover:text-[#eeeeee] opacity-100 appearance-none" onClick={(e) => { e.stopPropagation(); startArtifactCreation(proj.path, proj.name, "note"); }}><FileText size={14} /></button>
                   </span>
                 </div>
 
                 {/* Expanded artifacts */}
                 {isExpanded && (
                   <>
+                    {creatingArtifact?.projectPath === proj.path && (
+                      <div className="min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] ml-[12px] text-[#d8d8d8]/62">
+                        <span className="text-[11px] text-[#777777]">{creatingArtifact.kind === "chat" ? "Chat" : creatingArtifact.kind === "note" ? "Nota" : "Tabla"}</span>
+                        <input
+                          className="appearance-none min-w-0 flex-1 h-[22px] box-border border-0 bg-[var(--color-surface-9)] text-[#d8d8d8] caret-[#d8d8d8] text-xs outline-none p-0 px-2 shadow-none placeholder:text-[#8f8f8f] rounded-md"
+                          autoFocus
+                          placeholder="Nombre"
+                          value={newArtifactName}
+                          onChange={(e) => setNewArtifactName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") finishArtifactCreation();
+                            if (e.key === "Escape") { setCreatingArtifact(null); setNewArtifactName(""); }
+                          }}
+                          onBlur={() => { setCreatingArtifact(null); setNewArtifactName(""); }}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </div>
+                    )}
                     {proj.chats.map((chat) => (
                       <ArtifactNode key={chat.id} kind="chat" item={chat} project={proj} isActive={activeArtifactId === chat.id} 
                         renaming={renamingItemId === `chat-${chat.id}`} setRenaming={setRenamingItemId} renameInput={renameInput} setRenameInput={setRenameInput}
@@ -423,6 +529,30 @@ export default function Sidebar() {
                       <ArtifactNode key={note.id} kind="note" item={note} project={proj} isActive={activeArtifactId === note.id}
                         renaming={renamingItemId === `note-${note.id}`} setRenaming={setRenamingItemId} renameInput={renameInput} setRenameInput={setRenameInput}
                         onCommit={handleRenameCommit} onOpen={openArtifact} onDelete={handleDelete} onDragStart={onDragStart} onContextMenu={openArtifactMenu} />
+                    ))}
+
+                    <button
+                      data-sidebar-item
+                      type="button"
+                      className="min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] ml-[12px] text-xs text-left cursor-pointer text-[#d8d8d8]/62 hover:text-[#d8d8d8] hover:bg-white/2 transition-colors bg-transparent border-0 appearance-none"
+                      onClick={() => toggleStructure(proj)}
+                    >
+                      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center">
+                        <MousePointer2 size={14} />
+                      </span>
+                      <span>Estructura</span>
+                    </button>
+
+                    {expandedStructures.has(proj.path) && (structureFiles[proj.path] || []).filter((entry) => isStructureEntryVisible(proj.path, entry.path)).map((entry) => (
+                      <React.Fragment key={`${proj.path}-${entry.path}`}>
+                        <button type="button" onClick={() => entry.isDirectory && toggleStructureDirectory(proj.path, entry.path)} className="min-h-[34px] flex w-full items-center gap-[9px] rounded-md px-[10px] ml-[12px] text-xs text-left text-[#d8d8d8]/62 hover:bg-white/2 bg-transparent border-0 appearance-none">
+                          <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center">
+                            {entry.isDirectory ? <FolderOpen size={14} /> : <FileCode2 size={14} />}
+                          </span>
+                          <span className="min-w-0 truncate">{entry.path}</span>
+                        </button>
+                        {isLastVisibleDescendant(proj.path, entry.path, structureFiles[proj.path] || []) && <div className="my-1 ml-[12px] mr-0 border-t border-[var(--color-surface-8)]" />}
+                      </React.Fragment>
                     ))}
 
                   </>
@@ -450,13 +580,13 @@ export default function Sidebar() {
             <Trash2 size={13} /><span>Eliminar</span>
           </button>
           <div className="my-1 border-t border-[var(--color-surface-8)]" />
-          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => handleCreateArtifact(projectMenu.path, projectMenu.name, "chat")}>
+          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => startArtifactCreation(projectMenu.path, projectMenu.name, "chat")}>
             <MessageSquarePlus size={13} /><span>Nuevo chat</span>
           </button>
-          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => handleCreateArtifact(projectMenu.path, projectMenu.name, "note")}>
+          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => startArtifactCreation(projectMenu.path, projectMenu.name, "note")}>
             <FileText size={13} /><span>Nueva nota</span>
           </button>
-          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => handleCreateArtifact(projectMenu.path, projectMenu.name, "table")}>
+          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => startArtifactCreation(projectMenu.path, projectMenu.name, "table")}>
             <TableIconReact size={13} /><span>Nueva tabla</span>
           </button>
         </div>,
@@ -480,13 +610,13 @@ export default function Sidebar() {
             <Trash2 size={13} /><span>Eliminar</span>
           </button>
           <div className="my-1 border-t border-[var(--color-surface-8)]" />
-          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => handleCreateArtifact(artifactMenu.projectPath, artifactMenu.projectName, "chat")}>
+          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => startArtifactCreation(artifactMenu.projectPath, artifactMenu.projectName, "chat")}>
             <MessageSquarePlus size={13} /><span>Nuevo chat</span>
           </button>
-          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => handleCreateArtifact(artifactMenu.projectPath, artifactMenu.projectName, "note")}>
+          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => startArtifactCreation(artifactMenu.projectPath, artifactMenu.projectName, "note")}>
             <FileText size={13} /><span>Nueva nota</span>
           </button>
-          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => handleCreateArtifact(artifactMenu.projectPath, artifactMenu.projectName, "table")}>
+          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => startArtifactCreation(artifactMenu.projectPath, artifactMenu.projectName, "table")}>
             <TableIconReact size={13} /><span>Nueva tabla</span>
           </button>
         </div>,
@@ -494,10 +624,11 @@ export default function Sidebar() {
       )}
       
       <section className="shrink-0 flex flex-col gap-1 p-[10px] border-t border-[var(--color-surface-9)] bg-[#161616] relative z-[2]">
-        <button className="min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer bg-transparent border-0 text-[#d8d8d8] hover:bg-white/2 appearance-none" type="button">
+        <button className="min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer bg-transparent border-0 text-[#d8d8d8] hover:bg-white/2 appearance-none" type="button" onClick={() => setSettingsOpen(true)}>
           <Settings size={15} /> Ajustes
         </button>
       </section>
+      <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );
 }
@@ -519,9 +650,13 @@ function ArtifactNode({
       onDragStart={(e) => onDragStart(e, kind, item, project.path, project.name)}
       onClick={() => onOpen(kind, item.id, item.name, project.path, project.name)}
       onContextMenu={(e) => onContextMenu(e, kind, item, project)}
-      onDoubleClick={() => { setRenaming(`${kind}-${item.id}`); setRenameInput(item.name); }}
       onKeyDown={(e) => {
         if (e.key === "Delete") onDelete(kind, item.id, project.path);
+        if (e.key === "F2") {
+          e.preventDefault();
+          setRenaming(`${kind}-${item.id}`);
+          setRenameInput(item.name);
+        }
       }}
     >
       {kind === "chat" ? (
@@ -529,7 +664,9 @@ function ArtifactNode({
           {initial}
         </span>
       ) : (
-        <Icon size={14} />
+        <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center">
+          <Icon size={14} />
+        </span>
       )}
       {renaming ? (
         <input
