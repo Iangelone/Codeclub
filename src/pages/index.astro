@@ -38,6 +38,11 @@ import ChatPanel from "../components/ChatPanel.astro";
         document.querySelector('#maximize')?.addEventListener('click', () => { appWindow.toggleMaximize(); });
         document.querySelector('#close')?.addEventListener('click', () => { appWindow.close(); });
         document.querySelector('.drag-area')?.addEventListener('dblclick', () => { appWindow.toggleMaximize(); });
+        document.addEventListener('keydown', async (event) => {
+          if (event.key !== 'F11') return;
+          event.preventDefault();
+          await appWindow.setSimpleFullscreen(!(await appWindow.isFullscreen()));
+        });
         
         let hasProjectSelection = false;
         const projectRequiredControls = document.querySelectorAll('[data-project-required]');

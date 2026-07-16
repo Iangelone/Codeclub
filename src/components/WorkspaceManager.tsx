@@ -158,14 +158,14 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
   useEffect(() => {
     const trackEvent = (panel: 'left' | 'right') => (e: Event) => {
       const detail = (e as CustomEvent).detail;
-      const id = detail?.chatId || detail?.noteId || detail?.tableId;
+      const id = detail?.chatId;
       const kind = e.type.split(':open-')[1];
       const key = id ? `${kind}:${id}` : kind === 'blank' ? 'blank' : kind;
       if (panel === 'left') leftStateRef.current = key;
       else rightStateRef.current = key;
       setPanelStates((current) => ({ ...current, [panel]: key }));
     };
-    const names = ['chat', 'note', 'table', 'diff', 'folders', 'blank'];
+    const names = ['chat', 'diff', 'folders', 'blank'];
     const listeners = names.flatMap(kind => [
       { name: `codeclub:panel-left:open-${kind}`, handler: trackEvent('left') },
       { name: `codeclub:panel-right:open-${kind}`, handler: trackEvent('right') },
@@ -178,7 +178,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
   useEffect(() => {
     const routeEvent = (originalName: string) => (e: Event) => {
       const detail = (e as CustomEvent).detail;
-      const id = detail?.chatId || detail?.noteId || detail?.tableId;
+      const id = detail?.chatId;
       const kind = originalName.replace('open-', '');
       const key = id ? `${kind}:${id}` : kind === 'blank' ? 'blank' : kind;
 
@@ -230,7 +230,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
       }));
     };
 
-    const events = ['open-chat', 'open-note', 'open-table', 'open-diff', 'open-folders', 'open-blank'];
+    const events = ['open-chat', 'open-folders', 'open-blank'];
     const handlers = events.map((name) => {
       const handler = routeEvent(name);
       window.addEventListener(`codeclub:${name}`, handler);

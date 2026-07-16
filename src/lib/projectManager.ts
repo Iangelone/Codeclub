@@ -13,13 +13,9 @@ export interface ProjectEntry {
 export const ensureProjectMeta = async (projectPath: string, name: string) => {
   const codeclubPath = `${projectPath}/.codeclub`;
   const chatsPath = `${codeclubPath}/chats`;
-  const notesPath = `${codeclubPath}/notes`;
-  const tablesPath = `${codeclubPath}/tables`;
   const metaPath = `${codeclubPath}/meta.json`;
 
   await mkdir(chatsPath, { recursive: true });
-  await mkdir(notesPath, { recursive: true });
-  await mkdir(tablesPath, { recursive: true });
 
   let metaData: any = {};
   if (await exists(metaPath)) {
@@ -38,8 +34,6 @@ export const ensureProjectMeta = async (projectPath: string, name: string) => {
       path: projectPath,
       created_at: metaData.created_at || new Date().toISOString(),
       chats: Array.isArray(metaData.chats) ? metaData.chats : [],
-      notes: Array.isArray(metaData.notes) ? metaData.notes : [],
-      tables: Array.isArray(metaData.tables) ? metaData.tables : [],
     })
   );
   await logPersistence("save_project_meta", "ok", { name, projectPath, path: metaPath });

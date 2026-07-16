@@ -455,8 +455,6 @@ export default function TerminalDock() {
     window.addEventListener('codeclub:active-project', setProjectPath);
     window.addEventListener('codeclub:project-selection-changed', handleProjectSelection);
     window.addEventListener('codeclub:open-chat', setProjectPath);
-    window.addEventListener('codeclub:open-note', setProjectPath);
-    window.addEventListener('codeclub:open-table', setProjectPath);
     window.addEventListener('codeclub:open-terminal-dock', openTerminalDock);
     init().catch(console.error);
 
@@ -465,8 +463,6 @@ export default function TerminalDock() {
       window.removeEventListener('codeclub:active-project', setProjectPath);
       window.removeEventListener('codeclub:project-selection-changed', handleProjectSelection);
       window.removeEventListener('codeclub:open-chat', setProjectPath);
-      window.removeEventListener('codeclub:open-note', setProjectPath);
-      window.removeEventListener('codeclub:open-table', setProjectPath);
       window.removeEventListener('codeclub:open-terminal-dock', openTerminalDock);
     };
   }, []);

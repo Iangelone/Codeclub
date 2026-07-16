@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUpRight, ChevronDown, ChevronRight, Copy, FileCode2, FileText, MessageSquare, RotateCcw, Search, Table2, Terminal, Coffee, Folder, FolderTree, GitCompare, Plus, RefreshCw, X } from 'lucide-react';
+import { ArrowUpRight, ChevronDown, ChevronRight, Copy, FileCode2, MessageSquare, RotateCcw, Search, Terminal, Coffee, Folder, FolderTree, Plus, RefreshCw, X } from 'lucide-react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, indentWithTab } from '@codemirror/commands';
@@ -18,8 +18,6 @@ import { runStream } from '../lib/engine/run';
 
 const SPINNER_FRAMES = {
   chat: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"],
-  table: ["⡀", "⡄", "⡆", "⡇", "⣇", "⣧", "⣷", "⣿", "⣷", "⣧", "⣇", "⡇", "⡆", "⡄", "⡀"],
-  note: ["⠤", "⠔", "⠒", "⠢", "⠤", "⠠", "⢀", "⡀", "⠄", "⠂", "⠐", "⠈"],
   terminal: ["⡀", "⠄", "⠂", "⠁", "⠈", "⠐", "⠠", "⢀", "⠠", "⠐", "⠈", "⠁", "⠂", "⠄"]
 };
 
@@ -120,21 +118,15 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCommandIndex, setActiveCommandIndex] = useState(0);
   const [activeProject, setActiveProject] = useState<{projectPath: string, name: string} | null>(() => selectedProject ? { projectPath: selectedProject.projectPath, name: selectedProject.projectName || 'Proyecto' } : null);
-  const [projectMeta, setProjectMeta] = useState<{chats: any[], notes: any[], tables: any[]} | null>(null);
-  const [expandedMenu, setExpandedMenu] = useState<'chat' | 'note' | 'table' | null>(null);
-  const [creatingArtifactKind, setCreatingArtifactKind] = useState<'chat' | 'note' | 'table' | null>(null);
+  const [projectMeta, setProjectMeta] = useState<{chats: any[]} | null>(null);
+  const [expandedMenu, setExpandedMenu] = useState<'chat' | null>(null);
   const [newArtifactName, setNewArtifactName] = useState('');
   const [artifactSearch, setArtifactSearch] = useState<Record<string, string>>({});
   const [recentArtifactIds, setRecentArtifactIds] = useState<Record<string, string[]>>({});
   const [terminalCount, setTerminalCount] = useState(0);
-  const [changeCount, setChangeCount] = useState(0);
   const [activeChat, setActiveChat] = useState<{chatId: string, projectPath: string} | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState('blank');
-  const [activeNote, setActiveNote] = useState<{noteId: string, projectPath: string, name?: string} | null>(null);
-  const [activeTable, setActiveTable] = useState<{tableId: string, projectPath: string, name?: string} | null>(null);
-  const [titleDraft, setTitleDraft] = useState('');
-  const [noteContent, setNoteContent] = useState('');
-  const [tableData, setTableData] = useState<string[][]>([]);
+  const [selectedStructurePath, setSelectedStructurePath] = useState('');
   const agentStatusText = {
     idle: "Listo cuando tú lo estés.",
     streaming: "Pensando...",
@@ -144,24 +136,13 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     error: "Algo salió mal.",
   }[agentState] || "Listo cuando tú lo estés.";
   const isAgentBusy = ['streaming', 'tool_call', 'approval', 'running'].includes(agentState);
-  const noteSaveTimer = useRef(null);
-  const tableSaveTimer = useRef(null);
   const approvalResolversRef = useRef(new Map());
   const lastModelFetchRef = useRef(null);
   const commandMenuRef = useRef(null);
   const searchInputRef = useRef(null);
   const chatInputRef = useRef(null);
   const messagesEndRef = useRef(null);
-  const restoredProjectRef = useRef('');
-
-  const panelMemoryKey = (projectPath: string) => `codeclub:last-panel:${panelId}:${encodeURIComponent(projectPath)}`;
-
-  const rememberPanel = (kind: 'chat' | 'note' | 'table' | 'diff' | 'folders', detail: any) => {
-    if (!detail?.projectPath) return;
-    localStorage.setItem(panelMemoryKey(detail.projectPath), JSON.stringify({ kind, detail }));
-  };
-
-  const rememberRecentArtifact = (kind: 'chat' | 'note' | 'table', detail: any) => {
+  const rememberRecentArtifact = (kind: 'chat', detail: any) => {
     if (!detail?.projectPath || !detail?.[`${kind}Id`]) return;
     const key = `${detail.projectPath}:${kind}`;
     const storageKey = `codeclub:recent-artifacts:${kind}:${encodeURIComponent(detail.projectPath)}`;
@@ -172,44 +153,13 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     });
   };
 
-  const getRecentArtifactIds = (kind: 'chat' | 'note' | 'table', projectPath: string) => {
+  const getRecentArtifactIds = (kind: 'chat', projectPath: string) => {
     const key = `${projectPath}:${kind}`;
     if (recentArtifactIds[key]) return recentArtifactIds[key];
     try {
       return JSON.parse(localStorage.getItem(`codeclub:recent-artifacts:${kind}:${encodeURIComponent(projectPath)}`) || '[]');
     } catch {
       return [];
-    }
-  };
-
-  const restoreLastPanel = async (project: any) => {
-    if (!project?.projectPath || restoredProjectRef.current === project.projectPath) return;
-    restoredProjectRef.current = project.projectPath;
-    try {
-      const raw = localStorage.getItem(panelMemoryKey(project.projectPath));
-      if (!raw) {
-        setWorkspaceMode('blank');
-        return;
-      }
-      const saved = JSON.parse(raw);
-      if (saved.kind === 'diff' || saved.kind === 'folders') {
-        window.dispatchEvent(new CustomEvent(`${eventPrefix}:open-${saved.kind}`, { detail: saved.detail }));
-        return;
-      }
-      const { readTextFile, exists } = await import('@tauri-apps/plugin-fs');
-      const metaPath = `${project.projectPath}/.codeclub/meta.json`;
-      if (!(await exists(metaPath))) throw new Error('Proyecto sin metadatos');
-      const meta = JSON.parse(await readTextFile(metaPath));
-      const collection = saved.kind === 'chat' ? 'chats' : `${saved.kind}s`;
-      const idKey = saved.kind === 'chat' ? 'chatId' : saved.kind === 'note' ? 'noteId' : 'tableId';
-      const item = (meta[collection] || []).find((entry: any) => entry.id === saved.detail?.[idKey]);
-      if (!item) throw new Error('Panel anterior inexistente');
-      window.dispatchEvent(new CustomEvent(`${eventPrefix}:open-${saved.kind}`, {
-        detail: { ...saved.detail, name: item.name, projectName: project.projectName || project.name },
-      }));
-    } catch {
-      localStorage.removeItem(panelMemoryKey(project.projectPath));
-      setWorkspaceMode('blank');
     }
   };
 
@@ -223,7 +173,6 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       if (current?.projectPath === selectedProject.projectPath) return current;
       return { projectPath: selectedProject.projectPath, name: selectedProject.projectName || 'Proyecto' };
     });
-    if (selectedProject) restoreLastPanel(selectedProject);
   }, [selectedProject]);
 
   useEffect(() => {
@@ -238,30 +187,8 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   }, [activeProject]);
 
   useEffect(() => {
-    let cancelled = false;
-    const loadChangeCount = async () => {
-      if (!activeProject?.projectPath) {
-        setChangeCount(0);
-        return;
-      }
-      try {
-        const result = await invoke<{ stdout?: string }>('codeclub_run_command', {
-          projectPath: activeProject.projectPath,
-          request: { command: 'git', args: ['status', '--short'] },
-        });
-        if (!cancelled) setChangeCount((result.stdout || '').split('\n').filter(Boolean).length);
-      } catch {
-        if (!cancelled) setChangeCount(0);
-      }
-    };
-    loadChangeCount();
-    return () => { cancelled = true; };
-  }, [activeProject]);
-
-  useEffect(() => {
     const handleOpenChat = async (e: any) => {
       const chat = e.detail;
-      rememberPanel('chat', chat);
       rememberRecentArtifact('chat', chat);
       setWorkspaceMode('chat');
       setActiveChat(chat);
@@ -291,11 +218,11 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   }, [eventPrefix]);
 
   useEffect(() => {
-    const handlers = (['diff', 'folders'] as const).map((kind) => {
+    const handlers = (['folders'] as const).map((kind) => {
       const eventName = `${eventPrefix}:open-${kind}`;
       const handler = (e: any) => {
-        rememberPanel(kind, e.detail);
-        setWorkspaceMode(kind);
+      setWorkspaceMode(kind);
+        setSelectedStructurePath(kind === 'folders' ? e.detail?.path || '' : '');
         setActiveProject(e.detail?.projectPath ? {
           projectPath: e.detail.projectPath,
           name: e.detail.projectName || 'Proyecto',
@@ -311,7 +238,6 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     const handleActiveProject = (e: any) => {
       setActiveProject((current) => current?.projectPath === e.detail?.projectPath ? current : e.detail);
       setExpandedMenu(null);
-      restoreLastPanel(e.detail);
     };
     window.addEventListener('codeclub:active-project', handleActiveProject);
 
@@ -351,70 +277,19 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       const preserveProject = (event as CustomEvent).detail?.preserveProject === true;
       setWorkspaceMode('blank');
       if (!preserveProject) {
-        restoredProjectRef.current = '';
         setActiveProject(null);
         setProjectMeta(null);
       }
       setAgentState('idle');
       setPendingApprovals([]);
       approvalResolversRef.current.clear();
-      setActiveNote(null);
-      setActiveTable(null);
-    };
-
-    const handleOpenNote = async (e: any) => {
-      const note = e.detail;
-      rememberPanel('note', note);
-      rememberRecentArtifact('note', note);
-      setWorkspaceMode('note');
-      setAgentState('idle');
-      setPendingApprovals([]);
-      approvalResolversRef.current.clear();
-      setActiveNote(note);
-      setTitleDraft(note.name || 'Nota');
-      setActiveTable(null);
-      try {
-        const { readTextFile, exists } = await import('@tauri-apps/plugin-fs');
-        const path = `${note.projectPath}/.codeclub/notes/${note.noteId}.md`;
-        setNoteContent((await exists(path)) ? await readTextFile(path) : '');
-      } catch (err) {
-        console.error("Error loading note:", err);
-        setNoteContent('');
-      }
-    };
-
-    const handleOpenTable = async (e: any) => {
-      const table = e.detail;
-      rememberPanel('table', table);
-      rememberRecentArtifact('table', table);
-      setWorkspaceMode('table');
-      setAgentState('idle');
-      setPendingApprovals([]);
-      approvalResolversRef.current.clear();
-      setActiveTable(table);
-      setTitleDraft(table.name || 'Tabla');
-      setActiveNote(null);
-      try {
-        const { readTextFile, exists } = await import('@tauri-apps/plugin-fs');
-        const path = `${table.projectPath}/.codeclub/tables/${table.tableId}.json`;
-        const fallback = Array.from({ length: 8 }, () => Array.from({ length: 5 }, () => ''));
-        setTableData((await exists(path)) ? JSON.parse(await readTextFile(path)) : fallback);
-      } catch (err) {
-        console.error("Error loading table:", err);
-        setTableData(Array.from({ length: 8 }, () => Array.from({ length: 5 }, () => '')));
-      }
     };
 
     const blankEvent = `${eventPrefix}:open-blank`;
-    const noteEvent = `${eventPrefix}:open-note`;
-    const tableEvent = `${eventPrefix}:open-table`;
     window.addEventListener(blankEvent, handleOpenBlank);
-    window.addEventListener(noteEvent, handleOpenNote);
-    window.addEventListener(tableEvent, handleOpenTable);
+
     return () => {
       window.removeEventListener(blankEvent, handleOpenBlank);
-      window.removeEventListener(noteEvent, handleOpenNote);
-      window.removeEventListener(tableEvent, handleOpenTable);
     };
   }, [eventPrefix]);
 
@@ -440,27 +315,6 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   useEffect(() => {
     if (settingsReady && currentModel) localStorage.setItem('codeclub_last_model_id', currentModel.id);
   }, [currentModel, settingsReady]);
-
-  useEffect(() => {
-    const handleRenamedNote = (e: any) => {
-      if (!activeNote || e.detail.itemId !== activeNote.noteId || e.detail.projectPath !== activeNote.projectPath) return;
-      setActiveNote({ ...activeNote, name: e.detail.name });
-      setTitleDraft(e.detail.name);
-    };
-
-    const handleRenamedTable = (e: any) => {
-      if (!activeTable || e.detail.itemId !== activeTable.tableId || e.detail.projectPath !== activeTable.projectPath) return;
-      setActiveTable({ ...activeTable, name: e.detail.name });
-      setTitleDraft(e.detail.name);
-    };
-
-    window.addEventListener('codeclub:renamed-note', handleRenamedNote);
-    window.addEventListener('codeclub:renamed-table', handleRenamedTable);
-    return () => {
-      window.removeEventListener('codeclub:renamed-note', handleRenamedNote);
-      window.removeEventListener('codeclub:renamed-table', handleRenamedTable);
-    };
-  }, [activeNote, activeTable]);
 
   const openCommandMenu = (kind) => {
     setCommandKind(kind);
@@ -747,69 +601,6 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     }
   };
 
-  const saveNote = async (content) => {
-    if (!activeNote) return;
-    try {
-      const { writeTextFile, mkdir } = await import('@tauri-apps/plugin-fs');
-      const dir = `${activeNote.projectPath}/.codeclub/notes`;
-      const path = `${dir}/${activeNote.noteId}.md`;
-      await mkdir(dir, { recursive: true });
-      await writeTextFile(path, content);
-      await logPersistence('save_note', 'ok', { noteId: activeNote.noteId, projectPath: activeNote.projectPath, path });
-    } catch (e) {
-      await logPersistence('save_note', 'error', { noteId: activeNote?.noteId, error: e?.message || String(e) });
-    }
-  };
-
-  const queueSaveNote = (content) => {
-    setNoteContent(content);
-    if (noteSaveTimer.current) clearTimeout(noteSaveTimer.current);
-    noteSaveTimer.current = setTimeout(() => saveNote(content), 350);
-  };
-
-  const saveTable = async (nextTable) => {
-    if (!activeTable) return;
-    try {
-      const { writeTextFile, mkdir } = await import('@tauri-apps/plugin-fs');
-      const dir = `${activeTable.projectPath}/.codeclub/tables`;
-      const path = `${dir}/${activeTable.tableId}.json`;
-      await mkdir(dir, { recursive: true });
-      await writeTextFile(path, JSON.stringify(nextTable));
-      await logPersistence('save_table', 'ok', { tableId: activeTable.tableId, projectPath: activeTable.projectPath, path });
-    } catch (e) {
-      await logPersistence('save_table', 'error', { tableId: activeTable?.tableId, error: e?.message || String(e) });
-    }
-  };
-
-  const updateTableCell = (rowIndex, columnIndex, value) => {
-    const nextTable = tableData.map((row) => [...row]);
-    nextTable[rowIndex][columnIndex] = value;
-    setTableData(nextTable);
-    if (tableSaveTimer.current) clearTimeout(tableSaveTimer.current);
-    tableSaveTimer.current = setTimeout(() => saveTable(nextTable), 350);
-  };
-
-  const renameActiveArtifact = () => {
-    const artifact = workspaceMode === 'note' ? activeNote : activeTable;
-    if (!artifact) return;
-    const name = titleDraft.trim() || (workspaceMode === 'note' ? 'Nota' : 'Tabla');
-    const itemId = workspaceMode === 'note' ? artifact.noteId : artifact.tableId;
-    window.dispatchEvent(new CustomEvent('codeclub:rename-artifact', {
-      detail: { kind: workspaceMode, itemId, projectPath: artifact.projectPath, name },
-    }));
-  };
-
-  const handleTitleKeyDown = (e) => {
-    if (e.key === 'Enter') {
-      e.currentTarget.blur();
-      renameActiveArtifact();
-    }
-    if (e.key === 'Escape') {
-      setTitleDraft(workspaceMode === 'note' ? (activeNote?.name || 'Nota') : (activeTable?.name || 'Tabla'));
-      e.currentTarget.blur();
-    }
-  };
-
   const sendMessage = async (content, baseMessages = messages, shouldRenameChat = messages.length === 0, replaceHistory = false) => {
     if (!activeChat) {
       window.dispatchEvent(new CustomEvent('codeclub:require-project'));
@@ -1009,63 +800,46 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
 
   if (workspaceMode === 'blank') {
     if (activeProject) {
-      const createNewArtifact = async (kind: 'chat' | 'note' | 'table', customName: string) => {
+      const createNewArtifact = async (customName: string) => {
         if (!customName.trim()) {
-          setCreatingArtifactKind(null);
           setNewArtifactName('');
           return;
         }
         const id = Date.now().toString();
         const name = customName.trim();
-        const collection = kind === 'chat' ? 'chats' : `${kind}s`;
         try {
           const { readTextFile, writeTextFile, exists, mkdir } = await import('@tauri-apps/plugin-fs');
           const metaPath = `${activeProject.projectPath}/.codeclub/meta.json`;
-          let metaData: any = { chats: [], notes: [], tables: [] };
+          let metaData: any = { chats: [] };
           if (await exists(metaPath)) {
             metaData = JSON.parse(await readTextFile(metaPath));
           } else {
             await mkdir(`${activeProject.projectPath}/.codeclub`, { recursive: true });
           }
-          if (!Array.isArray(metaData[collection])) metaData[collection] = [];
-          metaData[collection].push({ id, name });
+          if (!Array.isArray(metaData.chats)) metaData.chats = [];
+          metaData.chats.push({ id, name });
           await writeTextFile(metaPath, JSON.stringify(metaData));
           
-          if (kind === 'chat') {
-            await mkdir(`${activeProject.projectPath}/.codeclub/chats`, { recursive: true });
-          } else if (kind === 'note') {
-            await mkdir(`${activeProject.projectPath}/.codeclub/notes`, { recursive: true });
-            await writeTextFile(`${activeProject.projectPath}/.codeclub/notes/${id}.md`, '');
-          } else if (kind === 'table') {
-            await mkdir(`${activeProject.projectPath}/.codeclub/tables`, { recursive: true });
-            await writeTextFile(`${activeProject.projectPath}/.codeclub/tables/${id}.json`, JSON.stringify(Array.from({ length: 8 }, () => Array.from({ length: 5 }, () => ""))));
-          }
+          await mkdir(`${activeProject.projectPath}/.codeclub/chats`, { recursive: true });
           
-          window.dispatchEvent(new CustomEvent(`codeclub:panel-${panelId}:open-${kind}`, {
-            detail: { projectPath: activeProject.projectPath, [`${kind}Id`]: id, name }
+          window.dispatchEvent(new CustomEvent(`codeclub:panel-${panelId}:open-chat`, {
+            detail: { projectPath: activeProject.projectPath, chatId: id, name }
           }));
           
           setProjectMeta(metaData);
-          setCreatingArtifactKind(null);
           setNewArtifactName('');
         } catch (e) {
           console.error(e);
         }
       };
 
-      const openProjectPanel = (kind: 'diff') => {
-        window.dispatchEvent(new CustomEvent(`codeclub:open-${kind}`, {
-          detail: { projectPath: activeProject.projectPath, projectName: activeProject.name, sourcePanel: panelId },
-        }));
-      };
-
       return (
         <div className="flex flex-col gap-2 w-[min(300px,calc(100%-64px))] text-[#d8d8d8] text-[13px]" style={{ fontWeight: 400 }}>
-          {(['chat', 'table', 'note'] as const).map((kind) => {
+          {(['chat'] as const).map((kind) => {
             const isExpanded = expandedMenu === kind;
             const isChatsBlocked = kind === 'chat' && blockedPanelState.startsWith('chat:');
             const items = projectMeta ? (projectMeta[kind === 'chat' ? 'chats' : `${kind}s`] || []) : [];
-            const title = kind === 'chat' ? 'Chats' : kind === 'table' ? 'Tablas' : 'Notas';
+            const title = 'Chats';
             const query = artifactSearch[kind] || '';
             const recentItems = getRecentArtifactIds(kind, activeProject.projectPath)
               .map((id) => items.find((item: any) => item.id === id))
@@ -1084,7 +858,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
                   className={`flex items-center justify-between p-[12px_16px] border-0 text-left w-full transition-colors duration-200 outline-none ${isChatsBlocked ? 'cursor-not-allowed text-[#555555]' : `cursor-pointer text-[#eeeeee] ${isExpanded ? 'bg-[var(--color-surface-4)]' : 'bg-transparent hover:bg-[var(--color-surface-3)]'}`}`}
                 >
                   <div className="flex items-center gap-3">
-                    {kind === 'chat' ? <MessageSquare size={16} strokeWidth={1.5} /> : kind === 'table' ? <Table2 size={16} strokeWidth={1.5} /> : <FileText size={16} strokeWidth={1.5} />}
+                    <MessageSquare size={16} strokeWidth={1.5} />
                     <span className="font-normal" style={{ fontWeight: 400 }}>{title}</span>
                   </div>
                   <span className="opacity-40 text-[11px]">{items.length}</span>
@@ -1150,24 +924,6 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
             );
           })}
 
-          {(['diff'] as const).map((kind) => {
-            const title = 'Cambios';
-            return (
-              <button
-                key={kind}
-                type="button"
-                onClick={() => openProjectPanel(kind)}
-                className="flex items-center justify-between rounded-xl border border-[var(--color-surface-10)] bg-[var(--color-surface-1)] p-[12px_16px] text-left text-[#eeeeee] shadow-[0_4px_12px_rgba(0,0,0,0.2)] outline-none transition-colors duration-200 hover:bg-[var(--color-surface-3)]"
-              >
-                  <div className="flex items-center gap-3">
-                    {kind === 'diff' ? <GitCompare size={16} strokeWidth={1.5} /> : <FolderTree size={16} strokeWidth={1.5} />}
-                    <span className="font-normal" style={{ fontWeight: 400 }}>{title}</span>
-                  </div>
-                <span className="opacity-40 text-[11px]">{changeCount}</span>
-              </button>
-            );
-          })}
-          
           <button 
             type="button" 
             onClick={(e) => {
@@ -1195,40 +951,8 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     );
   }
 
-  if (workspaceMode === 'note') {
-    return (
-      <div className="note-panel" style={{ width: 'min(860px, calc(100% - 64px))', height: 'min(720px, calc(100vh - 96px))', display: 'grid', gridTemplateRows: 'auto 1fr', gap: '14px' }}>
-        <input value={titleDraft} onChange={(e) => setTitleDraft(e.target.value)} onKeyDown={handleTitleKeyDown} style={{ border: 0, outline: 'none', background: 'transparent', color: '#eeeeee', fontSize: '28px', fontWeight: 600 }} />
-        <textarea value={noteContent} onChange={(e) => queueSaveNote(e.target.value)} placeholder="Escribí una nota..." style={{ resize: 'none', border: 0, outline: 'none', background: 'transparent', color: '#d8d8d8', fontSize: '14px', lineHeight: 1.7, fontFamily: 'inherit', overflow: 'auto', scrollbarWidth: 'none' }} />
-      </div>
-    );
-  }
-
-  if (workspaceMode === 'table') {
-    return (
-      <div className="table-panel" style={{ width: 'min(860px, calc(100% - 64px))', height: 'min(720px, calc(100vh - 96px))', display: 'grid', gridTemplateRows: 'auto 1fr', gap: '14px' }}>
-        <input value={titleDraft} onChange={(e) => setTitleDraft(e.target.value)} onKeyDown={handleTitleKeyDown} style={{ border: 0, outline: 'none', background: 'transparent', color: '#eeeeee', fontSize: '28px', fontWeight: 600 }} />
-          <div style={{ overflow: 'auto', scrollbarWidth: 'none', border: '1px solid var(--color-surface-9, #2c2c2c)', borderRadius: '8px', background: 'transparent' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-            <tbody>
-              {tableData.map((row, rowIndex) => (
-                <tr key={rowIndex}>
-                  {row.map((cell, columnIndex) => (
-                    <td key={columnIndex} style={{ border: '1px solid #2b2b2b', padding: 0 }}>
-                      <input value={cell} onChange={(e) => updateTableCell(rowIndex, columnIndex, e.target.value)} style={{ width: '100%', minHeight: '36px', boxSizing: 'border-box', border: 0, outline: 'none', background: 'transparent', color: '#d8d8d8', padding: '0 10px', fontSize: '12px' }} />
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    );
-  }
-
-  if (workspaceMode === 'diff' || workspaceMode === 'folders') {
-    return <ProjectPanelView kind={workspaceMode} projectPath={activeProject?.projectPath} />;
+  if (workspaceMode === 'folders') {
+    return <ProjectPanelView projectPath={activeProject?.projectPath} selectedPath={selectedStructurePath} />;
   }
 
   return (
@@ -1499,11 +1223,11 @@ function ProjectFoldersView({ projectPath }: { projectPath?: string }) {
   </div>;
 }
 
-function AppleFoldersView({ projectPath }: { projectPath?: string }) {
+function AppleFoldersView({ projectPath, initialSelectedPath = '' }: { projectPath?: string; initialSelectedPath?: string }) {
   const [loading, setLoading] = useState(true);
   const [entries, setEntries] = useState<ProjectFileEntry[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [selectedPath, setSelectedPath] = useState('');
+  const [selectedPath, setSelectedPath] = useState(initialSelectedPath);
   const [selectedContent, setSelectedContent] = useState('');
   const [error, setError] = useState('');
 
@@ -1524,6 +1248,9 @@ function AppleFoldersView({ projectPath }: { projectPath?: string }) {
     catch (reason) { setSelectedContent(`No se pudo abrir el archivo: ${String(reason)}`); }
     setSelectedPath(path);
   };
+  useEffect(() => {
+    if (initialSelectedPath && initialSelectedPath !== selectedPath) openFile(initialSelectedPath);
+  }, [initialSelectedPath, projectPath]);
   const renderFlat = (items: ProjectFileEntry[]): React.ReactNode => items
     .slice()
     .sort((a, b) => a.path.localeCompare(b.path))
@@ -1546,9 +1273,8 @@ function AppleFoldersView({ projectPath }: { projectPath?: string }) {
   </div>;
 }
 
-function ProjectPanelView({ kind, projectPath }: { kind: 'diff' | 'folders'; projectPath?: string }) {
-  if (kind === 'folders') return <AppleFoldersView projectPath={projectPath} />;
-  return <ProjectDiffView kind={kind} projectPath={projectPath} />;
+function ProjectPanelView({ projectPath, selectedPath }: { projectPath?: string; selectedPath?: string }) {
+  return <AppleFoldersView projectPath={projectPath} initialSelectedPath={selectedPath} />;
 }
 
 function ProjectDiffView({ kind, projectPath }: { kind: 'diff' | 'folders'; projectPath?: string }) {
