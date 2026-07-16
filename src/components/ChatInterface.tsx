@@ -1235,7 +1235,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     <div className="chat-interface-container" style={{ width: 'min(860px, calc(100% - 64px))', height: 'min(720px, calc(100vh - 96px))', display: 'grid', gridTemplateRows: composerDocked ? 'minmax(0, 1fr) auto' : '1fr', placeItems: composerDocked ? 'stretch' : 'center', gap: '10px', overflow: 'visible', paddingBottom: composerDocked ? '18px' : 0 }}>
       
       {/* Zona de mensajes */}
-      <div className="messages-area" style={{ minHeight: 0, height: '100%', overflowY: 'auto', display: composerDocked ? 'flex' : 'none', flexDirection: 'column', gap: '6px', paddingBottom: '10px', overscrollBehavior: 'contain' }}>
+      <div className="messages-area" style={{ minHeight: 0, height: '100%', overflowY: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none', display: composerDocked ? 'flex' : 'none', flexDirection: 'column', gap: '6px', paddingBottom: '10px', overscrollBehavior: 'contain' }}>
         <div aria-hidden="true" style={{ flex: '1 0 auto' }} />
         {messages.map((m, i) => (
           <React.Fragment key={i}>
@@ -1243,22 +1243,23 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
               <div aria-hidden="true" style={{ alignSelf: 'stretch', borderTop: '1px solid rgba(255, 255, 255, 0.08)', margin: '14px 0' }} />
             )}
             <div style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '5px', maxWidth: '80%' }}>
+              <span style={{ alignSelf: 'start', justifySelf: m.role === 'user' ? 'end' : 'start', color: m.role === 'user' ? avatarColor : '#ffffff', fontSize: '13px', fontWeight: 600, marginBottom: '2px', padding: m.role === 'user' ? '0 8px' : 0 }}>
+                {m.role === 'user' ? 'Tú' : 'Concierge'}
+              </span>
               {m.role === 'assistant' && (
                 <MessageToolSummary tools={m.tools} isBusy={isAgentBusy && i === messages.length - 1} />
               )}
-              <div style={{ background: m.role === 'user' ? '#202020' : 'transparent', padding: '10px 14px', borderRadius: '10px', color: '#eee', fontSize: '14px', width: 'fit-content', maxWidth: '100%', lineHeight: 1.5 }}>
+              <div style={{ background: m.role === 'user' ? '#202020' : 'transparent', padding: m.role === 'user' ? '14px 20px' : '0', borderRadius: m.role === 'user' ? '24px 24px 4px 24px' : '0', color: '#eee', fontSize: '14px', width: 'fit-content', maxWidth: '100%', lineHeight: 1.5, boxShadow: m.role === 'user' ? '0 4px 14px rgba(0, 0, 0, 0.18)' : 'none' }}>
                 <ReactMarkdown components={{ p: ({ children }) => <p style={{ margin: 0 }}>{children}</p> }}>{m.content}</ReactMarkdown>
               </div>
-              {m.role === 'user' && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', opacity: 0.72 }}>
-                  <button type="button" aria-label="Copiar mensaje" onClick={() => handleCopyMessage(m.content)} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: 'pointer' }}>
-                    <Copy size={13} strokeWidth={2} />
-                  </button>
-                  <button type="button" aria-label="Reintentar desde este mensaje" onClick={() => handleRetryMessage(i)} disabled={isAgentBusy} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: isAgentBusy ? 'not-allowed' : 'pointer' }}>
-                    <RotateCcw size={13} strokeWidth={2} />
-                  </button>
-                </div>
-              )}
+              <div style={{ alignSelf: m.role === 'user' ? 'end' : 'start', display: 'flex', alignItems: 'center', gap: '4px', opacity: 0.72 }}>
+                <button type="button" aria-label="Copiar mensaje" onClick={() => handleCopyMessage(m.content)} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: 'pointer' }}>
+                  <Copy size={13} strokeWidth={2} />
+                </button>
+                {m.role === 'user' && <button type="button" aria-label="Reintentar desde este mensaje" onClick={() => handleRetryMessage(i)} disabled={isAgentBusy} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: isAgentBusy ? 'not-allowed' : 'pointer' }}>
+                  <RotateCcw size={13} strokeWidth={2} />
+                </button>}
+              </div>
             </div>
           </React.Fragment>
         ))}
@@ -1309,8 +1310,8 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
           <button type="button" onClick={handleAttachFiles} className="text-white/40 hover:text-white transition-colors" aria-label="Añadir archivos" style={{ flex: '0 0 40px', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--color-surface-9, #2f2f2f)', borderRadius: '50%', background: '#121212', boxShadow: '0 18px 52px rgba(0, 0, 0, 0.26)', cursor: 'pointer' }}>
             <Plus size={18} strokeWidth={2} />
           </button>
-          <div className="composer-box" style={{ '--avatar-color': avatarColor, minHeight: '40px', flex: '1 1 auto', minWidth: 0, padding: '1.5px', borderRadius: '22px', background: 'var(--color-surface-9, #2f2f2f)', boxShadow: '0 18px 52px rgba(0, 0, 0, 0.26)' } as React.CSSProperties}>
-          <form onSubmit={handleSubmit} className="composer-box-inner" style={{ minHeight: '40px', width: '100%', minWidth: 0, display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 6px 5px 12px', border: 0, borderRadius: '20px', background: '#121212' }}>
+          <div className="composer-box" style={{ '--avatar-color': avatarColor, minHeight: '40px', flex: '1 1 auto', minWidth: 0, padding: '1px', borderRadius: '22px', background: 'var(--color-surface-9, #2f2f2f)', boxShadow: '0 18px 52px rgba(0, 0, 0, 0.26)' } as React.CSSProperties}>
+          <form onSubmit={handleSubmit} className="composer-box-inner" style={{ minHeight: '40px', width: '100%', minWidth: 0, display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 6px 5px 12px', border: 0, borderRadius: '21px', background: '#121212' }}>
           {false && (
           <button type="button" onClick={handleAttachFiles} className="text-white/40 hover:text-white transition-colors" aria-label="Añadir archivos" style={{ flex: '0 0 28px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, background: 'transparent', cursor: 'pointer' }}>
             <Plus size={18} strokeWidth={2} />

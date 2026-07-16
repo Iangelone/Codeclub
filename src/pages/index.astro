@@ -22,7 +22,8 @@ import ChatPanel from "../components/ChatPanel.astro";
       }
     </script>
   </head>
-  <body class="has-sidebar group grid grid-rows-[36px_1fr] grid-cols-[0_1fr] transition-[grid-template-columns] duration-140 ease-out [&.has-sidebar]:grid-cols-[264px_1fr] m-0 min-w-[320px] min-h-screen bg-transparent text-[#dedede] overflow-hidden font-sans before:content-[''] before:fixed before:inset-[36px_0_0] before:-z-10">
+  <body class="has-sidebar group relative isolate grid grid-rows-[36px_1fr] grid-cols-[0_1fr] transition-[grid-template-columns] duration-140 ease-out [&.has-sidebar]:grid-cols-[264px_1fr] m-0 min-w-[320px] min-h-screen bg-transparent text-[#dedede] overflow-hidden font-sans">
+    <div id="app-background" aria-hidden="true"></div>
     <Topbar />
     <Sidebar client:load />
     <main class="row-start-2 col-start-2 min-w-0 min-h-0 bg-transparent" aria-label="Workspace">

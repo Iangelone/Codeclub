@@ -21,14 +21,18 @@ body {
 }
 
 body {
+  background-image: none;
+}
+
+.app-background,
+#app-background {
+  position: fixed;
+  inset: 36px 0 0;
+  z-index: -1;
   background-image: linear-gradient(rgba(10, 10, 10, 0.52), rgba(10, 10, 10, 0.52)), url('/unsplash.jpg');
   background-position: center;
   background-size: cover;
-  background-attachment: fixed;
-}
-
-body::before {
-  background: transparent;
+  background-repeat: no-repeat;
   pointer-events: none;
 }
 
@@ -43,6 +47,10 @@ body::before {
 .composer-box:focus-within {
   background: var(--avatar-color) !important;
   box-shadow: 0 0 18px var(--avatar-color), 0 18px 52px rgba(0, 0, 0, 0.26);
+}
+
+.messages-area::-webkit-scrollbar {
+  display: none;
 }
 
 .workspace-divider {

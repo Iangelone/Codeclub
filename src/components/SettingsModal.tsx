@@ -20,10 +20,12 @@ const colorFromHue = (hue: number) => `hsl(${hue}, 55%, 45%)`;
 const DEFAULT_COLOR = colorFromHue(220);
 
 function applyBackground(type: "color" | "image", value: string) {
-  document.body.style.backgroundImage = type === "image"
+  const background = document.querySelector<HTMLElement>("#app-background");
+  if (!background) return;
+  background.style.backgroundImage = type === "image"
     ? `linear-gradient(rgba(10, 10, 10, 0.52), rgba(10, 10, 10, 0.52)), url("${value}")`
     : "none";
-  document.body.style.backgroundColor = type === "color" ? value : "#111111";
+  background.style.backgroundColor = type === "color" ? value : "#111111";
 }
 
 export default function SettingsModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
@@ -60,6 +62,11 @@ export default function SettingsModal({ isOpen, onClose }: { isOpen: boolean; on
     applyBackground(type, value);
   };
 
+  const applyCurrentImage = () => {
+    const value = urlInput.trim() || "/unsplash.jpg";
+    changeBackground("image", value);
+  };
+
   if (!isOpen || typeof document === "undefined") return null;
 
   return createPortal(
@@ -92,9 +99,9 @@ export default function SettingsModal({ isOpen, onClose }: { isOpen: boolean; on
             <p className="mb-3 text-xs text-[#999]">Fondo</p>
             <div className="mb-3 flex gap-2">
               <button onClick={() => changeBackground("color", "#101010")} className={`flex items-center gap-1.5 rounded-lg border-0 px-3 py-1.5 text-xs transition-colors ${bgType === "color" ? "bg-white/20 text-white" : "bg-white/5 text-[#999] hover:bg-white/10"}`}><PaintBucket size={13} /> Color plano</button>
-              <button onClick={() => changeBackground("image", urlInput || "/unsplash.jpg")} className={`flex items-center gap-1.5 rounded-lg border-0 px-3 py-1.5 text-xs transition-colors ${bgType === "image" ? "bg-white/20 text-white" : "bg-white/5 text-[#999] hover:bg-white/10"}`}><ImageIcon size={13} /> Imagen</button>
+              <button onClick={applyCurrentImage} className={`flex items-center gap-1.5 rounded-lg border-0 px-3 py-1.5 text-xs transition-colors ${bgType === "image" ? "bg-white/20 text-white" : "bg-white/5 text-[#999] hover:bg-white/10"}`}><ImageIcon size={13} /> Imagen</button>
             </div>
-            {bgType === "image" && <div className="flex gap-2"><input value={urlInput} onChange={(e) => setUrlInput(e.target.value)} placeholder="https://..." className="min-w-0 flex-1 rounded-xl border-0 bg-[#1c1c1c] px-3 py-2 text-xs text-white outline-none placeholder:text-white/30 focus:ring-1 focus:ring-white/20" /><button onClick={() => changeBackground("image", urlInput || "/unsplash.jpg")} className="rounded-xl border-0 bg-white/10 px-3 py-2 text-xs text-white transition-colors hover:bg-white/20">Aplicar</button></div>}
+            {bgType === "image" && <div className="flex gap-2"><input value={urlInput} onChange={(e) => setUrlInput(e.target.value)} placeholder="https://..." className="min-w-0 flex-1 rounded-xl border-0 bg-[#1c1c1c] px-3 py-2 text-xs text-white outline-none placeholder:text-white/30 focus:ring-1 focus:ring-white/20" /><button onClick={applyCurrentImage} className="rounded-xl border-0 bg-white/10 px-3 py-2 text-xs text-white transition-colors hover:bg-white/20">Aplicar</button></div>}
           </div>
         </div>
       </div>
