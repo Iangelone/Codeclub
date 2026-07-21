@@ -4,6 +4,7 @@ import { PanelBottomClose, Plus } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import '@xterm/xterm/css/xterm.css';
+import { getSetting, setSetting } from '../lib/persistence';
 
 type ShellKind = 'auto' | 'powershell' | 'git-bash' | 'wsl' | 'cmd';
 
@@ -54,13 +55,7 @@ const computeTerminalName = (shell: string, existing: TerminalInfo[]) => {
   return `${base} ${sameType.length + 1}`;
 };
 
-const readPersistedTerminals = () => {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]') as TerminalInfo[];
-  } catch {
-    return [];
-  }
-};
+const readPersistedTerminals = () => getSetting<TerminalInfo[]>(STORAGE_KEY, []);
 
 const upsertTerminal = (items: TerminalInfo[], next: TerminalInfo) => {
   const index = items.findIndex((item) => item.id === next.id);
@@ -81,15 +76,8 @@ const MAX_HEIGHT_FRACTION = 0.8;
 const POSITION_KEY = 'codeclub_terminal_pos';
 const HEIGHT_KEY = 'codeclub_terminal_height';
 
-const getInitialPosition = () => {
+const getDefaultPosition = () => {
   if (typeof window === 'undefined') return { x: 60, y: 60 };
-  try {
-    const saved = localStorage.getItem(POSITION_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (typeof parsed.x === 'number' && typeof parsed.y === 'number') return parsed;
-    }
-  } catch {}
   const dockWidth = Math.min(760, window.innerWidth - 64);
   const dockHeight = Math.min(360, Math.max(220, window.innerHeight * 0.36));
   return {
@@ -98,15 +86,8 @@ const getInitialPosition = () => {
   };
 };
 
-const getInitialHeight = () => {
+const getDefaultHeight = () => {
   if (typeof window === 'undefined') return 300;
-  try {
-    const saved = localStorage.getItem(HEIGHT_KEY);
-    if (saved) {
-      const h = parseInt(saved, 10);
-      if (!isNaN(h) && h >= MIN_HEIGHT && h <= window.innerHeight * MAX_HEIGHT_FRACTION) return h;
-    }
-  } catch {}
   return Math.min(360, Math.max(220, window.innerHeight * 0.36));
 };
 
@@ -118,7 +99,7 @@ export default function TerminalDock() {
   const [isOpen, setIsOpen] = useState(false);
   const [shellMenuOpen, setShellMenuOpen] = useState(false);
   const [shellMenuPosition, setShellMenuPosition] = useState({ left: 0 });
-  const [position, setPosition] = useState<{ x: number; y: number }>(getInitialPosition);
+  const [position, setPosition] = useState<{ x: number; y: number }>(getDefaultPosition);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const barRef = useRef<HTMLDivElement | null>(null);
   const plusButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -132,13 +113,24 @@ export default function TerminalDock() {
   const outputRef = useRef(new Map<string, string>());
   const loadedRef = useRef(false);
   const restoredRef = useRef(false);
-  const [dockHeight, setDockHeight] = useState(getInitialHeight);
+  const [dockHeight, setDockHeight] = useState(getDefaultHeight);
   const dragRef = useRef({ isDragging: false, startX: 0, startY: 0, startPosX: 0, startPosY: 0 });
   const positionRef = useRef(position);
   positionRef.current = position;
   const resizeRef = useRef({ isResizing: false, startY: 0, startHeight: 0 });
   const dockHeightRef = useRef(dockHeight);
   dockHeightRef.current = dockHeight;
+
+  useEffect(() => {
+    void Promise.all([
+      getSetting(POSITION_KEY, getDefaultPosition()),
+      getSetting(HEIGHT_KEY, getDefaultHeight()),
+    ]).then(([savedPosition, savedHeight]) => {
+      if (savedPosition && typeof savedPosition.x === 'number' && typeof savedPosition.y === 'number') setPosition(savedPosition);
+      const height = Number(savedHeight);
+      if (Number.isFinite(height) && height >= MIN_HEIGHT && height <= window.innerHeight * MAX_HEIGHT_FRACTION) setDockHeight(height);
+    });
+  }, []);
 
   const visibleTerminals = terminals.filter((terminal) => !terminal.is_agent && terminal.projectPath === activeProjectPath);
   const activeTerminal = visibleTerminals.find((terminal) => terminal.id === activeId) || null;
@@ -149,13 +141,13 @@ export default function TerminalDock() {
 
   const persistPosition = () => {
     try {
-      localStorage.setItem(POSITION_KEY, JSON.stringify(positionRef.current));
+      void setSetting(POSITION_KEY, positionRef.current);
     } catch {}
   };
 
   const persistHeight = () => {
     try {
-      localStorage.setItem(HEIGHT_KEY, String(dockHeightRef.current));
+      void setSetting(HEIGHT_KEY, dockHeightRef.current);
     } catch {}
   };
 
@@ -285,7 +277,7 @@ export default function TerminalDock() {
       scrollback: 5000,
       allowTransparency: true,
       theme: {
-        background: '#101010',
+        background: '#111111',
         foreground: '#cfcfcf',
         cursor: '#d8d8d8',
         selectionBackground: '#404040',
@@ -364,7 +356,7 @@ export default function TerminalDock() {
         created_at,
         status,
       }));
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    void setSetting(STORAGE_KEY, payload);
   }, [terminals]);
 
   useEffect(() => {
@@ -378,13 +370,13 @@ export default function TerminalDock() {
 
       if (!restoredRef.current) {
         restoredRef.current = true;
-        readPersistedTerminals().forEach((terminal) => {
+        void readPersistedTerminals().then((savedTerminals) => savedTerminals.forEach((terminal) => {
           createTerminal(terminal.shell as ShellKind, {
             cwd: terminal.cwd || detail.projectPath,
             projectPath: terminal.projectPath || detail.projectPath,
             open: false,
           }).catch(console.error);
-        });
+        }));
       }
     };
 
@@ -403,11 +395,6 @@ export default function TerminalDock() {
 
     const openTerminalDock = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
-      if (!resolveActiveProjectPath()) {
-        setShellMenuOpen(false);
-        setIsOpen(false);
-        return;
-      }
       if (detail.terminalId) setActiveId(detail.terminalId);
       setIsOpen((value) => {
         const next = detail.toggle ? !value : true;

@@ -30,14 +30,14 @@ ChatInterface.tsx (orchestrator)
 | `writeFile` | `codeclub_write_file` | Sí | contentPreview 800 chars |
 | `runCommand` | `codeclub_run_command` | Sí | Commands: bun, npm, pnpm, node, git, cargo, python, rg |
 | `subagent` | `runStream` interno | No | Tools read-only (listFiles, readFile, searchText) |
-| `remember` | `saveMemory` | No | Guarda en `.codeclub/memory/{key}.json` |
+| `remember` | `saveMemory` | No | Guarda en la carpeta de configuración del SO, por proyecto |
 | `recall` | `searchMemory` | No | Busca por key o tag |
 | `forget` | `deleteMemory` | No | Elimina por key exacta |
 | `askUser` | Solicitud estructurada | No | Devuelve una pregunta pendiente sin UI |
-| `createPlan` | `.codeclub/agent-state.json` | No | Crea un plan persistente |
-| `updatePlan` | `.codeclub/agent-state.json` | No | Actualiza plan o paso |
-| `todo` | `.codeclub/agent-state.json` | No | CRUD de TODOs persistentes |
-| `getTaskStatus` | `.codeclub/agent-state.json` | No | Lee plan y TODOs actuales |
+| `createPlan` | `agent-state.json` en configuración del SO | No | Crea un plan persistente |
+| `updatePlan` | `agent-state.json` en configuración del SO | No | Actualiza plan o paso |
+| `todo` | `agent-state.json` en configuración del SO | No | CRUD de TODOs persistentes |
+| `getTaskStatus` | `agent-state.json` en configuración del SO | No | Lee plan y TODOs actuales |
 
 Cada tool recibe `ToolContext`:
 - `projectPath`: workspace activo
@@ -56,6 +56,6 @@ Cada tool recibe `ToolContext`:
 
 ## Memory
 
-Las tools `remember`, `recall`, `forget` persisten en `.codeclub/memory/{key}.json`.
+Las tools `remember`, `recall`, `forget` persisten en la carpeta de configuración del SO.
 Cada entrada: `{ key, content, tags[], created_at, updated_at }`.
 Al borrar un chat/nota/tabla, se limpian automáticamente las memorias con tag `{kind}:{itemId}` en `index.astro`.

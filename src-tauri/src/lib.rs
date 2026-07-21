@@ -478,6 +478,29 @@ fn codeclub_write_file(project_path: String, path: String, content: String) -> R
 }
 
 #[tauri::command]
+fn codeclub_create_entry(project_path: String, path: String, kind: String) -> Result<(), String> {
+    let full_path = safe_workspace_path(&project_path, &path)?;
+
+    match kind.as_str() {
+        "folder" => fs::create_dir_all(&full_path)
+            .map_err(|error| format!("No se pudo crear la carpeta: {error}")),
+        "file" => {
+            if let Some(parent) = full_path.parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|error| format!("No se pudo crear el directorio: {error}"))?;
+            }
+            fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&full_path)
+                .map(|_| ())
+                .map_err(|error| format!("No se pudo crear el archivo: {error}"))
+        }
+        _ => Err("Tipo de elemento invalido: usa 'file' o 'folder'.".into()),
+    }
+}
+
+#[tauri::command]
 fn codeclub_search_text(
     project_path: String,
     query: String,
@@ -875,6 +898,7 @@ pub fn run() {
             codeclub_read_file,
             codeclub_search_text,
             codeclub_write_file,
+            codeclub_create_entry,
             codeclub_run_command,
             codeclub_terminal_list,
             codeclub_terminal_create,

@@ -2,19 +2,27 @@ import React, { useState, useRef, useEffect } from 'react';
 import { ArrowUpRight, ChevronDown, ChevronRight, Copy, FileCode2, MessageSquare, RotateCcw, Search, Terminal, Coffee, Folder, FolderTree, Plus, RefreshCw, X } from 'lucide-react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
-import { defaultKeymap, indentWithTab } from '@codemirror/commands';
+import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { javascript } from '@codemirror/lang-javascript';
 import { html } from '@codemirror/lang-html';
 import { css } from '@codemirror/lang-css';
 import { json } from '@codemirror/lang-json';
 import { markdown } from '@codemirror/lang-markdown';
+import { python } from '@codemirror/lang-python';
+import { rust } from '@codemirror/lang-rust';
+import { sql } from '@codemirror/lang-sql';
+import { xml } from '@codemirror/lang-xml';
 import { oneDark } from '@codemirror/theme-one-dark';
-import { invoke } from '@tauri-apps/api/core';
+import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+import { readFile, readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { open } from '@tauri-apps/plugin-dialog';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import ReactMarkdown from 'react-markdown';
+import mammoth from 'mammoth';
 import { createTools } from '../lib/engine/tools';
 import { runStream } from '../lib/engine/run';
+import { getProjectFilePath, getSetting, logPersistence, setSetting } from '../lib/persistence';
+import { getProjectChatPath, readProjectMeta, writeProjectMeta } from '../lib/projectManager';
 
 const SPINNER_FRAMES = {
   chat: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"],
@@ -94,12 +102,13 @@ const MessageToolSummary = ({ tools, isBusy }) => {
 export default function ChatInterface({ catalog, defaultProvider, defaultModel, panelId = 'left', eventPrefix = 'codeclub', selectedProject, blockedPanelState = 'blank' }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
-  const [avatarColor, setAvatarColor] = useState(() => typeof window !== 'undefined' ? localStorage.getItem('codeclub_avatar_color') || '#3b6bb5' : '#3b6bb5');
+  const [inputFocused, setInputFocused] = useState(false);
+  const [avatarColor, setAvatarColor] = useState('#3b6bb5');
   const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [agentState, setAgentState] = useState('idle');
   const [pendingApprovals, setPendingApprovals] = useState([]);
-  const [composerDocked, setComposerDocked] = useState(false);
+  const [composerDocked, setComposerDocked] = useState(true);
   const composerDockedRef = useRef(false);
 
   const [currentProvider, setCurrentProvider] = useState(defaultProvider);
@@ -108,6 +117,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [credentialProvider, setCredentialProvider] = useState(null);
 
   useEffect(() => {
+    void getSetting('codeclub_avatar_color', '#3b6bb5').then(setAvatarColor);
     const handleProfileChange = (event) => setAvatarColor(event.detail?.color || '#3b6bb5');
     window.addEventListener('codeclub:profile-changed', handleProfileChange);
     return () => window.removeEventListener('codeclub:profile-changed', handleProfileChange);
@@ -125,6 +135,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [recentArtifactIds, setRecentArtifactIds] = useState<Record<string, string[]>>({});
   const [terminalCount, setTerminalCount] = useState(0);
   const [activeChat, setActiveChat] = useState<{chatId: string, projectPath: string} | null>(null);
+  const activeChatRef = useRef<{chatId: string, projectPath: string} | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState('blank');
   const [selectedStructurePath, setSelectedStructurePath] = useState('');
   const agentStatusText = {
@@ -148,7 +159,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     const storageKey = `codeclub:recent-artifacts:${kind}:${encodeURIComponent(detail.projectPath)}`;
     setRecentArtifactIds((current) => {
       const ids = [detail[`${kind}Id`], ...(current[key] || [])].filter((id, index, all) => all.indexOf(id) === index).slice(0, 3);
-      localStorage.setItem(storageKey, JSON.stringify(ids));
+      void setSetting(storageKey, ids);
       return { ...current, [key]: ids };
     });
   };
@@ -156,12 +167,17 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const getRecentArtifactIds = (kind: 'chat', projectPath: string) => {
     const key = `${projectPath}:${kind}`;
     if (recentArtifactIds[key]) return recentArtifactIds[key];
-    try {
-      return JSON.parse(localStorage.getItem(`codeclub:recent-artifacts:${kind}:${encodeURIComponent(projectPath)}`) || '[]');
-    } catch {
-      return [];
-    }
+    return [];
   };
+
+  useEffect(() => {
+    if (!activeProject?.projectPath) return;
+    const kind = 'chat';
+    const key = `${activeProject.projectPath}:${kind}`;
+    void getSetting<string[]>(`codeclub:recent-artifacts:${kind}:${encodeURIComponent(activeProject.projectPath)}`, []).then((ids) => {
+      setRecentArtifactIds((current) => current[key] ? current : { ...current, [key]: ids });
+    });
+  }, [activeProject?.projectPath]);
 
   useEffect(() => {
     composerDockedRef.current = composerDocked;
@@ -192,13 +208,17 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       rememberRecentArtifact('chat', chat);
       setWorkspaceMode('chat');
       setActiveChat(chat);
+      activeChatRef.current = chat;
+      setMessages([]);
+      setInput('');
+      setAttachedFiles([]);
       setAgentState('idle');
       setPendingApprovals([]);
       approvalResolversRef.current.clear();
       const wasDocked = composerDockedRef.current;
       try {
         const { readTextFile, exists } = await import('@tauri-apps/plugin-fs');
-        const path = `${chat.projectPath}/.codeclub/chats/${chat.chatId}.jsonl`;
+        const path = await getProjectChatPath(chat.projectPath, chat.chatId);
         if (await exists(path)) {
           const content = await readTextFile(path);
           const lines = content.split('\n').filter(l => l.trim() !== '');
@@ -216,6 +236,20 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     window.addEventListener(eventName, handleOpenChat);
     return () => window.removeEventListener(eventName, handleOpenChat);
   }, [eventPrefix]);
+
+  useEffect(() => {
+    const handleOpenEmptyChat = () => {
+      setWorkspaceMode('chat');
+      setMessages([]);
+      setInput('');
+      setAttachedFiles([]);
+      setPendingApprovals([]);
+      setAgentState('idle');
+      approvalResolversRef.current.clear();
+    };
+    window.addEventListener('codeclub:open-empty-chat', handleOpenEmptyChat);
+    return () => window.removeEventListener('codeclub:open-empty-chat', handleOpenEmptyChat);
+  }, []);
 
   useEffect(() => {
     const handlers = (['folders'] as const).map((kind) => {
@@ -256,13 +290,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     if (workspaceMode === 'blank' && activeProject) {
       const loadMeta = async () => {
         try {
-          const { readTextFile, exists } = await import('@tauri-apps/plugin-fs');
-          const path = `${activeProject.projectPath}/.codeclub/meta.json`;
-          if (await exists(path)) {
-            setProjectMeta(JSON.parse(await readTextFile(path)));
-          } else {
-            setProjectMeta(null);
-          }
+          setProjectMeta(await readProjectMeta(activeProject.projectPath));
         } catch (e) {
           console.error(e);
           setProjectMeta(null);
@@ -294,26 +322,24 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   }, [eventPrefix]);
 
   useEffect(() => {
-    const savedProviderId = localStorage.getItem('codeclub_last_provider_id');
-    const savedModelId = localStorage.getItem('codeclub_last_model_id');
-    const savedProvider = savedProviderId
-      ? catalog.find((item) => item.type === 'provider' && item.id === savedProviderId)
-      : null;
-    const savedModel = savedModelId
-      ? catalog.find((item) => item.type === 'model' && item.id === savedModelId)
-      : null;
-
-    setCurrentProvider(savedProvider || defaultProvider);
-    setCurrentModel(savedModel || defaultModel);
-    setSettingsReady(true);
+    Promise.all([
+      getSetting('codeclub_last_provider_id', ''),
+      getSetting('codeclub_last_model_id', ''),
+    ]).then(([savedProviderId, savedModelId]) => {
+      const savedProvider = savedProviderId ? catalog.find((item) => item.type === 'provider' && item.id === savedProviderId) : null;
+      const savedModel = savedModelId ? catalog.find((item) => item.type === 'model' && item.id === savedModelId) : null;
+      setCurrentProvider(savedProvider || defaultProvider);
+      setCurrentModel(savedModel || defaultModel);
+      setSettingsReady(true);
+    });
   }, [catalog, defaultProvider, defaultModel]);
 
   useEffect(() => {
-    if (settingsReady && currentProvider) localStorage.setItem('codeclub_last_provider_id', currentProvider.id);
+    if (settingsReady && currentProvider) void setSetting('codeclub_last_provider_id', currentProvider.id);
   }, [currentProvider, settingsReady]);
 
   useEffect(() => {
-    if (settingsReady && currentModel) localStorage.setItem('codeclub_last_model_id', currentModel.id);
+    if (settingsReady && currentModel) void setSetting('codeclub_last_model_id', currentModel.id);
   }, [currentModel, settingsReady]);
 
   const openCommandMenu = (kind) => {
@@ -324,6 +350,15 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     setTimeout(() => commandMenuRef.current?.focus(), 10);
   };
 
+  useEffect(() => {
+    const handleOpenCommandMenu = (event: Event) => {
+      const kind = (event as CustomEvent).detail?.kind;
+      if (kind === 'provider' || kind === 'model') openCommandMenu(kind);
+    };
+    window.addEventListener('codeclub:open-command-menu', handleOpenCommandMenu);
+    return () => window.removeEventListener('codeclub:open-command-menu', handleOpenCommandMenu);
+  }, []);
+
   const filteredCatalog = catalog.filter((item) => {
     const matchesKind = item.type === commandKind;
     const itemLabel = item.label || item.id || '';
@@ -331,6 +366,10 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     const matchesProvider = commandKind !== 'model' || item.providerId === currentProvider?.id;
     return matchesKind && matchesQuery && matchesProvider;
   });
+  const slashCommands = [
+    { id: 'proveedor', label: '/proveedor', description: 'Seleccionar proveedor', type: 'command' },
+    { id: 'modelo', label: '/modelo', description: 'Seleccionar modelo', type: 'command' },
+  ].filter((command) => command.label.toLowerCase().includes(searchQuery.toLowerCase()));
 
   useEffect(() => {
     setActiveCommandIndex(0);
@@ -360,6 +399,12 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   }, [menuOpen]);
 
   const handleItemClick = (item) => {
+    if (item.type === 'command') {
+      setInput(`/${item.id}`);
+      setMenuOpen(false);
+      chatInputRef.current?.focus();
+      return;
+    }
     if (item.type === 'provider') {
       setCurrentProvider(item);
       setCredentialProvider(item);
@@ -527,34 +572,13 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   };
 
 
-  const logPersistence = async (action, status, detail = {}) => {
-    const entry = {
-      at: new Date().toISOString(),
-      action,
-      status,
-      ...detail,
-    };
-
-    console.info("[codeclub:persist]", entry);
-
-    try {
-      const { readTextFile, writeTextFile, mkdir, exists } = await import('@tauri-apps/plugin-fs');
-      const { appLocalDataDir, join } = await import('@tauri-apps/api/path');
-      const appDataPath = await appLocalDataDir();
-      const logPath = await join(appDataPath, 'persistence-log.jsonl');
-      await mkdir(appDataPath, { recursive: true });
-      const previous = (await exists(logPath)) ? await readTextFile(logPath) : '';
-      await writeTextFile(logPath, `${previous}${JSON.stringify(entry)}\n`);
-    } catch (error) {
-      console.error("[codeclub:persist] log failed", error);
-    }
-  };
-
   const appendToJsonl = async (msg) => {
-    if (!activeChat) return;
+    const chat = activeChatRef.current;
+    if (!chat) return;
     try {
-      const { writeTextFile, readTextFile, exists } = await import('@tauri-apps/plugin-fs');
-      const path = `${activeChat.projectPath}/.codeclub/chats/${activeChat.chatId}.jsonl`;
+      const { writeTextFile, readTextFile, exists, mkdir } = await import('@tauri-apps/plugin-fs');
+      await mkdir(await getProjectFilePath(chat.projectPath, 'chats'), { recursive: true });
+      const path = await getProjectChatPath(chat.projectPath, chat.chatId);
       let content = '';
       if (await exists(path)) {
         content = await readTextFile(path);
@@ -564,45 +588,61 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       await writeTextFile(path, content);
       await logPersistence('append_chat_message', 'ok', {
         role: msg.role,
-        chatId: activeChat.chatId,
-        projectPath: activeChat.projectPath,
+        chatId: chat.chatId,
+        projectPath: chat.projectPath,
         path,
       });
     } catch (e) {
       console.error("FS Append Error:", e);
       await logPersistence('append_chat_message', 'error', {
         role: msg.role,
-        chatId: activeChat?.chatId,
-        projectPath: activeChat?.projectPath,
+        chatId: chat?.chatId,
+        projectPath: chat?.projectPath,
         error: e?.message || String(e),
       });
     }
   };
 
   const writeChatJsonl = async (nextMessages) => {
-    if (!activeChat) return;
+    const chat = activeChatRef.current;
+    if (!chat) return;
     try {
       const { writeTextFile, mkdir } = await import('@tauri-apps/plugin-fs');
-      const dir = `${activeChat.projectPath}/.codeclub/chats`;
-      const path = `${dir}/${activeChat.chatId}.jsonl`;
+      const dir = await getProjectFilePath(chat.projectPath, 'chats');
+      const path = await getProjectChatPath(chat.projectPath, chat.chatId);
       await mkdir(dir, { recursive: true });
       await writeTextFile(path, nextMessages.map((msg) => JSON.stringify(msg)).join('\n') + '\n');
       await logPersistence('rewrite_chat_history', 'ok', {
-        chatId: activeChat.chatId,
-        projectPath: activeChat.projectPath,
+        chatId: chat.chatId,
+        projectPath: chat.projectPath,
         path,
       });
     } catch (e) {
       await logPersistence('rewrite_chat_history', 'error', {
-        chatId: activeChat?.chatId,
-        projectPath: activeChat?.projectPath,
+        chatId: chat?.chatId,
+        projectPath: chat?.projectPath,
         error: e?.message || String(e),
       });
     }
   };
 
   const sendMessage = async (content, baseMessages = messages, shouldRenameChat = messages.length === 0, replaceHistory = false) => {
-    if (!activeChat) {
+    let chat = activeChatRef.current;
+    if (!chat && activeProject?.projectPath) {
+      const title = content.trim().split(/\r?\n/)[0].slice(0, 60) || 'Nuevo chat';
+      const id = Date.now().toString();
+      const metaData: any = await readProjectMeta(activeProject.projectPath) || { name: activeProject.name, path: activeProject.projectPath, created_at: new Date().toISOString(), chats: [] };
+      if (!Array.isArray(metaData.chats)) metaData.chats = [];
+      metaData.chats.push({ id, name: title });
+      await writeProjectMeta(activeProject.projectPath, metaData);
+      chat = { chatId: id, projectPath: activeProject.projectPath };
+      activeChatRef.current = chat;
+      setActiveChat(chat);
+      setProjectMeta(metaData);
+      window.dispatchEvent(new CustomEvent('codeclub:project-meta-changed', { detail: { projectPath: activeProject.projectPath } }));
+    }
+
+    if (!chat) {
       window.dispatchEvent(new CustomEvent('codeclub:require-project'));
       return;
     }
@@ -611,7 +651,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       let title = content.trim();
       if (title.length > 20) title = title.substring(0, 20) + '...';
       window.dispatchEvent(new CustomEvent('codeclub:rename-chat', {
-        detail: { chatId: activeChat.chatId, newName: title, projectPath: activeChat.projectPath }
+        detail: { chatId: chat.chatId, newName: title, projectPath: chat.projectPath }
       }));
     }
 
@@ -635,7 +675,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
         throw new Error('Elegí un proveedor y un modelo antes de enviar.');
       }
 
-      let apiKey = localStorage.getItem(`${currentProvider.id}_api_key`);
+      let apiKey = await getSetting(`${currentProvider.id}_api_key`, '');
       
       if (!apiKey || apiKey === 'dummy-key') {
         throw new Error(`API Key no configurada para ${currentProvider.label || currentProvider.id}. Por favor agregala en la configuración.`);
@@ -669,7 +709,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       updateAssistantMessage();
 
       const tools = createTools({
-        projectPath: activeChat.projectPath,
+        projectPath: chat.projectPath,
         recordToolEvent,
         setAgentState,
         requestToolApproval,
@@ -732,7 +772,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     if ((!input.trim() && attachedFiles.length === 0) || isAgentBusy) return;
 
     if (credentialProvider) {
-      localStorage.setItem(`${credentialProvider.id}_api_key`, input.trim());
+      void setSetting(`${credentialProvider.id}_api_key`, input.trim());
       setCredentialProvider(null);
       setInput('');
       return;
@@ -798,7 +838,15 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     }
   };
 
-  if (workspaceMode === 'blank') {
+  if (workspaceMode === 'blank' && !activeProject) {
+    return (
+      <div style={{ width: '100%', height: '100%', minHeight: '100%', display: 'grid', placeItems: 'center', textAlign: 'center', color: 'rgba(216, 216, 216, 0.42)', fontSize: '13px' }}>
+        Seleccioná un proyecto
+      </div>
+    );
+  }
+
+  if (workspaceMode === 'blank' && false) {
     if (activeProject) {
       const createNewArtifact = async (customName: string) => {
         if (!customName.trim()) {
@@ -808,19 +856,15 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
         const id = Date.now().toString();
         const name = customName.trim();
         try {
-          const { readTextFile, writeTextFile, exists, mkdir } = await import('@tauri-apps/plugin-fs');
-          const metaPath = `${activeProject.projectPath}/.codeclub/meta.json`;
-          let metaData: any = { chats: [] };
-          if (await exists(metaPath)) {
-            metaData = JSON.parse(await readTextFile(metaPath));
-          } else {
-            await mkdir(`${activeProject.projectPath}/.codeclub`, { recursive: true });
-          }
+          let metaData: any = await readProjectMeta(activeProject.projectPath) || {
+            name: activeProject.name,
+            path: activeProject.projectPath,
+            created_at: new Date().toISOString(),
+            chats: [],
+          };
           if (!Array.isArray(metaData.chats)) metaData.chats = [];
           metaData.chats.push({ id, name });
-          await writeTextFile(metaPath, JSON.stringify(metaData));
-          
-          await mkdir(`${activeProject.projectPath}/.codeclub/chats`, { recursive: true });
+          await writeProjectMeta(activeProject.projectPath, metaData);
           
           window.dispatchEvent(new CustomEvent(`codeclub:panel-${panelId}:open-chat`, {
             detail: { projectPath: activeProject.projectPath, chatId: id, name }
@@ -850,7 +894,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
             ).slice(0, 3);
             
             return (
-              <div key={kind} className="flex flex-col bg-[var(--color-surface-1)] border border-[var(--color-surface-10)] rounded-xl overflow-hidden shadow-[0_4px_12px_rgba(0,0,0,0.2)]">
+              <div key={kind} className="flex flex-col bg-[var(--color-bg)] border border-[var(--color-surface-10)] rounded-xl overflow-hidden shadow-[0_4px_12px_rgba(0,0,0,0.2)]">
                 <button 
                   type="button" 
                   onClick={() => { if (!isChatsBlocked) setExpandedMenu(isExpanded ? null : kind); }}
@@ -864,7 +908,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
                   <span className="opacity-40 text-[11px]">{items.length}</span>
                 </button>
                 {isExpanded && (
-                  <div className="flex flex-col border-t border-[var(--color-surface-10)] max-h-[250px] overflow-y-auto bg-[var(--color-surface-0)] [scrollbar-width:none]">
+                  <div className="flex flex-col border-t border-[var(--color-surface-10)] max-h-[250px] overflow-y-auto bg-[var(--color-bg)] [scrollbar-width:none]">
                     <label className="flex shrink-0 items-center gap-2 h-[34px] w-full border-b border-[var(--color-surface-8)] px-[12px] text-[#777777]">
                       <Search size={14} strokeWidth={1.6} />
                       <input
@@ -932,7 +976,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
                 detail: { toggle: true, anchorRect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height } }
               }));
             }}
-            className="flex items-center justify-between p-[12px_16px] bg-[var(--color-surface-1)] hover:bg-[var(--color-surface-3)] border border-[var(--color-surface-10)] rounded-xl text-[#eeeeee] cursor-pointer text-left w-full transition-colors duration-200 outline-none shadow-[0_4px_12px_rgba(0,0,0,0.2)]"
+            className="flex items-center justify-between p-[12px_16px] bg-[var(--color-bg)] hover:bg-[var(--color-surface-3)] border border-[var(--color-surface-10)] rounded-xl text-[#eeeeee] cursor-pointer text-left w-full transition-colors duration-200 outline-none shadow-[0_4px_12px_rgba(0,0,0,0.2)]"
           >
             <div className="flex items-center gap-3">
               <Terminal size={16} strokeWidth={1.5} />
@@ -945,7 +989,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     }
 
     return (
-      <div style={{ width: 'min(600px, calc(100% - 64px))', display: 'grid', placeItems: 'center', color: 'rgba(216, 216, 216, 0.42)', fontSize: '13px' }}>
+      <div style={{ width: '100%', height: '100%', minHeight: '100%', display: 'grid', placeItems: 'center', textAlign: 'center', color: 'rgba(216, 216, 216, 0.42)', fontSize: '13px' }}>
         Seleccioná un proyecto
       </div>
     );
@@ -956,7 +1000,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   }
 
   return (
-    <div className="chat-interface-container" style={{ width: 'min(860px, calc(100% - 64px))', height: 'min(720px, calc(100vh - 96px))', display: 'grid', gridTemplateRows: composerDocked ? 'minmax(0, 1fr) auto' : '1fr', placeItems: composerDocked ? 'stretch' : 'center', gap: '10px', overflow: 'visible', paddingBottom: composerDocked ? '18px' : 0 }}>
+    <div className="chat-interface-container" style={{ width: 'min(680px, calc(100% - 64px))', height: '100%', justifySelf: 'center', display: 'grid', gridTemplateRows: 'minmax(0, 1fr) auto', placeItems: 'stretch', gap: '10px', overflow: 'visible', paddingBottom: '5vh' }}>
       
       {/* Zona de mensajes */}
       <div className="messages-area" style={{ minHeight: 0, height: '100%', overflowY: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none', display: composerDocked ? 'flex' : 'none', flexDirection: 'column', gap: '6px', paddingBottom: '10px', overscrollBehavior: 'contain' }}>
@@ -1007,35 +1051,10 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
         <div ref={messagesEndRef} aria-hidden="true" />
       </div>
 
-      <div className="chat-composer" style={{ width: 'min(600px, 100%)', justifySelf: 'center', position: 'relative', display: 'grid', gap: '10px', transform: composerDocked ? 'translateY(18px)' : 'translateY(0)', transition: 'transform 420ms cubic-bezier(0.22, 1, 0.36, 1)' }}>
-        <div className="composer-status w-full overflow-hidden whitespace-nowrap text-ellipsis" style={{ display: 'flex', alignItems: 'center', justifyContent: composerDocked ? 'flex-start' : 'center', gap: '8px', color: composerDocked ? 'rgba(216, 216, 216, 0.42)' : undefined, fontSize: composerDocked ? '12px' : undefined, transform: composerDocked && menuOpen ? 'translateY(-194px)' : 'translateY(0)', transition: 'transform 180ms ease', position: 'relative', zIndex: 11 }}>
-          <span className="braille-spinner shrink-0" data-state={agentState} aria-hidden="true" style={{ position: 'relative' }} />
-          {composerDocked ? (
-            <span className="shrink-0" style={{ color: 'rgba(216, 216, 216, 0.82)' }}>{agentStatusText}</span>
-          ) : (
-            <p className="shrink-0" style={{ margin: 0, color: 'rgba(216, 216, 216, 0.82)', fontSize: '16px' }}>{agentStatusText}</p>
-          )}
-          {composerDocked && (
-            <>
-              <span className="shrink-0">{currentProvider?.label || 'Sin proveedor'}</span>
-              <span className="shrink-0" style={{ color: 'rgba(216, 216, 216, 0.24)' }}>/</span>
-              <span className="truncate min-w-0" style={{ textOverflow: 'ellipsis', overflow: 'hidden' }}>{currentModel?.label || 'Sin modelo'}</span>
-            </>
-          )}
-        </div>
-
-        <div className="selection-status" style={{ display: composerDocked ? 'none' : 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: 'rgba(216, 216, 216, 0.42)', fontSize: '12px' }}>
-          <span>{currentProvider?.label || 'Sin proveedor'}</span>
-          <span style={{ color: 'rgba(216, 216, 216, 0.24)' }}>/</span>
-          <span>{currentModel?.label || 'Sin modelo'}</span>
-        </div>
-
+      <div className="chat-composer" style={{ width: '100%', justifySelf: 'center', alignSelf: 'center', position: 'relative', display: 'grid', gap: '10px' }}>
         <div className="composer-row" style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }}>
-          <button type="button" onClick={handleAttachFiles} className="text-white/40 hover:text-white transition-colors" aria-label="Añadir archivos" style={{ flex: '0 0 40px', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--color-surface-9, #2f2f2f)', borderRadius: '50%', background: '#121212', boxShadow: '0 18px 52px rgba(0, 0, 0, 0.26)', cursor: 'pointer' }}>
-            <Plus size={18} strokeWidth={2} />
-          </button>
-          <div className="composer-box" style={{ '--avatar-color': avatarColor, minHeight: '40px', flex: '1 1 auto', minWidth: 0, padding: '1px', borderRadius: '22px', background: 'var(--color-surface-9, #2f2f2f)', boxShadow: '0 18px 52px rgba(0, 0, 0, 0.26)' } as React.CSSProperties}>
-          <form onSubmit={handleSubmit} className="composer-box-inner" style={{ minHeight: '40px', width: '100%', minWidth: 0, display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 6px 5px 12px', border: 0, borderRadius: '21px', background: '#121212' }}>
+          <div className="composer-box" style={{ minHeight: '40px', flex: '1 1 auto', minWidth: 0, padding: '1px', borderRadius: '22px', background: '#202020', boxShadow: '0 18px 52px rgba(0, 0, 0, 0.26)' } as React.CSSProperties}>
+          <form onSubmit={handleSubmit} className="composer-box-inner" style={{ minHeight: '40px', width: '100%', minWidth: 0, display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 6px 5px 16px', border: 0, borderRadius: '21px', background: '#121212', position: 'relative' }}>
           {false && (
           <button type="button" onClick={handleAttachFiles} className="text-white/40 hover:text-white transition-colors" aria-label="Añadir archivos" style={{ flex: '0 0 28px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, background: 'transparent', cursor: 'pointer' }}>
             <Plus size={18} strokeWidth={2} />
@@ -1053,27 +1072,49 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
               Añadido {attachedFiles.length}
             </button>
           )}
+          {!input.trim() && !inputFocused && (
+            <div className="pointer-events-none absolute inset-y-0 left-[16px] right-[46px] flex items-center gap-2 text-[12px] text-[#d8d8d8]/70">
+              <span className="braille-spinner shrink-0" data-state={agentState} aria-hidden="true" />
+              <span className="truncate">{agentStatusText}</span>
+            </div>
+          )}
           <textarea
             ref={chatInputRef}
             rows={1}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              const value = e.target.value;
+              setInput(value);
+              if (value === '/' || (value.startsWith('/') && !value.includes(' '))) {
+                setCommandKind('command');
+                setSearchQuery(value.slice(1));
+                setMenuOpen(true);
+              } else if (commandKind === 'command') {
+                setMenuOpen(false);
+              }
+            }}
             onInput={(e) => {
               const target = e.currentTarget;
               target.style.height = 'auto';
-              target.style.height = `${Math.min(target.scrollHeight, 58)}px`;
-              target.style.overflowY = target.scrollHeight > 58 ? 'auto' : 'hidden';
+              target.style.height = `${Math.min(target.scrollHeight, 140)}px`;
+              target.style.overflowY = target.scrollHeight > 140 ? 'auto' : 'hidden';
             }}
             onKeyDown={(e) => {
+              if (e.key === 'Enter' && /^\/(proveedor|modelo)$/i.test(input.trim())) {
+                e.preventDefault();
+                openCommandMenu(input.trim().toLowerCase() === '/proveedor' ? 'provider' : 'model');
+                return;
+              }
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 e.currentTarget.form?.requestSubmit();
               }
             }}
-            onFocus={() => setMenuOpen(false)}
-            placeholder={credentialProvider ? `Escribí tu credencial de ${credentialProvider.label || credentialProvider.id}` : "Preguntá, pedí código o describí una tarea"}
+            onFocus={() => { setInputFocused(true); setMenuOpen(false); }}
+            onBlur={() => setInputFocused(false)}
+            placeholder={credentialProvider ? `Escribí tu credencial de ${credentialProvider.label || credentialProvider.id}` : ""}
             aria-label="Mensaje"
-            style={{ appearance: 'none', flex: '1 1 auto', minWidth: 0, width: '100%', height: '22px', maxHeight: '58px', alignSelf: 'center', resize: 'none', border: 0, outline: 'none', background: 'transparent', color: '#eeeeee', fontSize: '12px', lineHeight: 1.4, padding: '4px 10px 4px 0', fontFamily: 'inherit', overflowY: 'hidden', scrollbarWidth: 'none' }}
+            style={{ appearance: 'none', flex: '1 1 auto', minWidth: 0, width: '100%', height: '22px', maxHeight: '140px', alignSelf: 'center', resize: 'none', border: 0, outline: 'none', background: 'transparent', color: '#eeeeee', fontSize: '12px', lineHeight: 1.4, padding: '4px 10px 4px 0', fontFamily: 'inherit', overflowY: 'hidden', scrollbarWidth: 'none' }}
           />
           <button type="submit" disabled={isAgentBusy} className="send-button text-white/35 hover:text-white transition-colors" aria-label={credentialProvider ? "Guardar credencial" : "Enviar"} style={{ flex: '0 0 36px', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, borderRadius: '50%', background: 'transparent', cursor: isAgentBusy ? 'not-allowed' : 'pointer' }}>
             <ArrowUpRight size={18} strokeWidth={2} />
@@ -1096,11 +1137,11 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={handleSearchKeyDown}
-            placeholder={commandKind === 'provider' ? 'Buscar proveedor' : 'Buscar modelo del proveedor activo'}
+            placeholder={commandKind === 'provider' ? 'Buscar proveedor' : commandKind === 'model' ? 'Buscar modelo del proveedor activo' : 'Buscar comando'}
             style={{ height: '30px', padding: '0 8px', borderRadius: '7px', background: 'var(--color-surface-3, #1c1c1c)', fontSize: '12px', color: '#eeeeee', border: 'none', outline: 'none' }}
           />
-          <div className="command-list" style={{ display: 'grid', gap: '4px', maxHeight: '120px', overflow: 'auto', scrollbarWidth: 'none', paddingBottom: '12px', maskImage: 'linear-gradient(to bottom, black 85%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to bottom, black 85%, transparent 100%)' }}>
-            {filteredCatalog.map((item, index) => (
+          <div className="command-list" style={{ display: 'grid', gap: '4px', maxHeight: '300px', overflow: 'auto', scrollbarWidth: 'none', paddingBottom: '12px', maskImage: 'linear-gradient(to bottom, black 92%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to bottom, black 92%, transparent 100%)' }}>
+            {(commandKind === 'command' ? slashCommands : filteredCatalog).map((item, index) => (
               <button
                 key={item.id}
                 type="button"
@@ -1112,7 +1153,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
               >
                 <span>{item.label}</span>
                 <small style={{ color: 'rgba(216, 216, 216, 0.36)', fontSize: '11px' }}>
-                  {item.type === 'provider' ? 'proveedor' : 'modelo'}
+                  {item.type === 'command' ? item.description : item.type === 'provider' ? 'proveedor' : 'modelo'}
                 </small>
               </button>
             ))}
@@ -1149,8 +1190,10 @@ function buildFileTree(entries: ProjectFileEntry[]): FileTreeNode[] {
   return sortBranch(root);
 }
 
-function CodeMirrorFileEditor({ path, content }: { path: string; content: string }) {
+function CodeMirrorFileEditor({ path, content, onChange }: { path: string; content: string; onChange?: (content: string) => void }) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
   useEffect(() => {
     if (!hostRef.current) return;
     const extension = path.split('.').pop()?.toLowerCase();
@@ -1160,12 +1203,53 @@ function CodeMirrorFileEditor({ path, content }: { path: string; content: string
       : extension === 'css' || extension === 'scss' ? css()
       : extension === 'json' ? json()
       : extension === 'md' || extension === 'mdx' ? markdown()
+      : extension === 'py' ? python()
+      : extension === 'rs' ? rust()
+      : extension === 'sql' ? sql()
+      : extension === 'xml' || extension === 'svg' || extension === 'yaml' || extension === 'yml' ? xml()
       : [];
-    const state = EditorState.create({ doc: content, extensions: [lineNumbers(), language, oneDark, keymap.of([...defaultKeymap, indentWithTab]), EditorView.editable.of(false), EditorView.theme({ '&': { height: '100%', backgroundColor: 'transparent' }, '.cm-editor': { backgroundColor: 'transparent' }, '.cm-scroller': { overflow: 'auto', fontFamily: 'var(--font-mono, monospace)' }, '.cm-gutters': { backgroundColor: 'transparent', border: 0 } })] });
+    const state = EditorState.create({ doc: content, extensions: [history(), lineNumbers(), language, oneDark, keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]), EditorView.editable.of(Boolean(onChange)), EditorView.updateListener.of((update) => { if (update.docChanged && onChangeRef.current) onChangeRef.current(update.state.doc.toString()); }), EditorView.theme({ '&': { height: '100%', backgroundColor: 'transparent !important' }, '.cm-editor': { backgroundColor: 'transparent !important' }, '.cm-content': { backgroundColor: 'transparent !important' }, '.cm-scroller': { overflow: 'auto', fontFamily: 'var(--font-mono, monospace)', backgroundColor: 'transparent !important' }, '.cm-gutters': { backgroundColor: 'transparent !important', border: 0 } })] });
     const view = new EditorView({ state, parent: hostRef.current });
     return () => view.destroy();
-  }, [path, content]);
+  }, [path]);
   return <div ref={hostRef} className="h-full min-h-0 text-[12px]" />;
+}
+
+type OpenFile = { path: string; fsPath?: string; content: string; html?: string; error?: string };
+const getExtension = (path: string) => path.split('.').pop()?.toLowerCase() || '';
+const imageExtensions = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico']);
+
+function parseCsv(content: string): string[][] {
+  const firstLine = content.split(/\r?\n/)[0] || '';
+  const delimiter = (firstLine.match(/;/g)?.length || 0) > (firstLine.match(/,/g)?.length || 0) ? ';' : ',';
+  const rows: string[][] = [];
+  let row: string[] = [], cell = '', quoted = false;
+  for (let index = 0; index < content.length; index += 1) {
+    const char = content[index];
+    if (char === '"' && quoted && content[index + 1] === '"') { cell += '"'; index += 1; continue; }
+    if (char === '"') { quoted = !quoted; continue; }
+    if (!quoted && char === delimiter) { row.push(cell); cell = ''; continue; }
+    if (!quoted && char === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; continue; }
+    if (char !== '\r') cell += char;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+
+function FilePreview({ projectPath, file, onChange }: { projectPath: string; file: OpenFile; onChange?: (content: string) => void }) {
+  const extension = getExtension(file.path);
+  const sourcePath = file.fsPath || `${projectPath}/${file.path}`;
+  if (file.error) return <div className="p-4 text-xs text-[#c28d8d]">{file.error}</div>;
+  if (imageExtensions.has(extension)) return <div className="flex h-full items-center justify-center overflow-auto p-6"><img src={convertFileSrc(sourcePath)} alt={file.path} className="max-h-full max-w-full object-contain" /></div>;
+  if (extension === 'pdf') return <iframe title={file.path} src={convertFileSrc(sourcePath)} className="h-full w-full border-0 bg-white" />;
+  if (extension === 'html' || extension === 'htm') return <iframe title={file.path} srcDoc={file.content} sandbox="" className="h-full w-full border-0 bg-white" />;
+  if (extension === 'md' || extension === 'mdx') return <article className="prose prose-invert max-w-none overflow-auto p-6 text-sm"><ReactMarkdown>{file.content}</ReactMarkdown></article>;
+  if (extension === 'csv' || extension === 'tsv') {
+    const rows = parseCsv(file.content);
+    return <div className="h-full overflow-auto p-4"><table className="min-w-full border-collapse text-left text-xs"><tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((value, cellIndex) => rowIndex === 0 ? <th key={cellIndex} className="border border-[#2b2b2b] bg-[#1c1c1c] px-3 py-2 font-medium text-[#eeeeee]">{value}</th> : <td key={cellIndex} className="border border-[#2b2b2b] px-3 py-2 text-[#bdbdbd]">{value}</td>)}</tr>)}</tbody></table></div>;
+  }
+  if (extension === 'docx') return file.html ? <article className="prose max-w-none overflow-auto bg-white p-8 text-black" dangerouslySetInnerHTML={{ __html: file.html }} /> : <div className="p-4 text-xs text-[#8f8f8f]">Convirtiendo documento...</div>;
+  return <CodeMirrorFileEditor path={file.path} content={file.content} onChange={onChange} />;
 }
 
 function ProjectFoldersView({ projectPath }: { projectPath?: string }) {
@@ -1217,7 +1301,7 @@ function ProjectFoldersView({ projectPath }: { projectPath?: string }) {
 
   return <div className="flex h-[min(720px,calc(100vh-96px))] w-[min(980px,calc(100%-64px))] min-w-0 flex-col gap-3 text-[#d8d8d8]">
     <div className="flex items-center justify-between text-sm text-[#eeeeee]"><div className="flex items-center gap-2"><FolderTree size={16} /><span>Carpetas</span></div><button type="button" onClick={loadProject} className="rounded-md p-1.5 text-[#777777] hover:bg-[var(--color-surface-3)] hover:text-[#eeeeee]" aria-label="Actualizar panel" title="Actualizar"><RefreshCw size={14} /></button></div>
-    <div className="flex min-h-0 flex-1 overflow-hidden rounded-xl border border-[var(--color-surface-8)] bg-[var(--color-surface-1)]">
+    <div className="flex min-h-0 flex-1 overflow-hidden rounded-xl border border-[var(--color-surface-8)] bg-[var(--color-bg)]">
       {loading ? <span className="p-4 text-xs text-[#8f8f8f]">Cargando...</span> : <><div className="w-[min(290px,38%)] min-w-[190px] overflow-auto border-r border-[var(--color-surface-8)] p-2 [scrollbar-width:none]">{loadError ? <span className="p-2 text-xs text-[#a87878]">{loadError}</span> : tree.length ? renderTree(tree) : <span className="p-2 text-xs text-[#777777]">No se encontraron archivos.</span>}</div><div className="min-w-0 flex-1 overflow-hidden bg-[#101010]">{selectedPath ? <CodeMirrorFileEditor path={selectedPath} content={selectedContent} /> : <div className="flex h-full items-center justify-center text-xs text-[#666666]">Seleccioná un archivo para verlo</div>}</div></>}
     </div>
   </div>;
@@ -1228,7 +1312,8 @@ function AppleFoldersView({ projectPath, initialSelectedPath = '' }: { projectPa
   const [entries, setEntries] = useState<ProjectFileEntry[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [selectedPath, setSelectedPath] = useState(initialSelectedPath);
-  const [selectedContent, setSelectedContent] = useState('');
+  const [openFiles, setOpenFiles] = useState<Record<string, OpenFile>>({});
+  const [tabs, setTabs] = useState<string[]>([]);
   const [error, setError] = useState('');
 
   const loadProject = async () => {
@@ -1244,9 +1329,34 @@ function AppleFoldersView({ projectPath, initialSelectedPath = '' }: { projectPa
   useEffect(() => { loadProject(); }, [projectPath]);
   const openFile = async (path: string) => {
     if (!projectPath) return;
-    try { setSelectedContent(await invoke<string>('codeclub_read_file', { projectPath, path })); }
-    catch (reason) { setSelectedContent(`No se pudo abrir el archivo: ${String(reason)}`); }
     setSelectedPath(path);
+    setTabs((current) => current.includes(path) ? current : [...current, path]);
+    if (openFiles[path]) return;
+    const extension = getExtension(path);
+    try {
+      if (imageExtensions.has(extension) || extension === 'pdf') {
+        setOpenFiles((current) => ({ ...current, [path]: { path, content: '' } }));
+      } else if (extension === 'docx') {
+        const bytes = await readFile(`${projectPath}/${path}`);
+        const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+        const result = await mammoth.convertToHtml({ arrayBuffer });
+        setOpenFiles((current) => ({ ...current, [path]: { path, content: '', html: result.value } }));
+      } else {
+        const content = await invoke<string>('codeclub_read_file', { projectPath, path });
+        setOpenFiles((current) => ({ ...current, [path]: { path, content } }));
+      }
+    } catch (reason) {
+      setOpenFiles((current) => ({ ...current, [path]: { path, content: '', error: `No se pudo abrir: ${String(reason)}` } }));
+    }
+  };
+  const closeFile = (path: string) => {
+    setTabs((current) => {
+      const index = current.indexOf(path);
+      const next = current.filter((item) => item !== path);
+      if (selectedPath === path) setSelectedPath(next[index - 1] || next[index] || '');
+      return next;
+    });
+    setOpenFiles((current) => { const next = { ...current }; delete next[path]; return next; });
   };
   useEffect(() => {
     if (initialSelectedPath && initialSelectedPath !== selectedPath) openFile(initialSelectedPath);
@@ -1273,8 +1383,151 @@ function AppleFoldersView({ projectPath, initialSelectedPath = '' }: { projectPa
   </div>;
 }
 
+function TabbedProjectView({ projectPath, initialSelectedPath = '' }: { projectPath?: string; initialSelectedPath?: string }) {
+  const [loading, setLoading] = useState(true);
+  const [entries, setEntries] = useState<ProjectFileEntry[]>([]);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [tabs, setTabs] = useState<string[]>([]);
+  const [selectedPath, setSelectedPath] = useState(initialSelectedPath);
+  const [files, setFiles] = useState<Record<string, OpenFile>>({});
+  const saveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const panelRef = useRef<HTMLDivElement>(null);
+  const draggedFileRef = useRef<{ projectPath: string; path: string } | null>(null);
+  const [error, setError] = useState('');
+
+  const loadProject = async () => {
+    if (!projectPath) return;
+    setLoading(true);
+    try {
+      const result = await invoke<ProjectFileEntry[]>('codeclub_list_files', { projectPath, maxFiles: 1200 });
+      setEntries(result);
+      setExpanded(new Set(result.filter((entry) => entry.kind === 'directory').map((entry) => entry.path)));
+      setError('');
+    } catch (reason) { setError(String(reason)); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { void loadProject(); }, [projectPath]);
+
+  const normalizeTabPath = (value: string) => value.replace(/\\/g, '/').replace(/^\.\/+/, '');
+
+  const openFile = async (path: string, replaceCurrent = false, fsPath?: string) => {
+    if (!projectPath) return;
+    const requestedTabPath = normalizeTabPath(fsPath || path);
+    const existingTab = tabs.find((item) => item.toLowerCase() === requestedTabPath.toLowerCase());
+    const tabPath = existingTab || requestedTabPath;
+    const displayPath = fsPath ? fsPath.split(/[\\/]/).filter(Boolean).pop() || path : path;
+    setSelectedPath(tabPath);
+    setTabs((current) => {
+      if (existingTab || current.some((item) => item.toLowerCase() === tabPath.toLowerCase())) return current;
+      if (replaceCurrent && selectedPath && current.includes(selectedPath)) return current.map((item) => item === selectedPath ? tabPath : item);
+      return [...current, tabPath];
+    });
+    if (files[tabPath]) return;
+    const extension = getExtension(displayPath);
+    const sourcePath = fsPath || `${projectPath}/${requestedTabPath}`;
+    try {
+      if (imageExtensions.has(extension) || extension === 'pdf') {
+        setFiles((current) => ({ ...current, [tabPath]: { path: displayPath, fsPath, content: '' } }));
+      } else if (extension === 'docx') {
+        const bytes = await readFile(sourcePath);
+        const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+        const result = await mammoth.convertToHtml({ arrayBuffer });
+        setFiles((current) => ({ ...current, [tabPath]: { path: displayPath, fsPath, content: '', html: result.value } }));
+      } else {
+        const content = fsPath ? await readTextFile(sourcePath) : await invoke<string>('codeclub_read_file', { projectPath, path: requestedTabPath });
+        setFiles((current) => ({ ...current, [tabPath]: { path: displayPath, fsPath, content } }));
+      }
+    } catch (reason) {
+      setFiles((current) => ({ ...current, [tabPath]: { path: displayPath, fsPath, content: '', error: `No se pudo abrir: ${String(reason)}` } }));
+    }
+  };
+
+  useEffect(() => { if (initialSelectedPath) void openFile(initialSelectedPath); }, [initialSelectedPath, projectPath]);
+
+  useEffect(() => {
+    const rememberDraggedFile = (event: Event) => {
+      draggedFileRef.current = (event as CustomEvent<{ projectPath: string; path: string }>).detail;
+    };
+    const clearDraggedFile = () => { draggedFileRef.current = null; };
+    window.addEventListener('codeclub-file-drag-start', rememberDraggedFile);
+    window.addEventListener('dragend', clearDraggedFile);
+    return () => {
+      window.removeEventListener('codeclub-file-drag-start', rememberDraggedFile);
+      window.removeEventListener('dragend', clearDraggedFile);
+    };
+  }, []);
+
+  const handleFileDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const payload = event.dataTransfer.getData('application/codeclub-file') || event.dataTransfer.getData('text/plain');
+    const fallback = draggedFileRef.current;
+    const nativeFile = event.dataTransfer.files?.[0] as (File & { path?: string }) | undefined;
+    if (!payload && !fallback && !nativeFile?.path) return;
+    try {
+      const dropped = fallback || (payload ? JSON.parse(payload) as { projectPath: string; path: string } : null);
+      if (dropped && dropped.projectPath === projectPath) {
+        const tabBar = panelRef.current?.querySelector('main > div:first-child');
+        void openFile(dropped.path, !tabBar?.contains(event.target as Node));
+      } else if (nativeFile?.path) {
+        const tabBar = panelRef.current?.querySelector('main > div:first-child');
+        void openFile(nativeFile.name, !tabBar?.contains(event.target as Node), nativeFile.path);
+      }
+    } catch {
+      // Ignorar datos de arrastre que no pertenecen al indexador.
+    }
+  };
+
+  useEffect(() => () => Object.values(saveTimersRef.current).forEach((timer) => clearTimeout(timer)), []);
+
+  const handleContentChange = (path: string, content: string) => {
+    if (!projectPath) return;
+    const file = files[path];
+    setFiles((current) => ({ ...current, [path]: { ...current[path], content } }));
+    const previousTimer = saveTimersRef.current[path];
+    if (previousTimer) clearTimeout(previousTimer);
+    saveTimersRef.current[path] = setTimeout(async () => {
+      try {
+        if (file?.fsPath) await writeTextFile(file.fsPath, content);
+        else await invoke('codeclub_write_file', { projectPath, path, content });
+      } catch (reason) {
+        setFiles((current) => ({ ...current, [path]: { ...current[path], error: `No se pudo guardar: ${String(reason)}` } }));
+      }
+    }, 700);
+  };
+
+  const closeFile = (path: string) => {
+    setTabs((current) => {
+      const index = current.indexOf(path);
+      const next = current.filter((item) => item !== path);
+      if (selectedPath === path) setSelectedPath(next[index - 1] || next[index] || '');
+      return next;
+    });
+    setFiles((current) => { const next = { ...current }; delete next[path]; return next; });
+  };
+
+  const tree = buildFileTree(entries);
+  const renderTree = (nodes: FileTreeNode[], depth = 0): React.ReactNode => nodes.map((node) => {
+    const isOpen = expanded.has(node.path);
+    return <React.Fragment key={node.path}>
+      <button type="button" onClick={() => node.kind === 'directory' ? setExpanded((current) => { const next = new Set(current); next.has(node.path) ? next.delete(node.path) : next.add(node.path); return next; }) : void openFile(node.path)} className={`flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[12px] ${selectedPath === node.path ? 'bg-[var(--color-surface-7)] text-[#eeeeee]' : 'text-[#bdbdbd] hover:bg-[var(--color-surface-3)]'}`} style={{ paddingLeft: `${8 + depth * 14}px` }}>
+        {node.kind === 'directory' ? (isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />) : <span className="w-[13px]" />}
+        {node.kind === 'directory' ? <Folder size={14} className="text-[#a89b72]" /> : <FileCode2 size={14} className="text-[#777777]" />}
+        <span className="min-w-0 flex-1 truncate">{node.name}</span>
+      </button>
+      {node.kind === 'directory' && isOpen && renderTree(node.children, depth + 1)}
+    </React.Fragment>;
+  });
+
+  return <div ref={panelRef} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleFileDrop} className="flex h-full w-full min-w-0 flex-col overflow-hidden text-[#d8d8d8]">
+    {loading ? <div className="flex flex-1 items-center justify-center text-xs text-[#777777]">Cargando proyecto...</div> : <div className="flex min-h-0 flex-1">
+      <main className="flex min-w-0 flex-1 flex-col">{tabs.length ? <><div className="flex h-10 shrink-0 items-end gap-1 overflow-x-auto border-b border-[var(--color-surface-8)] bg-[#121212] px-2">{tabs.map((path) => <div key={path} className={`group flex h-9 max-w-[190px] min-w-[110px] items-center gap-2 border-x border-t px-3 text-[11px] ${selectedPath === path ? 'border-[var(--color-surface-8)] bg-[#1a1a1a] text-[#eeeeee]' : 'border-transparent text-[#777777]'}`}><button type="button" onClick={() => setSelectedPath(path)} className="min-w-0 flex-1 truncate bg-transparent text-left">{path.split(/[\\/]/).pop()}</button><button type="button" onClick={() => closeFile(path)} className="rounded p-0.5 text-[#666666] hover:bg-white/10 hover:text-white" title="Cerrar archivo" aria-label={`Cerrar ${path}`}><X size={12} /></button></div>)}</div><div className="min-h-0 flex-1 overflow-hidden bg-transparent">{files[selectedPath] ? <FilePreview projectPath={projectPath || ''} file={files[selectedPath]} onChange={(content) => handleContentChange(selectedPath, content)} /> : <div className="p-4 text-xs text-[#777777]">Cargando archivo...</div>}</div></> : <div className="flex flex-1 items-center justify-center text-xs text-[#666666]">Elegí un archivo para abrirlo en una pestaña</div>}</main>
+    </div>}
+  </div>;
+}
+
 function ProjectPanelView({ projectPath, selectedPath }: { projectPath?: string; selectedPath?: string }) {
-  return <AppleFoldersView projectPath={projectPath} initialSelectedPath={selectedPath} />;
+  return <TabbedProjectView projectPath={projectPath} initialSelectedPath={selectedPath} />;
 }
 
 function ProjectDiffView({ kind, projectPath }: { kind: 'diff' | 'folders'; projectPath?: string }) {

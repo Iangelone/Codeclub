@@ -28,6 +28,12 @@
     "fs:allow-applocaldata-meta",
     "fs:allow-applocaldata-read",
     "fs:allow-applocaldata-write",
+    "fs:allow-appconfig-meta",
+    "fs:allow-appconfig-read",
+    "fs:allow-appconfig-write",
+    "fs:allow-appcache-meta",
+    "fs:allow-appcache-read",
+    "fs:allow-appcache-write",
     "dialog:default"
   ]
 }

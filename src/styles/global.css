@@ -10,9 +10,26 @@
   --color-surface-5: #1c1c1c;
   --color-surface-6: #1e1e1e;
   --color-surface-7: #202020;
-  --color-surface-8: #2b2b2b;
-  --color-surface-9: #2c2c2c;
-  --color-surface-10: #2f2f2f;
+  --color-surface-8: #202020;
+  --color-surface-9: #202020;
+  --color-surface-10: #202020;
+}
+
+button {
+  cursor: pointer;
+}
+
+.composer-row > button:first-child {
+  display: none;
+}
+
+.composer-box-inner {
+  padding-left: 16px !important;
+  padding-right: 12px !important;
+}
+
+.composer-box-inner textarea {
+  padding: 4px 0 !important;
 }
 
 html,
@@ -26,10 +43,11 @@ body {
 
 .app-background,
 #app-background {
+  display: none;
   position: fixed;
   inset: 36px 0 0;
   z-index: -1;
-  background-image: linear-gradient(rgba(10, 10, 10, 0.52), rgba(10, 10, 10, 0.52)), url('/unsplash.jpg');
+  background-image: none;
   background-position: center;
   background-size: cover;
   background-repeat: no-repeat;
@@ -38,69 +56,25 @@ body {
 
 .acrylic-panel {
   background: rgba(22, 22, 22, 0.48);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 0;
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.28), inset 0 1px rgba(255, 255, 255, 0.055);
   backdrop-filter: blur(22px) saturate(1.25);
   -webkit-backdrop-filter: blur(22px) saturate(1.25);
 }
 
-.composer-box:focus-within {
-  background: var(--avatar-color) !important;
-  box-shadow: 0 0 18px var(--avatar-color), 0 18px 52px rgba(0, 0, 0, 0.26);
+.workspace-pane.acrylic-panel {
+  background: #111111;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
 }
 
 .messages-area::-webkit-scrollbar {
   display: none;
 }
 
-.workspace-divider {
-  width: 1px;
-  height: 100%;
-  position: relative;
-  cursor: col-resize;
-  z-index: 5;
-}
-
-.workspace-divider-line {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: -2px;
-  right: -2px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.workspace-divider-line::after {
-  content: '';
-  width: 3px;
-  height: 36px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.07);
-  transition: background 120ms ease, height 120ms ease;
-}
-
-.workspace-divider:hover .workspace-divider-line::after {
-  height: 48px;
-  background: rgba(255, 255, 255, 0.18);
-}
-
 .workspace-pane {
   position: relative;
-}
-
-.workspace-pane.is-active-pane::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 32px;
-  height: 2px;
-  border-radius: 1px;
-  background: rgba(255, 255, 255, 0.08);
-  pointer-events: none;
 }
 
 .drag-preview {

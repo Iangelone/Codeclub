@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { exists, readTextFile, writeTextFile, remove, readDir, mkdir, rename } from "@tauri-apps/plugin-fs";
+import { exists, remove, readDir, rename } from "@tauri-apps/plugin-fs";
+import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { logPersistence } from "../lib/persistence";
 import SettingsModal from "./SettingsModal";
@@ -9,21 +10,27 @@ import {
   writeProjectIndex,
   ensureProjectMeta,
   saveProjectIndex,
+  readProjectMeta,
+  writeProjectMeta,
+  getProjectChatPath,
 } from "../lib/projectManager";
 
 import {
   Folder,
   FolderOpen,
   FolderPlus,
-  Library,
   Settings,
   MessageSquare,
   MessageSquarePlus,
+  FilePenLine,
+  GitBranch,
+  Puzzle,
   FileText,
   FileCode2,
   MousePointer2,
   Trash2
 } from "lucide-react";
+import { activeChatStore, chatsStore, type GlobalChat } from "../lib/store";
 
 // --- Types ---
 type Artifact = { id: string; name: string };
@@ -36,12 +43,15 @@ type ProjectData = {
 
 export default function Sidebar() {
   const [projects, setProjects] = useState<ProjectData[]>([]);
+  const [globalChats, setGlobalChats] = useState<GlobalChat[]>([]);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [expandedStructures, setExpandedStructures] = useState<Set<string>>(new Set());
   const [openStructureDirectories, setOpenStructureDirectories] = useState<Set<string>>(new Set());
   const [structureFiles, setStructureFiles] = useState<Record<string, StructureEntry[]>>({});
   const [creatingStructure, setCreatingStructure] = useState<{ projectPath: string; parentPath: string; kind: "file" | "folder" } | null>(null);
   const [newStructureName, setNewStructureName] = useState("");
+  const [structureError, setStructureError] = useState("");
+  const structureCreationBusyRef = useRef(false);
   const [structureMenu, setStructureMenu] = useState<{ projectPath: string; path: string; isDirectory: boolean; top: number; left: number } | null>(null);
   const structureMenuRef = useRef<HTMLDivElement | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -79,17 +89,21 @@ export default function Sidebar() {
       for (const proj of globalProjects) {
         let chats: Artifact[] = [];
         try {
-          const metaPath = `${proj.path}/.codeclub/meta.json`;
-          if (await exists(metaPath)) {
-            const metaData = JSON.parse(await readTextFile(metaPath));
-            chats = metaData.chats || [];
-          }
+          const metaData = await readProjectMeta(proj.path);
+          chats = metaData?.chats || [];
         } catch (e) {
           console.error("Error reading meta for", proj.name, e);
         }
         loaded.push({ name: proj.name, path: proj.path, chats });
       }
       setProjects(loaded);
+      const chats = loaded.flatMap((project) => project.chats.map((chat) => ({
+        ...chat,
+        projectPath: project.path,
+        projectName: project.name,
+      })));
+      setGlobalChats(chats);
+      chatsStore.set(chats);
     } catch (e) {
       console.error("Failed to load projects", e);
     }
@@ -98,13 +112,16 @@ export default function Sidebar() {
   useEffect(() => {
     loadProjects();
     const handleIndexed = () => loadProjects();
+    const handleMetaChanged = () => loadProjects();
     const handleRequire = () => setCreatingProject(true);
     window.dispatchEvent(new CustomEvent("codeclub:project-selection-changed", { detail: { selected: false } }));
     
     window.addEventListener("codeclub:project-indexed", handleIndexed);
+    window.addEventListener("codeclub:project-meta-changed", handleMetaChanged);
     window.addEventListener("codeclub:require-project", handleRequire);
     return () => {
       window.removeEventListener("codeclub:project-indexed", handleIndexed);
+      window.removeEventListener("codeclub:project-meta-changed", handleMetaChanged);
       window.removeEventListener("codeclub:require-project", handleRequire);
     };
   }, []);
@@ -184,10 +201,14 @@ export default function Sidebar() {
     selectProject(project.path, project.name);
     if (!structureFiles[project.path]) {
       try {
-        const files = await readStructure(project.path);
-        setStructureFiles((current) => ({ ...current, [project.path]: files }));
+        if (!(await exists(project.path))) {
+          setStructureFiles((current) => ({ ...current, [project.path]: [] }));
+        } else {
+          const files = await readStructure(project.path);
+          setStructureFiles((current) => ({ ...current, [project.path]: files }));
+        }
       } catch (error) {
-        console.error("Error leyendo la estructura", error);
+        console.warn("No se pudo leer la estructura del proyecto", project.path, error);
         setStructureFiles((current) => ({ ...current, [project.path]: [] }));
       }
     }
@@ -208,37 +229,73 @@ export default function Sidebar() {
   };
 
   const refreshStructure = async (projectPath: string) => {
-    const files = await readStructure(projectPath);
-    setStructureFiles((current) => ({ ...current, [projectPath]: files }));
+    try {
+      if (!(await exists(projectPath))) {
+        setStructureFiles((current) => ({ ...current, [projectPath]: [] }));
+        return;
+      }
+      const files = await readStructure(projectPath);
+      setStructureFiles((current) => ({ ...current, [projectPath]: files }));
+    } catch (error) {
+      console.warn("No se pudo actualizar la estructura del proyecto", projectPath, error);
+    }
   };
 
   const startStructureCreation = (projectPath: string, parentPath: string, kind: "file" | "folder") => {
     setStructureMenu(null);
+    setExpandedProjects((current) => {
+      if (current.has(projectPath)) return current;
+      const next = new Set(current);
+      next.add(projectPath);
+      return next;
+    });
     setCreatingStructure({ projectPath, parentPath, kind });
     setNewStructureName("");
+    setStructureError("");
   };
 
+  // Indexador de estructura del proyecto: refresca y despliega el árbol después de crear.
   const finishStructureCreation = async () => {
-    if (!creatingStructure || !newStructureName.trim()) {
-      setCreatingStructure(null);
-      setNewStructureName("");
+    if (!creatingStructure || !newStructureName.trim() || structureCreationBusyRef.current) return;
+    const name = newStructureName.trim();
+    if (name.includes("/") || name.includes("\\") || name === "." || name === "..") {
+      setStructureError("El nombre no puede contener rutas ni ser '.' o '..'.");
       return;
     }
-    const name = newStructureName.trim();
-    if (name.includes("/") || name.includes("\\") || name === "." || name === "..") return;
-    const target = `${creatingStructure.projectPath}/${creatingStructure.parentPath ? `${creatingStructure.parentPath}/` : ""}${name}`;
+    // Los archivos nuevos sin extensión se crean como texto plano para que el indexador los trate correctamente.
+    const lastDot = name.lastIndexOf(".");
+    const hasExtension = lastDot > 0 && lastDot < name.length - 1;
+    const entryName = creatingStructure.kind === "file" && !hasExtension ? `${name}.txt` : name;
+    structureCreationBusyRef.current = true;
     try {
-      if (creatingStructure.kind === "folder") {
-        await mkdir(target, { recursive: true });
-      } else {
-        await writeTextFile(target, "");
-      }
+      const relativePath = `${creatingStructure.parentPath ? `${creatingStructure.parentPath}/` : ""}${entryName}`;
+      await invoke("codeclub_create_entry", {
+        projectPath: creatingStructure.projectPath,
+        path: relativePath,
+        kind: creatingStructure.kind,
+      });
       await refreshStructure(creatingStructure.projectPath);
-    } catch (error) {
-      console.error("Error creando elemento de estructura", error);
-    } finally {
+      setExpandedStructures((current) => new Set(current).add(creatingStructure.projectPath));
+      if (creatingStructure.parentPath) {
+        const segments = creatingStructure.parentPath.split("/").filter(Boolean);
+        let currentPath = "";
+        setOpenStructureDirectories((current) => {
+          const next = new Set(current);
+          for (const segment of segments) {
+            currentPath = currentPath ? `${currentPath}/${segment}` : segment;
+            next.add(`${creatingStructure.projectPath}:${currentPath}`);
+          }
+          return next;
+        });
+      }
       setCreatingStructure(null);
       setNewStructureName("");
+      setStructureError("");
+    } catch (error) {
+      console.error("Error creando elemento de estructura", error);
+      setStructureError(error instanceof Error ? error.message : String(error));
+    } finally {
+      structureCreationBusyRef.current = false;
     }
   };
 
@@ -356,15 +413,11 @@ export default function Sidebar() {
     
     try {
       await ensureProjectMeta(projectPath, projectName);
-      const metaPath = `${projectPath}/.codeclub/meta.json`;
-      if (!(await exists(metaPath))) return;
-      
-      const metaData = JSON.parse(await readTextFile(metaPath));
+      const metaData = await readProjectMeta(projectPath);
+      if (!metaData) return;
       if (!Array.isArray(metaData.chats)) metaData.chats = [];
       metaData.chats.push({ id, name });
-      await writeTextFile(metaPath, JSON.stringify(metaData));
-
-      await mkdir(`${projectPath}/.codeclub/chats`, { recursive: true });
+      await writeProjectMeta(projectPath, metaData);
 
       await logPersistence("create_chat", "ok", { id, projectPath });
       setExpandedProjects(prev => new Set(prev).add(projectPath));
@@ -387,13 +440,12 @@ export default function Sidebar() {
         return;
       }
 
-      const metaPath = `${projectPath}/.codeclub/meta.json`;
-      if (!(await exists(metaPath))) return;
-      const metaData = JSON.parse(await readTextFile(metaPath));
+      const metaData = await readProjectMeta(projectPath);
+      if (!metaData) return;
       metaData.chats = (metaData.chats || []).filter((entry: any) => entry.id !== itemId);
-      await writeTextFile(metaPath, JSON.stringify(metaData));
+      await writeProjectMeta(projectPath, metaData);
 
-      const filePath = `${projectPath}/.codeclub/chats/${itemId}.jsonl`;
+      const filePath = await getProjectChatPath(projectPath, itemId);
       
       if (await exists(filePath)) await remove(filePath);
 
@@ -419,13 +471,12 @@ export default function Sidebar() {
         return;
       }
 
-      const metaPath = `${projectPath}/.codeclub/meta.json`;
-      if (!(await exists(metaPath))) return;
-      const metaData = JSON.parse(await readTextFile(metaPath));
+      const metaData = await readProjectMeta(projectPath);
+      if (!metaData) return;
       const item = metaData.chats?.find((entry: any) => entry.id === itemId);
       if (item) {
         item.name = finalName;
-        await writeTextFile(metaPath, JSON.stringify(metaData));
+        await writeProjectMeta(projectPath, metaData);
         window.dispatchEvent(new CustomEvent(`codeclub:renamed-${kind}`, {
           detail: { itemId, name: finalName, projectPath },
         }));
@@ -450,6 +501,17 @@ export default function Sidebar() {
     window.dispatchEvent(new CustomEvent("codeclub:active-project", { detail: { projectPath: path, projectName: name } }));
   };
 
+  const handleProjectSelection = (project: ProjectData) => {
+    if (selectedProjectId === project.path) return;
+    selectProject(project.path, project.name);
+    setExpandedProjects((current) => {
+      if (current.has(project.path)) return current;
+      const next = new Set(current);
+      next.add(project.path);
+      return next;
+    });
+  };
+
   const openProjectMenu = (e: React.MouseEvent, project: ProjectData) => {
     e.preventDefault();
     setProjectMenu({ path: project.path, name: project.name, top: e.clientY, left: e.clientX });
@@ -465,13 +527,14 @@ export default function Sidebar() {
     if (target.closest("[data-sidebar-item], button, input")) return;
     setSelectedProjectId(null);
     setActiveArtifactId(null);
+    activeChatStore.set({});
     window.dispatchEvent(new CustomEvent("codeclub:project-selection-changed", { detail: { selected: false } }));
-    window.dispatchEvent(new CustomEvent("codeclub:panel-mode", { detail: { mode: "single" } }));
-    window.dispatchEvent(new CustomEvent("codeclub:panel-left:open-blank", { detail: {} }));
+    window.dispatchEvent(new CustomEvent("codeclub:open-blank", { detail: {} }));
   };
 
   const openArtifact = (kind: string, id: string, name: string, projectPath: string, projectName: string) => {
     setActiveArtifactId(id);
+    activeChatStore.set({ id, kind });
     selectProject(projectPath, projectName);
     window.dispatchEvent(new CustomEvent(`codeclub:open-${kind}`, {
       detail: { [`${kind}Id`]: id, name, projectPath, projectName }
@@ -491,15 +554,27 @@ export default function Sidebar() {
     setTimeout(() => preview.remove(), 0);
   };
 
+  const openGlobalChat = (chat: GlobalChat) => {
+    openArtifact("chat", chat.id, chat.name, chat.projectPath, chat.projectName);
+  };
+
   return (
-    <div className="row-start-2 col-start-1 min-w-[264px] w-[264px] h-[calc(100vh-36px)] min-h-0 overflow-hidden flex flex-col border-t border-[rgba(47,47,47,1)] border-r border-[var(--color-surface-10)] bg-[#161616] shadow-[12px_0_40px_rgba(0,0,0,0.25)] -translate-x-full transition-transform duration-140 ease-out z-10 group-[.has-sidebar]:translate-x-0" onClick={handleSidebarClick}>
+      <div onClick={handleSidebarClick} className="row-start-2 col-start-1 min-w-[264px] w-[264px] h-[calc(100vh-36px)] min-h-0 overflow-hidden flex flex-col border-r border-[var(--color-surface-10)] bg-[var(--color-bg)] shadow-[4px_0_14px_rgba(0,0,0,0.16)] -translate-x-full transition-transform duration-140 ease-out z-10 group-[.has-sidebar]:translate-x-0">
       <section className="min-h-0 flex-1 flex flex-col p-[10px_10px_0] overflow-hidden">
-        <div className="h-[24px] shrink-0 flex items-center justify-between text-[#9f9f9f] text-xs font-normal group/heading">
-          <span className="flex items-center gap-[6px]"><Library size={14} /> Proyectos</span>
-          <button className="w-[28px] h-[28px] grid place-items-center rounded-md opacity-0 transition-opacity duration-120 group-hover/heading:opacity-100 focus-visible:opacity-100 bg-transparent border-0 text-[#d8d8d8] hover:bg-white/2 appearance-none" id="create-project" type="button" onClick={() => setCreatingProject(true)} aria-label="Crear proyecto"><FolderPlus size={14} /></button>
+        <div className="h-[24px] shrink-0 mb-1 flex items-center gap-[6px] px-[10px] text-[#9f9f9f] text-xs">
+          Codeclub
+        </div>
+        <div className="shrink-0 flex flex-col gap-1 pb-1">
+          <div data-sidebar-item onClick={() => window.dispatchEvent(new CustomEvent("codeclub:open-empty-chat"))} className="w-full min-h-[34px] flex cursor-pointer items-center gap-[9px] rounded-md bg-[#1E1E1E] px-[10px] text-xs text-left text-[#eeeeee]">
+            <FilePenLine size={15} /> Nuevo chat
+          </div>
+          <div className="w-full min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left text-[#777777] hover:bg-[var(--color-surface-3)] hover:text-[#eeeeee]">
+            <Folder size={15} /> Proyectos
+          </div>
         </div>
         
         <div className="mt-0 flex-1 min-h-0 flex flex-col gap-1 overflow-y-auto overscroll-contain pt-1 pb-[56px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {false && <>
           {creatingProject && (
             <div className="min-h-[34px] box-border flex items-center gap-[9px] px-[10px] text-[#cfcfcf]">
               <Folder size={14} />
@@ -523,6 +598,7 @@ export default function Sidebar() {
             const isExpanded = expandedProjects.has(proj.path);
             const isSelected = selectedProjectId === proj.path;
             const isRenaming = renamingItemId === `proj-${proj.path}`;
+            const indexedFolderName = proj.path.split(/[\\/]/).filter(Boolean).pop() || proj.name;
 
             return (
               <div key={proj.path} className={`flex flex-col gap-[3px] min-w-0 group/card ${isSelected ? "is-selected" : ""} ${isExpanded ? "is-expanded" : ""}`}>
@@ -530,7 +606,7 @@ export default function Sidebar() {
                   data-sidebar-item
                   className="min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer bg-transparent w-full min-w-0 box-border text-[#d8d8d8] hover:bg-white/2 focus-visible:bg-[var(--color-surface-7)] focus-visible:outline-none group-[.is-selected]/card:bg-[#1c1c1c] group-[.is-selected]/card:text-[#eeeeee] group-[.is-selected]/card:hover:bg-[#1e1e1e] group/prow outline-none appearance-none border-0"
                   tabIndex={0}
-                  onClick={() => { selectProject(proj.path, proj.name); toggleProject(proj.path); }}
+                  onClick={() => handleProjectSelection(proj)}
                   onContextMenu={(e) => openProjectMenu(e, proj)}
                   onKeyDown={(e) => {
                     if (e.key === "Delete") handleDelete("project", proj.path, proj.path);
@@ -540,8 +616,7 @@ export default function Sidebar() {
                       setRenameInput(proj.name);
                     }
                     if (e.key === "Enter" || e.key === " ") {
-                      selectProject(proj.path, proj.name);
-                      toggleProject(proj.path);
+                      handleProjectSelection(proj);
                     }
                   }}
                 >
@@ -590,12 +665,6 @@ export default function Sidebar() {
                         />
                       </div>
                     )}
-                    {proj.chats.map((chat) => (
-                      <ArtifactNode key={chat.id} kind="chat" item={chat} project={proj} isActive={activeArtifactId === chat.id} 
-                        renaming={renamingItemId === `chat-${chat.id}`} setRenaming={setRenamingItemId} renameInput={renameInput} setRenameInput={setRenameInput}
-                        onCommit={handleRenameCommit} onOpen={openArtifact} onDelete={handleDelete} onDragStart={onDragStart} onContextMenu={openArtifactMenu} />
-                    ))}
-
                     <div className="flex items-center gap-1 ml-[12px]">
                       <button
                         data-sidebar-item
@@ -606,18 +675,19 @@ export default function Sidebar() {
                         <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center">
                           <MousePointer2 size={14} />
                         </span>
-                        <span>Estructura</span>
+                        <span>{indexedFolderName}</span>
                       </button>
                     </div>
 
                     {creatingStructure?.projectPath === proj.path && <div className="ml-[24px] flex min-h-[34px] items-center gap-2 rounded-md px-[10px] text-xs text-[#d8d8d8]/70">
                       {creatingStructure.kind === "file" ? <FileCode2 size={14} /> : <Folder size={14} />}
-                      <input autoFocus value={newStructureName} onChange={(e) => setNewStructureName(e.target.value)} placeholder={creatingStructure.kind === "file" ? "nombre.ext" : "Nombre de carpeta"} onBlur={finishStructureCreation} onKeyDown={(e) => { if (e.key === "Enter") finishStructureCreation(); if (e.key === "Escape") { setCreatingStructure(null); setNewStructureName(""); } }} onClick={(e) => e.stopPropagation()} className="min-w-0 flex-1 rounded-md border-0 bg-[var(--color-surface-9)] px-2 py-1 text-xs text-[#d8d8d8] outline-none placeholder:text-[#777]" />
+                      <input autoFocus value={newStructureName} onChange={(e) => { setNewStructureName(e.target.value); setStructureError(""); }} placeholder={creatingStructure.kind === "file" ? "nombre.ext" : "Nombre de carpeta"} onBlur={finishStructureCreation} onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); void finishStructureCreation(); } if (e.key === "Escape") { setCreatingStructure(null); setNewStructureName(""); setStructureError(""); } }} onClick={(e) => e.stopPropagation()} className="min-w-0 flex-1 rounded-md border-0 bg-[var(--color-surface-9)] px-2 py-1 text-xs text-[#d8d8d8] outline-none placeholder:text-[#777]" />
+                      {structureError && <span className="text-[10px] text-[#f28b82]" title={structureError}>No se pudo crear</span>}
                     </div>}
 
                     {expandedStructures.has(proj.path) && (structureFiles[proj.path] || []).filter((entry) => isStructureEntryVisible(proj.path, entry.path)).map((entry) => (
                       <React.Fragment key={`${proj.path}-${entry.path}`}>
-                        <button type="button" onClick={() => entry.isDirectory && toggleStructureDirectory(proj.path, entry.path)} onContextMenu={(event) => { event.preventDefault(); setStructureMenu({ projectPath: proj.path, path: entry.path, isDirectory: entry.isDirectory, top: event.clientY, left: event.clientX }); }} className="min-h-[34px] flex w-full items-center gap-[9px] rounded-md px-[10px] ml-[12px] text-xs text-left text-[#d8d8d8]/62 hover:bg-white/2 bg-transparent border-0 appearance-none">
+                        <button type="button" draggable={!entry.isDirectory} onDragStart={(event) => { if (!entry.isDirectory) { const payload = JSON.stringify({ projectPath: proj.path, path: entry.path }); event.dataTransfer.effectAllowed = "copyMove"; event.dataTransfer.setData("application/codeclub-file", payload); event.dataTransfer.setData("text/plain", payload); window.dispatchEvent(new CustomEvent("codeclub-file-drag-start", { detail: { projectPath: proj.path, path: entry.path } })); } }} onClick={() => { if (entry.isDirectory) { toggleStructureDirectory(proj.path, entry.path); } else { window.dispatchEvent(new CustomEvent("codeclub:open-folders", { detail: { projectPath: proj.path, path: entry.path } })); } }} onContextMenu={(event) => { event.preventDefault(); setStructureMenu({ projectPath: proj.path, path: entry.path, isDirectory: entry.isDirectory, top: event.clientY, left: event.clientX }); }} className="min-h-[34px] flex w-full items-center gap-[9px] px-[10px] ml-[12px] text-xs text-left text-[#d8d8d8]/62 hover:bg-white/2 bg-transparent border-0 appearance-none">
                           <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center">
                             {entry.isDirectory ? (openStructureDirectories.has(`${proj.path}:${entry.path}`) ? <FolderOpen size={14} /> : <Folder size={14} />) : <FileCode2 size={14} />}
                           </span>
@@ -632,6 +702,34 @@ export default function Sidebar() {
               </div>
             );
           })}
+          </>}
+
+          <div className="flex w-full flex-col gap-1">
+            <button type="button" className="w-full min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left text-[#777777] hover:bg-[var(--color-surface-3)] hover:text-[#eeeeee] bg-transparent border-0 appearance-none" onClick={() => window.dispatchEvent(new CustomEvent("codeclub:open-repository"))}>
+              <GitBranch size={15} /> Repositorio
+            </button>
+            <button type="button" className="w-full min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left text-[#777777] hover:bg-[var(--color-surface-3)] hover:text-[#eeeeee] bg-transparent border-0 appearance-none" onClick={() => window.dispatchEvent(new CustomEvent("codeclub:open-extensions"))}>
+              <Puzzle size={15} /> Complementos
+            </button>
+          </div>
+
+          <div className="mt-2">
+            <div className="h-[24px] shrink-0 mb-1 flex items-center gap-[6px] px-[10px] text-[#9f9f9f] text-xs">Chats</div>
+            <div className="flex flex-col gap-1">
+              {globalChats.slice(-3).reverse().map((chat) => (
+                <button key={`${chat.projectPath}:${chat.id}`} type="button" className={`w-full min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left text-[#777777] hover:bg-white/2 bg-transparent border-0 appearance-none ${activeArtifactId === chat.id ? "bg-white/5 text-[#eeeeee]" : ""}`} onClick={() => openGlobalChat(chat)} onContextMenu={(event) => { event.preventDefault(); openArtifactMenu(event, "chat", { id: chat.id, name: chat.name }, { name: chat.projectName, path: chat.projectPath, chats: [] }); }} title={chat.projectName}>
+                  {activeArtifactId === chat.id ? (
+                    <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center" aria-label="Chat activo">
+                      <span className="braille-spinner" data-state="idle" aria-hidden="true" />
+                    </span>
+                  ) : (
+                    <span className="chat-dot flex h-[22px] w-[22px] shrink-0 items-center justify-center" aria-hidden="true" />
+                  )}
+                  <span className="min-w-0 flex-1 truncate">{chat.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 
@@ -703,7 +801,7 @@ export default function Sidebar() {
         document.body
       )}
       
-      <section className="shrink-0 flex flex-col gap-1 p-[10px] border-t border-[var(--color-surface-9)] bg-[#161616] relative z-[2]">
+      <section className="shrink-0 flex flex-col gap-1 p-[10px] border-t border-[var(--color-surface-9)] bg-[var(--color-bg)] relative z-[2]">
         <button className="min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer bg-transparent border-0 text-[#d8d8d8] hover:bg-white/2 appearance-none" type="button" onClick={() => setSettingsOpen(true)}>
           <Settings size={15} /> Ajustes
         </button>

@@ -39,7 +39,7 @@ const catalog = [
     width: min(760px, calc(100vw - 64px));
     display: grid;
     grid-template-rows: 34px minmax(0, 1fr);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    border: 1px solid #202020;
     border-radius: 12px;
     background: rgba(22, 22, 22, 0.72);
     backdrop-filter: blur(32px) saturate(1.4);
@@ -254,7 +254,7 @@ const catalog = [
     display: grid;
     gap: 3px;
     padding: 6px;
-    border: 1px solid var(--color-surface-10, #2f2f2f);
+    border: 1px solid #202020;
     border-radius: 8px;
     background: rgba(18, 18, 18, 0.96);
     backdrop-filter: blur(20px) saturate(1.25);
@@ -337,6 +337,7 @@ const catalog = [
     line-height: 1;
     opacity: 0.78;
     transition: color 620ms ease, text-shadow 620ms ease, opacity 620ms ease;
+    text-shadow: none !important;
     text-shadow:
       0 0 10px rgba(123, 130, 255, 0.42),
       0 0 18px rgba(255, 117, 181, 0.18);
@@ -385,6 +386,14 @@ const catalog = [
     content: "\280b";
     font-size: 18px;
     animation: braille-frame 880ms steps(1, end) infinite;
+  }
+
+  .chat-dot::before {
+    content: "·";
+    color: #777777;
+    font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+    font-size: 18px;
+    line-height: 1;
   }
 
   @keyframes braille-frame {

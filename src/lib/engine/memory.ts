@@ -1,3 +1,5 @@
+import { getProjectFilePath } from '../persistence';
+
 export interface MemoryEntry {
   key: string;
   content: string;
@@ -6,13 +8,8 @@ export interface MemoryEntry {
   updated_at: string;
 }
 
-function dir(projectPath: string) {
-  return `${projectPath}/.codeclub/memory`;
-}
-
-function filePath(projectPath: string, key: string) {
-  return `${dir(projectPath)}/${encodeURIComponent(key)}.json`;
-}
+const dir = (projectPath: string) => getProjectFilePath(projectPath, 'memory');
+const filePath = (projectPath: string, key: string) => getProjectFilePath(projectPath, 'memory', `${encodeURIComponent(key)}.json`);
 
 export async function saveMemory(
   projectPath: string,
@@ -21,8 +18,9 @@ export async function saveMemory(
   tags: string[] = [],
 ): Promise<MemoryEntry> {
   const { mkdir, writeTextFile, readTextFile, exists } = await import('@tauri-apps/plugin-fs');
-  await mkdir(dir(projectPath), { recursive: true });
-  const fp = filePath(projectPath, key);
+  const memoryDir = await dir(projectPath);
+  await mkdir(memoryDir, { recursive: true });
+  const fp = await filePath(projectPath, key);
   let entry: MemoryEntry;
   if (await exists(fp)) {
     const existing = JSON.parse(await readTextFile(fp));
@@ -36,14 +34,14 @@ export async function saveMemory(
 
 export async function loadMemory(projectPath: string, key: string): Promise<MemoryEntry | null> {
   const { readTextFile, exists } = await import('@tauri-apps/plugin-fs');
-  const fp = filePath(projectPath, key);
+  const fp = await filePath(projectPath, key);
   if (!(await exists(fp))) return null;
   return JSON.parse(await readTextFile(fp));
 }
 
 export async function searchMemory(projectPath: string, query: string): Promise<MemoryEntry[]> {
   const { readDir, readTextFile } = await import('@tauri-apps/plugin-fs');
-  const d = dir(projectPath);
+  const d = await dir(projectPath);
   try {
     const entries = await readDir(d);
     const results: MemoryEntry[] = [];
@@ -62,7 +60,7 @@ export async function searchMemory(projectPath: string, query: string): Promise<
 
 export async function deleteMemory(projectPath: string, key: string): Promise<boolean> {
   const { remove, exists } = await import('@tauri-apps/plugin-fs');
-  const fp = filePath(projectPath, key);
+  const fp = await filePath(projectPath, key);
   if (!(await exists(fp))) return false;
   await remove(fp);
   return true;
@@ -70,7 +68,7 @@ export async function deleteMemory(projectPath: string, key: string): Promise<bo
 
 export async function deleteMemoriesByTag(projectPath: string, tag: string): Promise<number> {
   const { readDir, readTextFile, remove } = await import('@tauri-apps/plugin-fs');
-  const d = dir(projectPath);
+  const d = await dir(projectPath);
   let count = 0;
   try {
     const entries = await readDir(d);
