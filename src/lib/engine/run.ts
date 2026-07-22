@@ -19,6 +19,7 @@ export async function runStream({
   callbacks: EngineCallbacks;
 }): Promise<string> {
   let content = '';
+  let reasoning = '';
 
   const result = streamText({
     model,
@@ -35,8 +36,19 @@ export async function runStream({
   });
 
   for await (const part of result.fullStream) {
-    if (part.type === 'text-delta') {
-      content += part.text;
+    const streamPart = part as any;
+
+    if (streamPart.type === 'reasoning-delta') {
+      const delta = streamPart.text ?? streamPart.delta ?? '';
+      if (delta) {
+        reasoning += delta;
+        callbacks.onReasoningDelta?.(reasoning);
+      }
+      continue;
+    }
+
+    if (streamPart.type === 'text-delta') {
+      content += streamPart.text;
       callbacks.onTextDelta(content);
       continue;
     }

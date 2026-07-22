@@ -2,6 +2,7 @@
 import "../styles/global.css";
 import Topbar from "../components/Topbar.astro";
 import Sidebar from "../components/Sidebar.tsx";
+import RightSidebar from "../components/RightSidebar.tsx";
 import ChatPanel from "../components/ChatPanel.astro";
 ---
 
@@ -11,6 +12,7 @@ import ChatPanel from "../components/ChatPanel.astro";
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Codeclub</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <script>
       if (navigator.userAgent.includes("Windows")) {
         document.documentElement.classList.add("is-windows");
@@ -22,12 +24,14 @@ import ChatPanel from "../components/ChatPanel.astro";
       }
     </script>
   </head>
-  <body class="has-sidebar group grid grid-rows-[36px_1fr] grid-cols-[0_1fr] transition-[grid-template-columns] duration-140 ease-out [&.has-sidebar]:grid-cols-[264px_1fr] m-0 min-w-[320px] min-h-screen bg-transparent text-[#dedede] overflow-hidden font-sans before:content-[''] before:fixed before:inset-[36px_0_0] before:-z-10 before:bg-[var(--color-bg)]">
+  <body class="has-sidebar group relative isolate grid h-screen max-h-screen grid-rows-[36px_minmax(0,1fr)] grid-cols-[0_minmax(0,1fr)_0] transition-[grid-template-columns] duration-140 ease-out [&.has-sidebar]:grid-cols-[264px_minmax(0,1fr)_0] [&.has-right-panel]:grid-cols-[264px_minmax(0,1fr)_264px] m-0 min-w-[320px] min-h-0 bg-[#111111] text-[#dedede] overflow-hidden font-sans">
+    <div id="app-background" aria-hidden="true"></div>
     <Topbar />
     <Sidebar client:load />
-    <main class="row-start-2 col-start-2 min-w-0 min-h-0 bg-transparent" aria-label="Workspace">
+    <main class="row-start-2 col-start-2 h-full min-w-0 min-h-0 bg-[var(--color-bg)]" aria-label="Workspace">
       <ChatPanel />
     </main>
+    <RightSidebar client:load />
     <script>
       const initCodeclubApp = async () => {
         const { getCurrentWindow } = await import('@tauri-apps/api/window');
@@ -37,6 +41,11 @@ import ChatPanel from "../components/ChatPanel.astro";
         document.querySelector('#maximize')?.addEventListener('click', () => { appWindow.toggleMaximize(); });
         document.querySelector('#close')?.addEventListener('click', () => { appWindow.close(); });
         document.querySelector('.drag-area')?.addEventListener('dblclick', () => { appWindow.toggleMaximize(); });
+        document.addEventListener('keydown', async (event) => {
+          if (event.key !== 'F11') return;
+          event.preventDefault();
+          await appWindow.setSimpleFullscreen(!(await appWindow.isFullscreen()));
+        });
         
         let hasProjectSelection = false;
         const projectRequiredControls = document.querySelectorAll('[data-project-required]');
@@ -50,9 +59,6 @@ import ChatPanel from "../components/ChatPanel.astro";
             element.classList.toggle('cursor-not-allowed', !enabled);
             element.classList.toggle('pointer-events-none', !enabled && element.tagName !== 'BUTTON');
           });
-          if (!enabled) {
-            window.dispatchEvent(new CustomEvent('codeclub:panel-mode', { detail: { mode: 'single' } }));
-          }
         };
 
         window.addEventListener('codeclub:project-selection-changed', (event) => {
@@ -62,35 +68,35 @@ import ChatPanel from "../components/ChatPanel.astro";
 
         document.querySelectorAll('[data-action="toggle-terminal"]').forEach((el) => {
           el.addEventListener('click', (event) => {
-            if (!hasProjectSelection) return;
             event.preventDefault();
             window.dispatchEvent(new CustomEvent('codeclub:open-terminal-dock', { detail: { toggle: true } }));
           });
         });
         
-        const panelSingleBtn = document.querySelector('#panel-single');
-        const panelSplitBtn = document.querySelector('#panel-split');
-        const updatePanelButtons = (mode) => {
-          panelSingleBtn?.classList.toggle('is-active', mode === 'single');
-          panelSplitBtn?.classList.toggle('is-active', mode === 'split');
-        };
-        panelSingleBtn?.addEventListener('click', () => {
-          window.dispatchEvent(new CustomEvent('codeclub:panel-mode', { detail: { mode: 'single' } }));
-          updatePanelButtons('single');
-        });
-        panelSplitBtn?.addEventListener('click', () => {
-          if (!hasProjectSelection) return;
-          window.dispatchEvent(new CustomEvent('codeclub:panel-mode', { detail: { mode: 'split' } }));
-          updatePanelButtons('split');
-        });
-        window.addEventListener('codeclub:panel-mode-changed', (e) => {
-          updatePanelButtons(e.detail?.mode || 'single');
-        });
-        
         const sidebarButton = document.querySelector('[data-action="toggle-sidebar"]');
         sidebarButton?.addEventListener('click', () => {
           document.body.classList.toggle('has-sidebar');
+          document.body.style.setProperty('--left-panel-width', document.body.classList.contains('has-sidebar') ? '264px' : '0px');
         });
+
+        const singlePanelButton = document.querySelector('#panel-single');
+        const splitPanelButton = document.querySelector('#panel-split');
+        const dockButton = document.querySelector('#panel-dock');
+        const setRightPanel = (open) => {
+          document.body.classList.toggle('has-right-panel', open);
+          document.body.style.setProperty('--left-panel-width', document.body.classList.contains('has-sidebar') ? '264px' : '0px');
+          singlePanelButton?.classList.toggle('is-active', !open);
+          splitPanelButton?.classList.toggle('is-active', open);
+        };
+        singlePanelButton?.addEventListener('click', () => setRightPanel(false));
+        splitPanelButton?.addEventListener('click', () => setRightPanel(!document.body.classList.contains('has-right-panel')));
+        dockButton?.addEventListener('click', () => {
+          window.dispatchEvent(new CustomEvent('codeclub:toggle-panel-dock'));
+          dockButton.classList.toggle('is-active');
+          dockButton.setAttribute('aria-label', dockButton.classList.contains('is-active') ? 'Ocultar dock' : 'Mostrar dock');
+          dockButton.setAttribute('title', dockButton.classList.contains('is-active') ? 'Ocultar dock' : 'Mostrar dock');
+        });
+        setRightPanel(false);
       };
       
       if (document.readyState === 'loading') {
@@ -101,3 +107,9 @@ import ChatPanel from "../components/ChatPanel.astro";
     </script>
   </body>
 </html>
+
+<style is="global">
+  body.has-right-panel {
+    grid-template-columns: var(--left-panel-width, 264px) minmax(0, 1fr) var(--right-panel-width, 35vw) !important;
+  }
+</style>

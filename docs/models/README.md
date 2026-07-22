@@ -25,4 +25,4 @@ Provider `Custom` hardcodeado para endpoints OpenAI-compatibles definidos por us
 
 ## API Keys
 
-Se almacenan por provider en localStorage con key `{providerId}_api_key`.
+Se almacenan por provider en el archivo de configuración del SO con key `{providerId}_api_key`.

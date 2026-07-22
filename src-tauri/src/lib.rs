@@ -2,19 +2,28 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     fs,
-    io::{Read, Write},
+    io::{BufRead, Read, Write},
     path::{Component, Path, PathBuf},
     process::{Child, ChildStdin, Command, Stdio},
     sync::{Arc, Mutex},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 #[derive(Serialize)]
 struct FileEntry {
     path: String,
     kind: String,
     size: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectIndexSnapshot {
+    file_count: usize,
+    directory_count: usize,
+    total_size: u64,
+    files: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -62,6 +71,11 @@ struct HttpFetchResponse {
 #[derive(Default)]
 struct TerminalRegistry {
     sessions: Mutex<HashMap<String, TerminalSession>>,
+}
+
+#[derive(Default)]
+struct WhatsAppRegistry {
+    child: Mutex<Option<Child>>,
 }
 
 struct TerminalSession {
@@ -215,6 +229,25 @@ fn resolve_terminal_cwd(request: &TerminalCreateRequest) -> Result<PathBuf, Stri
 
     if let Some(project_path) = &request.project_path {
         return workspace_root(project_path);
+    }
+
+    let home = if cfg!(windows) {
+        std::env::var("USERPROFILE").or_else(|_| {
+            let drive = std::env::var("HOMEDRIVE").map_err(|_| ())?;
+            let path = std::env::var("HOMEPATH").map_err(|_| ())?;
+            Ok::<String, ()>(format!("{drive}{path}"))
+        }).ok()
+    } else {
+        std::env::var("HOME").ok()
+    };
+
+    if let Some(home) = home {
+        let path = PathBuf::from(home);
+        if path.exists() {
+            return path
+                .canonicalize()
+                .map_err(|error| format!("No se pudo resolver la carpeta personal: {error}"));
+        }
     }
 
     std::env::current_dir().map_err(|error| format!("No se pudo resolver el cwd: {error}"))
@@ -449,6 +482,35 @@ fn codeclub_list_files(
 }
 
 #[tauri::command]
+fn codeclub_index_project(project_path: String) -> Result<ProjectIndexSnapshot, String> {
+    let root = workspace_root(&project_path)?;
+    let mut entries = Vec::new();
+    collect_files(&root, &root, &mut entries, 4000)?;
+    let file_count = entries.iter().filter(|entry| entry.kind == "file").count();
+    let directory_count = entries.iter().filter(|entry| entry.kind == "directory").count();
+    let total_size = entries.iter().filter(|entry| entry.kind == "file").map(|entry| entry.size).sum();
+    let files = entries.into_iter().filter(|entry| entry.kind == "file").map(|entry| entry.path).collect();
+    Ok(ProjectIndexSnapshot { file_count, directory_count, total_size, files })
+}
+
+#[tauri::command]
+fn codeclub_get_username() -> String {
+    std::env::var("USERNAME")
+        .or_else(|_| std::env::var("USER"))
+        .unwrap_or_else(|_| "Usuario".into())
+}
+
+#[tauri::command]
+fn codeclub_get_system_root() -> Result<String, String> {
+    if cfg!(windows) {
+        let drive = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".into());
+        Ok(format!("{drive}\\"))
+    } else {
+        Ok("/".into())
+    }
+}
+
+#[tauri::command]
 fn codeclub_read_file(project_path: String, path: String) -> Result<String, String> {
     let full_path = safe_workspace_path(&project_path, &path)?;
     let metadata =
@@ -468,6 +530,29 @@ fn codeclub_write_file(project_path: String, path: String, content: String) -> R
     }
     fs::write(full_path, content)
         .map_err(|error| format!("No se pudo escribir el archivo: {error}"))
+}
+
+#[tauri::command]
+fn codeclub_create_entry(project_path: String, path: String, kind: String) -> Result<(), String> {
+    let full_path = safe_workspace_path(&project_path, &path)?;
+
+    match kind.as_str() {
+        "folder" => fs::create_dir_all(&full_path)
+            .map_err(|error| format!("No se pudo crear la carpeta: {error}")),
+        "file" => {
+            if let Some(parent) = full_path.parent() {
+                fs::create_dir_all(parent)
+                    .map_err(|error| format!("No se pudo crear el directorio: {error}"))?;
+            }
+            fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&full_path)
+                .map(|_| ())
+                .map_err(|error| format!("No se pudo crear el archivo: {error}"))
+        }
+        _ => Err("Tipo de elemento invalido: usa 'file' o 'folder'.".into()),
+    }
 }
 
 #[tauri::command]
@@ -536,11 +621,6 @@ fn codeclub_run_command(
     request: CommandRequest,
 ) -> Result<CommandOutput, String> {
     let root = workspace_root(&project_path)?;
-    let allowed = ["bun", "npm", "pnpm", "node", "git", "cargo", "python", "rg"];
-    if !allowed.contains(&request.command.as_str()) {
-        return Err("Comando no permitido para el agente.".into());
-    }
-
     let mut child = Command::new(&request.command)
         .args(&request.args)
         .current_dir(root)
@@ -855,18 +935,120 @@ async fn codeclub_http_fetch(request: HttpFetchRequest) -> Result<HttpFetchRespo
     })
 }
 
+#[tauri::command]
+fn codeclub_whatsapp_start(app: AppHandle, state: State<'_, WhatsAppRegistry>) -> Result<(), String> {
+    let mut registry = state.child.lock().map_err(|error| error.to_string())?;
+    if let Some(child) = registry.as_mut() {
+        if child.try_wait().map_err(|error| error.to_string())?.is_none() {
+            if let Some(stdin) = child.stdin.as_mut() {
+                let _ = writeln!(stdin, "{}", serde_json::json!({ "type": "list_chats" }));
+                let _ = stdin.flush();
+            }
+            return Ok(());
+        }
+    }
+
+    let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("scripts").join("whatsapp-bridge.mjs");
+    let data_dir = app.path().app_data_dir().map_err(|error| error.to_string())?.join("whatsapp-baileys-session");
+    fs::create_dir_all(&data_dir).map_err(|error| error.to_string())?;
+    let mut child = Command::new("node")
+        .arg(script)
+        .env("CODECLUB_WHATSAPP_DIR", data_dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("No se pudo iniciar WhatsApp: {error}"))?;
+
+    if let Some(stdout) = child.stdout.take() {
+        let app_handle = app.clone();
+        std::thread::spawn(move || {
+            let reader = std::io::BufReader::new(stdout);
+            for line in reader.lines().flatten() {
+                if let Ok(payload) = serde_json::from_str::<serde_json::Value>(&line) {
+                    let _ = app_handle.emit("codeclub:whatsapp-event", payload);
+                }
+            }
+        });
+    }
+    if let Some(stderr) = child.stderr.take() {
+        let app_handle = app.clone();
+        std::thread::spawn(move || {
+            let reader = std::io::BufReader::new(stderr);
+            for line in reader.lines().flatten() {
+                let _ = app_handle.emit(
+                    "codeclub:whatsapp-event",
+                    serde_json::json!({ "type": "error", "message": line }),
+                );
+            }
+        });
+    }
+    *registry = Some(child);
+    Ok(())
+}
+
+#[tauri::command]
+fn codeclub_whatsapp_send(state: State<'_, WhatsAppRegistry>, chat_id: String, body: String) -> Result<(), String> {
+    let mut registry = state.child.lock().map_err(|error| error.to_string())?;
+    let child = registry.as_mut().ok_or_else(|| "WhatsApp no está iniciado".to_string())?;
+    let stdin = child.stdin.as_mut().ok_or_else(|| "No hay canal de WhatsApp".to_string())?;
+    writeln!(stdin, "{}", serde_json::json!({ "type": "send", "chatId": chat_id, "body": body })).map_err(|error| error.to_string())?;
+    stdin.flush().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn codeclub_whatsapp_get_messages(state: State<'_, WhatsAppRegistry>, chat_id: String) -> Result<(), String> {
+    let mut registry = state.child.lock().map_err(|error| error.to_string())?;
+    let child = registry.as_mut().ok_or_else(|| "WhatsApp no está iniciado".to_string())?;
+    let stdin = child.stdin.as_mut().ok_or_else(|| "No hay canal de WhatsApp".to_string())?;
+    writeln!(stdin, "{}", serde_json::json!({ "type": "get_messages", "chatId": chat_id })).map_err(|error| error.to_string())?;
+    stdin.flush().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn codeclub_whatsapp_refresh(state: State<'_, WhatsAppRegistry>) -> Result<(), String> {
+    let mut registry = state.child.lock().map_err(|error| error.to_string())?;
+    let child = registry.as_mut().ok_or_else(|| "WhatsApp no está iniciado".to_string())?;
+    let stdin = child.stdin.as_mut().ok_or_else(|| "No hay canal de WhatsApp".to_string())?;
+    writeln!(stdin, "{}", serde_json::json!({ "type": "refresh" })).map_err(|error| error.to_string())?;
+    stdin.flush().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn codeclub_whatsapp_logout(state: State<'_, WhatsAppRegistry>) -> Result<(), String> {
+    let mut registry = state.child.lock().map_err(|error| error.to_string())?;
+    let child = registry.as_mut().ok_or_else(|| "WhatsApp no está iniciado".to_string())?;
+    let stdin = child.stdin.as_mut().ok_or_else(|| "No hay canal de WhatsApp".to_string())?;
+    writeln!(stdin, "{}", serde_json::json!({ "type": "logout" })).map_err(|error| error.to_string())?;
+    stdin.flush().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn codeclub_whatsapp_stop(state: State<'_, WhatsAppRegistry>) -> Result<(), String> {
+    let mut registry = state.child.lock().map_err(|error| error.to_string())?;
+    if let Some(mut child) = registry.take() {
+        let _ = child.kill();
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(TerminalRegistry::default())
+        .manage(WhatsAppRegistry::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             codeclub_list_files,
+            codeclub_index_project,
+            codeclub_get_username,
+            codeclub_get_system_root,
             codeclub_read_file,
             codeclub_search_text,
             codeclub_write_file,
+            codeclub_create_entry,
             codeclub_run_command,
             codeclub_terminal_list,
             codeclub_terminal_create,
@@ -875,7 +1057,13 @@ pub fn run() {
             codeclub_terminal_rename,
             codeclub_terminal_stop,
             codeclub_terminal_delete,
-            codeclub_http_fetch
+            codeclub_http_fetch,
+            codeclub_whatsapp_start,
+            codeclub_whatsapp_send,
+            codeclub_whatsapp_get_messages,
+            codeclub_whatsapp_refresh,
+            codeclub_whatsapp_logout,
+            codeclub_whatsapp_stop
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

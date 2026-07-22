@@ -4,6 +4,7 @@ import { PanelBottomClose, Plus } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import '@xterm/xterm/css/xterm.css';
+import { getSetting, setSetting } from '../lib/persistence';
 
 type ShellKind = 'auto' | 'powershell' | 'git-bash' | 'wsl' | 'cmd';
 
@@ -32,7 +33,7 @@ type TerminalSnapshot = {
 const STORAGE_KEY = 'codeclub_terminal_tabs_v1';
 
 const shellOptions: { id: ShellKind; label: string }[] = [
-  { id: 'auto', label: 'Default' },
+  { id: 'auto', label: 'Sistema' },
   { id: 'powershell', label: 'PowerShell' },
   { id: 'cmd', label: 'Command Prompt' },
   { id: 'git-bash', label: 'Git Bash' },
@@ -54,13 +55,7 @@ const computeTerminalName = (shell: string, existing: TerminalInfo[]) => {
   return `${base} ${sameType.length + 1}`;
 };
 
-const readPersistedTerminals = () => {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]') as TerminalInfo[];
-  } catch {
-    return [];
-  }
-};
+const readPersistedTerminals = () => getSetting<TerminalInfo[]>(STORAGE_KEY, []);
 
 const upsertTerminal = (items: TerminalInfo[], next: TerminalInfo) => {
   const index = items.findIndex((item) => item.id === next.id);
@@ -81,15 +76,8 @@ const MAX_HEIGHT_FRACTION = 0.8;
 const POSITION_KEY = 'codeclub_terminal_pos';
 const HEIGHT_KEY = 'codeclub_terminal_height';
 
-const getInitialPosition = () => {
+const getDefaultPosition = () => {
   if (typeof window === 'undefined') return { x: 60, y: 60 };
-  try {
-    const saved = localStorage.getItem(POSITION_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (typeof parsed.x === 'number' && typeof parsed.y === 'number') return parsed;
-    }
-  } catch {}
   const dockWidth = Math.min(760, window.innerWidth - 64);
   const dockHeight = Math.min(360, Math.max(220, window.innerHeight * 0.36));
   return {
@@ -98,15 +86,8 @@ const getInitialPosition = () => {
   };
 };
 
-const getInitialHeight = () => {
+const getDefaultHeight = () => {
   if (typeof window === 'undefined') return 300;
-  try {
-    const saved = localStorage.getItem(HEIGHT_KEY);
-    if (saved) {
-      const h = parseInt(saved, 10);
-      if (!isNaN(h) && h >= MIN_HEIGHT && h <= window.innerHeight * MAX_HEIGHT_FRACTION) return h;
-    }
-  } catch {}
   return Math.min(360, Math.max(220, window.innerHeight * 0.36));
 };
 
@@ -118,7 +99,7 @@ export default function TerminalDock() {
   const [isOpen, setIsOpen] = useState(false);
   const [shellMenuOpen, setShellMenuOpen] = useState(false);
   const [shellMenuPosition, setShellMenuPosition] = useState({ left: 0 });
-  const [position, setPosition] = useState<{ x: number; y: number }>(getInitialPosition);
+  const [position, setPosition] = useState<{ x: number; y: number }>(getDefaultPosition);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const barRef = useRef<HTMLDivElement | null>(null);
   const plusButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -132,7 +113,7 @@ export default function TerminalDock() {
   const outputRef = useRef(new Map<string, string>());
   const loadedRef = useRef(false);
   const restoredRef = useRef(false);
-  const [dockHeight, setDockHeight] = useState(getInitialHeight);
+  const [dockHeight, setDockHeight] = useState(getDefaultHeight);
   const dragRef = useRef({ isDragging: false, startX: 0, startY: 0, startPosX: 0, startPosY: 0 });
   const positionRef = useRef(position);
   positionRef.current = position;
@@ -140,7 +121,18 @@ export default function TerminalDock() {
   const dockHeightRef = useRef(dockHeight);
   dockHeightRef.current = dockHeight;
 
-  const visibleTerminals = terminals.filter((terminal) => !terminal.is_agent && terminal.projectPath === activeProjectPath);
+  useEffect(() => {
+    void Promise.all([
+      getSetting(POSITION_KEY, getDefaultPosition()),
+      getSetting(HEIGHT_KEY, getDefaultHeight()),
+    ]).then(([savedPosition, savedHeight]) => {
+      if (savedPosition && typeof savedPosition.x === 'number' && typeof savedPosition.y === 'number') setPosition(savedPosition);
+      const height = Number(savedHeight);
+      if (Number.isFinite(height) && height >= MIN_HEIGHT && height <= window.innerHeight * MAX_HEIGHT_FRACTION) setDockHeight(height);
+    });
+  }, []);
+
+  const visibleTerminals = terminals.filter((terminal) => !terminal.is_agent && (terminal.projectPath || null) === activeProjectPath);
   const activeTerminal = visibleTerminals.find((terminal) => terminal.id === activeId) || null;
 
   const resolveActiveProjectPath = () => {
@@ -149,13 +141,13 @@ export default function TerminalDock() {
 
   const persistPosition = () => {
     try {
-      localStorage.setItem(POSITION_KEY, JSON.stringify(positionRef.current));
+      void setSetting(POSITION_KEY, positionRef.current);
     } catch {}
   };
 
   const persistHeight = () => {
     try {
-      localStorage.setItem(HEIGHT_KEY, String(dockHeightRef.current));
+      void setSetting(HEIGHT_KEY, dockHeightRef.current);
     } catch {}
   };
 
@@ -285,7 +277,7 @@ export default function TerminalDock() {
       scrollback: 5000,
       allowTransparency: true,
       theme: {
-        background: '#101010',
+        background: '#111111',
         foreground: '#cfcfcf',
         cursor: '#d8d8d8',
         selectionBackground: '#404040',
@@ -335,13 +327,12 @@ export default function TerminalDock() {
 
   useEffect(() => {
     visibleTerminalCountRef.current = visibleTerminals.length;
-  }, [visibleTerminals.length]);
+    window.dispatchEvent(new CustomEvent('codeclub:terminal-count-changed', {
+      detail: { projectPath: activeProjectPath, count: visibleTerminals.length },
+    }));
+  }, [activeProjectPath, visibleTerminals.length]);
 
   useEffect(() => {
-    if (!activeProjectPath) {
-      setActiveId(null);
-      return;
-    }
     if (!visibleTerminals.some((terminal) => terminal.id === activeId)) {
       setActiveId(visibleTerminals[0]?.id || null);
     }
@@ -351,7 +342,7 @@ export default function TerminalDock() {
     if (!loadedRef.current) return;
     const payload = terminals
       .filter((terminal) => !terminal.is_agent)
-      .map(({ id, name, shell, cwd, is_agent, created_at, status }) => ({
+      .map(({ id, name, shell, cwd, projectPath, is_agent, created_at, status }) => ({
         id,
         name,
         shell,
@@ -361,7 +352,7 @@ export default function TerminalDock() {
         created_at,
         status,
       }));
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    void setSetting(STORAGE_KEY, payload);
   }, [terminals]);
 
   useEffect(() => {
@@ -375,13 +366,13 @@ export default function TerminalDock() {
 
       if (!restoredRef.current) {
         restoredRef.current = true;
-        readPersistedTerminals().forEach((terminal) => {
+        void readPersistedTerminals().then((savedTerminals) => savedTerminals.forEach((terminal) => {
           createTerminal(terminal.shell as ShellKind, {
             cwd: terminal.cwd || detail.projectPath,
             projectPath: terminal.projectPath || detail.projectPath,
             open: false,
           }).catch(console.error);
-        });
+        }));
       }
     };
 
@@ -395,16 +386,10 @@ export default function TerminalDock() {
       activeProjectPathRef.current = null;
       setActiveProjectPath(null);
       setActiveId(null);
-      setIsOpen(false);
     };
 
     const openTerminalDock = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
-      if (!resolveActiveProjectPath()) {
-        setShellMenuOpen(false);
-        setIsOpen(false);
-        return;
-      }
       if (detail.terminalId) setActiveId(detail.terminalId);
       setIsOpen((value) => {
         const next = detail.toggle ? !value : true;
@@ -452,8 +437,6 @@ export default function TerminalDock() {
     window.addEventListener('codeclub:active-project', setProjectPath);
     window.addEventListener('codeclub:project-selection-changed', handleProjectSelection);
     window.addEventListener('codeclub:open-chat', setProjectPath);
-    window.addEventListener('codeclub:open-note', setProjectPath);
-    window.addEventListener('codeclub:open-table', setProjectPath);
     window.addEventListener('codeclub:open-terminal-dock', openTerminalDock);
     init().catch(console.error);
 
@@ -462,8 +445,6 @@ export default function TerminalDock() {
       window.removeEventListener('codeclub:active-project', setProjectPath);
       window.removeEventListener('codeclub:project-selection-changed', handleProjectSelection);
       window.removeEventListener('codeclub:open-chat', setProjectPath);
-      window.removeEventListener('codeclub:open-note', setProjectPath);
-      window.removeEventListener('codeclub:open-table', setProjectPath);
       window.removeEventListener('codeclub:open-terminal-dock', openTerminalDock);
     };
   }, []);
@@ -482,7 +463,6 @@ export default function TerminalDock() {
   }, [isOpen]);
 
   const toggleShellMenu = () => {
-    if (!resolveActiveProjectPath()) return;
     const rect = plusButtonRef.current?.getBoundingClientRect();
     const barRect = barRef.current?.getBoundingClientRect();
     if (rect && barRect) {
@@ -499,7 +479,6 @@ export default function TerminalDock() {
     options: { cwd?: string; projectPath?: string; isAgent?: boolean; open?: boolean } = {},
   ) => {
     const projectPath = options.cwd || resolveActiveProjectPath();
-    if (!options.isAgent && !projectPath) return null;
     const name = computeTerminalName(shell, terminals);
     const terminal = await invoke<TerminalInfo>('codeclub_terminal_create', {
       request: {
@@ -572,21 +551,13 @@ export default function TerminalDock() {
                 key={terminal.id}
                 type="button"
                 className={`terminal-tab ${terminal.id === activeId ? 'is-active' : ''}`}
+                onDoubleClick={() => deleteTerminal(terminal.id)}
                 onClick={() => {
                   setActiveId(terminal.id);
                   setIsOpen(true);
                 }}
               >
                 <span>{terminal.name}</span>
-                <b
-                  aria-label="Cerrar terminal"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    deleteTerminal(terminal.id);
-                  }}
-                >
-                  x
-                </b>
               </button>
             ))}
             <div className="terminal-new">
@@ -622,7 +593,7 @@ export default function TerminalDock() {
             <div ref={hostRef} className="terminal-host" />
           ) : (
             <div className="terminal-empty">
-              <button type="button" onClick={() => createTerminal('auto')}>Crear terminal</button>
+              <button type="button" onClick={toggleShellMenu}>Crear terminal</button>
             </div>
           )}
         </div>

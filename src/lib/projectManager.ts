@@ -1,6 +1,7 @@
-import { BaseDirectory, readTextFile, writeTextFile, mkdir, exists, remove } from "@tauri-apps/plugin-fs";
-import { appLocalDataDir } from "@tauri-apps/api/path";
-import { getAppDataFilePath, logPersistence } from "./persistence.ts";
+import { appConfigDir, join } from "@tauri-apps/api/path";
+import { exists, mkdir, readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
+import { getAppConfigFilePath, getProjectFilePath, getSetting, logPersistence, setSetting } from "./persistence.ts";
+import { invoke } from "@tauri-apps/api/core";
 
 const PROJECTS_INDEX = "projects.json";
 const PROJECTS_BACKUP_INDEX = "projects.backup.json";
@@ -8,110 +9,229 @@ const PROJECTS_BACKUP_INDEX = "projects.backup.json";
 export interface ProjectEntry {
   path: string;
   name: string;
+  file_count?: number;
+  directory_count?: number;
+  total_size?: number;
+  files?: string[];
+  indexed_at?: string;
 }
 
-export const ensureProjectMeta = async (projectPath: string, name: string) => {
-  const codeclubPath = `${projectPath}/.codeclub`;
-  const chatsPath = `${codeclubPath}/chats`;
-  const notesPath = `${codeclubPath}/notes`;
-  const tablesPath = `${codeclubPath}/tables`;
-  const metaPath = `${codeclubPath}/meta.json`;
+export interface ProjectIndexSnapshot {
+  fileCount: number;
+  directoryCount: number;
+  totalSize: number;
+  files: string[];
+}
 
-  await mkdir(chatsPath, { recursive: true });
-  await mkdir(notesPath, { recursive: true });
-  await mkdir(tablesPath, { recursive: true });
+export interface ProjectMeta {
+  name: string;
+  path: string;
+  created_at: string;
+  chats: Array<{ id: string; name: string }>;
+}
 
-  let metaData: any = {};
-  if (await exists(metaPath)) {
-    try {
-      metaData = JSON.parse(await readTextFile(metaPath));
-    } catch {
-      metaData = {};
-    }
+export interface BusinessWorkspace {
+  version: 1;
+  currency: string;
+  project: { status: string; monthly_fee: number | null; next_billing_date: string | null };
+  profile: { description: string; services: string[]; target_clients: string[] };
+  pricing: { hourly_rate: number | null; fixed_scope: boolean; milestones: boolean; retainer_monthly: number | null; value_based: boolean };
+  opportunities: any[];
+  estimates: any[];
+  quotes: any[];
+  milestones: any[];
+  payments: any[];
+  time_entries: any[];
+  expenses: any[];
+  invoices: any[];
+  notes: any[];
+  updated_at: string;
+}
+
+export interface CodeclubProfile {
+  id: string;
+  name: string;
+  role: string;
+  created_at: string;
+  last_seen: string;
+}
+
+export interface GlobalChatEntry {
+  id: string;
+  name: string;
+  projectPath: "";
+  projectName: "Sin proyecto";
+}
+
+const GLOBAL_CHATS_SETTING = "codeclub_global_chats";
+const GLOBAL_CHAT_HISTORIES_SETTING = "codeclub_global_chat_histories";
+export const readGlobalChats = async (): Promise<GlobalChatEntry[]> => {
+  const chats = await getSetting<GlobalChatEntry[]>(GLOBAL_CHATS_SETTING, []);
+  return Array.isArray(chats) ? chats : [];
+};
+export const writeGlobalChats = async (chats: GlobalChatEntry[]) => setSetting(GLOBAL_CHATS_SETTING, chats);
+export const readGlobalChatHistory = async (chatId: string): Promise<any[]> => {
+  const histories = await getSetting<Record<string, any[]>>(GLOBAL_CHAT_HISTORIES_SETTING, {});
+  return Array.isArray(histories[chatId]) ? histories[chatId] : [];
+};
+export const writeGlobalChatHistory = async (chatId: string, messages: any[]) => {
+  const histories = await getSetting<Record<string, any[]>>(GLOBAL_CHAT_HISTORIES_SETTING, {});
+  histories[chatId] = messages;
+  await setSetting(GLOBAL_CHAT_HISTORIES_SETTING, histories);
+};
+
+export const getProjectMetaPath = (projectPath: string) => getProjectFilePath(projectPath, "meta.json");
+export const getBusinessWorkspacePath = (projectPath: string) => getProjectFilePath(projectPath, "business.json");
+export const getProjectChatPath = (projectPath: string, chatId: string) => getProjectFilePath(projectPath, "chats", `${chatId}.jsonl`);
+
+export const readProjectMeta = async (projectPath: string): Promise<ProjectMeta | null> => {
+  const path = await getProjectMetaPath(projectPath);
+  if (!(await exists(path))) return null;
+  try {
+    const data = JSON.parse(await readTextFile(path));
+    return { ...data, chats: Array.isArray(data.chats) ? data.chats : [] };
+  } catch {
+    return null;
   }
+};
 
-  await writeTextFile(
-    metaPath,
-    JSON.stringify({
-      ...metaData,
-      name,
-      path: projectPath,
-      created_at: metaData.created_at || new Date().toISOString(),
-      chats: Array.isArray(metaData.chats) ? metaData.chats : [],
-      notes: Array.isArray(metaData.notes) ? metaData.notes : [],
-      tables: Array.isArray(metaData.tables) ? metaData.tables : [],
-    })
-  );
-  await logPersistence("save_project_meta", "ok", { name, projectPath, path: metaPath });
+export const writeProjectMeta = async (projectPath: string, meta: ProjectMeta) => {
+  const path = await getProjectMetaPath(projectPath);
+  await mkdir(await getProjectFilePath(projectPath), { recursive: true });
+  await writeTextFile(path, JSON.stringify(meta));
+};
+
+export const ensureProjectMeta = async (projectPath: string, name: string) => {
+  const current = await readProjectMeta(projectPath);
+  const meta: ProjectMeta = {
+    name,
+    path: projectPath,
+    created_at: current?.created_at || new Date().toISOString(),
+    chats: current?.chats || [],
+  };
+  await writeProjectMeta(projectPath, meta);
+  await logPersistence("save_project_meta", "ok", { name, projectPath, path: await getProjectMetaPath(projectPath) });
 };
 
 export const saveProjectIndex = async (name: string, projectPath: string) => {
-  let globalProjects: ProjectEntry[] = [];
-  await mkdir(await appLocalDataDir(), { recursive: true });
-
-  if (await exists(PROJECTS_INDEX, { baseDir: BaseDirectory.AppLocalData })) {
-    const data = await readTextFile(PROJECTS_INDEX, { baseDir: BaseDirectory.AppLocalData });
-    if (data) globalProjects = JSON.parse(data);
-  }
-
+  const globalProjects = await readProjectIndex();
   const existingProject = globalProjects.find((project) => project.path === projectPath);
-  if (existingProject) {
-    existingProject.name = name;
-  } else {
-    globalProjects.push({ name, path: projectPath });
-  }
+  if (existingProject) existingProject.name = name;
+  else globalProjects.push({ name, path: projectPath });
+  await writeProjectIndex(globalProjects);
+  await logPersistence("save_project_index", "ok", { name, projectPath, count: globalProjects.length });
+};
 
-  const payload = JSON.stringify(globalProjects);
-  const absoluteIndexPath = await getAppDataFilePath(PROJECTS_INDEX);
-  const absoluteBackupPath = await getAppDataFilePath(PROJECTS_BACKUP_INDEX);
-  await writeTextFile(PROJECTS_INDEX, payload, { baseDir: BaseDirectory.AppLocalData });
-  await writeTextFile(absoluteBackupPath, payload);
-  await logPersistence("save_project_index", "ok", {
+export const ensureCodeclubFolder = async (projectPath: string) => {
+  await mkdir(await join(projectPath, ".codeclub"), { recursive: true });
+};
+
+export const readBusinessWorkspace = async (projectPath: string): Promise<BusinessWorkspace | null> => {
+  const path = await getBusinessWorkspacePath(projectPath);
+  if (!(await exists(path))) return null;
+  try {
+    const data = JSON.parse(await readTextFile(path));
+    return {
+      version: 1,
+      currency: "USD",
+      project: { status: "prospecto", monthly_fee: null, next_billing_date: null },
+      profile: { description: "", services: [], target_clients: [] },
+      pricing: { hourly_rate: null, fixed_scope: true, milestones: true, retainer_monthly: null, value_based: false },
+      opportunities: [], estimates: [], quotes: [], milestones: [], payments: [], time_entries: [], expenses: [], invoices: [], notes: [],
+      updated_at: new Date().toISOString(),
+      ...data,
+      project: { status: "prospecto", monthly_fee: null, next_billing_date: null, ...(data.project || {}) },
+    };
+  } catch { return null; }
+};
+
+export const ensureBusinessWorkspace = async (projectPath: string) => {
+  const current = await readBusinessWorkspace(projectPath);
+  if (current) return current;
+  const workspace: BusinessWorkspace = {
+    version: 1,
+    currency: "USD",
+    project: { status: "prospecto", monthly_fee: null, next_billing_date: null },
+    profile: { description: "", services: [], target_clients: [] },
+    pricing: { hourly_rate: null, fixed_scope: true, milestones: true, retainer_monthly: null, value_based: false },
+    opportunities: [], estimates: [], quotes: [], milestones: [], payments: [], time_entries: [], expenses: [], invoices: [], notes: [],
+    updated_at: new Date().toISOString(),
+  };
+  await ensureCodeclubFolder(projectPath);
+  await writeTextFile(await getBusinessWorkspacePath(projectPath), JSON.stringify(workspace, null, 2));
+  return workspace;
+};
+
+export const writeBusinessWorkspace = async (projectPath: string, workspace: BusinessWorkspace) => {
+  await ensureCodeclubFolder(projectPath);
+  const next = { ...workspace, version: 1 as const, updated_at: new Date().toISOString() };
+  await writeTextFile(await getBusinessWorkspacePath(projectPath), JSON.stringify(next, null, 2));
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("codeclub:business-updated", { detail: { projectPath } }));
+  return next;
+};
+
+export const ensureProjectProfile = async (projectPath: string) => {
+  await ensureCodeclubFolder(projectPath);
+  const profilePath = await join(projectPath, ".codeclub", "profiles.json");
+  let profiles: CodeclubProfile[] = [];
+  if (await exists(profilePath)) {
+    try {
+      const parsed = JSON.parse(await readTextFile(profilePath));
+      profiles = Array.isArray(parsed) ? parsed : [];
+    } catch { profiles = []; }
+  }
+  const name = await invoke<string>("codeclub_get_username").catch(() => "Usuario");
+  const id = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-") || "usuario";
+  const now = new Date().toISOString();
+  const existing = profiles.find((profile) => profile.id === id);
+  if (existing) existing.last_seen = now;
+  else profiles.push({ id, name: name.trim() || "Usuario", role: "Developer", created_at: now, last_seen: now });
+  await writeTextFile(profilePath, JSON.stringify(profiles, null, 2));
+  return profiles;
+};
+
+export const indexProjectContents = async (name: string, projectPath: string) => {
+  await ensureProjectProfile(projectPath);
+  await ensureBusinessWorkspace(projectPath);
+  const snapshot = await invoke<ProjectIndexSnapshot>("codeclub_index_project", { projectPath });
+  const projects = await readProjectIndex();
+  const existing = projects.find((project) => project.path === projectPath);
+  const entry: ProjectEntry = {
+    ...(existing || {}),
     name,
-    projectPath,
-    count: globalProjects.length,
-    paths: [absoluteIndexPath, absoluteBackupPath],
-  });
+    path: projectPath,
+    file_count: snapshot.fileCount,
+    directory_count: snapshot.directoryCount,
+    total_size: snapshot.totalSize,
+    files: snapshot.files,
+    indexed_at: new Date().toISOString(),
+  };
+  const next = existing ? projects.map((project) => project.path === projectPath ? entry : project) : [...projects, entry];
+  await writeProjectIndex(next);
+  return entry;
 };
 
 export const writeProjectIndex = async (projects: ProjectEntry[]) => {
-  await mkdir(await appLocalDataDir(), { recursive: true });
+  const configPath = await appConfigDir();
   const payload = JSON.stringify(projects);
-  await writeTextFile(PROJECTS_INDEX, payload, { baseDir: BaseDirectory.AppLocalData });
-  await writeTextFile(await getAppDataFilePath(PROJECTS_BACKUP_INDEX), payload);
+  await mkdir(configPath, { recursive: true });
+  await writeTextFile(await getAppConfigFilePath(PROJECTS_INDEX), payload);
+  await writeTextFile(await getAppConfigFilePath(PROJECTS_BACKUP_INDEX), payload);
 };
 
 export const readProjectIndex = async (): Promise<ProjectEntry[]> => {
-  const candidates = [
-    { label: "AppLocalData", path: PROJECTS_INDEX, options: { baseDir: BaseDirectory.AppLocalData } },
-    { label: "absolute", path: await getAppDataFilePath(PROJECTS_INDEX) },
-    { label: "backup", path: await getAppDataFilePath(PROJECTS_BACKUP_INDEX) },
-  ];
-
-  for (const candidate of candidates) {
+  const candidates = [PROJECTS_INDEX, PROJECTS_BACKUP_INDEX];
+  for (const fileName of candidates) {
+    const path = await getAppConfigFilePath(fileName);
     try {
-      if (await exists(candidate.path, candidate.options)) {
-        const data = await readTextFile(candidate.path, candidate.options);
-        const projects = data ? JSON.parse(data) : [];
-        await logPersistence("read_project_index", "ok", {
-          source: candidate.label,
-          path: candidate.path,
-          count: projects.length,
-        });
-        return projects;
-      }
-      await logPersistence("read_project_index", "missing", {
-        source: candidate.label,
-        path: candidate.path,
-      });
+      if (!(await exists(path))) continue;
+      const data = await readTextFile(path);
+      const projects = data ? JSON.parse(data) : [];
+      await logPersistence("read_project_index", "ok", { path, count: projects.length });
+      return Array.isArray(projects) ? projects : [];
     } catch (error: any) {
-      await logPersistence("read_project_index", "error", {
-        source: candidate.label,
-        path: candidate.path,
-        error: error?.message || String(error),
-      });
+      await logPersistence("read_project_index", "error", { path, error: error?.message || String(error) });
     }
   }
-
   return [];
 };

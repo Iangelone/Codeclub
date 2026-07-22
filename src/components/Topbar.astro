@@ -3,7 +3,6 @@ import {
   ArrowLeft,
   ArrowRight,
   Bug,
-  Columns2,
   Command,
   Eye,
   FilePlus,
@@ -13,6 +12,8 @@ import {
   Minus,
   PiggyBank,
   PanelLeft,
+  PanelTop,
+  PanelRight,
   Save,
   Scissors,
   Settings,
@@ -23,7 +24,7 @@ import {
 } from "lucide-astro";
 ---
 
-<header class="col-span-full h-[36px] grid grid-cols-[auto_1fr_auto_138px] bg-[var(--color-bg)]/48 border-b border-[var(--color-surface-10)] select-none">
+<header class="col-span-full h-[36px] grid grid-cols-[auto_1fr_auto_138px] bg-[var(--color-bg)] border-b border-[var(--color-surface-10)] select-none">
   <div class="flex items-center h-full pl-[6px]">
     <button class="w-[30px] h-[28px] grid place-items-center border-0 rounded-md bg-transparent text-[#d8d8d8] hover:bg-[var(--color-surface-7)]" type="button" aria-label="Toggle sidebar" data-action="toggle-sidebar">
       <PanelLeft size={15} strokeWidth={1.8} />
@@ -86,10 +87,13 @@ import {
     <button id="panel-single" class="w-[30px] h-[28px] grid place-items-center border-0 rounded-md bg-transparent text-[#d8d8d8]/52 transition-colors duration-120 hover:bg-[var(--color-surface-7)] hover:text-[#d8d8d8] [&.is-active]:bg-[var(--color-surface-6)] [&.is-active]:text-[#eeeeee] cursor-pointer is-active" type="button" aria-label="Panel simple">
       <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
     </button>
-    <button id="panel-split" data-project-required class="w-[30px] h-[28px] grid place-items-center border-0 rounded-md bg-transparent text-[#d8d8d8]/52 transition-colors duration-120 hover:bg-[var(--color-surface-7)] hover:text-[#d8d8d8] [&.is-active]:bg-[var(--color-surface-6)] [&.is-active]:text-[#eeeeee] cursor-pointer" type="button" aria-label="Panel doble">
-      <Columns2 size={14} strokeWidth={1.8} />
+    <button id="panel-split" class="w-[30px] h-[28px] grid place-items-center border-0 rounded-md bg-transparent text-[#d8d8d8]/52 transition-colors duration-120 hover:bg-[var(--color-surface-7)] hover:text-[#d8d8d8] [&.is-active]:bg-[var(--color-surface-6)] [&.is-active]:text-[#eeeeee] cursor-pointer" type="button" aria-label="Panel doble">
+      <PanelRight size={14} strokeWidth={1.8} />
     </button>
-    <button id="topbar-terminal" data-project-required class="w-[30px] h-[28px] grid place-items-center border-0 rounded-md bg-transparent text-[#d8d8d8]/52 transition-colors duration-120 hover:bg-[var(--color-surface-7)] hover:text-[#d8d8d8] [&.is-active]:bg-[var(--color-surface-6)] [&.is-active]:text-[#eeeeee] cursor-pointer" type="button" aria-label="Terminal" data-action="toggle-terminal">
+    <button id="panel-dock" class="w-[30px] h-[28px] grid place-items-center border-0 rounded-md bg-transparent text-[#d8d8d8]/52 transition-colors duration-120 hover:bg-[var(--color-surface-7)] hover:text-[#d8d8d8] [&.is-active]:bg-[var(--color-surface-6)] [&.is-active]:text-[#eeeeee] cursor-pointer" type="button" aria-label="Mostrar dock" title="Mostrar dock">
+      <PanelTop size={14} strokeWidth={1.8} />
+    </button>
+    <button id="topbar-terminal" class="w-[30px] h-[28px] grid place-items-center border-0 rounded-md bg-transparent text-[#d8d8d8]/52 transition-colors duration-120 hover:bg-[var(--color-surface-7)] hover:text-[#d8d8d8] [&.is-active]:bg-[var(--color-surface-6)] [&.is-active]:text-[#eeeeee] cursor-pointer" type="button" aria-label="Terminal" data-action="toggle-terminal">
       <Terminal size={14} strokeWidth={1.8} />
     </button>
   </nav>

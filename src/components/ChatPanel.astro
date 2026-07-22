@@ -11,7 +11,7 @@ const catalog = [
 ];
 ---
 
-<section class="relative min-w-0 min-h-full grid place-items-center overflow-hidden" aria-label="Chat">
+<section class="relative h-full min-w-0 min-h-0 grid place-items-stretch overflow-hidden" aria-label="Chat">
   <WorkspaceManager client:load catalog={catalog} defaultProvider={defaultProvider} defaultModel={defaultModel} />
   <TerminalDock client:load />
 </section>
@@ -39,14 +39,12 @@ const catalog = [
     width: min(760px, calc(100vw - 64px));
     display: grid;
     grid-template-rows: 34px minmax(0, 1fr);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    border: 1px solid #202020;
     border-radius: 12px;
     background: rgba(22, 22, 22, 0.72);
     backdrop-filter: blur(32px) saturate(1.4);
     -webkit-backdrop-filter: blur(32px) saturate(1.4);
-    box-shadow:
-      0 22px 70px rgba(0, 0, 0, 0.5),
-      0 0 0 1px rgba(255, 255, 255, 0.03);
+    box-shadow: none;
     z-index: 1000;
     opacity: 0;
     pointer-events: none;
@@ -170,7 +168,7 @@ const catalog = [
     gap: 6px;
     padding: 0 7px 0 10px;
     border: 0;
-    border-radius: 0;
+    border-radius: 6px;
     background: transparent;
     position: relative;
   }
@@ -245,6 +243,7 @@ const catalog = [
 
   .terminal-new-tab {
     width: 28px;
+    border-radius: 6px;
   }
 
   .terminal-shell-menu {
@@ -254,7 +253,7 @@ const catalog = [
     display: grid;
     gap: 3px;
     padding: 6px;
-    border: 1px solid var(--color-surface-10, #2f2f2f);
+    border: 1px solid #202020;
     border-radius: 8px;
     background: rgba(18, 18, 18, 0.96);
     backdrop-filter: blur(20px) saturate(1.25);
@@ -337,6 +336,7 @@ const catalog = [
     line-height: 1;
     opacity: 0.78;
     transition: color 620ms ease, text-shadow 620ms ease, opacity 620ms ease;
+    text-shadow: none !important;
     text-shadow:
       0 0 10px rgba(123, 130, 255, 0.42),
       0 0 18px rgba(255, 117, 181, 0.18);
@@ -346,7 +346,24 @@ const catalog = [
     animation: spinner-idle-color 5.6s ease-in-out infinite;
   }
 
+  .braille-spinner[data-state="streaming"]::before {
+    animation-duration: 520ms;
+  }
+
+  .braille-spinner[data-state="tool_call"]::before {
+    animation: tool-frame 720ms steps(1, end) infinite;
+  }
+
+  .braille-spinner[data-state="approval"]::before {
+    animation: approval-pulse 1200ms steps(1, end) infinite;
+  }
+
+  .braille-spinner[data-state="running"]::before {
+    animation: running-frame 1500ms steps(1, end) infinite;
+  }
+
   .braille-spinner[data-state="streaming"] {
+    animation: spinner-idle-color 5.6s ease-in-out infinite;
     color: #7dd3fc;
     text-shadow:
       0 0 10px rgba(125, 211, 252, 0.42),
@@ -354,6 +371,7 @@ const catalog = [
   }
 
   .braille-spinner[data-state="tool_call"] {
+    animation: spinner-idle-color 5.6s ease-in-out infinite;
     color: #86efac;
     text-shadow:
       0 0 10px rgba(134, 239, 172, 0.36),
@@ -361,6 +379,7 @@ const catalog = [
   }
 
   .braille-spinner[data-state="approval"] {
+    animation: spinner-idle-color 5.6s ease-in-out infinite;
     color: #fde68a;
     text-shadow:
       0 0 10px rgba(253, 230, 138, 0.34),
@@ -368,6 +387,7 @@ const catalog = [
   }
 
   .braille-spinner[data-state="running"] {
+    animation: spinner-idle-color 5.6s ease-in-out infinite;
     color: #d8b4fe;
     text-shadow:
       0 0 10px rgba(216, 180, 254, 0.38),
@@ -387,6 +407,14 @@ const catalog = [
     animation: braille-frame 880ms steps(1, end) infinite;
   }
 
+  .chat-dot::before {
+    content: "·";
+    color: #777777;
+    font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+    font-size: 18px;
+    line-height: 1;
+  }
+
   @keyframes braille-frame {
     0% { content: "\280b"; }
     12.5% { content: "\2819"; }
@@ -396,6 +424,47 @@ const catalog = [
     62.5% { content: "\2834"; }
     75% { content: "\2826"; }
     87.5% { content: "\2827"; }
+  }
+
+  @keyframes tool-frame {
+    0%, 100% { content: "\280b"; }
+    6.25% { content: "\2819"; }
+    12.5% { content: "\281a"; }
+    18.75% { content: "\2812"; }
+    25% { content: "\2802"; }
+    31.25% { content: "\2802"; }
+    37.5% { content: "\2812"; }
+    43.75% { content: "\2832"; }
+    50% { content: "\2834"; }
+    56.25% { content: "\2826"; }
+    62.5% { content: "\2816"; }
+    68.75% { content: "\2812"; }
+    75% { content: "\2810"; }
+    81.25% { content: "\2810"; }
+    87.5% { content: "\2812"; }
+    93.75% { content: "\2813"; }
+  }
+
+  @keyframes running-frame {
+    0%, 100% { content: "\280b"; }
+    12.5% { content: "\2819"; }
+    25% { content: "\2839"; }
+    37.5% { content: "\2838"; }
+    50% { content: "\283c"; }
+    62.5% { content: "\2834"; }
+    75% { content: "\2826"; }
+    87.5% { content: "\2827"; }
+  }
+
+  @keyframes approval-pulse {
+    0%, 100% { content: "\283f"; opacity: 0.52; transform: scale(0.86); }
+    12.5% { content: "\283e"; }
+    25% { content: "\283d"; opacity: 0.78; transform: scale(0.94); }
+    37.5% { content: "\283b"; }
+    50% { content: "\283f"; opacity: 1; transform: scale(1); }
+    62.5% { content: "\2837"; }
+    75% { content: "\282f"; opacity: 0.78; transform: scale(0.94); }
+    87.5% { content: "\281f"; }
   }
 
   .messages-area::-webkit-scrollbar {
@@ -411,6 +480,11 @@ const catalog = [
   .messages-area {
     scrollbar-width: thin;
     scrollbar-color: #2f2f2f transparent;
+  }
+
+  @keyframes spinner-generating-color {
+    0%, 100% { color: #7dd3fc; text-shadow: 0 0 10px rgba(125, 211, 252, 0.42); }
+    50% { color: #c7cbff; text-shadow: 0 0 12px rgba(199, 203, 255, 0.46); }
   }
 
   @keyframes spinner-idle-color {
