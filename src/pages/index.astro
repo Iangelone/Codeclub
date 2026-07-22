@@ -83,7 +83,6 @@ import ChatPanel from "../components/ChatPanel.astro";
         const dockButton = document.querySelector('#panel-dock');
         const setRightPanel = (open) => {
           document.body.classList.toggle('has-right-panel', open);
-          document.body.style.setProperty('--right-panel-width', open ? '360px' : '0px');
           document.body.style.setProperty('--left-panel-width', document.body.classList.contains('has-sidebar') ? '264px' : '0px');
           singlePanelButton?.classList.toggle('is-active', !open);
           splitPanelButton?.classList.toggle('is-active', open);
