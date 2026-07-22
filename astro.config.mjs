@@ -24,6 +24,8 @@ export default defineConfig({
         "@tauri-apps/api/path",
         "@tauri-apps/plugin-fs",
         "@tauri-apps/plugin-dialog",
+        "@xterm/xterm",
+        "@xterm/addon-fit",
       ],
     },
 

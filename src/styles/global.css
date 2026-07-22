@@ -32,6 +32,69 @@ button {
   padding: 4px 0 !important;
 }
 
+.credential-menu-input::placeholder {
+  color: #777777;
+  opacity: 1;
+}
+
+.credential-key-icon {
+  animation: spinner-idle-color 10s ease-in-out infinite;
+}
+
+.custom-body-input {
+  scrollbar-width: thin;
+  scrollbar-color: #2f2f2f transparent;
+}
+
+.custom-body-input::-webkit-scrollbar {
+  width: 5px;
+}
+
+.custom-body-input::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-body-input::-webkit-scrollbar-thumb {
+  background: #2f2f2f;
+  border-radius: 999px;
+}
+
+.business-table-scrollbar,
+.business-dashboard-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #2f2f2f transparent;
+}
+
+.business-table-scrollbar::-webkit-scrollbar,
+.business-dashboard-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.business-table-scrollbar::-webkit-scrollbar-track,
+.business-dashboard-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.business-table-scrollbar::-webkit-scrollbar-thumb,
+.business-dashboard-scrollbar::-webkit-scrollbar-thumb {
+  background: #2f2f2f;
+  border-radius: 999px;
+}
+
+.business-history-track {
+  animation: business-history-marquee 28s linear infinite;
+}
+
+.business-history-ribbon:hover .business-history-track {
+  animation-play-state: paused;
+}
+
+@keyframes business-history-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(calc(-50% - 4px)); }
+}
+
 html,
 body {
   background-color: #111111;

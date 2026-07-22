@@ -1,6 +1,7 @@
-import { appConfigDir } from "@tauri-apps/api/path";
+import { appConfigDir, join } from "@tauri-apps/api/path";
 import { exists, mkdir, readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
-import { getAppConfigFilePath, getProjectFilePath, logPersistence } from "./persistence.ts";
+import { getAppConfigFilePath, getProjectFilePath, getSetting, logPersistence, setSetting } from "./persistence.ts";
+import { invoke } from "@tauri-apps/api/core";
 
 const PROJECTS_INDEX = "projects.json";
 const PROJECTS_BACKUP_INDEX = "projects.backup.json";
@@ -8,6 +9,18 @@ const PROJECTS_BACKUP_INDEX = "projects.backup.json";
 export interface ProjectEntry {
   path: string;
   name: string;
+  file_count?: number;
+  directory_count?: number;
+  total_size?: number;
+  files?: string[];
+  indexed_at?: string;
+}
+
+export interface ProjectIndexSnapshot {
+  fileCount: number;
+  directoryCount: number;
+  totalSize: number;
+  files: string[];
 }
 
 export interface ProjectMeta {
@@ -16,6 +29,38 @@ export interface ProjectMeta {
   created_at: string;
   chats: Array<{ id: string; name: string }>;
 }
+
+export interface CodeclubProfile {
+  id: string;
+  name: string;
+  role: string;
+  created_at: string;
+  last_seen: string;
+}
+
+export interface GlobalChatEntry {
+  id: string;
+  name: string;
+  projectPath: "";
+  projectName: "Sin proyecto";
+}
+
+const GLOBAL_CHATS_SETTING = "codeclub_global_chats";
+const GLOBAL_CHAT_HISTORIES_SETTING = "codeclub_global_chat_histories";
+export const readGlobalChats = async (): Promise<GlobalChatEntry[]> => {
+  const chats = await getSetting<GlobalChatEntry[]>(GLOBAL_CHATS_SETTING, []);
+  return Array.isArray(chats) ? chats : [];
+};
+export const writeGlobalChats = async (chats: GlobalChatEntry[]) => setSetting(GLOBAL_CHATS_SETTING, chats);
+export const readGlobalChatHistory = async (chatId: string): Promise<any[]> => {
+  const histories = await getSetting<Record<string, any[]>>(GLOBAL_CHAT_HISTORIES_SETTING, {});
+  return Array.isArray(histories[chatId]) ? histories[chatId] : [];
+};
+export const writeGlobalChatHistory = async (chatId: string, messages: any[]) => {
+  const histories = await getSetting<Record<string, any[]>>(GLOBAL_CHAT_HISTORIES_SETTING, {});
+  histories[chatId] = messages;
+  await setSetting(GLOBAL_CHAT_HISTORIES_SETTING, histories);
+};
 
 export const getProjectMetaPath = (projectPath: string) => getProjectFilePath(projectPath, "meta.json");
 export const getProjectChatPath = (projectPath: string, chatId: string) => getProjectFilePath(projectPath, "chats", `${chatId}.jsonl`);
@@ -56,6 +101,50 @@ export const saveProjectIndex = async (name: string, projectPath: string) => {
   else globalProjects.push({ name, path: projectPath });
   await writeProjectIndex(globalProjects);
   await logPersistence("save_project_index", "ok", { name, projectPath, count: globalProjects.length });
+};
+
+export const ensureCodeclubFolder = async (projectPath: string) => {
+  await mkdir(await join(projectPath, ".codeclub"), { recursive: true });
+};
+
+export const ensureProjectProfile = async (projectPath: string) => {
+  await ensureCodeclubFolder(projectPath);
+  const profilePath = await join(projectPath, ".codeclub", "profiles.json");
+  let profiles: CodeclubProfile[] = [];
+  if (await exists(profilePath)) {
+    try {
+      const parsed = JSON.parse(await readTextFile(profilePath));
+      profiles = Array.isArray(parsed) ? parsed : [];
+    } catch { profiles = []; }
+  }
+  const name = await invoke<string>("codeclub_get_username").catch(() => "Usuario");
+  const id = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-") || "usuario";
+  const now = new Date().toISOString();
+  const existing = profiles.find((profile) => profile.id === id);
+  if (existing) existing.last_seen = now;
+  else profiles.push({ id, name: name.trim() || "Usuario", role: "Developer", created_at: now, last_seen: now });
+  await writeTextFile(profilePath, JSON.stringify(profiles, null, 2));
+  return profiles;
+};
+
+export const indexProjectContents = async (name: string, projectPath: string) => {
+  await ensureProjectProfile(projectPath);
+  const snapshot = await invoke<ProjectIndexSnapshot>("codeclub_index_project", { projectPath });
+  const projects = await readProjectIndex();
+  const existing = projects.find((project) => project.path === projectPath);
+  const entry: ProjectEntry = {
+    ...(existing || {}),
+    name,
+    path: projectPath,
+    file_count: snapshot.fileCount,
+    directory_count: snapshot.directoryCount,
+    total_size: snapshot.totalSize,
+    files: snapshot.files,
+    indexed_at: new Date().toISOString(),
+  };
+  const next = existing ? projects.map((project) => project.path === projectPath ? entry : project) : [...projects, entry];
+  await writeProjectIndex(next);
+  return entry;
 };
 
 export const writeProjectIndex = async (projects: ProjectEntry[]) => {

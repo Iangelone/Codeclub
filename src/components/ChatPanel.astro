@@ -44,9 +44,7 @@ const catalog = [
     background: rgba(22, 22, 22, 0.72);
     backdrop-filter: blur(32px) saturate(1.4);
     -webkit-backdrop-filter: blur(32px) saturate(1.4);
-    box-shadow:
-      0 22px 70px rgba(0, 0, 0, 0.5),
-      0 0 0 1px rgba(255, 255, 255, 0.03);
+    box-shadow: none;
     z-index: 1000;
     opacity: 0;
     pointer-events: none;
@@ -170,7 +168,7 @@ const catalog = [
     gap: 6px;
     padding: 0 7px 0 10px;
     border: 0;
-    border-radius: 0;
+    border-radius: 6px;
     background: transparent;
     position: relative;
   }
@@ -245,6 +243,7 @@ const catalog = [
 
   .terminal-new-tab {
     width: 28px;
+    border-radius: 6px;
   }
 
   .terminal-shell-menu {

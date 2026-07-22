@@ -33,7 +33,7 @@ type TerminalSnapshot = {
 const STORAGE_KEY = 'codeclub_terminal_tabs_v1';
 
 const shellOptions: { id: ShellKind; label: string }[] = [
-  { id: 'auto', label: 'Default' },
+  { id: 'auto', label: 'Sistema' },
   { id: 'powershell', label: 'PowerShell' },
   { id: 'cmd', label: 'Command Prompt' },
   { id: 'git-bash', label: 'Git Bash' },
@@ -132,7 +132,7 @@ export default function TerminalDock() {
     });
   }, []);
 
-  const visibleTerminals = terminals.filter((terminal) => !terminal.is_agent && terminal.projectPath === activeProjectPath);
+  const visibleTerminals = terminals.filter((terminal) => !terminal.is_agent && (terminal.projectPath || null) === activeProjectPath);
   const activeTerminal = visibleTerminals.find((terminal) => terminal.id === activeId) || null;
 
   const resolveActiveProjectPath = () => {
@@ -333,10 +333,6 @@ export default function TerminalDock() {
   }, [activeProjectPath, visibleTerminals.length]);
 
   useEffect(() => {
-    if (!activeProjectPath) {
-      setActiveId(null);
-      return;
-    }
     if (!visibleTerminals.some((terminal) => terminal.id === activeId)) {
       setActiveId(visibleTerminals[0]?.id || null);
     }
@@ -390,7 +386,6 @@ export default function TerminalDock() {
       activeProjectPathRef.current = null;
       setActiveProjectPath(null);
       setActiveId(null);
-      setIsOpen(false);
     };
 
     const openTerminalDock = (event: Event) => {
@@ -468,7 +463,6 @@ export default function TerminalDock() {
   }, [isOpen]);
 
   const toggleShellMenu = () => {
-    if (!resolveActiveProjectPath()) return;
     const rect = plusButtonRef.current?.getBoundingClientRect();
     const barRect = barRef.current?.getBoundingClientRect();
     if (rect && barRect) {
@@ -485,7 +479,6 @@ export default function TerminalDock() {
     options: { cwd?: string; projectPath?: string; isAgent?: boolean; open?: boolean } = {},
   ) => {
     const projectPath = options.cwd || resolveActiveProjectPath();
-    if (!options.isAgent && !projectPath) return null;
     const name = computeTerminalName(shell, terminals);
     const terminal = await invoke<TerminalInfo>('codeclub_terminal_create', {
       request: {
@@ -558,21 +551,13 @@ export default function TerminalDock() {
                 key={terminal.id}
                 type="button"
                 className={`terminal-tab ${terminal.id === activeId ? 'is-active' : ''}`}
+                onDoubleClick={() => deleteTerminal(terminal.id)}
                 onClick={() => {
                   setActiveId(terminal.id);
                   setIsOpen(true);
                 }}
               >
                 <span>{terminal.name}</span>
-                <b
-                  aria-label="Cerrar terminal"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    deleteTerminal(terminal.id);
-                  }}
-                >
-                  x
-                </b>
               </button>
             ))}
             <div className="terminal-new">
@@ -608,7 +593,7 @@ export default function TerminalDock() {
             <div ref={hostRef} className="terminal-host" />
           ) : (
             <div className="terminal-empty">
-              <button type="button" onClick={() => createTerminal('auto')}>Crear terminal</button>
+              <button type="button" onClick={toggleShellMenu}>Crear terminal</button>
             </div>
           )}
         </div>

@@ -18,6 +18,15 @@ struct FileEntry {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectIndexSnapshot {
+    file_count: usize,
+    directory_count: usize,
+    total_size: u64,
+    files: Vec<String>,
+}
+
+#[derive(Serialize)]
 struct SearchMatch {
     path: String,
     line: usize,
@@ -215,6 +224,25 @@ fn resolve_terminal_cwd(request: &TerminalCreateRequest) -> Result<PathBuf, Stri
 
     if let Some(project_path) = &request.project_path {
         return workspace_root(project_path);
+    }
+
+    let home = if cfg!(windows) {
+        std::env::var("USERPROFILE").or_else(|_| {
+            let drive = std::env::var("HOMEDRIVE").map_err(|_| ())?;
+            let path = std::env::var("HOMEPATH").map_err(|_| ())?;
+            Ok::<String, ()>(format!("{drive}{path}"))
+        }).ok()
+    } else {
+        std::env::var("HOME").ok()
+    };
+
+    if let Some(home) = home {
+        let path = PathBuf::from(home);
+        if path.exists() {
+            return path
+                .canonicalize()
+                .map_err(|error| format!("No se pudo resolver la carpeta personal: {error}"));
+        }
     }
 
     std::env::current_dir().map_err(|error| format!("No se pudo resolver el cwd: {error}"))
@@ -449,10 +477,32 @@ fn codeclub_list_files(
 }
 
 #[tauri::command]
+fn codeclub_index_project(project_path: String) -> Result<ProjectIndexSnapshot, String> {
+    let root = workspace_root(&project_path)?;
+    let mut entries = Vec::new();
+    collect_files(&root, &root, &mut entries, 4000)?;
+    let file_count = entries.iter().filter(|entry| entry.kind == "file").count();
+    let directory_count = entries.iter().filter(|entry| entry.kind == "directory").count();
+    let total_size = entries.iter().filter(|entry| entry.kind == "file").map(|entry| entry.size).sum();
+    let files = entries.into_iter().filter(|entry| entry.kind == "file").map(|entry| entry.path).collect();
+    Ok(ProjectIndexSnapshot { file_count, directory_count, total_size, files })
+}
+
+#[tauri::command]
 fn codeclub_get_username() -> String {
     std::env::var("USERNAME")
         .or_else(|_| std::env::var("USER"))
         .unwrap_or_else(|_| "Usuario".into())
+}
+
+#[tauri::command]
+fn codeclub_get_system_root() -> Result<String, String> {
+    if cfg!(windows) {
+        let drive = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".into());
+        Ok(format!("{drive}\\"))
+    } else {
+        Ok("/".into())
+    }
 }
 
 #[tauri::command]
@@ -894,7 +944,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             codeclub_list_files,
+            codeclub_index_project,
             codeclub_get_username,
+            codeclub_get_system_root,
             codeclub_read_file,
             codeclub_search_text,
             codeclub_write_file,

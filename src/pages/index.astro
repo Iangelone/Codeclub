@@ -2,6 +2,7 @@
 import "../styles/global.css";
 import Topbar from "../components/Topbar.astro";
 import Sidebar from "../components/Sidebar.tsx";
+import RightSidebar from "../components/RightSidebar.tsx";
 import ChatPanel from "../components/ChatPanel.astro";
 ---
 
@@ -22,13 +23,14 @@ import ChatPanel from "../components/ChatPanel.astro";
       }
     </script>
   </head>
-  <body class="has-sidebar group relative isolate grid grid-rows-[36px_1fr] grid-cols-[0_1fr] transition-[grid-template-columns] duration-140 ease-out [&.has-sidebar]:grid-cols-[264px_1fr] m-0 min-w-[320px] min-h-screen bg-[#111111] text-[#dedede] overflow-hidden font-sans">
+  <body class="has-sidebar group relative isolate grid grid-rows-[36px_1fr] grid-cols-[0_minmax(0,1fr)_0] transition-[grid-template-columns] duration-140 ease-out [&.has-sidebar]:grid-cols-[264px_minmax(0,1fr)_0] [&.has-right-panel]:grid-cols-[264px_minmax(0,1fr)_264px] m-0 min-w-[320px] min-h-screen bg-[#111111] text-[#dedede] overflow-hidden font-sans">
     <div id="app-background" aria-hidden="true"></div>
     <Topbar />
     <Sidebar client:load />
     <main class="row-start-2 col-start-2 min-w-0 min-h-0 bg-[var(--color-bg)]" aria-label="Workspace">
       <ChatPanel />
     </main>
+    <RightSidebar client:load />
     <script>
       const initCodeclubApp = async () => {
         const { getCurrentWindow } = await import('@tauri-apps/api/window');
@@ -73,7 +75,28 @@ import ChatPanel from "../components/ChatPanel.astro";
         const sidebarButton = document.querySelector('[data-action="toggle-sidebar"]');
         sidebarButton?.addEventListener('click', () => {
           document.body.classList.toggle('has-sidebar');
+          document.body.style.setProperty('--left-panel-width', document.body.classList.contains('has-sidebar') ? '264px' : '0px');
         });
+
+        const singlePanelButton = document.querySelector('#panel-single');
+        const splitPanelButton = document.querySelector('#panel-split');
+        const dockButton = document.querySelector('#panel-dock');
+        const setRightPanel = (open) => {
+          document.body.classList.toggle('has-right-panel', open);
+          document.body.style.setProperty('--right-panel-width', open ? '360px' : '0px');
+          document.body.style.setProperty('--left-panel-width', document.body.classList.contains('has-sidebar') ? '264px' : '0px');
+          singlePanelButton?.classList.toggle('is-active', !open);
+          splitPanelButton?.classList.toggle('is-active', open);
+        };
+        singlePanelButton?.addEventListener('click', () => setRightPanel(false));
+        splitPanelButton?.addEventListener('click', () => setRightPanel(!document.body.classList.contains('has-right-panel')));
+        dockButton?.addEventListener('click', () => {
+          window.dispatchEvent(new CustomEvent('codeclub:toggle-panel-dock'));
+          dockButton.classList.toggle('is-active');
+          dockButton.setAttribute('aria-label', dockButton.classList.contains('is-active') ? 'Ocultar dock' : 'Mostrar dock');
+          dockButton.setAttribute('title', dockButton.classList.contains('is-active') ? 'Ocultar dock' : 'Mostrar dock');
+        });
+        setRightPanel(false);
       };
       
       if (document.readyState === 'loading') {
@@ -84,3 +107,9 @@ import ChatPanel from "../components/ChatPanel.astro";
     </script>
   </body>
 </html>
+
+<style is="global">
+  body.has-right-panel {
+    grid-template-columns: var(--left-panel-width, 264px) minmax(0, 1fr) var(--right-panel-width, 35vw) !important;
+  }
+</style>

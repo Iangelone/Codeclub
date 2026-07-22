@@ -69,6 +69,60 @@ function createSubagentTools(ctx: { projectPath: string; recordToolEvent: (name:
   };
 }
 
+export function createBusinessTools(ctx: { recordToolEvent: (name: string, input: any, output: any) => void; setAgentState: (state: string) => void; indexedProjects: Array<{ name: string; path: string }> }) {
+  const { recordToolEvent, setAgentState, indexedProjects } = ctx;
+  return {
+    listIndexedProjects: tool({
+      description: 'List the projects indexed in Codeclub for business context.',
+      inputSchema: jsonSchema({ type: 'object', properties: {}, additionalProperties: false }),
+      execute: async () => {
+        setAgentState('tool_call');
+        const output = indexedProjects;
+        recordToolEvent('listIndexedProjects', {}, output);
+        return output;
+      },
+    }),
+    createExecutionPlan: tool({
+      description: 'Create a structured execution plan for a business initiative.',
+      inputSchema: jsonSchema({
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          objective: { type: 'string' },
+          steps: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['title', 'objective', 'steps'],
+        additionalProperties: false,
+      }),
+      execute: async ({ title, objective, steps }) => {
+        setAgentState('tool_call');
+        const output = { type: 'execution_plan', title, objective, steps, status: 'draft', createdAt: new Date().toISOString() };
+        recordToolEvent('createExecutionPlan', { title, objective, steps }, output);
+        return output;
+      },
+    }),
+    createBudget: tool({
+      description: 'Calculate a business budget from line items.',
+      inputSchema: jsonSchema({
+        type: 'object',
+        properties: {
+          currency: { type: 'string' },
+          items: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' }, amount: { type: 'number' } }, required: ['name', 'amount'], additionalProperties: false } },
+        },
+        required: ['items'],
+        additionalProperties: false,
+      }),
+      execute: async ({ currency, items }) => {
+        setAgentState('tool_call');
+        const total = items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+        const output = { type: 'budget', currency: currency || 'USD', items, total };
+        recordToolEvent('createBudget', { currency, items }, output);
+        return output;
+      },
+    }),
+  };
+}
+
 export function createTools(ctx: ToolContext) {
   const { projectPath, recordToolEvent, setAgentState, requestToolApproval, provider, modelId } = ctx;
 

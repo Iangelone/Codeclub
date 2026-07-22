@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUpRight, ChevronDown, ChevronRight, Copy, FileCode2, MessageSquare, RotateCcw, Search, Terminal, Coffee, Folder, FolderTree, Plus, RefreshCw, X } from 'lucide-react';
+import { ArrowUpRight, ChevronDown, ChevronRight, Copy, FileCode2, KeyRound, MessageSquare, RotateCcw, Search, Terminal, Coffee, Folder, FolderOpen, FolderTree, Plus, RefreshCw, X } from 'lucide-react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -19,10 +19,10 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import ReactMarkdown from 'react-markdown';
 import mammoth from 'mammoth';
-import { createTools } from '../lib/engine/tools';
+import { createBusinessTools, createTools } from '../lib/engine/tools';
 import { runStream } from '../lib/engine/run';
 import { getProjectFilePath, getSetting, logPersistence, setSetting } from '../lib/persistence';
-import { getProjectChatPath, readProjectMeta, writeProjectMeta } from '../lib/projectManager';
+import { getProjectChatPath, readGlobalChatHistory, readGlobalChats, readProjectIndex, readProjectMeta, writeGlobalChatHistory, writeGlobalChats, writeProjectMeta } from '../lib/projectManager';
 
 const SPINNER_FRAMES = {
   chat: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"],
@@ -114,10 +114,22 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [currentProvider, setCurrentProvider] = useState(defaultProvider);
   const [currentModel, setCurrentModel] = useState(defaultModel);
   const [settingsReady, setSettingsReady] = useState(false);
+  const [username, setUsername] = useState('Usuario');
+  const [showEmptyGreeting, setShowEmptyGreeting] = useState(true);
   const [credentialProvider, setCredentialProvider] = useState(null);
+  const [credentialInput, setCredentialInput] = useState('');
+  const credentialInputRef = useRef<HTMLInputElement>(null);
+  const [customHeader, setCustomHeader] = useState('');
+  const [customBody, setCustomBody] = useState('');
+  const [customToolsFormat, setCustomToolsFormat] = useState<'json' | 'xml'>('json');
+  const [customCredentialInput, setCustomCredentialInput] = useState('');
+  const [customUrl, setCustomUrl] = useState('');
+  const [customConfigError, setCustomConfigError] = useState('');
+  const customHeaderRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     void getSetting('codeclub_avatar_color', '#3b6bb5').then(setAvatarColor);
+    void invoke<string>('codeclub_get_username').then((name) => setUsername(name || 'Usuario')).catch(() => setUsername('Usuario'));
     const handleProfileChange = (event) => setAvatarColor(event.detail?.color || '#3b6bb5');
     window.addEventListener('codeclub:profile-changed', handleProfileChange);
     return () => window.removeEventListener('codeclub:profile-changed', handleProfileChange);
@@ -126,6 +138,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [menuOpen, setMenuOpen] = useState(false);
   const [commandKind, setCommandKind] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [projectOptions, setProjectOptions] = useState<any[]>([]);
   const [activeCommandIndex, setActiveCommandIndex] = useState(0);
   const [activeProject, setActiveProject] = useState<{projectPath: string, name: string} | null>(() => selectedProject ? { projectPath: selectedProject.projectPath, name: selectedProject.projectName || 'Proyecto' } : null);
   const [projectMeta, setProjectMeta] = useState<{chats: any[]} | null>(null);
@@ -137,6 +150,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [activeChat, setActiveChat] = useState<{chatId: string, projectPath: string} | null>(null);
   const activeChatRef = useRef<{chatId: string, projectPath: string} | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState('blank');
+  const [chatMode, setChatMode] = useState<'development' | 'business'>('development');
   const [selectedStructurePath, setSelectedStructurePath] = useState('');
   const agentStatusText = {
     idle: "Listo cuando tú lo estés.",
@@ -187,6 +201,8 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     setActiveProject((current) => {
       if (!selectedProject) return null;
       if (current?.projectPath === selectedProject.projectPath) return current;
+      activeChatRef.current = null;
+      setActiveChat(null);
       return { projectPath: selectedProject.projectPath, name: selectedProject.projectName || 'Proyecto' };
     });
   }, [selectedProject]);
@@ -217,6 +233,12 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       approvalResolversRef.current.clear();
       const wasDocked = composerDockedRef.current;
       try {
+        if (!chat.projectPath) {
+          const parsed = await readGlobalChatHistory(chat.chatId);
+          setMessages(parsed);
+          if (!wasDocked && parsed.length > 0) setComposerDocked(true);
+          return;
+        }
         const { readTextFile, exists } = await import('@tauri-apps/plugin-fs');
         const path = await getProjectChatPath(chat.projectPath, chat.chatId);
         if (await exists(path)) {
@@ -240,6 +262,8 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   useEffect(() => {
     const handleOpenEmptyChat = () => {
       setWorkspaceMode('chat');
+      activeChatRef.current = null;
+      setActiveChat(null);
       setMessages([]);
       setInput('');
       setAttachedFiles([]);
@@ -250,6 +274,21 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     window.addEventListener('codeclub:open-empty-chat', handleOpenEmptyChat);
     return () => window.removeEventListener('codeclub:open-empty-chat', handleOpenEmptyChat);
   }, []);
+
+  useEffect(() => {
+    const handleChatMode = (event: Event) => setChatMode((event as CustomEvent).detail?.mode === 'business' ? 'business' : 'development');
+    window.addEventListener('codeclub:chat-mode-changed', handleChatMode);
+    return () => window.removeEventListener('codeclub:chat-mode-changed', handleChatMode);
+  }, []);
+
+  useEffect(() => {
+    if (messages.length === 0) {
+      setShowEmptyGreeting(true);
+      return;
+    }
+    const timer = window.setTimeout(() => setShowEmptyGreeting(false), 320);
+    return () => window.clearTimeout(timer);
+  }, [messages.length]);
 
   useEffect(() => {
     const handlers = (['folders'] as const).map((kind) => {
@@ -270,7 +309,11 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
 
   useEffect(() => {
     const handleActiveProject = (e: any) => {
-      setActiveProject((current) => current?.projectPath === e.detail?.projectPath ? current : e.detail);
+      if (e.detail?.projectPath && activeChatRef.current?.projectPath !== e.detail.projectPath) {
+        activeChatRef.current = null;
+        setActiveChat(null);
+      }
+      setActiveProject(e.detail?.projectPath ? (current) => current?.projectPath === e.detail.projectPath ? current : e.detail : null);
       setExpandedMenu(null);
     };
     window.addEventListener('codeclub:active-project', handleActiveProject);
@@ -354,18 +397,25 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     const handleOpenCommandMenu = (event: Event) => {
       const kind = (event as CustomEvent).detail?.kind;
       if (kind === 'provider' || kind === 'model') openCommandMenu(kind);
+      if (kind === 'project') {
+        void readProjectIndex().then((projects) => {
+          setProjectOptions([{ id: '__none__', label: 'Sin proyecto', type: 'project', projectPath: null, isNone: true }, ...projects.map((project) => ({ id: project.path, label: project.name, type: 'project', projectPath: project.path }))]);
+          openCommandMenu('project');
+        });
+      }
     };
     window.addEventListener('codeclub:open-command-menu', handleOpenCommandMenu);
     return () => window.removeEventListener('codeclub:open-command-menu', handleOpenCommandMenu);
   }, []);
 
-  const filteredCatalog = catalog.filter((item) => {
+  const filteredCatalog = (commandKind === 'project' ? projectOptions : catalog).filter((item) => {
     const matchesKind = item.type === commandKind;
     const itemLabel = item.label || item.id || '';
     const matchesQuery = itemLabel.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesProvider = commandKind !== 'model' || item.providerId === currentProvider?.id;
     return matchesKind && matchesQuery && matchesProvider;
   });
+  const activeSelection = commandKind === 'provider' ? currentProvider : commandKind === 'model' ? currentModel : commandKind === 'project' && activeProject ? { id: activeProject.projectPath, label: activeProject.name } : null;
   const slashCommands = [
     { id: 'proveedor', label: '/proveedor', description: 'Seleccionar proveedor', type: 'command' },
     { id: 'modelo', label: '/modelo', description: 'Seleccionar modelo', type: 'command' },
@@ -405,10 +455,48 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       chatInputRef.current?.focus();
       return;
     }
+    if (item.type === 'project') {
+      if (item.isNone) {
+        setActiveProject(null);
+        activeChatRef.current = null;
+        setActiveChat(null);
+        window.dispatchEvent(new CustomEvent('codeclub:project-selection-changed', { detail: { selected: false, keepChat: true } }));
+        window.dispatchEvent(new CustomEvent('codeclub:active-project', { detail: { projectPath: null, projectName: '' } }));
+      } else {
+        setActiveProject({ projectPath: item.projectPath, name: item.label });
+        activeChatRef.current = null;
+        setActiveChat(null);
+        window.dispatchEvent(new CustomEvent('codeclub:project-selection-changed', { detail: { selected: true, projectPath: item.projectPath, projectName: item.label } }));
+        window.dispatchEvent(new CustomEvent('codeclub:active-project', { detail: { projectPath: item.projectPath, projectName: item.label } }));
+      }
+      setMenuOpen(false);
+      setCommandKind('');
+      return;
+    }
     if (item.type === 'provider') {
       setCurrentProvider(item);
-      setCredentialProvider(item);
+      const isCustomProvider = item.id === 'custom';
+      setCredentialProvider(isCustomProvider ? null : item);
+      setCredentialInput('');
       setInput('');
+      setCommandKind(isCustomProvider ? 'custom-config' : 'credential');
+      setSearchQuery('');
+      if (isCustomProvider) {
+        void Promise.all([
+          getSetting('codeclub_custom_header', ''),
+          getSetting('codeclub_custom_body', ''),
+          getSetting<'json' | 'xml'>('codeclub_custom_tools_format', 'json'),
+          getSetting('custom_api_key', ''),
+          getSetting('codeclub_custom_url', ''),
+        ]).then(([header, body, format, credential, url]) => {
+          setCustomHeader(header);
+          setCustomBody(body);
+          setCustomToolsFormat(format === 'xml' ? 'xml' : 'json');
+          setCustomCredentialInput(credential);
+          setCustomUrl(url);
+          setCurrentProvider((current) => current ? { ...current, api: url } : current);
+        });
+      }
       const firstModel = catalog.find((m) => m.type === 'model' && m.providerId === item.id);
       if (firstModel) setCurrentModel(firstModel);
     } else if (item.type === 'model') {
@@ -418,8 +506,17 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     if (item.type !== 'provider') {
       setInput((prev) => prev.replace(/\/(proveedor|modelo)$/i, '').trimStart());
     }
-    setMenuOpen(false);
-    chatInputRef.current?.focus();
+    if (item.type === 'provider') {
+      setMenuOpen(true);
+    } else {
+      setMenuOpen(false);
+      setCommandKind('');
+    }
+    if (item.type === 'provider') {
+      setTimeout(() => (item.id === 'custom' ? customHeaderRef.current : credentialInputRef.current)?.focus(), 0);
+    } else {
+      chatInputRef.current?.focus();
+    }
   };
 
   const handleSearchKeyDown = (e) => {
@@ -462,12 +559,57 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     }
   };
 
-  const compactJson = (value) => {
+  const saveCredential = () => {
+    if (!credentialProvider || !credentialInput.trim()) return;
+    void setSetting(`${credentialProvider.id}_api_key`, credentialInput.trim());
+    setCredentialProvider(null);
+    setCredentialInput('');
+    setMenuOpen(false);
+    setCommandKind('');
+    chatInputRef.current?.focus();
+  };
+
+  const saveCustomProviderConfig = () => {
+    if (!customUrl.trim()) {
+      setCustomConfigError('La URL es obligatoria.');
+      return;
+    }
+    void Promise.all([
+      setSetting('codeclub_custom_header', customHeader.trim()),
+      setSetting('codeclub_custom_body', customBody),
+      setSetting('codeclub_custom_tools_format', customToolsFormat),
+      setSetting('custom_api_key', customCredentialInput.trim()),
+      setSetting('codeclub_custom_url', customUrl.trim()),
+    ]);
+    setCurrentProvider((current) => current ? { ...current, api: customUrl.trim() } : current);
+    setCustomConfigError('');
+    setMenuOpen(false);
+    setCommandKind('');
+    chatInputRef.current?.focus();
+  };
+
+const compactJson = (value) => {
     try {
       return JSON.stringify(value).slice(0, 260);
     } catch {
       return String(value).slice(0, 260);
     }
+  };
+
+  const escapeXml = (value) => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+
+  const toolsAsXml = (tools) => {
+    const items = Array.isArray(tools) ? tools : [];
+    return `<tools>${items.map((item) => {
+      const fn = item?.function || item || {};
+      const parameters = typeof fn.parameters === 'string' ? fn.parameters : JSON.stringify(fn.parameters || {});
+      return `<tool name="${escapeXml(fn.name)}" type="${escapeXml(item?.type || 'function')}"><description>${escapeXml(fn.description)}</description><parameters>${escapeXml(parameters)}</parameters></tool>`;
+    }).join('')}</tools>`;
   };
 
   const clipDebug = (value, max = 20000) => {
@@ -511,7 +653,18 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
 
   const tauriModelFetch = async (input, init = {}) => {
     const request = input instanceof Request ? new Request(input, init) : new Request(input, init);
-    const requestBody = ['GET', 'HEAD'].includes(request.method) ? undefined : await request.clone().text();
+    let requestBody = ['GET', 'HEAD'].includes(request.method) ? undefined : await request.clone().text();
+    if (requestBody && currentProvider?.id === 'custom' && customToolsFormat === 'xml') {
+      try {
+        const payload = JSON.parse(requestBody);
+        if (Array.isArray(payload.tools)) {
+          payload.tools = toolsAsXml(payload.tools);
+          requestBody = JSON.stringify(payload);
+        }
+      } catch {
+        // Dejá pasar cuerpos no JSON sin modificarlos.
+      }
+    }
     const fetchDebug = {
       method: request.method,
       url: request.url,
@@ -575,6 +728,11 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const appendToJsonl = async (msg) => {
     const chat = activeChatRef.current;
     if (!chat) return;
+    if (!chat.projectPath) {
+      const messages = await readGlobalChatHistory(chat.chatId);
+      await writeGlobalChatHistory(chat.chatId, [...messages, msg]);
+      return;
+    }
     try {
       const { writeTextFile, readTextFile, exists, mkdir } = await import('@tauri-apps/plugin-fs');
       await mkdir(await getProjectFilePath(chat.projectPath, 'chats'), { recursive: true });
@@ -606,6 +764,10 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const writeChatJsonl = async (nextMessages) => {
     const chat = activeChatRef.current;
     if (!chat) return;
+    if (!chat.projectPath) {
+      await writeGlobalChatHistory(chat.chatId, nextMessages);
+      return;
+    }
     try {
       const { writeTextFile, mkdir } = await import('@tauri-apps/plugin-fs');
       const dir = await getProjectFilePath(chat.projectPath, 'chats');
@@ -643,13 +805,18 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     }
 
     if (!chat) {
-      window.dispatchEvent(new CustomEvent('codeclub:require-project'));
-      return;
+      chat = { chatId: `global-${Date.now()}`, projectPath: '' };
+      activeChatRef.current = chat;
+      setActiveChat(chat);
+      const globalChats = await readGlobalChats();
+      globalChats.push({ id: chat.chatId, name: 'Nuevo chat', projectPath: '', projectName: 'Sin proyecto' });
+      await writeGlobalChats(globalChats);
+      window.dispatchEvent(new CustomEvent('codeclub:global-chat-changed'));
     }
 
     if (shouldRenameChat) {
       let title = content.trim();
-      if (title.length > 20) title = title.substring(0, 20) + '...';
+      if (title.length > 120) title = title.substring(0, 120) + '...';
       window.dispatchEvent(new CustomEvent('codeclub:rename-chat', {
         detail: { chatId: chat.chatId, newName: title, projectPath: chat.projectPath }
       }));
@@ -677,7 +844,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
 
       let apiKey = await getSetting(`${currentProvider.id}_api_key`, '');
       
-      if (!apiKey || apiKey === 'dummy-key') {
+      if ((!apiKey || apiKey === 'dummy-key') && currentProvider.id !== 'custom') {
         throw new Error(`API Key no configurada para ${currentProvider.label || currentProvider.id}. Por favor agregala en la configuración.`);
       }
       
@@ -708,16 +875,28 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       };
       updateAssistantMessage();
 
-      const tools = createTools({
-        projectPath: chat.projectPath,
+      const toolProjectPath = chat.projectPath || await invoke<string>('codeclub_get_system_root');
+      const indexedProjects = await readProjectIndex();
+      const developmentTools = createTools({
+        projectPath: toolProjectPath,
         recordToolEvent,
         setAgentState,
         requestToolApproval,
         provider,
         modelId: currentModel.id,
       });
+      const tools = chatMode === 'business'
+        ? createBusinessTools({ recordToolEvent, setAgentState, indexedProjects })
+        : developmentTools;
 
-      const system = [
+      const system = chatMode === 'business' ? [
+        'Sos el asistente de negocios de Codeclub.',
+        'Responde en español, claro y orientado a decisiones.',
+        `El proyecto activo es ${chat.projectPath || 'Sin proyecto'}.`,
+        `Proyectos indexados disponibles: ${indexedProjects.map((project) => `${project.name} (${project.path})`).join(', ') || 'ninguno'}.`,
+        'Usa listIndexedProjects para consultar el portfolio, createExecutionPlan para planes y createBudget para presupuestos.',
+        'Tus resultados son borradores estructurados y deben explicar supuestos cuando falten datos.',
+      ].join(' ') : [
         'Sos el agente IDE de Codeclub.',
         'Responde en español, breve y util.',
         'Tenes herramientas para inspeccionar y modificar el workspace activo.',
@@ -770,13 +949,6 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if ((!input.trim() && attachedFiles.length === 0) || isAgentBusy) return;
-
-    if (credentialProvider) {
-      void setSetting(`${credentialProvider.id}_api_key`, input.trim());
-      setCredentialProvider(null);
-      setInput('');
-      return;
-    }
 
     if (/^\/terminal$/i.test(input.trim())) {
       const rect = e.currentTarget.getBoundingClientRect();
@@ -1003,8 +1175,9 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     <div className="chat-interface-container" style={{ width: 'min(680px, calc(100% - 64px))', height: '100%', justifySelf: 'center', display: 'grid', gridTemplateRows: 'minmax(0, 1fr) auto', placeItems: 'stretch', gap: '10px', overflow: 'visible', paddingBottom: '5vh' }}>
       
       {/* Zona de mensajes */}
-      <div className="messages-area" style={{ minHeight: 0, height: '100%', overflowY: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none', display: composerDocked ? 'flex' : 'none', flexDirection: 'column', gap: '6px', paddingBottom: '10px', overscrollBehavior: 'contain' }}>
+      <div className="messages-area" style={{ position: 'relative', minHeight: 0, height: '100%', overflowY: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none', display: composerDocked ? 'flex' : 'none', flexDirection: 'column', gap: '6px', paddingBottom: '10px', overscrollBehavior: 'contain' }}>
         <div aria-hidden="true" style={{ flex: '1 0 auto' }} />
+        {showEmptyGreeting && <div aria-hidden={messages.length > 0} style={{ position: 'absolute', top: '50%', left: '50%', color: '#eeeeee', fontSize: '18px', fontWeight: 500, letterSpacing: '-0.02em', opacity: messages.length === 0 ? 1 : 0, transform: messages.length === 0 ? 'translate(-50%, -50%)' : 'translate(-50%, calc(-50% + 4px))', transition: 'opacity 280ms ease, transform 280ms ease', whiteSpace: 'nowrap' }}>¿Qué toca hoy, {username}?</div>}
         {messages.map((m, i) => (
           <React.Fragment key={i}>
             {i > 0 && (
@@ -1017,7 +1190,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
               {m.role === 'assistant' && (
                 <MessageToolSummary tools={m.tools} isBusy={isAgentBusy && i === messages.length - 1} />
               )}
-              <div style={{ background: m.role === 'user' ? '#202020' : 'transparent', padding: m.role === 'user' ? '14px 20px' : '0', borderRadius: m.role === 'user' ? '24px 24px 4px 24px' : '0', color: '#eee', fontSize: '14px', width: 'fit-content', maxWidth: '100%', lineHeight: 1.5, boxShadow: m.role === 'user' ? '0 4px 14px rgba(0, 0, 0, 0.18)' : 'none' }}>
+              <div style={{ background: m.role === 'user' ? '#202020' : 'transparent', padding: m.role === 'user' ? '14px 20px' : '0', borderRadius: m.role === 'user' ? '24px 24px 4px 24px' : '0', color: '#eee', fontSize: '14px', width: 'fit-content', maxWidth: '100%', lineHeight: 1.5, overflowWrap: 'anywhere', wordBreak: 'break-word', boxShadow: m.role === 'user' ? '0 4px 14px rgba(0, 0, 0, 0.18)' : 'none' }}>
                 <ReactMarkdown components={{ p: ({ children }) => <p style={{ margin: 0 }}>{children}</p> }}>{m.content}</ReactMarkdown>
               </div>
               <div style={{ alignSelf: m.role === 'user' ? 'end' : 'start', display: 'flex', alignItems: 'center', gap: '4px', opacity: 0.72 }}>
@@ -1110,9 +1283,9 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
                 e.currentTarget.form?.requestSubmit();
               }
             }}
-            onFocus={() => { setInputFocused(true); setMenuOpen(false); }}
+            onFocus={() => { setInputFocused(true); if (commandKind !== 'credential') setMenuOpen(false); }}
             onBlur={() => setInputFocused(false)}
-            placeholder={credentialProvider ? `Escribí tu credencial de ${credentialProvider.label || credentialProvider.id}` : ""}
+            placeholder=""
             aria-label="Mensaje"
             style={{ appearance: 'none', flex: '1 1 auto', minWidth: 0, width: '100%', height: '22px', maxHeight: '140px', alignSelf: 'center', resize: 'none', border: 0, outline: 'none', background: 'transparent', color: '#eeeeee', fontSize: '12px', lineHeight: 1.4, padding: '4px 10px 4px 0', fontFamily: 'inherit', overflowY: 'hidden', scrollbarWidth: 'none' }}
           />
@@ -1128,20 +1301,64 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
           tabIndex={-1}
           onKeyDown={handleCommandMenuKeyDown}
           className={`command-menu ${menuOpen ? 'is-open' : ''}`}
-          style={{ position: 'absolute', left: 0, right: 0, top: composerDocked ? 'auto' : 'calc(100% + 8px)', bottom: composerDocked ? '58px' : 'auto', display: menuOpen ? 'grid' : 'none', gap: '8px', padding: '9px', border: '1px solid var(--color-surface-9, #2f2f2f)', borderRadius: '8px', background: composerDocked ? 'rgba(18, 18, 18, 0.72)' : '#121212', backdropFilter: composerDocked ? 'blur(18px) saturate(1.35)' : undefined, WebkitBackdropFilter: composerDocked ? 'blur(18px) saturate(1.35)' : undefined, boxShadow: '0 20px 58px rgba(0, 0, 0, 0.34)', zIndex: 10, outline: 'none' }}
+          style={{ position: 'absolute', left: composerDocked ? '7%' : 0, right: composerDocked ? '7%' : 0, top: composerDocked ? 'auto' : 'calc(100% + 8px)', bottom: composerDocked ? '52px' : 'auto', display: menuOpen ? 'grid' : 'none', gap: '8px', padding: '9px', border: '1px solid var(--color-surface-9, #2f2f2f)', borderBottom: composerDocked ? 0 : '1px solid var(--color-surface-9, #2f2f2f)', borderRadius: composerDocked ? '12px 12px 0 0' : '8px', background: '#121212', boxShadow: 'none', zIndex: 10, outline: 'none' }}
         >
 
-          <input
+          {commandKind !== 'credential' && commandKind !== 'custom-config' && <input
             ref={searchInputRef}
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={handleSearchKeyDown}
-            placeholder={commandKind === 'provider' ? 'Buscar proveedor' : commandKind === 'model' ? 'Buscar modelo del proveedor activo' : 'Buscar comando'}
+            placeholder={commandKind === 'provider' ? 'Buscar proveedor' : commandKind === 'model' ? 'Buscar modelo del proveedor activo' : commandKind === 'project' ? 'Buscar proyecto' : 'Buscar comando'}
             style={{ height: '30px', padding: '0 8px', borderRadius: '7px', background: 'var(--color-surface-3, #1c1c1c)', fontSize: '12px', color: '#eeeeee', border: 'none', outline: 'none' }}
-          />
-          <div className="command-list" style={{ display: 'grid', gap: '4px', maxHeight: '300px', overflow: 'auto', scrollbarWidth: 'none', paddingBottom: '12px', maskImage: 'linear-gradient(to bottom, black 92%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to bottom, black 92%, transparent 100%)' }}>
-            {(commandKind === 'command' ? slashCommands : filteredCatalog).map((item, index) => (
+          />}
+          {commandKind === 'credential' ? (
+            <div style={{ position: 'relative', minHeight: '34px' }}>
+              <KeyRound size={15} strokeWidth={1.8} className="credential-key-icon" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+              <input
+                ref={credentialInputRef}
+                type="password"
+                value={credentialInput}
+                onChange={(event) => setCredentialInput(event.target.value)}
+                onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); saveCredential(); } }}
+                placeholder={`Escribí tu credencial de ${credentialProvider?.label || credentialProvider?.id}`}
+                className="credential-menu-input"
+                style={{ boxSizing: 'border-box', width: '100%', height: '34px', padding: '0 10px 0 32px', border: '1px solid #2b2b2b', borderRadius: '8px', background: '#1c1c1c', color: '#eeeeee', fontSize: '12px', outline: 'none' }}
+              />
+            </div>
+          ) : commandKind === 'custom-config' ? (
+            <div style={{ display: 'grid', gap: '8px' }}>
+              <div style={{ position: 'relative', minHeight: '34px' }}>
+                <KeyRound size={15} strokeWidth={1.8} className="credential-key-icon" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                <input type="password" value={customCredentialInput} onChange={(event) => setCustomCredentialInput(event.target.value)} placeholder="Escribí tu credencial (opcional)" style={{ boxSizing: 'border-box', width: '100%', height: '34px', padding: '0 10px 0 32px', border: '1px solid #2b2b2b', borderRadius: '8px', background: '#1c1c1c', color: '#eeeeee', fontSize: '12px', outline: 'none' }} />
+              </div>
+              <input value={customUrl} onChange={(event) => { setCustomUrl(event.target.value); setCustomConfigError(''); }} placeholder="URL del proveedor (obligatoria)" style={{ height: '32px', padding: '0 9px', border: '1px solid #2b2b2b', borderRadius: '7px', background: '#1c1c1c', color: '#eeeeee', fontSize: '12px', outline: 'none' }} />
+              <label style={{ display: 'grid', gap: '5px', color: '#999999', fontSize: '11px' }}>
+                Header (opcional)
+                <input ref={customHeaderRef} value={customHeader} onChange={(event) => setCustomHeader(event.target.value)} placeholder="Authorization: Bearer ..." style={{ height: '32px', padding: '0 9px', border: '1px solid #2b2b2b', borderRadius: '7px', background: '#1c1c1c', color: '#eeeeee', fontSize: '12px', outline: 'none' }} />
+              </label>
+              <label style={{ display: 'grid', gap: '5px', color: '#999999', fontSize: '11px' }}>
+                Body (opcional)
+                <textarea className="custom-body-input" value={customBody} onChange={(event) => setCustomBody(event.target.value)} placeholder="Body adicional de la petición" rows={8} style={{ boxSizing: 'border-box', minHeight: '128px', maxHeight: '128px', resize: 'none', overflowY: 'auto', padding: '8px 9px', border: '1px solid #2b2b2b', borderRadius: '7px', background: '#1c1c1c', color: '#eeeeee', fontSize: '12px', lineHeight: 1.4, outline: 'none' }} />
+              </label>
+              <div style={{ display: 'grid', gap: '5px', color: '#999999', fontSize: '11px' }}>
+                Formato de tools
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px' }}>
+                  {(['json', 'xml'] as const).map((format) => <button key={format} type="button" onClick={() => setCustomToolsFormat(format)} style={{ height: '30px', border: '1px solid #2b2b2b', borderRadius: '7px', background: customToolsFormat === format ? '#1E1E1E' : 'transparent', color: customToolsFormat === format ? '#eeeeee' : '#777777', fontSize: '11px' }}>{format.toUpperCase()}</button>)}
+                </div>
+              </div>
+              {customConfigError && <span style={{ color: '#f28b82', fontSize: '11px' }}>{customConfigError}</span>}
+              <button type="button" onClick={saveCustomProviderConfig} style={{ height: '32px', border: 0, borderRadius: '7px', background: '#1E1E1E', color: '#eeeeee', fontSize: '12px' }}>Guardar configuración</button>
+            </div>
+          ) : <div className="command-list" style={{ display: 'grid', gap: '4px', maxHeight: '300px', overflow: 'auto', scrollbarWidth: 'none', paddingBottom: '12px', maskImage: 'linear-gradient(to bottom, black 92%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to bottom, black 92%, transparent 100%)' }}>
+            {activeSelection && (
+              <div aria-current="true" style={{ minHeight: '32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', borderRadius: '7px', background: '#1E1E1E', color: '#eeeeee', fontSize: '12px', padding: '0 9px' }}>
+                <span>{activeSelection.label || activeSelection.id}</span>
+                <small style={{ color: 'rgba(216, 216, 216, 0.5)', fontSize: '11px' }}>Seleccionado</small>
+              </div>
+            )}
+            {(commandKind === 'command' ? slashCommands : filteredCatalog.filter((item) => item.id !== activeSelection?.id)).map((item, index) => (
               <button
                 key={item.id}
                 type="button"
@@ -1157,7 +1374,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
                 </small>
               </button>
             ))}
-          </div>
+          </div>}
         </div>
       </div>
     </div>
@@ -1314,6 +1531,7 @@ function AppleFoldersView({ projectPath, initialSelectedPath = '' }: { projectPa
   const [selectedPath, setSelectedPath] = useState(initialSelectedPath);
   const [openFiles, setOpenFiles] = useState<Record<string, OpenFile>>({});
   const [tabs, setTabs] = useState<string[]>([]);
+  const [showFileTree, setShowFileTree] = useState(true);
   const [error, setError] = useState('');
 
   const loadProject = async () => {
@@ -1519,9 +1737,11 @@ function TabbedProjectView({ projectPath, initialSelectedPath = '' }: { projectP
     </React.Fragment>;
   });
 
-  return <div ref={panelRef} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleFileDrop} className="flex h-full w-full min-w-0 flex-col overflow-hidden text-[#d8d8d8]">
+  return <div ref={panelRef} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleFileDrop} className="flex h-full w-full min-w-0 flex-col overflow-hidden bg-[#171717] text-[#eeeeee]">
+    <div className="flex h-9 shrink-0 items-center justify-between border-b border-[#2b2b2b] px-4"><span className="text-[13px] leading-none">/</span><button type="button" onClick={() => setShowFileTree((visible) => !visible)} className="grid h-7 w-7 place-items-center rounded-[9px] bg-[#202020] text-[#eeeeee] hover:bg-[#2b2b2b]" title="Mostrar u ocultar árbol del workspace" aria-label="Mostrar u ocultar árbol del workspace"><FolderOpen size={16} /></button></div>
     {loading ? <div className="flex flex-1 items-center justify-center text-xs text-[#777777]">Cargando proyecto...</div> : <div className="flex min-h-0 flex-1">
-      <main className="flex min-w-0 flex-1 flex-col">{tabs.length ? <><div className="flex h-10 shrink-0 items-end gap-1 overflow-x-auto border-b border-[var(--color-surface-8)] bg-[#121212] px-2">{tabs.map((path) => <div key={path} className={`group flex h-9 max-w-[190px] min-w-[110px] items-center gap-2 border-x border-t px-3 text-[11px] ${selectedPath === path ? 'border-[var(--color-surface-8)] bg-[#1a1a1a] text-[#eeeeee]' : 'border-transparent text-[#777777]'}`}><button type="button" onClick={() => setSelectedPath(path)} className="min-w-0 flex-1 truncate bg-transparent text-left">{path.split(/[\\/]/).pop()}</button><button type="button" onClick={() => closeFile(path)} className="rounded p-0.5 text-[#666666] hover:bg-white/10 hover:text-white" title="Cerrar archivo" aria-label={`Cerrar ${path}`}><X size={12} /></button></div>)}</div><div className="min-h-0 flex-1 overflow-hidden bg-transparent">{files[selectedPath] ? <FilePreview projectPath={projectPath || ''} file={files[selectedPath]} onChange={(content) => handleContentChange(selectedPath, content)} /> : <div className="p-4 text-xs text-[#777777]">Cargando archivo...</div>}</div></> : <div className="flex flex-1 items-center justify-center text-xs text-[#666666]">Elegí un archivo para abrirlo en una pestaña</div>}</main>
+      <main className="flex min-w-0 flex-1 flex-col bg-[#171717]">{tabs.length ? <><div className="flex h-8 shrink-0 items-end gap-1 overflow-x-auto border-b border-[#2b2b2b] bg-[#171717] px-2">{tabs.map((path) => <div key={path} className={`group flex h-7 max-w-[190px] min-w-[110px] items-center gap-2 border-x border-t px-3 text-[11px] ${selectedPath === path ? 'border-[#2b2b2b] bg-[#1c1c1c] text-[#eeeeee]' : 'border-transparent text-[#777777]'}`}><button type="button" onClick={() => setSelectedPath(path)} className="min-w-0 flex-1 truncate bg-transparent text-left">{path.split(/[\\/]/).pop()}</button><button type="button" onClick={() => closeFile(path)} className="rounded p-0.5 text-[#666666] hover:bg-white/10 hover:text-white" title="Cerrar archivo" aria-label={`Cerrar ${path}`}><X size={12} /></button></div>)}</div><div className="min-h-0 flex-1 overflow-hidden bg-transparent">{files[selectedPath] ? <FilePreview projectPath={projectPath || ''} file={files[selectedPath]} onChange={(content) => handleContentChange(selectedPath, content)} /> : <div className="p-4 text-xs text-[#777777]">Cargando archivo...</div>}</div></> : <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center"><FolderOpen size={44} strokeWidth={1.4} className="text-[#a7a7a7]" /><div><p className="m-0 text-[18px] font-semibold text-[#eeeeee]">Abrir archivo</p><p className="m-0 mt-3 max-w-[360px] text-[16px] leading-6 text-[#a7a7a7]">Selecciona un archivo del árbol del espacio de trabajo</p></div></div>}</main>
+      {showFileTree && <aside className="flex w-[374px] shrink-0 flex-col border-l border-[#2b2b2b] bg-[#171717]"><div className="min-h-0 flex-1 overflow-auto px-3 py-3 [scrollbar-width:none]">{tree.length ? renderTree(tree) : <div className="p-3 text-sm text-[#777777]">No se encontraron archivos.</div>}</div></aside>}
     </div>}
   </div>;
 }

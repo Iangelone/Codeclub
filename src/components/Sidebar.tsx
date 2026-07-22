@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { exists, remove, readDir, rename } from "@tauri-apps/plugin-fs";
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { confirm as confirmDialog, open } from "@tauri-apps/plugin-dialog";
 import { logPersistence } from "../lib/persistence";
 import SettingsModal from "./SettingsModal";
 import {
@@ -10,9 +10,12 @@ import {
   writeProjectIndex,
   ensureProjectMeta,
   saveProjectIndex,
+  indexProjectContents,
   readProjectMeta,
   writeProjectMeta,
   getProjectChatPath,
+  readGlobalChats,
+  writeGlobalChats,
 } from "../lib/projectManager";
 
 import {
@@ -22,13 +25,13 @@ import {
   Settings,
   MessageSquare,
   MessageSquarePlus,
-  FilePenLine,
-  GitBranch,
-  Puzzle,
+  Blocks,
+  Target,
   FileText,
   FileCode2,
   MousePointer2,
-  Trash2
+  Trash2,
+  Eraser
 } from "lucide-react";
 import { activeChatStore, chatsStore, type GlobalChat } from "../lib/store";
 
@@ -57,6 +60,7 @@ export default function Sidebar() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [activeArtifactId, setActiveArtifactId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState<"chat" | "projects" | "businesses">("projects");
 
   const [creatingProject, setCreatingProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
@@ -69,6 +73,7 @@ export default function Sidebar() {
     name: string;
     top: number;
     left: number;
+    source?: "sidebar" | "panel";
   } | null>(null);
   const projectMenuRef = useRef<HTMLDivElement | null>(null);
   const [artifactMenu, setArtifactMenu] = useState<{
@@ -81,6 +86,7 @@ export default function Sidebar() {
     left: number;
   } | null>(null);
   const artifactMenuRef = useRef<HTMLDivElement | null>(null);
+  const [renamingArtifact, setRenamingArtifact] = useState<typeof artifactMenu>(null);
 
   const loadProjects = async () => {
     try {
@@ -97,11 +103,15 @@ export default function Sidebar() {
         loaded.push({ name: proj.name, path: proj.path, chats });
       }
       setProjects(loaded);
-      const chats = loaded.flatMap((project) => project.chats.map((chat) => ({
+      const projectChats = loaded.flatMap((project) => project.chats.map((chat) => ({
         ...chat,
         projectPath: project.path,
         projectName: project.name,
       })));
+      const chats = [...projectChats, ...(await readGlobalChats())].sort((a, b) => {
+        const time = (id: string) => Number(id.replace("global-", "")) || 0;
+        return time(a.id) - time(b.id);
+      });
       setGlobalChats(chats);
       chatsStore.set(chats);
     } catch (e) {
@@ -113,16 +123,78 @@ export default function Sidebar() {
     loadProjects();
     const handleIndexed = () => loadProjects();
     const handleMetaChanged = () => loadProjects();
+    const handleGlobalChatChanged = () => loadProjects();
     const handleRequire = () => setCreatingProject(true);
+    const handleOpenChat = (event?: Event) => {
+      setActiveSection("chat");
+      const detail = (event as CustomEvent | undefined)?.detail || {};
+      if (detail.chatId) {
+        setActiveArtifactId(detail.chatId);
+        activeChatStore.set({ id: detail.chatId, kind: "chat" });
+      } else {
+        setActiveArtifactId(null);
+        activeChatStore.set({});
+      }
+    };
+    const handleOpenProjects = () => setActiveSection("projects");
+    const handleOpenBusinesses = () => setActiveSection("businesses");
+    const handleProjectContextMenu = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      if (!detail.path || !detail.name) return;
+      setProjectMenu({ path: detail.path, name: detail.name, top: detail.top, left: detail.left, source: "panel" });
+    };
+    const handleNewChatRequest = () => void openNewChat();
+    const handleChatRename = async (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      if (!detail.chatId || !detail.newName) return;
+      if (!detail.projectPath) {
+        const chats = await readGlobalChats();
+        const chat = chats.find((item) => item.id === detail.chatId);
+        if (!chat) return;
+        chat.name = detail.newName;
+        await writeGlobalChats(chats);
+        await loadProjects();
+        return;
+      }
+      const metaData = await readProjectMeta(detail.projectPath);
+      const chat = metaData?.chats?.find((item) => item.id === detail.chatId);
+      if (!metaData || !chat || chat.name === detail.newName) return;
+      chat.name = detail.newName;
+      await writeProjectMeta(detail.projectPath, metaData);
+      notifyProjectMetaChanged(detail.projectPath);
+      await loadProjects();
+    };
+    const handleProjectSelection = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      setSelectedProjectId(detail.selected === true ? detail.projectPath : null);
+    };
     window.dispatchEvent(new CustomEvent("codeclub:project-selection-changed", { detail: { selected: false } }));
     
     window.addEventListener("codeclub:project-indexed", handleIndexed);
     window.addEventListener("codeclub:project-meta-changed", handleMetaChanged);
+    window.addEventListener("codeclub:global-chat-changed", handleGlobalChatChanged);
     window.addEventListener("codeclub:require-project", handleRequire);
+    window.addEventListener("codeclub:open-empty-chat", handleOpenChat);
+    window.addEventListener("codeclub:open-chat", handleOpenChat);
+    window.addEventListener("codeclub:request-new-chat", handleNewChatRequest);
+    window.addEventListener("codeclub:rename-chat", handleChatRename);
+    window.addEventListener("codeclub:open-projects", handleOpenProjects);
+    window.addEventListener("codeclub:open-businesses", handleOpenBusinesses);
+    window.addEventListener("codeclub:project-context-menu", handleProjectContextMenu);
+    window.addEventListener("codeclub:project-selection-changed", handleProjectSelection);
     return () => {
       window.removeEventListener("codeclub:project-indexed", handleIndexed);
       window.removeEventListener("codeclub:project-meta-changed", handleMetaChanged);
+      window.removeEventListener("codeclub:global-chat-changed", handleGlobalChatChanged);
       window.removeEventListener("codeclub:require-project", handleRequire);
+      window.removeEventListener("codeclub:open-empty-chat", handleOpenChat);
+      window.removeEventListener("codeclub:open-chat", handleOpenChat);
+      window.removeEventListener("codeclub:request-new-chat", handleNewChatRequest);
+      window.removeEventListener("codeclub:rename-chat", handleChatRename);
+      window.removeEventListener("codeclub:open-projects", handleOpenProjects);
+      window.removeEventListener("codeclub:open-businesses", handleOpenBusinesses);
+      window.removeEventListener("codeclub:project-context-menu", handleProjectContextMenu);
+      window.removeEventListener("codeclub:project-selection-changed", handleProjectSelection);
     };
   }, []);
 
@@ -317,7 +389,7 @@ export default function Sidebar() {
 
   const deleteStructureEntry = async () => {
     if (!structureMenu) return;
-    if (!window.confirm(`¿Eliminar ${structureMenu.path}?`)) return;
+    if (!(await confirmDialog(`¿Eliminar ${structureMenu.path}?`, { title: "Eliminar elemento", kind: "warning" }))) return;
     try {
       await remove(`${structureMenu.projectPath}/${structureMenu.path}`, { recursive: structureMenu.isDirectory });
       await refreshStructure(structureMenu.projectPath);
@@ -375,7 +447,7 @@ export default function Sidebar() {
         return;
       }
       await ensureProjectMeta(selectedPath, newProjectName);
-      await saveProjectIndex(newProjectName, selectedPath);
+      await indexProjectContents(newProjectName, selectedPath);
       await logPersistence("create_project", "ok", { name: newProjectName, projectPath: selectedPath });
       setCreatingProject(false);
       setNewProjectName("");
@@ -434,9 +506,10 @@ export default function Sidebar() {
       if (kind === "project") {
         const projList = (await readProjectIndex()).filter((entry) => entry.path !== projectPath);
         await writeProjectIndex(projList);
-        window.dispatchEvent(new CustomEvent("codeclub:open-blank"));
+        if (selectedProjectId === projectPath) window.dispatchEvent(new CustomEvent("codeclub:open-blank"));
         await logPersistence("delete_project", "ok", { projectPath });
-        loadProjects();
+        await loadProjects();
+        window.dispatchEvent(new CustomEvent("codeclub:project-indexed"));
         return;
       }
 
@@ -467,7 +540,19 @@ export default function Sidebar() {
       if (kind === "project") {
         await ensureProjectMeta(projectPath, finalName);
         await saveProjectIndex(finalName, projectPath);
-        loadProjects();
+        await loadProjects();
+        window.dispatchEvent(new CustomEvent("codeclub:project-indexed"));
+        return;
+      }
+
+      if (!projectPath) {
+        const chats = await readGlobalChats();
+        const item = chats.find((entry) => entry.id === itemId);
+        if (item) {
+          item.name = finalName;
+          await writeGlobalChats(chats);
+          await loadProjects();
+        }
         return;
       }
 
@@ -494,11 +579,56 @@ export default function Sidebar() {
   };
 
   const selectProject = (path: string, name: string) => {
+    setActiveSection("chat");
     setSelectedProjectId(path);
     window.dispatchEvent(new CustomEvent("codeclub:project-selection-changed", {
       detail: { selected: true, projectPath: path, projectName: name },
     }));
     window.dispatchEvent(new CustomEvent("codeclub:active-project", { detail: { projectPath: path, projectName: name } }));
+  };
+
+  const commitArtifactRename = async () => {
+    if (!renamingArtifact || !renameInput.trim()) return;
+    await handleRenameCommit("chat", renamingArtifact.id, renamingArtifact.projectPath, renamingArtifact.name);
+    setRenamingArtifact(null);
+  };
+
+  const handleClearChats = async (projectPath: string) => {
+    const project = projects.find((item) => item.path === projectPath);
+    if (!(await confirmDialog(`¿Limpiar todos los chats de ${project?.name || "este proyecto"}?`, { title: "Limpiar chats", kind: "warning" }))) return;
+    try {
+      if (!projectPath) {
+        await writeGlobalChats([]);
+        window.dispatchEvent(new CustomEvent("codeclub:open-blank"));
+        await loadProjects();
+        return;
+      }
+
+      if (!projectPath) {
+        await writeGlobalChats((await readGlobalChats()).filter((entry) => entry.id !== itemId));
+        window.dispatchEvent(new CustomEvent("codeclub:open-blank"));
+        await loadProjects();
+        return;
+      }
+      const metaData = await readProjectMeta(projectPath);
+      if (!metaData) return;
+      for (const chat of metaData.chats || []) {
+        const chatPath = await getProjectChatPath(projectPath, chat.id);
+        if (await exists(chatPath)) await remove(chatPath);
+      }
+      metaData.chats = [];
+      await writeProjectMeta(projectPath, metaData);
+      if (selectedProjectId === projectPath) {
+        setActiveArtifactId(null);
+        activeChatStore.set({});
+        window.dispatchEvent(new CustomEvent("codeclub:open-blank", { detail: { preserveProject: true } }));
+      }
+      notifyProjectMetaChanged(projectPath);
+      await logPersistence("clear_project_chats", "ok", { projectPath });
+      await loadProjects();
+    } catch (error) {
+      console.error("Error limpiando chats del proyecto", error);
+    }
   };
 
   const handleProjectSelection = (project: ProjectData) => {
@@ -514,7 +644,7 @@ export default function Sidebar() {
 
   const openProjectMenu = (e: React.MouseEvent, project: ProjectData) => {
     e.preventDefault();
-    setProjectMenu({ path: project.path, name: project.name, top: e.clientY, left: e.clientX });
+    setProjectMenu({ path: project.path, name: project.name, top: e.clientY, left: e.clientX, source: "sidebar" });
   };
 
   const openArtifactMenu = (e: React.MouseEvent, kind: string, item: Artifact, project: ProjectData) => {
@@ -526,10 +656,30 @@ export default function Sidebar() {
     const target = e.target as HTMLElement;
     if (target.closest("[data-sidebar-item], button, input")) return;
     setSelectedProjectId(null);
+    setActiveSection("projects");
     setActiveArtifactId(null);
     activeChatStore.set({});
     window.dispatchEvent(new CustomEvent("codeclub:project-selection-changed", { detail: { selected: false } }));
     window.dispatchEvent(new CustomEvent("codeclub:open-blank", { detail: {} }));
+  };
+
+  const openProjectsPanel = () => {
+    setActiveSection("projects");
+    setSelectedProjectId(null);
+    setActiveArtifactId(null);
+    setProjectMenu(null);
+    setArtifactMenu(null);
+    activeChatStore.set({});
+    window.dispatchEvent(new CustomEvent("codeclub:project-selection-changed", { detail: { selected: false } }));
+    window.dispatchEvent(new CustomEvent("codeclub:open-projects"));
+    window.dispatchEvent(new CustomEvent("codeclub:open-blank", { detail: {} }));
+  };
+
+  const openNewChat = async () => {
+    setActiveSection("chat");
+    setActiveArtifactId(null);
+    activeChatStore.set({});
+    window.dispatchEvent(new CustomEvent("codeclub:open-empty-chat"));
   };
 
   const openArtifact = (kind: string, id: string, name: string, projectPath: string, projectName: string) => {
@@ -555,6 +705,14 @@ export default function Sidebar() {
   };
 
   const openGlobalChat = (chat: GlobalChat) => {
+    if (!chat.projectPath) {
+      setActiveSection("chat");
+      setActiveArtifactId(chat.id);
+      activeChatStore.set({ id: chat.id, kind: "chat" });
+      window.dispatchEvent(new CustomEvent("codeclub:project-selection-changed", { detail: { selected: false, keepChat: true } }));
+      window.dispatchEvent(new CustomEvent("codeclub:open-chat", { detail: { chatId: chat.id, name: chat.name, projectPath: "", projectName: "Sin proyecto" } }));
+      return;
+    }
     openArtifact("chat", chat.id, chat.name, chat.projectPath, chat.projectName);
   };
 
@@ -565,16 +723,21 @@ export default function Sidebar() {
           Codeclub
         </div>
         <div className="shrink-0 flex flex-col gap-1 pb-1">
-          <div data-sidebar-item onClick={() => window.dispatchEvent(new CustomEvent("codeclub:open-empty-chat"))} className="w-full min-h-[34px] flex cursor-pointer items-center gap-[9px] rounded-md bg-[#1E1E1E] px-[10px] text-xs text-left text-[#eeeeee]">
-            <FilePenLine size={15} /> Nuevo chat
+          <div data-sidebar-item onClick={() => void openNewChat()} className={`w-full min-h-[34px] flex cursor-pointer items-center gap-[9px] rounded-md px-[10px] text-xs text-left transition-colors ${activeSection === "chat" && !activeArtifactId ? "bg-[#1E1E1E] text-[#eeeeee]" : "text-[#777777] hover:bg-[var(--color-surface-3)] hover:text-[#eeeeee]"}`}>
+            <MessageSquarePlus size={15} /> Nuevo chat
           </div>
-          <div className="w-full min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left text-[#777777] hover:bg-[var(--color-surface-3)] hover:text-[#eeeeee]">
+          <div data-sidebar-item role="button" tabIndex={0} onClick={openProjectsPanel} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openProjectsPanel(); } }} className={`w-full min-h-[34px] flex cursor-pointer items-center gap-[9px] rounded-md px-[10px] text-xs text-left transition-colors focus-visible:outline-none ${activeSection === "projects" ? "bg-[#1E1E1E] text-[#eeeeee]" : "text-[#777777] hover:bg-[var(--color-surface-3)] hover:text-[#eeeeee]"}`}>
             <Folder size={15} /> Proyectos
           </div>
+          <button type="button" className={`w-full min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left transition-colors ${activeSection === "businesses" ? "bg-[#1E1E1E] text-[#eeeeee]" : "text-[#777777] hover:bg-[var(--color-surface-3)] hover:text-[#eeeeee]"} border-0 appearance-none`} onClick={() => { setActiveSection("businesses"); window.dispatchEvent(new CustomEvent("codeclub:open-businesses")); window.setTimeout(() => setActiveSection("businesses"), 80); }}>
+            <Target size={15} /> Negocios
+          </button>
+          <button type="button" className="w-full min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left text-[#777777] hover:bg-[var(--color-surface-3)] hover:text-[#eeeeee] bg-transparent border-0 appearance-none" onClick={() => window.dispatchEvent(new CustomEvent("codeclub:open-extensions"))}>
+            <Blocks size={15} /> Complementos
+          </button>
         </div>
         
         <div className="mt-0 flex-1 min-h-0 flex flex-col gap-1 overflow-y-auto overscroll-contain pt-1 pb-[56px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {false && <>
           {creatingProject && (
             <div className="min-h-[34px] box-border flex items-center gap-[9px] px-[10px] text-[#cfcfcf]">
               <Folder size={14} />
@@ -594,7 +757,7 @@ export default function Sidebar() {
             </div>
           )}
 
-          {projects.map((proj) => {
+          {false && (projects.map((proj) => {
             const isExpanded = expandedProjects.has(proj.path);
             const isSelected = selectedProjectId === proj.path;
             const isRenaming = renamingItemId === `proj-${proj.path}`;
@@ -701,22 +864,12 @@ export default function Sidebar() {
                 )}
               </div>
             );
-          })}
-          </>}
-
-          <div className="flex w-full flex-col gap-1">
-            <button type="button" className="w-full min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left text-[#777777] hover:bg-[var(--color-surface-3)] hover:text-[#eeeeee] bg-transparent border-0 appearance-none" onClick={() => window.dispatchEvent(new CustomEvent("codeclub:open-repository"))}>
-              <GitBranch size={15} /> Repositorio
-            </button>
-            <button type="button" className="w-full min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left text-[#777777] hover:bg-[var(--color-surface-3)] hover:text-[#eeeeee] bg-transparent border-0 appearance-none" onClick={() => window.dispatchEvent(new CustomEvent("codeclub:open-extensions"))}>
-              <Puzzle size={15} /> Complementos
-            </button>
-          </div>
+          }))}
 
           <div className="mt-2">
             <div className="h-[24px] shrink-0 mb-1 flex items-center gap-[6px] px-[10px] text-[#9f9f9f] text-xs">Chats</div>
             <div className="flex flex-col gap-1">
-              {globalChats.slice(-3).reverse().map((chat) => (
+              {[...globalChats].reverse().map((chat) => (
                 <button key={`${chat.projectPath}:${chat.id}`} type="button" className={`w-full min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left text-[#777777] hover:bg-white/2 bg-transparent border-0 appearance-none ${activeArtifactId === chat.id ? "bg-white/5 text-[#eeeeee]" : ""}`} onClick={() => openGlobalChat(chat)} onContextMenu={(event) => { event.preventDefault(); openArtifactMenu(event, "chat", { id: chat.id, name: chat.name }, { name: chat.projectName, path: chat.projectPath, chats: [] }); }} title={chat.projectName}>
                   {activeArtifactId === chat.id ? (
                     <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center" aria-label="Chat activo">
@@ -740,18 +893,19 @@ export default function Sidebar() {
           style={{ top: projectMenu.top, left: projectMenu.left }}
           onClick={() => setProjectMenu(null)}
         >
-          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => { selectProject(projectMenu.path, projectMenu.name); toggleProject(projectMenu.path); }}>
-            {expandedProjects.has(projectMenu.path) ? <Folder size={13} /> : <FolderOpen size={13} />}<span>{expandedProjects.has(projectMenu.path) ? "Cerrar" : "Abrir"}</span>
+          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => { selectProject(projectMenu.path, projectMenu.name); if (projectMenu.source !== "panel") toggleProject(projectMenu.path); }}>
+            {expandedProjects.has(projectMenu.path) && projectMenu.source !== "panel" ? <Folder size={13} /> : <FolderOpen size={13} />}<span>{expandedProjects.has(projectMenu.path) && projectMenu.source !== "panel" ? "Cerrar" : "Abrir"}</span>
           </button>
-          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => { setRenamingItemId(`proj-${projectMenu.path}`); setRenameInput(projectMenu.name); }}>
+          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => { window.dispatchEvent(new CustomEvent("codeclub:request-rename-project", { detail: { path: projectMenu.path, name: projectMenu.name } })); setProjectMenu(null); }}>
             <FileText size={13} /><span>Renombrar</span>
           </button>
           <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => handleDelete("project", projectMenu.path, projectMenu.path)}>
             <Trash2 size={13} /><span>Eliminar</span>
           </button>
+          {projectMenu.source !== "panel" && <>
           <div className="my-1 border-t border-[var(--color-surface-8)]" />
-          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => startArtifactCreation(projectMenu.path, projectMenu.name)}>
-            <MessageSquarePlus size={13} /><span>Nuevo chat</span>
+          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => handleClearChats(projectMenu.path)}>
+            <Eraser size={13} /><span>Limpiar</span>
           </button>
           <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => startStructureCreation(projectMenu.path, "", "file")}>
             <FileCode2 size={13} /><span>Nuevo archivo</span>
@@ -759,6 +913,7 @@ export default function Sidebar() {
           <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => startStructureCreation(projectMenu.path, "", "folder")}>
             <FolderPlus size={13} /><span>Nueva carpeta</span>
           </button>
+          </>}
         </div>,
         document.body
       )}
@@ -787,16 +942,33 @@ export default function Sidebar() {
           <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => openArtifact(artifactMenu.kind, artifactMenu.id, artifactMenu.name, artifactMenu.projectPath, artifactMenu.projectName)}>
             <MessageSquare size={13} /><span>Abrir</span>
           </button>
-          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => { setRenamingItemId(`${artifactMenu.kind}-${artifactMenu.id}`); setRenameInput(artifactMenu.name); }}>
+          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => { setRenamingItemId(`${artifactMenu.kind}-${artifactMenu.id}`); setRenameInput(artifactMenu.name); setRenamingArtifact(artifactMenu); }}>
             <FileText size={13} /><span>Renombrar</span>
           </button>
           <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => handleDelete(artifactMenu.kind, artifactMenu.id, artifactMenu.projectPath)}>
             <Trash2 size={13} /><span>Eliminar</span>
           </button>
           <div className="my-1 border-t border-[var(--color-surface-8)]" />
-          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => startArtifactCreation(artifactMenu.projectPath, artifactMenu.projectName)}>
-            <MessageSquarePlus size={13} /><span>Nuevo chat</span>
+          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => handleClearChats(artifactMenu.projectPath)}>
+            <Eraser size={13} /><span>Limpiar</span>
           </button>
+        </div>,
+        document.body
+      )}
+
+      {renamingArtifact && typeof document !== "undefined" && createPortal(
+        <div className="fixed z-[110] w-[240px] rounded-lg border border-[var(--color-surface-10)] bg-[#121212] p-2 shadow-[0_18px_54px_rgba(0,0,0,0.38)]" style={{ top: renamingArtifact.top, left: renamingArtifact.left }}>
+          <input
+            autoFocus
+            value={renameInput}
+            onChange={(event) => setRenameInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") { event.preventDefault(); void commitArtifactRename(); }
+              if (event.key === "Escape") { setRenamingArtifact(null); setRenamingItemId(null); setRenameInput(""); }
+            }}
+            placeholder="Nombre del chat"
+            className="h-8 w-full rounded-md border border-[#2b2b2b] bg-[#1c1c1c] px-2 text-xs text-[#eeeeee] outline-none placeholder:text-[#777777]"
+          />
         </div>,
         document.body
       )}
