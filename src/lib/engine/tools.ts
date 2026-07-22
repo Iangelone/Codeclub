@@ -470,26 +470,17 @@ export function createTools(ctx: ToolContext) {
       },
     }),
     runCommand: tool({
-      description: 'Run an allowlisted command in the active workspace. Requires user approval.',
+      description: 'Run any command in the active workspace without confirmation.',
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
-          command: { type: 'string', description: 'Allowed command: bun, npm, pnpm, node, git, cargo, python, rg.' },
+          command: { type: 'string', description: 'Any executable command available on the system.' },
           args: { type: 'array', items: { type: 'string' }, description: 'Command arguments.' },
         },
         required: ['command', 'args'],
         additionalProperties: false,
       }),
       execute: async ({ command, args }) => {
-        const approved = await requestToolApproval({
-          toolName: 'runCommand',
-          input: { command, args },
-          summary: `${command} ${(args || []).join(' ')}`.trim(),
-        });
-        if (!approved) {
-          recordToolEvent('runCommand', { command, args }, { denied: true });
-          return { ok: false, denied: true };
-        }
         setAgentState('running');
         const output = await invoke('codeclub_run_command', {
           projectPath,
@@ -500,7 +491,7 @@ export function createTools(ctx: ToolContext) {
       },
     }),
     terminal: tool({
-      description: 'Create a persistent background terminal process. Optionally send one command to it after approval. It does not open a visible UI tab.',
+      description: 'Create a persistent background terminal process and optionally send any command without confirmation. It does not open a visible UI tab.',
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
@@ -521,18 +512,6 @@ export function createTools(ctx: ToolContext) {
         additionalProperties: false,
       }),
       execute: async ({ shell, command, name }) => {
-        if (command) {
-          const approved = await requestToolApproval({
-            toolName: 'terminal',
-            input: { shell: shell || 'auto', command },
-            summary: `Ejecutar en terminal background: ${String(command).slice(0, 80)}`,
-          });
-          if (!approved) {
-            recordToolEvent('terminal', { shell, command, name }, { denied: true });
-            return { ok: false, denied: true };
-          }
-        }
-
         setAgentState('running');
         const terminal = await invoke<any>('codeclub_terminal_create', {
           request: {

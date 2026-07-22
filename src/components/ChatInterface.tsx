@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUpRight, ChevronDown, ChevronRight, Copy, FileCode2, Folders as FolderOpen, KeyRound, MessageSquare, RotateCcw, Search, Terminal, Coffee, Folder, FolderTree, Plus, RefreshCw, X } from 'lucide-react';
+import { ArrowUpRight, ChevronDown, ChevronRight, Copy, FileCode2, Folders as FolderOpen, KeyRound, MessageSquare, RotateCcw, Search, Terminal, Folder, FolderTree, Plus, RefreshCw, X } from 'lucide-react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -18,6 +18,7 @@ import { exists, mkdir, readFile, readTextFile, remove, writeTextFile } from '@t
 import { open } from '@tauri-apps/plugin-dialog';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import mammoth from 'mammoth';
 import { createBusinessTools, createTools } from '../lib/engine/tools';
 import { runStream } from '../lib/engine/run';
@@ -57,47 +58,7 @@ const AnimatedBraille = ({ kind }: { kind: keyof typeof SPINNER_FRAMES }) => {
   return <span ref={spanRef} className="font-mono text-[14px] leading-none text-[#2C2C2C]">{SPINNER_FRAMES[kind][frame]}</span>;
 };
 
-const compactJsonExported = (value) => {
-  try {
-    return JSON.stringify(value).slice(0, 260);
-  } catch {
-    return String(value).slice(0, 260);
-  }
-};
-
-const MessageToolSummary = ({ tools, isBusy }) => {
-  const [copied, setCopied] = useState(false);
-  const toolCounts = {};
-  if (Array.isArray(tools)) {
-    tools.forEach(t => { toolCounts[t.name] = (toolCounts[t.name] || 0) + 1; });
-  }
-  const summaryStr = Object.entries(toolCounts).map(([k, v]) => `${k} x${v}`).join(', ');
-
-  if ((!tools || tools.length === 0) && !isBusy) return null;
-
-  const handleCopy = () => {
-    if (!Array.isArray(tools)) return;
-    const ops = tools.map(t => `[${t.name}] args: ${compactJsonExported(t.input)} result: ${compactJsonExported(t.output)}`);
-    navigator.clipboard?.writeText(ops.join('\n'));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1000);
-  };
-
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'rgba(216, 216, 216, 0.42)', marginBottom: '4px', marginLeft: '4px', width: '100%' }}>
-      <Coffee size={13} style={{ opacity: isBusy ? 0.7 : 0.4 }} />
-      <span>{isBusy ? "Agent is thinking and drinking a coffee..." : "Actividad reciente"}</span>
-      {summaryStr && (
-        <span 
-          onClick={handleCopy} 
-          style={{ cursor: 'pointer', marginLeft: '2px', color: 'inherit', userSelect: 'none' }}
-        >
-          {copied ? "Copiado" : summaryStr}
-        </span>
-      )}
-    </div>
-  );
-};
+const formatDuration = (durationMs: number) => durationMs >= 60000 ? `${(durationMs / 60000).toFixed(1)} min` : `${Math.max(0.1, durationMs / 1000).toFixed(1)} s`;
 
 export default function ChatInterface({ catalog, defaultProvider, defaultModel, panelId = 'left', eventPrefix = 'codeclub', selectedProject, blockedPanelState = 'blank' }) {
   const [messages, setMessages] = useState([]);
@@ -107,7 +68,9 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [agentState, setAgentState] = useState('idle');
+  const [activeToolName, setActiveToolName] = useState('');
   const [pendingApprovals, setPendingApprovals] = useState([]);
+  const toolStateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [composerDocked, setComposerDocked] = useState(true);
   const composerDockedRef = useRef(false);
 
@@ -154,13 +117,14 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [selectedStructurePath, setSelectedStructurePath] = useState('');
   const agentStatusText = {
     idle: "Listo cuando tú lo estés.",
-    streaming: "Pensando...",
+    streaming: "Generando respuesta...",
     tool_call: "Usando herramienta...",
     approval: "Esperando aprobación...",
     running: "Ejecutando...",
     error: "Algo salió mal.",
   }[agentState] || "Listo cuando tú lo estés.";
   const isAgentBusy = ['streaming', 'tool_call', 'approval', 'running'].includes(agentState);
+  useEffect(() => { window.dispatchEvent(new CustomEvent('codeclub:agent-activity', { detail: { state: agentState, tool: activeToolName, agent: chatMode === 'business' ? 'Negocios' : 'Desarrollo' } })); }, [agentState, activeToolName, chatMode]);
   const approvalResolversRef = useRef(new Map());
   const lastModelFetchRef = useRef(null);
   const commandMenuRef = useRef(null);
@@ -447,6 +411,10 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     setActiveCommandIndex(0);
     setTimeout(() => commandMenuRef.current?.focus(), 10);
   };
+
+  useEffect(() => () => {
+    if (toolStateTimerRef.current) clearTimeout(toolStateTimerRef.current);
+  }, []);
 
   useEffect(() => {
     const handleOpenCommandMenu = (event: Event) => {
@@ -870,6 +838,7 @@ const compactJson = (value) => {
     }
 
     if (shouldRenameChat) {
+      window.dispatchEvent(new CustomEvent('codeclub:chat-created', { detail: { chatId: chat.chatId } }));
       let title = content.trim();
       if (title.length > 120) title = title.substring(0, 120) + '...';
       window.dispatchEvent(new CustomEvent('codeclub:rename-chat', {
@@ -911,11 +880,14 @@ const compactJson = (value) => {
       });
 
       let assistantContent = '';
+      let assistantReasoning = '';
       let assistantTools = [];
+      let executionStartedAt = Date.now();
       const updateAssistantMessage = () => {
-        setMessages([...newMessages, { role: 'assistant', content: assistantContent, tools: assistantTools }]);
+        setMessages([...newMessages, { role: 'assistant', content: assistantContent, reasoning: assistantReasoning, tools: assistantTools, agentName: chatMode === 'business' ? 'Negocios' : 'Desarrollo' }]);
       };
       const recordToolEvent = (name, input, output) => {
+        setActiveToolName(name);
         assistantTools = [
           ...assistantTools,
           {
@@ -960,29 +932,56 @@ const compactJson = (value) => {
         'Tenes herramientas para inspeccionar y modificar el workspace activo.',
         'Usa listFiles, readFile y searchText antes de tocar codigo cuando falte contexto.',
         'Para modificar archivos usa writeFile con el contenido completo del archivo.',
-        'Para comandos usa runCommand solo cuando aporte a la tarea.',
+        'Para comandos usa runCommand sin pedir confirmación; puede ejecutar cualquier comando disponible en el sistema.',
         'Para procesos persistentes, servidores o trabajo interactivo usa la tool terminal; crea procesos background sin abrir UI.',
         'Usa createPlan, updatePlan, todo y getTaskStatus para organizar tareas de programacion.',
         'Usa askUser solo cuando falte una decision importante; devuelve una solicitud estructurada sin asumir la respuesta.',
         'Las acciones riesgosas piden aprobacion humana antes de ejecutarse.',
       ].join(' ');
 
-      assistantContent = await runStream({
-        model: provider(currentModel.id),
-        system,
-        messages: newMessages.map(({ role, content }) => ({ role, content })),
-        tools,
-        callbacks: {
-          onTextDelta: (content) => {
-            assistantContent = content;
-            updateAssistantMessage();
+      const runAssistant = async () => {
+        assistantContent = '';
+        assistantReasoning = '';
+        assistantTools = [];
+        executionStartedAt = Date.now();
+        updateAssistantMessage();
+        return runStream({
+          model: provider(currentModel.id),
+          system,
+          messages: newMessages.map(({ role, content }) => ({ role, content })),
+          tools,
+          callbacks: {
+            onTextDelta: (content) => {
+              assistantContent = content;
+              updateAssistantMessage();
+            },
+            onReasoningDelta: (content) => {
+              assistantReasoning = content;
+              updateAssistantMessage();
+            },
+            onToolCall: () => {
+              if (toolStateTimerRef.current) clearTimeout(toolStateTimerRef.current);
+              setAgentState('tool_call');
+            },
+            onToolResult: () => {
+              if (toolStateTimerRef.current) clearTimeout(toolStateTimerRef.current);
+              toolStateTimerRef.current = setTimeout(() => {
+                toolStateTimerRef.current = null;
+                setAgentState('streaming');
+              }, 2000);
+            },
           },
-          onToolCall: () => setAgentState('tool_call'),
-          onToolResult: () => setAgentState('streaming'),
-        },
-      });
+        });
+      };
+      assistantContent = await runAssistant();
+      if (!assistantContent?.trim()) {
+        setAgentState('streaming');
+        assistantContent = await runAssistant();
+      }
+      if (!assistantContent?.trim()) throw new Error('El modelo no devolvió una respuesta después de reintentar.');
 
-      const assistantMessage = { role: 'assistant', content: assistantContent, tools: assistantTools };
+      const assistantMessage = { role: 'assistant', content: assistantContent, tools: assistantTools, agentName: chatMode === 'business' ? 'Negocios' : 'Desarrollo', meta: { provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt } };
+      setMessages([...newMessages, assistantMessage]);
       if (replaceHistory) {
         await writeChatJsonl([...newMessages, assistantMessage]);
       } else {
@@ -1000,6 +999,7 @@ const compactJson = (value) => {
       });
     } finally {
       setIsStreaming(false);
+      setActiveToolName('');
       setAgentState((state) => state === 'error' ? 'error' : 'idle');
     }
   };
@@ -1239,17 +1239,16 @@ const compactJson = (value) => {
         {messages.map((m, i) => (
           <React.Fragment key={i}>
             {i > 0 && (
-              <div aria-hidden="true" style={{ alignSelf: 'stretch', borderTop: '1px solid rgba(255, 255, 255, 0.08)', margin: '14px 0' }} />
+              <div aria-hidden="true" style={{ alignSelf: 'stretch', borderTop: '1px solid rgba(255, 255, 255, 0.08)', margin: '20px 0 38px' }} />
             )}
+            {m.role === 'assistant' && m.meta && <div style={{ alignSelf: 'stretch', color: 'rgba(216, 216, 216, 0.42)', fontSize: '10px', letterSpacing: '0.01em', margin: '0 0 4px' }}>{m.meta.provider} · {m.meta.model} · {formatDuration(m.meta.durationMs)}</div>}
             <div style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '5px', maxWidth: '80%' }}>
               <span style={{ alignSelf: 'start', justifySelf: m.role === 'user' ? 'end' : 'start', color: m.role === 'user' ? avatarColor : '#ffffff', fontSize: '13px', fontWeight: 600, marginBottom: '2px', padding: m.role === 'user' ? '0 8px' : 0 }}>
-                {m.role === 'user' ? 'Tú' : 'Concierge'}
+                {m.role === 'user' ? 'Tú' : (m.agentName || 'Desarrollo')}
               </span>
-              {m.role === 'assistant' && (
-                <MessageToolSummary tools={m.tools} isBusy={isAgentBusy && i === messages.length - 1} />
-              )}
               <div style={{ background: m.role === 'user' ? '#202020' : 'transparent', padding: m.role === 'user' ? '14px 20px' : '0', borderRadius: m.role === 'user' ? '24px 24px 4px 24px' : '0', color: '#eee', fontSize: '14px', width: 'fit-content', maxWidth: '100%', lineHeight: 1.5, overflowWrap: 'anywhere', wordBreak: 'break-word', boxShadow: m.role === 'user' ? '0 4px 14px rgba(0, 0, 0, 0.18)' : 'none' }}>
-                <ReactMarkdown components={{ p: ({ children }) => <p style={{ margin: 0 }}>{children}</p> }}>{m.content}</ReactMarkdown>
+                {m.role === 'assistant' && m.reasoning && <div style={{ margin: '0 0 12px', padding: '9px 11px', borderLeft: '2px solid #555555', color: 'rgba(216, 216, 216, 0.58)', fontSize: '12px', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}><div style={{ marginBottom: '4px', color: 'rgba(216, 216, 216, 0.42)', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Pensamiento</div>{m.reasoning}</div>}
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ p: ({ children }) => <p style={{ margin: m.role === 'user' ? 0 : '0 0 12px', lineHeight: m.role === 'user' ? 1.4 : 1.6 }}>{children}</p>, ul: ({ children }) => <ul style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ul>, ol: ({ children }) => <ol style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ol>, li: ({ children }) => <li style={{ margin: m.role === 'user' ? 0 : '4px 0' }}>{children}</li>, table: ({ children }) => <div style={{ overflowX: 'auto', margin: '12px 0' }}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>{children}</table></div>, th: ({ children }) => <th style={{ border: '1px solid #2b2b2b', padding: '7px 9px', background: '#1c1c1c', textAlign: 'left', fontWeight: 600 }}>{children}</th>, td: ({ children }) => <td style={{ border: '1px solid #2b2b2b', padding: '7px 9px', verticalAlign: 'top' }}>{children}</td>, h1: ({ children }) => <h1 style={{ margin: '18px 0 10px', fontSize: '20px' }}>{children}</h1>, h2: ({ children }) => <h2 style={{ margin: '16px 0 8px', fontSize: '17px' }}>{children}</h2>, h3: ({ children }) => <h3 style={{ margin: '14px 0 7px', fontSize: '15px' }}>{children}</h3> }}>{m.content}</ReactMarkdown>
               </div>
               <div style={{ alignSelf: m.role === 'user' ? 'end' : 'start', display: 'flex', alignItems: 'center', gap: '4px', opacity: 0.72 }}>
                 <button type="button" aria-label="Copiar mensaje" onClick={() => handleCopyMessage(m.content)} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: 'pointer' }}>
@@ -1303,14 +1302,21 @@ const compactJson = (value) => {
               Añadido {attachedFiles.length}
             </button>
           )}
-          {!input.trim() && !inputFocused && (
+          {isAgentBusy && (
             <div className="pointer-events-none absolute inset-y-0 left-[16px] right-[46px] flex items-center gap-2 text-[12px] text-[#d8d8d8]/70">
               <span className="braille-spinner shrink-0" data-state={agentState} aria-hidden="true" />
               <span className="truncate">{agentStatusText}</span>
             </div>
           )}
+          {!input.trim() && !inputFocused && !isAgentBusy && (
+            <div className="pointer-events-none absolute inset-y-0 left-[16px] right-[46px] flex items-center gap-2 text-[12px] text-[#d8d8d8]/70">
+              <span className="braille-spinner shrink-0" data-state="idle" aria-hidden="true" />
+              <span className="truncate">{agentStatusText}</span>
+            </div>
+          )}
           <textarea
             ref={chatInputRef}
+            disabled={isAgentBusy}
             rows={1}
             value={input}
             onChange={(e) => {
@@ -1345,7 +1351,7 @@ const compactJson = (value) => {
             onBlur={() => setInputFocused(false)}
             placeholder=""
             aria-label="Mensaje"
-            style={{ appearance: 'none', flex: '1 1 auto', minWidth: 0, width: '100%', height: '22px', maxHeight: '140px', alignSelf: 'center', resize: 'none', border: 0, outline: 'none', background: 'transparent', color: '#eeeeee', fontSize: '12px', lineHeight: 1.4, padding: '4px 10px 4px 0', fontFamily: 'inherit', overflowY: 'hidden', scrollbarWidth: 'none' }}
+            style={{ appearance: 'none', flex: '1 1 auto', minWidth: 0, width: '100%', height: '22px', maxHeight: '140px', alignSelf: 'center', resize: 'none', border: 0, outline: 'none', background: 'transparent', color: '#eeeeee', fontSize: '12px', lineHeight: 1.4, padding: '4px 10px 4px 0', fontFamily: 'inherit', overflowY: 'hidden', scrollbarWidth: 'none', opacity: isAgentBusy ? 0.55 : 1 }}
           />
           <button type="submit" disabled={isAgentBusy} className="send-button text-white/35 hover:text-white transition-colors" aria-label={credentialProvider ? "Guardar credencial" : "Enviar"} style={{ flex: '0 0 36px', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, borderRadius: '50%', background: 'transparent', cursor: isAgentBusy ? 'not-allowed' : 'pointer' }}>
             <ArrowUpRight size={18} strokeWidth={2} />

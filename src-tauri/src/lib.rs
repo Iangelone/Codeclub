@@ -621,11 +621,6 @@ fn codeclub_run_command(
     request: CommandRequest,
 ) -> Result<CommandOutput, String> {
     let root = workspace_root(&project_path)?;
-    let allowed = ["bun", "npm", "pnpm", "node", "git", "cargo", "python", "rg"];
-    if !allowed.contains(&request.command.as_str()) {
-        return Err("Comando no permitido para el agente.".into());
-    }
-
     let mut child = Command::new(&request.command)
         .args(&request.args)
         .current_dir(root)

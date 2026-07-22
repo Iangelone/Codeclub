@@ -17,6 +17,7 @@ export interface ToolContext {
 
 export interface EngineCallbacks {
   onTextDelta: (content: string) => void;
+  onReasoningDelta?: (content: string) => void;
   onToolCall?: () => void;
   onToolResult?: () => void;
   onError?: (error: any) => void;

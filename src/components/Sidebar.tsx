@@ -59,8 +59,15 @@ export default function Sidebar() {
   const structureMenuRef = useRef<HTMLDivElement | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [activeArtifactId, setActiveArtifactId] = useState<string | null>(null);
+  const [agentActivity, setAgentActivity] = useState<{ state: string; tool?: string; agent?: string }>({ state: "idle" });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeSection, setActiveSection] = useState<"chat" | "projects" | "businesses">("projects");
+
+  useEffect(() => {
+    const handleAgentActivity = (event: Event) => setAgentActivity((event as CustomEvent).detail || { state: "idle" });
+    window.addEventListener("codeclub:agent-activity", handleAgentActivity);
+    return () => window.removeEventListener("codeclub:agent-activity", handleAgentActivity);
+  }, []);
 
   const [creatingProject, setCreatingProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
@@ -144,6 +151,13 @@ export default function Sidebar() {
       setProjectMenu({ path: detail.path, name: detail.name, top: detail.top, left: detail.left, source: "panel" });
     };
     const handleNewChatRequest = () => void openNewChat();
+    const handleChatCreated = (event: Event) => {
+      const chatId = (event as CustomEvent).detail?.chatId;
+      if (!chatId) return;
+      setActiveSection("chat");
+      setActiveArtifactId(chatId);
+      activeChatStore.set({ id: chatId, kind: "chat" });
+    };
     const handleChatRename = async (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
       if (!detail.chatId || !detail.newName) return;
@@ -177,6 +191,7 @@ export default function Sidebar() {
     window.addEventListener("codeclub:open-empty-chat", handleOpenChat);
     window.addEventListener("codeclub:open-chat", handleOpenChat);
     window.addEventListener("codeclub:request-new-chat", handleNewChatRequest);
+    window.addEventListener("codeclub:chat-created", handleChatCreated);
     window.addEventListener("codeclub:rename-chat", handleChatRename);
     window.addEventListener("codeclub:open-projects", handleOpenProjects);
     window.addEventListener("codeclub:open-businesses", handleOpenBusinesses);
@@ -190,6 +205,7 @@ export default function Sidebar() {
       window.removeEventListener("codeclub:open-empty-chat", handleOpenChat);
       window.removeEventListener("codeclub:open-chat", handleOpenChat);
       window.removeEventListener("codeclub:request-new-chat", handleNewChatRequest);
+      window.removeEventListener("codeclub:chat-created", handleChatCreated);
       window.removeEventListener("codeclub:rename-chat", handleChatRename);
       window.removeEventListener("codeclub:open-projects", handleOpenProjects);
       window.removeEventListener("codeclub:open-businesses", handleOpenBusinesses);
@@ -873,7 +889,7 @@ export default function Sidebar() {
                 <button key={`${chat.projectPath}:${chat.id}`} type="button" className={`w-full min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left text-[#777777] hover:bg-white/2 bg-transparent border-0 appearance-none ${activeArtifactId === chat.id ? "bg-white/5 text-[#eeeeee]" : ""}`} onClick={() => openGlobalChat(chat)} onContextMenu={(event) => { event.preventDefault(); openArtifactMenu(event, "chat", { id: chat.id, name: chat.name }, { name: chat.projectName, path: chat.projectPath, chats: [] }); }} title={chat.projectName}>
                   {activeArtifactId === chat.id ? (
                     <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center" aria-label="Chat activo">
-                      <span className="braille-spinner" data-state="idle" aria-hidden="true" />
+                      <span className="braille-spinner" data-state={agentActivity.state} aria-label={agentActivity.tool || agentActivity.agent || "Chat activo"} title={agentActivity.tool || agentActivity.agent || "Chat activo"} />
                     </span>
                   ) : (
                     <span className="chat-dot flex h-[22px] w-[22px] shrink-0 items-center justify-center" aria-hidden="true" />
