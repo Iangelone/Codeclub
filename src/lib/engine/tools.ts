@@ -4,6 +4,8 @@ import type { ToolContext } from './types';
 import { runStream } from './run';
 import { saveMemory, searchMemory, deleteMemory } from './memory';
 import { createId, readAgentState, writeAgentState, type TaskStatus } from './planning';
+import { readBusinessWorkspace, writeBusinessWorkspace } from '../projectManager';
+import { whatsappContextStore } from '../store';
 
 function createSubagentTools(ctx: { projectPath: string; recordToolEvent: (name: string, input: any, output: any) => void; setAgentState: (state: string) => void }) {
   const { projectPath, recordToolEvent, setAgentState } = ctx;
@@ -69,9 +71,67 @@ function createSubagentTools(ctx: { projectPath: string; recordToolEvent: (name:
   };
 }
 
-export function createBusinessTools(ctx: { recordToolEvent: (name: string, input: any, output: any) => void; setAgentState: (state: string) => void; indexedProjects: Array<{ name: string; path: string }> }) {
-  const { recordToolEvent, setAgentState, indexedProjects } = ctx;
+const businessSpecialistTools = (projectPath: string, recordToolEvent: (name: string, input: any, output: any) => void, setAgentState: (state: string) => void) => ({
+  ...createSubagentTools({ projectPath, recordToolEvent, setAgentState }),
+  getBusinessWorkspace: tool({
+    description: 'Read the active project business workspace.',
+    inputSchema: jsonSchema({ type: 'object', properties: {}, additionalProperties: false }),
+    execute: async () => {
+      setAgentState('tool_call');
+      const output = await readBusinessWorkspace(projectPath);
+      recordToolEvent('specialist.getBusinessWorkspace', {}, output || { status: 'empty' });
+      return output || { status: 'empty' };
+    },
+  }),
+  getWhatsAppBusinessContext: tool({
+    description: 'Read current WhatsApp conversations and recent messages. Read-only.',
+    inputSchema: jsonSchema({ type: 'object', properties: { chatId: { type: 'string' }, maxMessages: { type: 'number' } }, additionalProperties: false }),
+    execute: async ({ chatId, maxMessages }) => {
+      setAgentState('tool_call');
+      const snapshot = whatsappContextStore.get();
+      const chats = chatId ? snapshot.chats.filter((chat) => chat.id === chatId) : snapshot.chats;
+      const limit = Math.min(Number(maxMessages) || 40, 100);
+      const messages = Object.fromEntries((chatId ? [chatId] : chats.map((chat) => chat.id)).map((id) => [id, (snapshot.messages[id] || []).slice(-limit)]));
+      const output = { connected: snapshot.connected, account: snapshot.account || null, chats, messages, readOnly: true };
+      recordToolEvent('specialist.getWhatsAppBusinessContext', { chatId }, { chats: chats.length });
+      return output;
+    },
+  }),
+});
+
+export function createBusinessTools(ctx: { recordToolEvent: (name: string, input: any, output: any) => void; setAgentState: (state: string) => void; indexedProjects: Array<{ name: string; path: string }>; projectPath: string; provider?: any; modelId?: string }) {
+  const { recordToolEvent, setAgentState, indexedProjects, projectPath, provider, modelId } = ctx;
   return {
+    listProjectFiles: tool({
+      description: 'List project files for business context. Read-only; skips heavy folders.',
+      inputSchema: jsonSchema({ type: 'object', properties: { maxFiles: { type: 'number' } }, additionalProperties: false }),
+      execute: async ({ maxFiles }) => {
+        setAgentState('tool_call');
+        const output = await invoke('codeclub_list_files', { projectPath, maxFiles: Math.min(Number(maxFiles) || 400, 1200) });
+        recordToolEvent('listProjectFiles', { maxFiles }, output);
+        return output;
+      },
+    }),
+    readProjectFile: tool({
+      description: 'Read a UTF-8 project file for business analysis. Read-only; never modifies it.',
+      inputSchema: jsonSchema({ type: 'object', properties: { path: { type: 'string' } }, required: ['path'], additionalProperties: false }),
+      execute: async ({ path }) => {
+        setAgentState('tool_call');
+        const output = await invoke('codeclub_read_file', { projectPath, path });
+        recordToolEvent('readProjectFile', { path }, String(output).slice(0, 1200));
+        return output;
+      },
+    }),
+    searchProjectText: tool({
+      description: 'Search project code and documentation for business context. Read-only.',
+      inputSchema: jsonSchema({ type: 'object', properties: { query: { type: 'string' }, maxMatches: { type: 'number' } }, required: ['query'], additionalProperties: false }),
+      execute: async ({ query, maxMatches }) => {
+        setAgentState('tool_call');
+        const output = await invoke('codeclub_search_text', { projectPath, query, maxMatches: Math.min(Number(maxMatches) || 80, 200) });
+        recordToolEvent('searchProjectText', { query, maxMatches }, output);
+        return output;
+      },
+    }),
     listIndexedProjects: tool({
       description: 'List the projects indexed in Codeclub for business context.',
       inputSchema: jsonSchema({ type: 'object', properties: {}, additionalProperties: false }),
@@ -79,6 +139,50 @@ export function createBusinessTools(ctx: { recordToolEvent: (name: string, input
         setAgentState('tool_call');
         const output = indexedProjects;
         recordToolEvent('listIndexedProjects', {}, output);
+        return output;
+      },
+    }),
+    getBusinessWorkspace: tool({
+      description: 'Read the business and economy workspace of the active project.',
+      inputSchema: jsonSchema({ type: 'object', properties: {}, additionalProperties: false }),
+      execute: async () => {
+        setAgentState('tool_call');
+        const output = await readBusinessWorkspace(projectPath);
+        recordToolEvent('getBusinessWorkspace', {}, output || { status: 'empty' });
+        return output || { status: 'empty', message: 'El proyecto todavía no tiene datos comerciales.' };
+      },
+    }),
+    updateBusinessWorkspace: tool({
+      description: 'Update one business workspace section. Use for project status, monthly fees, quotes, milestones, payments, clients, pricing, opportunities, estimates, time entries, expenses, invoices or notes.',
+      inputSchema: jsonSchema({
+        type: 'object',
+        properties: {
+          section: { type: 'string', enum: ['project', 'profile', 'pricing', 'opportunities', 'estimates', 'quotes', 'milestones', 'payments', 'time_entries', 'expenses', 'invoices', 'notes'] },
+          data: { description: 'Complete replacement value for the selected section.' },
+        },
+        required: ['section', 'data'],
+        additionalProperties: false,
+      }),
+      execute: async ({ section, data }) => {
+        setAgentState('tool_call');
+        const current = await readBusinessWorkspace(projectPath);
+        if (!current) return { ok: false, error: 'No existe el workspace comercial del proyecto.' };
+        const next = await writeBusinessWorkspace(projectPath, { ...current, [section]: data });
+        recordToolEvent('updateBusinessWorkspace', { section, data }, next);
+        return next;
+      },
+    }),
+    getWhatsAppBusinessContext: tool({
+      description: 'Read the current WhatsApp chats and recent messages for commercial analysis. This tool is read-only and cannot send messages.',
+      inputSchema: jsonSchema({ type: 'object', properties: { chatId: { type: 'string' }, maxMessages: { type: 'number' } }, additionalProperties: false }),
+      execute: async ({ chatId, maxMessages }) => {
+        setAgentState('tool_call');
+        const snapshot = whatsappContextStore.get();
+        const limit = Math.min(Number(maxMessages) || 40, 100);
+        const chats = chatId ? snapshot.chats.filter((chat) => chat.id === chatId) : snapshot.chats;
+        const messages = Object.fromEntries((chatId ? [chatId] : chats.map((chat) => chat.id)).map((id) => [id, (snapshot.messages[id] || []).slice(-limit)]));
+        const output = { connected: snapshot.connected, account: snapshot.account || null, chats, messages, readOnly: true };
+        recordToolEvent('getWhatsAppBusinessContext', { chatId, maxMessages: limit }, { connected: output.connected, chats: chats.length });
         return output;
       },
     }),
@@ -118,6 +222,32 @@ export function createBusinessTools(ctx: { recordToolEvent: (name: string, input
         const output = { type: 'budget', currency: currency || 'USD', items, total };
         recordToolEvent('createBudget', { currency, items }, output);
         return output;
+      },
+    }),
+    delegateBusinessSpecialist: tool({
+      description: 'Delegate a focused business investigation to a specialist IA. It can read project code, business data and WhatsApp, but cannot edit or send messages.',
+      inputSchema: jsonSchema({
+        type: 'object',
+        properties: {
+          specialist: { type: 'string', enum: ['commercial', 'pricing', 'finance', 'operations', 'crm_whatsapp', 'strategy'] },
+          task: { type: 'string' },
+        },
+        required: ['specialist', 'task'],
+        additionalProperties: false,
+      }),
+      execute: async ({ specialist, task }) => {
+        if (!provider || !modelId) return { error: 'No hay modelo configurado para la sub-IA.' };
+        setAgentState('tool_call');
+        const specialistTools = businessSpecialistTools(projectPath, recordToolEvent, setAgentState);
+        const result = await runStream({
+          model: provider(modelId),
+          system: `Sos la sub-IA de ${specialist} del asesor de negocios de Codeclub. Investigá solo la tarea recibida. Podés leer código, datos comerciales y WhatsApp; nunca edites archivos ni envíes mensajes. Devolvé hallazgos, supuestos y recomendación en español.`,
+          messages: [{ role: 'user', content: task }],
+          tools: specialistTools,
+          callbacks: { onTextDelta: () => {} },
+        });
+        recordToolEvent('delegateBusinessSpecialist', { specialist, task }, result);
+        return result;
       },
     }),
   };
@@ -430,21 +560,22 @@ export function createTools(ctx: ToolContext) {
       },
     }),
     subagent: tool({
-      description: 'Spawn a research subagent to explore the codebase. Give it a clear task. Returns a summary.',
+      description: 'Delegate a focused development task to a specialist IA that inspects the codebase with read tools.',
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
-          task: { type: 'string', description: 'The research task for the subagent.' },
+          specialist: { type: 'string', enum: ['explorer', 'frontend', 'backend', 'qa', 'security', 'documentation'] },
+          task: { type: 'string', description: 'The task for the specialist.' },
         },
-        required: ['task'],
+        required: ['specialist', 'task'],
         additionalProperties: false,
       }),
-      execute: async ({ task }) => {
+      execute: async ({ specialist, task }) => {
         if (!provider || !modelId) {
           return { error: 'No provider/model configured for subagent.' };
         }
         setAgentState('tool_call');
-        recordToolEvent('subagent', { task }, { status: 'running' });
+        recordToolEvent('subagent', { specialist, task }, { status: 'running' });
 
         const subTools = createSubagentTools({ projectPath, recordToolEvent, setAgentState });
 
@@ -458,7 +589,7 @@ export function createTools(ctx: ToolContext) {
           },
         });
 
-        recordToolEvent('subagent', { task }, { result });
+        recordToolEvent('subagent', { specialist, task }, { result });
         return result;
       },
     }),

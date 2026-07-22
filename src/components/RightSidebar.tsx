@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronRight, File, FileCode2, FileImage, FileText, Folder, FolderOpen, Folders, GitBranch, LockKeyhole, Plus, Search } from 'lucide-react';
+import { ArrowUpRight, ChevronRight, File, FileCode2, FileImage, FileText, Folder, FolderOpen, Folders, GitBranch, LockKeyhole, LogOut, MessageCircle, Plus, RefreshCw, Search } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
+import { whatsappContextStore } from '../lib/store';
 
 type FileEntry = { path: string; kind: 'file' | 'directory' };
 type FileNode = FileEntry & { name: string; children: FileNode[] };
@@ -142,10 +144,166 @@ function FilesView({ projectPath }: { projectPath: string }) {
   </div>;
 }
 
+function WhatsAppTerminalView() {
+  const [logs, setLogs] = useState<string[]>(['$ whatsapp bridge --persistent']);
+  const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    const appendLog = (message: string) => setLogs((current) => [...current, `${new Date().toLocaleTimeString()}  ${message}`].slice(-500));
+    const connect = async () => {
+      unlisten = await listen<any>('codeclub:whatsapp-event', (event) => {
+        const payload = event.payload || {};
+        if (payload.type === 'qr') { setRefreshing(false); appendLog('QR generado; escanealo desde WhatsApp > Dispositivos vinculados'); }
+        else if (payload.type === 'ready') { setRefreshing(false); whatsappContextStore.set({ ...whatsappContextStore.get(), connected: true, account: payload.name || payload.phone }); appendLog(`Conectado como ${payload.name || payload.phone || 'cuenta desconocida'}`); }
+        else if (payload.type === 'chats') { whatsappContextStore.set({ ...whatsappContextStore.get(), chats: payload.chats || [] }); appendLog(`Conversaciones recibidas: ${payload.chats?.length || 0}`); }
+        else if (payload.type === 'message') { const current = whatsappContextStore.get(); const chatId = payload.chat?.id; whatsappContextStore.set({ ...current, chats: chatId ? [payload.chat, ...current.chats.filter((chat) => chat.id !== chatId)] : current.chats, messages: chatId ? { ...current.messages, [chatId]: [...(current.messages[chatId] || []), payload.message].slice(-300) } : current.messages }); appendLog(`Mensaje recibido en ${payload.chat?.name || payload.chat?.id || 'chat'}`); }
+        else if (payload.type === 'chat_messages') { const current = whatsappContextStore.get(); whatsappContextStore.set({ ...current, messages: { ...current.messages, [payload.chatId]: payload.messages || [] } }); }
+        else if (payload.type === 'error') appendLog(`ERROR ${payload.message || 'sin detalle'}`);
+        else if (payload.type === 'disconnected') appendLog(payload.reason || 'WhatsApp desconectado');
+        else if (payload.type === 'session_reset') appendLog(payload.reason || 'Sesión reiniciada');
+        else if (payload.type === 'logged_out') appendLog('Sesión cerrada');
+        else appendLog(JSON.stringify(payload));
+      });
+      if (disposed) return;
+      try {
+        await invoke('codeclub_whatsapp_start');
+        appendLog('Bridge iniciado');
+      } catch (error) { appendLog(`ERROR ${String(error)}`); }
+    };
+    void connect();
+    return () => { disposed = true; unlisten?.(); void invoke('codeclub_whatsapp_stop').catch(() => undefined); };
+  }, []);
+
+  return <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#111111]">
+    <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-[#2b2b2b] bg-[#111111] px-2 text-[12px] text-[#eeeeee]">
+      <span>WhatsApp</span>
+      <div className="flex items-center gap-1">
+        <button type="button" onClick={() => { setRefreshing(true); setLogs((current) => [...current, `${new Date().toLocaleTimeString()}  Actualizando bridge...`].slice(-500)); void invoke('codeclub_whatsapp_refresh').catch((error) => { setRefreshing(false); setLogs((current) => [...current, `ERROR ${String(error)}`].slice(-500)); }); }} className="grid h-7 w-7 place-items-center rounded-[7px] bg-[#202020] text-[#eeeeee] hover:bg-[#2b2b2b]" title="Actualizar WhatsApp" aria-label="Actualizar WhatsApp"><RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} /></button>
+        <button type="button" onClick={() => { setLogs((current) => [...current, `${new Date().toLocaleTimeString()}  Cerrando sesión...`].slice(-500)); void invoke('codeclub_whatsapp_logout').catch((error) => setLogs((current) => [...current, `ERROR ${String(error)}`].slice(-500))); }} className="grid h-7 w-7 place-items-center rounded-[7px] bg-[#202020] text-[#eeeeee] hover:bg-[#2b2b2b]" title="Cerrar sesión de WhatsApp" aria-label="Cerrar sesión de WhatsApp"><LogOut size={14} /></button>
+      </div>
+    </div>
+    <pre className="file-preview-scrollbar m-0 min-h-0 flex-1 overflow-auto whitespace-pre-wrap bg-[#101010] p-3 font-mono text-[11px] leading-5 text-[#b9b9b9]">{logs.join('\n')}</pre>
+  </div>;
+}
+
+function LegacyWhatsAppView() {
+  const [query, setQuery] = useState('');
+  const [showConversations, setShowConversations] = useState(true);
+  const [qr, setQr] = useState('');
+  const [status, setStatus] = useState('Conectando con WhatsApp...');
+  const [chats, setChats] = useState<Array<{ id: string; name: string; unreadCount: number; timestamp?: number; pinned?: number }>>([]);
+  const [activeChatId, setActiveChatId] = useState('');
+  const [messages, setMessages] = useState<Record<string, Array<{ id: string; body: string; fromMe: boolean }>>>({});
+  const [input, setInput] = useState('');
+  const [chatDebug, setChatDebug] = useState('Esperando datos de WhatsApp...');
+  const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    const handleEvent = (payload: any) => {
+      if (payload.type === 'qr') { setRefreshing(false); setQr(payload.dataUrl); setStatus('Escaneá el código QR con WhatsApp'); }
+      if (payload.type === 'ready') {
+        setQr('');
+        setRefreshing(false);
+        const account = payload.name || payload.phone;
+        setStatus(account ? `Conectado como ${account}` : 'Conectado');
+      }
+      if (payload.type === 'session_reset') { setRefreshing(false); setQr(''); setChats([]); setActiveChatId(''); setStatus('Sesión expirada. Generando un nuevo QR...'); }
+      if (payload.type === 'logged_out') {
+        setRefreshing(false);
+        setQr('');
+        setChats([]);
+        setActiveChatId('');
+        setMessages({});
+        setChatDebug('Sesión limpia. Esperando nuevas conversaciones...');
+        setStatus('Sesión cerrada. Generando un nuevo QR...');
+        setTimeout(() => { if (!disposed) void invoke('codeclub_whatsapp_start').catch((error) => setStatus(String(error))); }, 300);
+      }
+      if (payload.type === 'error') setStatus(payload.message || 'No se pudo conectar con WhatsApp');
+      if (payload.type === 'disconnected') { setRefreshing(false); setQr(''); setStatus(payload.reason || 'WhatsApp desconectado'); }
+      if (payload.type === 'chats') {
+        const nextChats = payload.chats || [];
+        setChats(nextChats);
+        setChatDebug(`Evento recibido: ${nextChats.length} conversaciones`);
+      }
+      if (payload.type === 'message') {
+        setChats((current) => [payload.chat, ...current.filter((chat) => chat.id !== payload.chat.id)]);
+        setMessages((current) => ({ ...current, [payload.chat.id]: [...(current[payload.chat.id] || []).filter((message) => message.id !== payload.message.id), payload.message] }));
+      }
+      if (payload.type === 'chat_messages') setMessages((current) => ({ ...current, [payload.chatId]: payload.messages || [] }));
+    };
+    const connect = async () => {
+      unlisten = await listen<any>('codeclub:whatsapp-event', (event) => handleEvent(event.payload));
+      if (disposed) return;
+      try {
+        await invoke('codeclub_whatsapp_start');
+      } catch (error) { setStatus(String(error)); }
+    };
+    void connect();
+    return () => { disposed = true; unlisten?.(); void invoke('codeclub_whatsapp_stop').catch(() => undefined); };
+  }, []);
+
+  const activeChat = chats.find((chat) => chat.id === activeChatId);
+  const activeChatNumber = activeChat?.id.split('@')[0] || '';
+  const activeChatTitle = activeChat
+    ? activeChat.name === activeChatNumber
+      ? `WhatsApp - ${activeChatNumber}`
+      : `WhatsApp - ${activeChatNumber} - ${activeChat.name}`
+    : 'WhatsApp';
+  const visibleChats = chats
+    .filter((chat) => chat.name.toLowerCase().includes(query.toLowerCase()))
+    .sort((left, right) => {
+      const pinnedOrder = Number(Boolean(right.pinned)) - Number(Boolean(left.pinned));
+      return pinnedOrder || ((right.timestamp || 0) - (left.timestamp || 0));
+    });
+  const sendMessage = async () => {
+    const body = input.trim();
+    if (!body || !activeChatId) return;
+    await invoke('codeclub_whatsapp_send', { chatId: activeChatId, body });
+    setMessages((current) => ({ ...current, [activeChatId]: [...(current[activeChatId] || []), { id: `local-${Date.now()}`, body, fromMe: true }] }));
+    setInput('');
+  };
+  const openChat = async (chatId: string) => {
+    setActiveChatId(chatId);
+    await invoke('codeclub_whatsapp_get_messages', { chatId }).catch(() => undefined);
+  };
+
+  return <div className="flex h-full max-h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#111111]">
+    <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-[#2b2b2b] bg-[#111111] px-2">
+      <span className="min-w-0 truncate text-[12px] leading-none text-[#eeeeee]">{activeChatTitle}</span>
+      <div className="flex items-center gap-1">
+        <button type="button" onClick={() => { setRefreshing(true); setChatDebug('Actualizando conversaciones...'); void invoke('codeclub_whatsapp_refresh').catch((error) => { setRefreshing(false); setChatDebug(String(error)); }); }} className="grid h-7 w-7 place-items-center rounded-[7px] bg-[#202020] text-[#eeeeee] hover:bg-[#2b2b2b]" title="Actualizar conversaciones" aria-label="Actualizar conversaciones">
+          <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+        </button>
+        <button type="button" onClick={() => { setStatus('Cerrando sesión de WhatsApp...'); void invoke('codeclub_whatsapp_logout').catch((error) => setStatus(String(error))); }} className="grid h-7 w-7 place-items-center rounded-[7px] bg-[#202020] text-[#eeeeee] hover:bg-[#2b2b2b]" title="Cerrar sesión de WhatsApp" aria-label="Cerrar sesión de WhatsApp">
+          <LogOut size={14} />
+        </button>
+        <button type="button" onClick={() => setShowConversations((visible) => !visible)} className="grid h-7 w-7 place-items-center rounded-[7px] bg-[#202020] text-[#eeeeee] hover:bg-[#2b2b2b]" title={showConversations ? 'Ocultar conversaciones' : 'Mostrar conversaciones'} aria-label={showConversations ? 'Ocultar conversaciones' : 'Mostrar conversaciones'}>
+          <MessageCircle size={15} />
+        </button>
+      </div>
+    </div>
+    <div className="flex h-0 min-h-0 max-h-full flex-1 overflow-hidden">
+      <main className="flex h-full min-w-0 min-h-0 flex-1 flex-col bg-[#111111]">
+        {qr ? <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center"><img src={qr} alt="Código QR de WhatsApp" className="h-[220px] w-[220px] rounded-xl bg-white p-2" /><div><p className="m-0 text-[17px] font-semibold text-[#eeeeee]">Vincular WhatsApp</p><p className="m-0 mt-2 text-[13px] leading-5 text-[#a7a7a7]">Abrí WhatsApp en tu teléfono y escaneá este código</p></div></div> : activeChat ? <div className="flex min-h-0 flex-1 flex-col"><div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{(messages[activeChatId] || []).map((message) => <div key={message.id} className={`max-w-[78%] rounded-lg px-2.5 py-1.5 text-[12px] ${message.fromMe ? 'self-end bg-[#1e3a2b] text-[#e2f4e9]' : 'self-start bg-[#1d1d1d] text-[#eeeeee]'}`}>{message.body}</div>)}</div><div className="shrink-0 border-t border-[#2b2b2b] p-2"><div className="flex items-center gap-2 rounded-full border border-[#353535] bg-[#1d1d1d] px-3 py-1"><input value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void sendMessage(); }} className="min-w-0 flex-1 bg-transparent py-1 text-[12px] text-[#eeeeee] outline-none" placeholder="Escribí un mensaje..." /><button type="button" onClick={() => void sendMessage()} className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[#79c893] text-[#111111]" aria-label="Enviar mensaje" title="Enviar mensaje"><ArrowUpRight size={16} strokeWidth={2} /></button></div></div></div> : <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center"><MessageCircle size={42} strokeWidth={1.5} className="text-[#a7a7a7]" /><div className="max-w-[300px]"><p className="m-0 text-[18px] font-semibold text-[#eeeeee]">{status}</p><p className="m-0 mt-2 text-[14px] leading-5 text-[#a7a7a7]">Seleccioná un chat cuando WhatsApp esté conectado</p></div></div>}
+      </main>
+      <aside className={`h-full max-h-full min-h-0 shrink-0 overflow-hidden border-l border-[#2b2b2b] bg-[#121212] transition-[width,transform,opacity] duration-200 ease-out ${showConversations ? 'w-[35%]' : 'w-0 translate-x-full opacity-0 border-l-0 pointer-events-none'}`}>
+        <div className="flex h-full min-h-0 flex-1 flex-col px-3 py-3">
+          <label className="mb-2 flex h-8 shrink-0 items-center gap-2 rounded-[10px] border border-[#353535] bg-[#1d1d1d] px-2.5 text-[#9a9a9a] focus-within:border-[#555555]"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} className="min-w-0 flex-1 bg-transparent text-[12px] text-[#eeeeee] outline-none placeholder:text-[#929292]" placeholder="Buscar conversaciones..." aria-label="Buscar conversaciones" /></label>
+          <div className="min-h-0 flex-1 max-h-full overflow-y-auto bg-[#121212] p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{visibleChats.length ? visibleChats.map((chat) => <button key={chat.id} type="button" onClick={() => void openChat(chat.id)} className={`flex min-h-[34px] w-full items-center gap-2 rounded-md px-2 text-left text-[12px] ${activeChatId === chat.id ? 'bg-[#1e1e1e] text-[#eeeeee]' : 'text-[#cccccc] hover:bg-white/[0.04]'}`}><MessageCircle size={14} className="shrink-0 text-[#79c893]" /><span className="min-w-0 flex-1 truncate">{chat.name}</span>{chat.unreadCount > 0 && <span className="text-[10px] text-[#79c893]">{chat.unreadCount}</span>}</button>) : <div className="px-2 py-4 text-center"><p className="m-0 text-[12px] text-[#777777]">{query ? 'No se encontraron conversaciones.' : 'No hay conversaciones disponibles.'}</p><p className="m-0 mt-2 text-[10px] text-[#555555]">{chatDebug}</p></div>}</div>
+        </div>
+      </aside>
+    </div>
+  </div>;
+}
+
 export default function RightSidebar() {
-  type RightTab = 'files' | 'review' | 'browser' | 'quotes';
-  const labels: Record<RightTab, string> = { files: 'Archivos', review: 'Revisar', browser: 'Navegador', quotes: 'Cotizaciones' };
-  const availableTabs: RightTab[] = ['files', 'review', 'browser', 'quotes'];
+  type RightTab = 'files' | 'review' | 'browser' | 'quotes' | 'whatsapp';
+  const labels: Record<RightTab, string> = { files: 'Archivos', review: 'Revisar', browser: 'Navegador', quotes: 'Cotizaciones', whatsapp: 'WhatsApp' };
+  const availableTabs: RightTab[] = ['files', 'review', 'browser', 'quotes', 'whatsapp'];
   const [tabs, setTabs] = React.useState<RightTab[]>([]);
   const [activeTab, setActiveTab] = React.useState<RightTab | null>(null);
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -233,12 +391,13 @@ export default function RightSidebar() {
         </div>
         <div className="flex h-0 min-h-0 flex-1 flex-col overflow-hidden">
           {activeTab === 'files' && <FilesView projectPath={activeProjectPath} />}
+          {tabs.includes('whatsapp') && <div className={activeTab === 'whatsapp' ? 'flex h-full min-h-0 flex-1' : 'hidden'}><WhatsAppTerminalView /></div>}
           {tabs.length === 0 && <div className="flex flex-1 items-center justify-center">
             <button type="button" onClick={() => setMenuOpen(true)} className="min-h-[30px] rounded-lg border border-[#202020] bg-transparent px-3 text-[11px] text-[#777777] transition-colors hover:bg-[#1c1c1c] hover:text-[#eeeeee]">
               Crear panel
             </button>
           </div>}
-          {activeTab && activeTab !== 'files' && <div className="flex flex-1 items-center justify-center p-3 text-xs text-[#777777]">Panel {labels[activeTab]}</div>}
+          {activeTab && activeTab !== 'files' && activeTab !== 'whatsapp' && <div className="flex flex-1 items-center justify-center p-3 text-xs text-[#777777]">Panel {labels[activeTab]}</div>}
         </div>
       </div>
     </aside>

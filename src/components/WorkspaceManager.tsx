@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Cpu, Folder, House, MessageSquarePlus, MousePointer, Server, Target, Terminal } from 'lucide-react';
-import { chatsStore, type GlobalChat } from '../lib/store';
+import { Cpu, Folder, House, MessageSquarePlus, Server, Target, Terminal } from 'lucide-react';
+import { activeChatStore, chatsStore, type GlobalChat } from '../lib/store';
 import ChatInterface from './ChatInterface.tsx';
 import ProjectsPanel from './ProjectsPanel.tsx';
 import BusinessPanel from './BusinessPanel.tsx';
@@ -17,9 +17,13 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
   const [dockVisible, setDockVisible] = useState(false);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [availableProjects, setAvailableProjects] = useState<ProjectEntry[]>([]);
-  const [recentChats, setRecentChats] = useState<GlobalChat[]>(() => chatsStore.get().slice(-3).reverse());
+  const [recentChats, setRecentChats] = useState<GlobalChat[]>([]);
 
-  useEffect(() => chatsStore.subscribe((chats) => setRecentChats(chats.slice(-3).reverse())), []);
+  useEffect(() => {
+    const updateRecentChats = (chats: GlobalChat[]) => setRecentChats(chats.slice(-3).reverse());
+    updateRecentChats(chatsStore.get());
+    return chatsStore.subscribe(updateRecentChats);
+  }, []);
 
   useEffect(() => {
     window.dispatchEvent(new CustomEvent('codeclub:chat-mode-changed', { detail: { mode: chatMode } }));
@@ -62,11 +66,13 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
 
   const selectActiveProject = (project: ProjectEntry) => {
     setProjectPickerOpen(false);
+    const activeChat = activeChatStore.get();
+    if (activeChat.id) window.dispatchEvent(new CustomEvent('codeclub:chat-project-changed', { detail: { chatId: activeChat.id, projectPath: project.path, projectName: project.name } }));
     window.dispatchEvent(new CustomEvent('codeclub:project-selection-changed', {
-      detail: { selected: true, projectPath: project.path, projectName: project.name },
+      detail: { selected: Boolean(project.path), keepChat: !project.path, projectPath: project.path, projectName: project.name },
     }));
     window.dispatchEvent(new CustomEvent('codeclub:active-project', {
-      detail: { projectPath: project.path, projectName: project.name },
+      detail: { projectPath: project.path || null, projectName: project.name },
     }));
   };
 
@@ -150,8 +156,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
           <button type="button" aria-label="Nuevo chat" title="Nuevo chat" onClick={() => window.dispatchEvent(new CustomEvent('codeclub:request-new-chat'))} className="grid h-7 w-7 place-items-center rounded-[9px] border-0 bg-transparent text-[#777777] transition-colors hover:bg-[#1e1e1e] hover:text-[#eeeeee]"><House size={14} strokeWidth={1.8} /></button>
           <button type="button" aria-label="Seleccionar proveedor" title="Proveedor" onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-command-menu', { detail: { kind: 'provider' } }))} className="grid h-7 w-7 place-items-center rounded-[9px] border-0 bg-transparent text-[#777777] transition-colors hover:bg-[#1e1e1e] hover:text-[#eeeeee]"><Server size={14} strokeWidth={1.8} /></button>
           <button type="button" aria-label="Seleccionar modelo" title="Modelo" onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-command-menu', { detail: { kind: 'model' } }))} className="grid h-7 w-7 place-items-center rounded-[9px] border-0 bg-transparent text-[#777777] transition-colors hover:bg-[#1e1e1e] hover:text-[#eeeeee]"><Cpu size={14} strokeWidth={1.8} /></button>
-          <button type="button" aria-label="Proyectos" title="Proyectos" onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-projects'))} className="grid h-7 w-7 place-items-center rounded-[9px] border-0 bg-transparent text-[#777777] transition-colors hover:bg-[#1e1e1e] hover:text-[#eeeeee]"><Folder size={14} strokeWidth={1.8} /></button>
-          <button type="button" aria-label="Elegir proyecto indexado" title="Proyectos indexados" onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-command-menu', { detail: { kind: 'project' } }))} className="grid h-7 w-7 place-items-center rounded-[9px] border-0 bg-transparent text-[#777777] transition-colors hover:bg-[#1e1e1e] hover:text-[#eeeeee]"><MousePointer size={14} strokeWidth={1.8} /></button>
+          <button type="button" aria-label="Elegir proyecto del chat" title="Proyecto del chat" onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-command-menu', { detail: { kind: 'project' } }))} className="grid h-7 w-7 place-items-center rounded-[9px] border-0 bg-transparent text-[#777777] transition-colors hover:bg-[#1e1e1e] hover:text-[#eeeeee]"><Folder size={14} strokeWidth={1.8} /></button>
           <button type="button" aria-label={`Modo ${chatMode === 'development' ? 'desarrollo' : 'negocios'}`} title={`Modo ${chatMode === 'development' ? 'desarrollo' : 'negocios'}`} onMouseEnter={() => setModeHovered(true)} onMouseLeave={() => setModeHovered(false)} onClick={() => setChatMode((mode) => mode === 'development' ? 'business' : 'development')} className="grid h-7 w-7 place-items-center rounded-[9px] border-0 bg-transparent text-[#777777] transition-colors hover:bg-[#1e1e1e]">
             {chatMode === 'development' ? <MessageSquarePlus size={13} strokeWidth={1.8} style={{ color: modeHovered ? '#eeeeee' : '#777777' }} /> : <Target size={13} strokeWidth={1.8} style={{ color: modeHovered ? '#eeeeee' : '#777777' }} />}
           </button>
@@ -164,6 +169,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
         </div>
         </div>
         {projectPickerOpen && <div className="absolute left-1/2 top-12 z-50 grid w-[230px] -translate-x-1/2 gap-1 rounded-xl border border-[#2b2b2b] bg-[#121212] p-1.5" onClick={(event) => event.stopPropagation()}>
+          <button type="button" onClick={() => selectActiveProject({ path: '', name: 'Sin proyecto' })} className="flex min-h-[32px] items-center gap-2 rounded-lg border-0 bg-transparent px-2.5 text-left text-xs text-[#bdbdbd] hover:bg-[#1e1e1e] hover:text-[#eeeeee]"><Folder size={14} /><span className="min-w-0 flex-1 truncate">Sin proyecto</span></button>
           {availableProjects.length === 0 ? <div className="px-3 py-2 text-[11px] text-[#777777]">No hay proyectos indexados</div> : availableProjects.map((project) => <button key={project.path} type="button" onClick={() => selectActiveProject(project)} className="flex min-h-[32px] items-center gap-2 rounded-lg border-0 bg-transparent px-2.5 text-left text-xs text-[#bdbdbd] hover:bg-[#1e1e1e] hover:text-[#eeeeee]"><Folder size={14} /><span className="min-w-0 flex-1 truncate">{project.name}</span></button>)}
         </div>}
       </div>

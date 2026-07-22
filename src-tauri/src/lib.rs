@@ -2,13 +2,13 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     fs,
-    io::{Read, Write},
+    io::{BufRead, Read, Write},
     path::{Component, Path, PathBuf},
     process::{Child, ChildStdin, Command, Stdio},
     sync::{Arc, Mutex},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 #[derive(Serialize)]
 struct FileEntry {
@@ -71,6 +71,11 @@ struct HttpFetchResponse {
 #[derive(Default)]
 struct TerminalRegistry {
     sessions: Mutex<HashMap<String, TerminalSession>>,
+}
+
+#[derive(Default)]
+struct WhatsAppRegistry {
+    child: Mutex<Option<Child>>,
 }
 
 struct TerminalSession {
@@ -935,10 +940,108 @@ async fn codeclub_http_fetch(request: HttpFetchRequest) -> Result<HttpFetchRespo
     })
 }
 
+#[tauri::command]
+fn codeclub_whatsapp_start(app: AppHandle, state: State<'_, WhatsAppRegistry>) -> Result<(), String> {
+    let mut registry = state.child.lock().map_err(|error| error.to_string())?;
+    if let Some(child) = registry.as_mut() {
+        if child.try_wait().map_err(|error| error.to_string())?.is_none() {
+            if let Some(stdin) = child.stdin.as_mut() {
+                let _ = writeln!(stdin, "{}", serde_json::json!({ "type": "list_chats" }));
+                let _ = stdin.flush();
+            }
+            return Ok(());
+        }
+    }
+
+    let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("scripts").join("whatsapp-bridge.mjs");
+    let data_dir = app.path().app_data_dir().map_err(|error| error.to_string())?.join("whatsapp-baileys-session");
+    fs::create_dir_all(&data_dir).map_err(|error| error.to_string())?;
+    let mut child = Command::new("node")
+        .arg(script)
+        .env("CODECLUB_WHATSAPP_DIR", data_dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("No se pudo iniciar WhatsApp: {error}"))?;
+
+    if let Some(stdout) = child.stdout.take() {
+        let app_handle = app.clone();
+        std::thread::spawn(move || {
+            let reader = std::io::BufReader::new(stdout);
+            for line in reader.lines().flatten() {
+                if let Ok(payload) = serde_json::from_str::<serde_json::Value>(&line) {
+                    let _ = app_handle.emit("codeclub:whatsapp-event", payload);
+                }
+            }
+        });
+    }
+    if let Some(stderr) = child.stderr.take() {
+        let app_handle = app.clone();
+        std::thread::spawn(move || {
+            let reader = std::io::BufReader::new(stderr);
+            for line in reader.lines().flatten() {
+                let _ = app_handle.emit(
+                    "codeclub:whatsapp-event",
+                    serde_json::json!({ "type": "error", "message": line }),
+                );
+            }
+        });
+    }
+    *registry = Some(child);
+    Ok(())
+}
+
+#[tauri::command]
+fn codeclub_whatsapp_send(state: State<'_, WhatsAppRegistry>, chat_id: String, body: String) -> Result<(), String> {
+    let mut registry = state.child.lock().map_err(|error| error.to_string())?;
+    let child = registry.as_mut().ok_or_else(|| "WhatsApp no está iniciado".to_string())?;
+    let stdin = child.stdin.as_mut().ok_or_else(|| "No hay canal de WhatsApp".to_string())?;
+    writeln!(stdin, "{}", serde_json::json!({ "type": "send", "chatId": chat_id, "body": body })).map_err(|error| error.to_string())?;
+    stdin.flush().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn codeclub_whatsapp_get_messages(state: State<'_, WhatsAppRegistry>, chat_id: String) -> Result<(), String> {
+    let mut registry = state.child.lock().map_err(|error| error.to_string())?;
+    let child = registry.as_mut().ok_or_else(|| "WhatsApp no está iniciado".to_string())?;
+    let stdin = child.stdin.as_mut().ok_or_else(|| "No hay canal de WhatsApp".to_string())?;
+    writeln!(stdin, "{}", serde_json::json!({ "type": "get_messages", "chatId": chat_id })).map_err(|error| error.to_string())?;
+    stdin.flush().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn codeclub_whatsapp_refresh(state: State<'_, WhatsAppRegistry>) -> Result<(), String> {
+    let mut registry = state.child.lock().map_err(|error| error.to_string())?;
+    let child = registry.as_mut().ok_or_else(|| "WhatsApp no está iniciado".to_string())?;
+    let stdin = child.stdin.as_mut().ok_or_else(|| "No hay canal de WhatsApp".to_string())?;
+    writeln!(stdin, "{}", serde_json::json!({ "type": "refresh" })).map_err(|error| error.to_string())?;
+    stdin.flush().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn codeclub_whatsapp_logout(state: State<'_, WhatsAppRegistry>) -> Result<(), String> {
+    let mut registry = state.child.lock().map_err(|error| error.to_string())?;
+    let child = registry.as_mut().ok_or_else(|| "WhatsApp no está iniciado".to_string())?;
+    let stdin = child.stdin.as_mut().ok_or_else(|| "No hay canal de WhatsApp".to_string())?;
+    writeln!(stdin, "{}", serde_json::json!({ "type": "logout" })).map_err(|error| error.to_string())?;
+    stdin.flush().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn codeclub_whatsapp_stop(state: State<'_, WhatsAppRegistry>) -> Result<(), String> {
+    let mut registry = state.child.lock().map_err(|error| error.to_string())?;
+    if let Some(mut child) = registry.take() {
+        let _ = child.kill();
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(TerminalRegistry::default())
+        .manage(WhatsAppRegistry::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
@@ -959,7 +1062,13 @@ pub fn run() {
             codeclub_terminal_rename,
             codeclub_terminal_stop,
             codeclub_terminal_delete,
-            codeclub_http_fetch
+            codeclub_http_fetch,
+            codeclub_whatsapp_start,
+            codeclub_whatsapp_send,
+            codeclub_whatsapp_get_messages,
+            codeclub_whatsapp_refresh,
+            codeclub_whatsapp_logout,
+            codeclub_whatsapp_stop
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

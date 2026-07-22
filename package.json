@@ -12,6 +12,7 @@
     "web:dev:force": "astro dev --host 127.0.0.1 --force",
     "web:build": "astro build",
     "web:preview": "astro preview",
+    "whatsapp:debug": "node scripts/whatsapp-debug.mjs",
     "tauri": "tauri"
   },
   "dependencies": {
@@ -37,6 +38,7 @@
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "~2",
     "@tauri-apps/plugin-fs": "~2",
+    "@whiskeysockets/baileys": "^7.0.0-rc13",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "ai": "^7.0.16",
@@ -44,6 +46,7 @@
     "lucide-astro": "^0.556.0",
     "lucide-react": "^1.23.0",
     "mammoth": "^1.12.0",
+    "qrcode": "^1.5.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-markdown": "^10.1.0",

@@ -30,6 +30,24 @@ export interface ProjectMeta {
   chats: Array<{ id: string; name: string }>;
 }
 
+export interface BusinessWorkspace {
+  version: 1;
+  currency: string;
+  project: { status: string; monthly_fee: number | null; next_billing_date: string | null };
+  profile: { description: string; services: string[]; target_clients: string[] };
+  pricing: { hourly_rate: number | null; fixed_scope: boolean; milestones: boolean; retainer_monthly: number | null; value_based: boolean };
+  opportunities: any[];
+  estimates: any[];
+  quotes: any[];
+  milestones: any[];
+  payments: any[];
+  time_entries: any[];
+  expenses: any[];
+  invoices: any[];
+  notes: any[];
+  updated_at: string;
+}
+
 export interface CodeclubProfile {
   id: string;
   name: string;
@@ -63,6 +81,7 @@ export const writeGlobalChatHistory = async (chatId: string, messages: any[]) =>
 };
 
 export const getProjectMetaPath = (projectPath: string) => getProjectFilePath(projectPath, "meta.json");
+export const getBusinessWorkspacePath = (projectPath: string) => getProjectFilePath(projectPath, "business.json");
 export const getProjectChatPath = (projectPath: string, chatId: string) => getProjectFilePath(projectPath, "chats", `${chatId}.jsonl`);
 
 export const readProjectMeta = async (projectPath: string): Promise<ProjectMeta | null> => {
@@ -107,6 +126,50 @@ export const ensureCodeclubFolder = async (projectPath: string) => {
   await mkdir(await join(projectPath, ".codeclub"), { recursive: true });
 };
 
+export const readBusinessWorkspace = async (projectPath: string): Promise<BusinessWorkspace | null> => {
+  const path = await getBusinessWorkspacePath(projectPath);
+  if (!(await exists(path))) return null;
+  try {
+    const data = JSON.parse(await readTextFile(path));
+    return {
+      version: 1,
+      currency: "USD",
+      project: { status: "prospecto", monthly_fee: null, next_billing_date: null },
+      profile: { description: "", services: [], target_clients: [] },
+      pricing: { hourly_rate: null, fixed_scope: true, milestones: true, retainer_monthly: null, value_based: false },
+      opportunities: [], estimates: [], quotes: [], milestones: [], payments: [], time_entries: [], expenses: [], invoices: [], notes: [],
+      updated_at: new Date().toISOString(),
+      ...data,
+      project: { status: "prospecto", monthly_fee: null, next_billing_date: null, ...(data.project || {}) },
+    };
+  } catch { return null; }
+};
+
+export const ensureBusinessWorkspace = async (projectPath: string) => {
+  const current = await readBusinessWorkspace(projectPath);
+  if (current) return current;
+  const workspace: BusinessWorkspace = {
+    version: 1,
+    currency: "USD",
+    project: { status: "prospecto", monthly_fee: null, next_billing_date: null },
+    profile: { description: "", services: [], target_clients: [] },
+    pricing: { hourly_rate: null, fixed_scope: true, milestones: true, retainer_monthly: null, value_based: false },
+    opportunities: [], estimates: [], quotes: [], milestones: [], payments: [], time_entries: [], expenses: [], invoices: [], notes: [],
+    updated_at: new Date().toISOString(),
+  };
+  await ensureCodeclubFolder(projectPath);
+  await writeTextFile(await getBusinessWorkspacePath(projectPath), JSON.stringify(workspace, null, 2));
+  return workspace;
+};
+
+export const writeBusinessWorkspace = async (projectPath: string, workspace: BusinessWorkspace) => {
+  await ensureCodeclubFolder(projectPath);
+  const next = { ...workspace, version: 1 as const, updated_at: new Date().toISOString() };
+  await writeTextFile(await getBusinessWorkspacePath(projectPath), JSON.stringify(next, null, 2));
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("codeclub:business-updated", { detail: { projectPath } }));
+  return next;
+};
+
 export const ensureProjectProfile = async (projectPath: string) => {
   await ensureCodeclubFolder(projectPath);
   const profilePath = await join(projectPath, ".codeclub", "profiles.json");
@@ -129,6 +192,7 @@ export const ensureProjectProfile = async (projectPath: string) => {
 
 export const indexProjectContents = async (name: string, projectPath: string) => {
   await ensureProjectProfile(projectPath);
+  await ensureBusinessWorkspace(projectPath);
   const snapshot = await invoke<ProjectIndexSnapshot>("codeclub_index_project", { projectPath });
   const projects = await readProjectIndex();
   const existing = projects.find((project) => project.path === projectPath);

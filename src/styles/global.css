@@ -92,7 +92,7 @@ button {
 
 @keyframes business-history-marquee {
   from { transform: translateX(0); }
-  to { transform: translateX(calc(-50% - 4px)); }
+  to { transform: translateX(-50%); }
 }
 
 html,

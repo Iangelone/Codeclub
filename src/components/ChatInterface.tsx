@@ -14,7 +14,7 @@ import { sql } from '@codemirror/lang-sql';
 import { xml } from '@codemirror/lang-xml';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
-import { readFile, readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
+import { exists, mkdir, readFile, readTextFile, remove, writeTextFile } from '@tauri-apps/plugin-fs';
 import { open } from '@tauri-apps/plugin-dialog';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import ReactMarkdown from 'react-markdown';
@@ -273,6 +273,61 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     };
     window.addEventListener('codeclub:open-empty-chat', handleOpenEmptyChat);
     return () => window.removeEventListener('codeclub:open-empty-chat', handleOpenEmptyChat);
+  }, []);
+
+  useEffect(() => {
+    const handleChatProjectChanged = async (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      const current = activeChatRef.current;
+      if (!current || current.chatId !== detail.chatId || typeof detail.projectPath !== 'string' || current.projectPath === detail.projectPath) return;
+      const oldPath = current.projectPath;
+      const newPath = detail.projectPath;
+      const chatName = (current as any).name || 'Chat';
+      activeChatRef.current = { ...current, projectPath: newPath, projectName: detail.projectName, name: chatName };
+      setActiveChat(activeChatRef.current);
+      try {
+        const oldMessages = oldPath ? await (async () => {
+          const oldFile = await getProjectChatPath(oldPath, current.chatId);
+          return (await exists(oldFile)) ? await readTextFile(oldFile) : '';
+        })() : (await readGlobalChatHistory(current.chatId)).map((message) => JSON.stringify(message)).join('\n');
+        if (!newPath) {
+          const parsedMessages = oldMessages.split('\n').filter(Boolean).map((line) => JSON.parse(line));
+          await writeGlobalChatHistory(current.chatId, parsedMessages);
+          const globalChats = await readGlobalChats();
+          if (!globalChats.some((chat) => chat.id === current.chatId)) globalChats.push({ id: current.chatId, name: chatName, projectPath: '', projectName: 'Sin proyecto' });
+          await writeGlobalChats(globalChats);
+          if (oldPath) {
+            const oldFile = await getProjectChatPath(oldPath, current.chatId);
+            if (await exists(oldFile)) await remove(oldFile);
+            const oldMeta = await readProjectMeta(oldPath);
+            if (oldMeta) { oldMeta.chats = oldMeta.chats.filter((chat) => chat.id !== current.chatId); await writeProjectMeta(oldPath, oldMeta); }
+            window.dispatchEvent(new CustomEvent('codeclub:project-meta-changed', { detail: { projectPath: oldPath } }));
+          }
+          window.dispatchEvent(new CustomEvent('codeclub:global-chat-changed'));
+          return;
+        }
+        const newDir = await getProjectFilePath(newPath, 'chats');
+        const newFile = await getProjectChatPath(newPath, current.chatId);
+        await mkdir(newDir, { recursive: true });
+        if (oldMessages) await writeTextFile(newFile, oldMessages.endsWith('\n') ? oldMessages : `${oldMessages}\n`);
+        if (oldPath) {
+          const oldFile = await getProjectChatPath(oldPath, current.chatId);
+          if (await exists(oldFile)) await remove(oldFile);
+          const oldMeta = await readProjectMeta(oldPath);
+          if (oldMeta) { oldMeta.chats = oldMeta.chats.filter((chat) => chat.id !== current.chatId); await writeProjectMeta(oldPath, oldMeta); }
+        } else {
+          const globalChats = await readGlobalChats();
+          await writeGlobalChats(globalChats.filter((chat) => chat.id !== current.chatId));
+        }
+        const newMeta = await readProjectMeta(newPath) || { name: detail.projectName || 'Proyecto', path: newPath, created_at: new Date().toISOString(), chats: [] };
+        if (!newMeta.chats.some((chat) => chat.id === current.chatId)) newMeta.chats.push({ id: current.chatId, name: chatName });
+        await writeProjectMeta(newPath, newMeta);
+        window.dispatchEvent(new CustomEvent('codeclub:project-meta-changed', { detail: { projectPath: oldPath } }));
+        window.dispatchEvent(new CustomEvent('codeclub:project-meta-changed', { detail: { projectPath: newPath } }));
+      } catch (error) { console.error('Error vinculando chat al proyecto:', error); }
+    };
+    window.addEventListener('codeclub:chat-project-changed', handleChatProjectChanged);
+    return () => window.removeEventListener('codeclub:chat-project-changed', handleChatProjectChanged);
   }, []);
 
   useEffect(() => {
@@ -886,7 +941,7 @@ const compactJson = (value) => {
         modelId: currentModel.id,
       });
       const tools = chatMode === 'business'
-        ? createBusinessTools({ recordToolEvent, setAgentState, indexedProjects })
+        ? createBusinessTools({ recordToolEvent, setAgentState, indexedProjects, projectPath: toolProjectPath, provider, modelId: currentModel.id })
         : developmentTools;
 
       const system = chatMode === 'business' ? [
@@ -894,8 +949,11 @@ const compactJson = (value) => {
         'Responde en español, claro y orientado a decisiones.',
         `El proyecto activo es ${chat.projectPath || 'Sin proyecto'}.`,
         `Proyectos indexados disponibles: ${indexedProjects.map((project) => `${project.name} (${project.path})`).join(', ') || 'ninguno'}.`,
-        'Usa listIndexedProjects para consultar el portfolio, createExecutionPlan para planes y createBudget para presupuestos.',
-        'Tus resultados son borradores estructurados y deben explicar supuestos cuando falten datos.',
+        'Usa listIndexedProjects para consultar el portfolio, getBusinessWorkspace para leer la economía, updateBusinessWorkspace para mantenerla, createExecutionPlan para planes y createBudget para presupuestos.',
+        'Usa getWhatsAppBusinessContext para consultar conversaciones en tiempo real. Es estrictamente solo lectura: nunca envía mensajes.',
+        'Usa listProjectFiles, readProjectFile y searchProjectText para entender la implementación, capacidades y límites técnicos. Son herramientas de solo lectura: no edites código desde Negocios.',
+        'Delegá investigaciones amplias a sub-IA especialistas: en Código usa explorer, frontend, backend, qa, security o documentation; en Negocios usa delegateBusinessSpecialist con commercial, pricing, finance, operations, crm_whatsapp o strategy.',
+        'Actuá como asesor comercial: analizá rentabilidad, costos, horas, alcance, precio fijo, precio por hora, hitos, abonos y valor entregado. Tus resultados son borradores estructurados y deben explicar supuestos cuando falten datos.',
       ].join(' ') : [
         'Sos el agente IDE de Codeclub.',
         'Responde en español, breve y util.',

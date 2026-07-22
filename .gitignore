@@ -6,4 +6,6 @@ dist/
 dist-ssr/
 .astro/
 src-tauri/target/
+src-tauri/.wwebjs_cache/
+.whatsapp-debug-session/
 bun.lockb
