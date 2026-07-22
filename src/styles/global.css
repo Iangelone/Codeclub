@@ -136,6 +136,32 @@ body {
   display: none;
 }
 
+.file-preview-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #3a3a3a transparent;
+}
+
+.file-preview-scrollbar::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.file-preview-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.file-preview-scrollbar::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: #3a3a3a;
+  background-clip: padding-box;
+}
+
+.file-preview-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #505050;
+  background-clip: padding-box;
+}
+
 .workspace-pane {
   position: relative;
 }

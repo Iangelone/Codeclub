@@ -23,11 +23,11 @@ import ChatPanel from "../components/ChatPanel.astro";
       }
     </script>
   </head>
-  <body class="has-sidebar group relative isolate grid grid-rows-[36px_1fr] grid-cols-[0_minmax(0,1fr)_0] transition-[grid-template-columns] duration-140 ease-out [&.has-sidebar]:grid-cols-[264px_minmax(0,1fr)_0] [&.has-right-panel]:grid-cols-[264px_minmax(0,1fr)_264px] m-0 min-w-[320px] min-h-screen bg-[#111111] text-[#dedede] overflow-hidden font-sans">
+  <body class="has-sidebar group relative isolate grid h-screen max-h-screen grid-rows-[36px_minmax(0,1fr)] grid-cols-[0_minmax(0,1fr)_0] transition-[grid-template-columns] duration-140 ease-out [&.has-sidebar]:grid-cols-[264px_minmax(0,1fr)_0] [&.has-right-panel]:grid-cols-[264px_minmax(0,1fr)_264px] m-0 min-w-[320px] min-h-0 bg-[#111111] text-[#dedede] overflow-hidden font-sans">
     <div id="app-background" aria-hidden="true"></div>
     <Topbar />
     <Sidebar client:load />
-    <main class="row-start-2 col-start-2 min-w-0 min-h-0 bg-[var(--color-bg)]" aria-label="Workspace">
+    <main class="row-start-2 col-start-2 h-full min-w-0 min-h-0 bg-[var(--color-bg)]" aria-label="Workspace">
       <ChatPanel />
     </main>
     <RightSidebar client:load />

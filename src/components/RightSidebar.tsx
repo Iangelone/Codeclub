@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronRight, FileCode2, Folder, FolderOpen, Folders, GitBranch, Plus, Search } from 'lucide-react';
+import { ChevronRight, File, FileCode2, FileImage, FileText, Folder, FolderOpen, Folders, GitBranch, LockKeyhole, Plus, Search } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 
 type FileEntry = { path: string; kind: 'file' | 'directory' };
@@ -32,11 +32,28 @@ const buildTree = (entries: FileEntry[]) => {
 };
 
 const iconForFile = (name: string) => {
-  const extension = name.split('.').pop()?.toLowerCase();
+  const extension = name.split('.').pop()?.toLowerCase() || '';
+  if (name === '.env' || name.startsWith('.env.')) return <span className="flex h-4 w-4 shrink-0 items-center justify-center"><LockKeyhole size={15} className="text-[#e6c35c]" /></span>;
   if (name === '.gitignore') return <span className="flex h-4 w-4 shrink-0 items-center justify-center"><GitBranch size={16} className="text-[#ef623b]" /></span>;
   if (extension === 'md') return <span className="flex h-4 w-4 shrink-0 items-center justify-center text-[11px] font-bold leading-none text-[#4fda73]">M↓</span>;
-  if (extension === 'json' || extension === 'mjs' || extension === 'js' || extension === 'ts') return <span className="flex h-4 w-4 shrink-0 items-center justify-center"><span className="rounded bg-[#62551a] px-0.5 text-[8px] font-bold text-[#f6d84a]">JS</span></span>;
-  return <span className="flex h-4 w-4 shrink-0 items-center justify-center"><FileCode2 size={16} className="text-[#a8a8a8]" /></span>;
+  if (extension === 'js' || extension === 'jsx') return <span className="flex h-4 w-4 shrink-0 items-center justify-center"><span className="rounded bg-[#62551a] px-0.5 text-[8px] font-bold text-[#f6d84a]">JS</span></span>;
+  if (extension === 'ts' || extension === 'tsx' || extension === 'mjs' || extension === 'cjs') return <span className="flex h-4 w-4 shrink-0 items-center justify-center"><span className="rounded bg-[#245b73] px-0.5 text-[8px] font-bold text-[#8bd5ff]">TS</span></span>;
+  if (extension === 'json' || extension === 'jsonc') return <span className="flex h-4 w-4 shrink-0 items-center justify-center"><svg viewBox="0 0 32 32" aria-hidden="true"><path fill="#f5de19" d="M4.014 14.976a2.5 2.5 0 0 0 1.567-.518a2.38 2.38 0 0 0 .805-1.358a15.3 15.3 0 0 0 .214-2.944q.012-2.085.075-2.747a5.2 5.2 0 0 1 .418-1.686a3 3 0 0 1 .755-1.018A3.05 3.05 0 0 1 9 4.125A6.8 6.8 0 0 1 10.544 4h.7v1.96h-.387a2.34 2.34 0 0 0-1.723.468a3.4 3.4 0 0 0-.425 2.092a36 36 0 0 1-.137 4.133a4.7 4.7 0 0 1-.768 2.06A4.6 4.6 0 0 1 6.1 16a3.8 3.8 0 0 1 1.992 1.754a8.9 8.9 0 0 1 .618 3.865q0 2.435.05 2.9a1.76 1.76 0 0 0 .504 1.181a2.64 2.64 0 0 0 1.592.337h.387V28h-.7a6.8 6.8 0 0 1-1.544-.125a3.05 3.05 0 0 1-1.149-.581a3 3 0 0 1-.755-1.018a5.2 5.2 0 0 1-.418-1.686q-.062-.662-.075-2.747a15.3 15.3 0 0 0-.214-2.944a2.38 2.38 0 0 0-.805-1.358a2.5 2.5 0 0 0-1.567-.518Zm23.972 2.035a2.5 2.5 0 0 0-1.567.524a2.4 2.4 0 0 0-.805 1.361a16.5 16.5 0 0 0-.212 3.109a24 24 0 0 1-.169 3.234a3.35 3.35 0 0 1-.681 1.63a2.97 2.97 0 0 1-1.324.93a5.7 5.7 0 0 1-1.773.2h-.7V26.04h.387a2.64 2.64 0 0 0 1.592-.337a1.76 1.76 0 0 0 .506-1.186q.05-.462.05-2.9a8.9 8.9 0 0 1 .618-3.865A3.8 3.8 0 0 1 25.9 16a4.6 4.6 0 0 1-1.7-1.286a4.7 4.7 0 0 1-.768-2.06a36 36 0 0 1-.137-4.133a3.4 3.4 0 0 0-.425-2.092a2.34 2.34 0 0 0-1.723-.468h-.387V4h.7a6.8 6.8 0 0 1 1.54.125a3.05 3.05 0 0 1 1.149.581a3 3 0 0 1 .755 1.018a5.2 5.2 0 0 1 .418 1.686q.062.662.075 2.747a15.3 15.3 0 0 1-.212 3.109a2.38 2.38 0 0 1-.805 1.355a2.5 2.5 0 0 1-1.567.518Z" /></svg></span>;
+  if (extension === 'html' || extension === 'htm') return <span className="flex h-4 w-4 shrink-0 items-center justify-center"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#e44d26" d="M1.5 0h21l-1.9 21.5L12 24l-8.6-2.5L1.5 0Z" /><path fill="#f16529" d="M12 2v20.2l7-2 1.6-18.2H12Z" /><path fill="#fff" d="M12 6.2H5.5l.1 1.3.7 7.1H12v-2.4H8.5l-.2-2.4H12V6.2Zm0 11.3-3-.8-.2-2.4H6.5l.4 4.2 5.1 1.4v-2.4Z" /><path fill="#ebebeb" d="M12 6.2v2.4h3.6l-.2 2.4H12v2.4h5.5l.1-1.3.7-7.1H12Zm0 8.1v2.4l3-.8-.2-1.6H12Z" /></svg></span>;
+  if (extension === 'xml' || extension === 'svg') return <span className="flex h-4 w-4 shrink-0 items-center justify-center"><FileCode2 size={16} className="text-[#f28c5b]" /></span>;
+  if (extension === 'css' || extension === 'scss' || extension === 'sass' || extension === 'less') return <span className="flex h-4 w-4 shrink-0 items-center justify-center"><FileCode2 size={16} className="text-[#6ab7ff]" /></span>;
+  if (extension === 'txt' || extension === 'log' || extension === 'csv') return <span className="flex h-4 w-4 shrink-0 items-center justify-center"><FileText size={16} className="text-[#b8b8b8]" /></span>;
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'ico', 'bmp'].includes(extension)) return <span className="flex h-4 w-4 shrink-0 items-center justify-center"><FileImage size={16} className="text-[#c084fc]" /></span>;
+  const languageLabels: Record<string, string> = {
+    js: 'JS', jsx: 'JSX', mjs: 'JS', cjs: 'JS', ts: 'TS', tsx: 'TSX', py: 'PY', rb: 'RB', php: 'PHP', java: 'JAVA', kt: 'KT', kts: 'KT', swift: 'SW',
+    rs: 'RS', go: 'GO', c: 'C', h: 'C', cc: 'C++', cpp: 'C++', hpp: 'C++', cs: 'C#', fs: 'F#', fsx: 'F#', vb: 'VB', scala: 'SC', dart: 'DART', lua: 'LUA', r: 'R', jl: 'JL',
+    ex: 'EX', exs: 'EXS', erl: 'ERL', hrl: 'ERL', clj: 'CLJ', cljs: 'CLJS', hs: 'HS', lhs: 'HS', ml: 'ML', mli: 'MLI', sql: 'SQL', sh: 'SH', bash: 'SH', zsh: 'SH', fish: 'SH',
+    ps1: 'PS', psm1: 'PS', bat: 'BAT', cmd: 'CMD', pl: 'PL', pm: 'PL', groovy: 'GR', pas: 'PAS', asm: 'ASM', s: 'ASM', zig: 'ZIG', nim: 'NIM', cr: 'CR', sol: 'SOL',
+  };
+  const languageColors: Record<string, string> = { js: '#f6d84a', jsx: '#61dafb', ts: '#6ab7ff', tsx: '#6ab7ff', py: '#6aa84f', rb: '#d45b64', php: '#b39ddb', java: '#e58b63', kt: '#c084fc', swift: '#f28c5b', rs: '#d9a066', go: '#72c7d6', cs: '#9bd36a', dart: '#55c2e8', lua: '#7b9fe8', sql: '#d6a85c', sh: '#8fd18a', ps1: '#6ab7ff', zig: '#f0a35b', sol: '#9b9b9b' };
+  const label = languageLabels[extension];
+  if (label) return <span className="flex h-4 w-4 shrink-0 items-center justify-center"><span title={extension} className="text-[7px] font-bold leading-none" style={{ color: languageColors[extension] || '#d9a066' }}>{label}</span></span>;
+  return <span className="flex h-4 w-4 shrink-0 items-center justify-center"><File size={16} className="text-[#a8a8a8]" /></span>;
 };
 
 function FilesView({ projectPath }: { projectPath: string }) {
@@ -58,7 +75,9 @@ function FilesView({ projectPath }: { projectPath: string }) {
     try {
       const result = await invoke<FileEntry[]>('codeclub_list_files', { projectPath, maxFiles: 1200 });
       setEntries(result);
-      setExpanded(new Set(result.filter((entry) => entry.kind === 'directory').map((entry) => entry.path)));
+      // Un proyecto grande puede contener miles de carpetas (por ejemplo node_modules).
+      // Mantenerlas cerradas evita montar todo el árbol de golpe y conserva el layout.
+      setExpanded(new Set());
       setError('');
     } catch (reason) { setError(String(reason)); }
     finally { setLoading(false); }
@@ -102,19 +121,19 @@ function FilesView({ projectPath }: { projectPath: string }) {
     </React.Fragment>;
   });
 
-  return <div className="flex min-h-0 flex-1 flex-col bg-[#111111]">
+  return <div className="flex h-full max-h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#111111]">
     <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-[#2b2b2b] bg-[#111111] px-2">
       <span className="min-w-0 truncate text-[12px] leading-none text-[#eeeeee]">{selectedPath ? `/${selectedPath.replace(/\\/g, '/')}` : '/'}</span>
       <button type="button" onClick={() => setShowTree((visible) => !visible)} className="grid h-7 w-7 place-items-center rounded-[7px] bg-[#202020] text-[#eeeeee] hover:bg-[#2b2b2b]" title="Mostrar u ocultar árbol del workspace" aria-label="Mostrar u ocultar árbol del workspace"><FolderOpen size={15} /></button>
     </div>
-    <div className="flex h-0 min-h-0 flex-1">
-      <main className="flex min-w-0 flex-1 flex-col bg-[#111111]">
-        {selectedPath ? <div className="flex min-h-0 flex-1 flex-col">{fileLoading ? <div className="flex flex-1 items-center justify-center text-xs text-[#777777]">Cargando archivo...</div> : <pre className="m-0 min-h-0 flex-1 overflow-auto whitespace-pre-wrap p-4 font-mono text-[12px] leading-5 text-[#d8d8d8]">{selectedContent}</pre>}</div> : <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center"><Folders size={42} strokeWidth={1.5} className="text-[#a7a7a7]" /><div className="max-w-[300px]"><p className="m-0 text-[18px] font-semibold text-[#eeeeee]">Abrir archivo</p><p className="m-0 mt-2 text-[14px] leading-5 text-[#a7a7a7]">Selecciona un archivo del árbol del espacio de trabajo</p></div></div>}
+    <div className="flex h-0 min-h-0 max-h-full flex-1 overflow-hidden">
+      <main className="flex h-full min-w-0 min-h-0 flex-1 flex-col bg-[#111111]">
+        {selectedPath ? <div className="flex min-h-0 flex-1 flex-col">{fileLoading ? <div className="flex flex-1 items-center justify-center text-xs text-[#777777]">Cargando archivo...</div> : <pre className="file-preview-scrollbar m-0 min-h-0 flex-1 overflow-auto whitespace-pre-wrap p-4 font-mono text-[12px] leading-5 text-[#d8d8d8]">{selectedContent}</pre>}</div> : <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center"><Folders size={42} strokeWidth={1.5} className="text-[#a7a7a7]" /><div className="max-w-[300px]"><p className="m-0 text-[18px] font-semibold text-[#eeeeee]">Abrir archivo</p><p className="m-0 mt-2 text-[14px] leading-5 text-[#a7a7a7]">Selecciona un archivo del árbol del espacio de trabajo</p></div></div>}
       </main>
-      <aside className={`min-h-0 self-stretch flex shrink-0 flex-col border-l border-[#2b2b2b] bg-[#121212] transition-[width,transform,opacity] duration-200 ease-out ${showTree ? 'w-[35%]' : 'w-0 translate-x-full opacity-0 pointer-events-none'}`}>
-        <div className="mt-0 min-h-0 flex-1 flex flex-col px-3 py-3">
+      <aside className={`h-full max-h-full min-h-0 self-stretch flex shrink-0 flex-col border-l border-[#2b2b2b] bg-[#121212] transition-[width,transform,opacity] duration-200 ease-out ${showTree ? 'w-[35%]' : 'w-0 translate-x-full opacity-0 pointer-events-none'}`}>
+        <div className="mt-0 flex h-0 min-h-0 flex-1 flex-col px-3 py-3">
           <label className="mb-2 flex h-8 shrink-0 items-center gap-2 rounded-[10px] border border-[#353535] bg-[#1d1d1d] px-2.5 text-[#9a9a9a] focus-within:border-[#555555]"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} className="min-w-0 flex-1 bg-transparent text-[12px] text-[#eeeeee] outline-none placeholder:text-[#929292]" placeholder="Filtrar archivos..." aria-label="Filtrar archivos" /></label>
-          <div ref={treeScrollRef} onScroll={(event) => { treeScrollTopRef.current = event.currentTarget.scrollTop; }} style={{ overscrollBehavior: 'none', overflowAnchor: 'none' }} className="min-h-0 flex-1 overflow-x-auto overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div ref={treeScrollRef} onScroll={(event) => { treeScrollTopRef.current = event.currentTarget.scrollTop; }} style={{ overscrollBehavior: 'none', overflowAnchor: 'none' }} className="h-0 min-h-0 flex-1 overflow-x-auto overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {loading ? <div className="p-3 text-sm text-[#777777]">Cargando archivos...</div> : error ? <div className="p-3 text-sm text-[#c28d8d]">{error}</div> : tree.length ? renderTree(tree) : <div className="p-3 text-sm text-[#777777]">No se encontraron archivos.</div>}
           </div>
         </div>
@@ -194,7 +213,7 @@ export default function RightSidebar() {
   };
 
   return (
-    <aside className="right-sidebar relative z-40 row-start-2 col-start-3 min-w-0 min-h-0 overflow-visible border-l border-[var(--color-surface-10)] bg-[var(--color-bg)] text-[#d8d8d8] shadow-[-4px_0_14px_rgba(0,0,0,0.16)]" aria-label="Panel lateral derecho">
+    <aside className="right-sidebar relative z-40 row-start-2 col-start-3 h-full max-h-full min-w-0 min-h-0 overflow-hidden border-l border-[var(--color-surface-10)] bg-[var(--color-bg)] text-[#d8d8d8] shadow-[-4px_0_14px_rgba(0,0,0,0.16)]" aria-label="Panel lateral derecho">
       <div onPointerDown={startResize} className="absolute -left-[3px] top-0 z-20 h-full w-[6px] cursor-col-resize bg-transparent transition-colors hover:bg-[#2f2f2f]" aria-label="Redimensionar panel derecho" role="separator" />
       <div className="flex h-full min-w-[264px] flex-col">
         <div className="terminal-tabs h-[34px] shrink-0 border-b border-[var(--color-surface-10)] px-1" style={{ overflow: 'visible' }}>
@@ -212,7 +231,7 @@ export default function RightSidebar() {
           </div>}
           </div>
         </div>
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="flex h-0 min-h-0 flex-1 flex-col overflow-hidden">
           {activeTab === 'files' && <FilesView projectPath={activeProjectPath} />}
           {tabs.length === 0 && <div className="flex flex-1 items-center justify-center">
             <button type="button" onClick={() => setMenuOpen(true)} className="min-h-[30px] rounded-lg border border-[#202020] bg-transparent px-3 text-[11px] text-[#777777] transition-colors hover:bg-[#1c1c1c] hover:text-[#eeeeee]">
