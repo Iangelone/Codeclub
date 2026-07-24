@@ -23,7 +23,7 @@ type BrowserDomSelection = {
 const browserSelectionHash = '#__codeclub_selection=';
 
 const browserInspectorScript = (active: boolean) => {
-  const cursor = `url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2228%22 height=%2228%22 viewBox=%220 0 28 28%22%3E%3Cpath d=%22M14 3C7.9 3 3 7.3 3 12.7c0 3.1 1.6 5.8 4.1 7.6L6 25l5.2-2.2c.9.2 1.8.3 2.8.3 6.1 0 11-4.6 11-10.4S20.1 3 14 3Z%22 fill=%22%231687ff%22 stroke=%22white%22 stroke-width=%222%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E") 9 9, crosshair`;
+  const cursor = `url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2224%22 height=%2224%22 viewBox=%220 0 24 24%22 fill=%22none%22%3E%3Cpath d=%22M4 4l5.5 15 2.5-5.5 5.5-2.5L4 4z%22 fill=%22%231687ff%22 stroke=%22white%22 stroke-width=%221.5%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E") 4 4, crosshair`;
   return `(() => {
     const active = ${active ? 'true' : 'false'};
     const root = document.documentElement;
