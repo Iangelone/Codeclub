@@ -19,6 +19,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { createPortal } from 'react-dom';
 import mammoth from 'mammoth';
 import { createBusinessTools, createTools } from '../lib/engine/tools';
 import { runStream } from '../lib/engine/run';
@@ -143,6 +144,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const approvalResolversRef = useRef(new Map());
   const lastModelFetchRef = useRef(null);
   const commandMenuRef = useRef(null);
+  const commandMenuHostRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef(null);
   const chatInputRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -1355,8 +1357,9 @@ const compactJson = (value) => {
 
       <div className="chat-composer" style={{ width: '100%', justifySelf: 'center', alignSelf: 'center', position: 'relative', display: 'grid', gap: '10px' }}>
         <div className="composer-row" style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }}>
-          <div className="composer-box [&>[aria-label='Referencia de artifact']]:relative [&>[aria-label='Referencia de artifact']]:z-50 [&>[aria-label='Referencia de artifact']>span]:hidden" style={{ minHeight: '40px', flex: '1 1 auto', minWidth: 0, padding: '1px', borderRadius: '22px', background: '#202020', boxShadow: '0 18px 52px rgba(0, 0, 0, 0.26)' } as React.CSSProperties}>
+          <div className="composer-box [&>[aria-label='Referencia de artifact']]:relative [&>[aria-label='Referencia de artifact']]:z-50 [&>[aria-label='Referencia de artifact']>span]:hidden" style={{ minHeight: '40px', flex: '1 1 auto', minWidth: 0, padding: '1px', borderRadius: '22px', background: '#1a1a1a', boxShadow: '0 18px 52px rgba(0, 0, 0, 0.26)' } as React.CSSProperties}>
           {artifactReference && <div className="flex min-h-[28px] items-center gap-2 border-b border-[#202020] px-4 py-1.5" aria-label="Referencia de artifact"><span className="shrink-0 text-[10px] uppercase tracking-[0.08em] text-[#666]">Referencia</span><button type="button" onClick={() => setArtifactReference(null)} className="min-w-0 max-w-[260px] truncate rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-left text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar referencia">@{artifactReference.kind} · {artifactReference.title}</button></div>}
+          <div ref={commandMenuHostRef} className="w-full" />
           <form onSubmit={handleSubmit} className="composer-box-inner [&>button.absolute]:hidden" style={{ minHeight: '40px', width: '100%', minWidth: 0, display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 6px 5px 16px', border: 0, borderRadius: '21px', background: '#121212', position: 'relative' }}>
           {false && (
           <button type="button" onClick={handleAttachFiles} className="text-white/40 hover:text-white transition-colors" aria-label="Añadir archivos" style={{ flex: '0 0 28px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, background: 'transparent', cursor: 'pointer' }}>
@@ -1440,14 +1443,17 @@ const compactJson = (value) => {
           </div>
         </div>
 
-        <div
+        {commandMenuHostRef.current && createPortal((<div
           ref={commandMenuRef}
           tabIndex={-1}
           onKeyDown={handleCommandMenuKeyDown}
           className={`command-menu ${menuOpen ? 'is-open' : ''}`}
-          style={{ position: 'absolute', left: composerDocked ? '7%' : 0, right: composerDocked ? '7%' : 0, top: composerDocked ? 'auto' : 'calc(100% + 8px)', bottom: composerDocked ? '52px' : 'auto', display: menuOpen ? 'grid' : 'none', gap: '8px', padding: '9px', border: '1px solid var(--color-surface-9, #2f2f2f)', borderBottom: composerDocked ? 0 : '1px solid var(--color-surface-9, #2f2f2f)', borderRadius: composerDocked ? '12px 12px 0 0' : '8px', background: '#121212', boxShadow: 'none', zIndex: 10, outline: 'none' }}
+          style={{ position: 'static', width: 'calc(100% - 16px)', margin: '0 8px', display: menuOpen ? 'grid' : 'none', gap: '8px', padding: '8px', border: 0, borderRadius: '10px', background: '#1a1a1a', boxShadow: 'none', zIndex: 10, outline: 'none' }}
         >
-
+          <div className="flex min-h-[24px] items-center justify-between px-1 text-[10px] uppercase tracking-[0.08em] text-[#666]">
+            <span>{commandKind === 'provider' ? 'Proveedor' : commandKind === 'model' ? 'Modelo' : commandKind === 'project' ? 'Proyecto' : 'Comandos'}</span>
+            <button type="button" onClick={() => setMenuOpen(false)} className="grid h-5 w-5 place-items-center rounded-md bg-transparent text-[#666] hover:bg-[#1c1c1c] hover:text-[#ddd]" aria-label="Cerrar menú"><X size={12} strokeWidth={1.8} /></button>
+          </div>
           {commandKind !== 'credential' && commandKind !== 'custom-config' && <input
             ref={searchInputRef}
             type="text"
@@ -1455,7 +1461,7 @@ const compactJson = (value) => {
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={handleSearchKeyDown}
             placeholder={commandKind === 'provider' ? 'Buscar proveedor' : commandKind === 'model' ? 'Buscar modelo del proveedor activo' : commandKind === 'project' ? 'Buscar proyecto' : 'Buscar comando'}
-            style={{ height: '30px', padding: '0 8px', borderRadius: '7px', background: 'var(--color-surface-3, #1c1c1c)', fontSize: '12px', color: '#eeeeee', border: 'none', outline: 'none' }}
+            style={{ height: '30px', padding: '0 9px', borderRadius: '7px', background: '#151515', fontSize: '11px', color: '#eeeeee', border: 0, outline: 'none' }}
           />}
           {commandKind === 'credential' ? (
             <div style={{ position: 'relative', minHeight: '34px' }}>
@@ -1497,7 +1503,7 @@ const compactJson = (value) => {
             </div>
           ) : <div className="command-list" style={{ display: 'grid', gap: '4px', maxHeight: '300px', overflow: 'auto', scrollbarWidth: 'none', paddingBottom: '12px', maskImage: 'linear-gradient(to bottom, black 92%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to bottom, black 92%, transparent 100%)' }}>
             {activeSelection && (
-              <div aria-current="true" style={{ minHeight: '32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', borderRadius: '7px', background: '#1E1E1E', color: '#eeeeee', fontSize: '12px', padding: '0 9px' }}>
+              <div aria-current="true" style={{ minHeight: '30px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', borderRadius: '7px', background: '#1E1E1E', color: '#eeeeee', fontSize: '11px', padding: '0 9px' }}>
                 <span>{activeSelection.label || activeSelection.id}</span>
                 <small style={{ color: 'rgba(216, 216, 216, 0.5)', fontSize: '11px' }}>Seleccionado</small>
               </div>
@@ -1514,12 +1520,12 @@ const compactJson = (value) => {
               >
                 <span>{item.label}</span>
                 <small style={{ color: 'rgba(216, 216, 216, 0.36)', fontSize: '11px' }}>
-                  {item.type === 'command' ? item.description : item.type === 'provider' ? 'proveedor' : 'modelo'}
+                  {item.type === 'command' ? item.description : item.type === 'provider' ? 'proveedor' : item.type === 'project' ? 'proyecto' : 'modelo'}
                 </small>
               </button>
             ))}
           </div>}
-        </div>
+        </div>), commandMenuHostRef.current)}
       </div>
     </div>
   );

@@ -23,10 +23,11 @@ export async function runStream({
   let content = '';
   let reasoning = '';
   const startedAt = Date.now();
+  const styleInstruction = '\n\nRegla de estilo: respondé en español, con tono sobrio y profesional. No uses emojis salvo que el usuario los pida explícitamente.';
 
   const result = streamText({
     model,
-    system,
+    system: `${system}${styleInstruction}`,
     messages,
     tools,
     abortSignal: signal,
@@ -40,7 +41,16 @@ export async function runStream({
   });
 
   for await (const part of result.fullStream) {
+    if (signal?.aborted) {
+      const error = new Error('Generación cancelada por el usuario.');
+      error.name = 'AbortError';
+      throw error;
+    }
     const streamPart = part as any;
+
+    if (streamPart.type === 'finish' || (streamPart.type === 'finish-step' && !['tool-calls', 'tool_call'].includes(streamPart.finishReason))) {
+      break;
+    }
 
     if (streamPart.type === 'reasoning-delta') {
       const delta = streamPart.text ?? streamPart.delta ?? '';

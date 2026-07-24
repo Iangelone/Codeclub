@@ -37,10 +37,10 @@ button {
 }
 
 .command-menu {
-  border-color: #202020 !important;
+  border: 0 !important;
   border-radius: 12px 12px 0 0 !important;
-  background: #121212 !important;
-  box-shadow: 0 18px 52px rgba(0, 0, 0, 0.26) !important;
+  background: #1a1a1a !important;
+  box-shadow: none !important;
 }
 
 .credential-menu-input::placeholder {
