@@ -499,9 +499,35 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
 
   const syncWebview = async (view = webviewRef.current) => {
     const host = hostRef.current;
-    if (!host || !view) return;
-    const rect = host.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
+    const isPanelOpen = document.body.classList.contains('has-right-panel');
+    const rect = host?.getBoundingClientRect();
+    const isValid = Boolean(
+      isPanelOpen &&
+      host &&
+      rect &&
+      rect.width > 0 &&
+      rect.height > 0 &&
+      rect.left < window.innerWidth &&
+      rect.top < window.innerHeight
+    );
+
+    if (!isValid) {
+      if (webviewRef.current) {
+        await webviewRef.current.close().catch(() => undefined);
+        webviewRef.current = null;
+      } else {
+        await invoke('codeclub_browser_close').catch(() => undefined);
+      }
+      return;
+    }
+
+    if (!view && addressRef.current) {
+      void openPage(addressRef.current, false);
+      return;
+    }
+
+    if (!view) return;
+
     try {
       await view.setPosition(new LogicalPosition(rect.left, rect.top));
       await view.setSize(new LogicalSize(rect.width, rect.height));
@@ -520,9 +546,13 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
     try {
       await webviewRef.current?.close().catch(() => undefined);
       if (requestId !== requestRef.current) return;
+      const isPanelOpen = document.body.classList.contains('has-right-panel');
       const host = hostRef.current;
       const rect = host?.getBoundingClientRect();
-      if (!host || !rect || rect.width <= 0 || rect.height <= 0) return;
+      if (!isPanelOpen || !host || !rect || rect.width <= 0 || rect.height <= 0) {
+        webviewRef.current = null;
+        return;
+      }
       const view = new Webview(getCurrentWindow(), 'codeclub-browser', {
         url,
         x: rect.left,
@@ -553,10 +583,13 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
     }).then((unlisten) => { stopListening = unlisten; });
     void listen<string>('codeclub-browser-page-loaded', () => { if (inspectModeRef.current) void installInspector(true); }).then((unlisten) => { stopPageListening = unlisten; });
     void openPage(initialUrl, false);
-    const resizeObserver = new ResizeObserver(() => { void syncWebview(); });
+    const handleSync = () => { void syncWebview(); };
+    const resizeObserver = new ResizeObserver(handleSync);
     if (hostRef.current) resizeObserver.observe(hostRef.current);
-    const handleResize = () => { void syncWebview(); };
-    window.addEventListener('resize', handleResize);
+    const bodyObserver = new MutationObserver(handleSync);
+    bodyObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    window.addEventListener('resize', handleSync);
+    window.addEventListener('codeclub:right-panel-toggled', handleSync);
     const navigationPoll = window.setInterval(async () => {
       try {
         const view = webviewRef.current;
@@ -591,12 +624,17 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
     }, 700);
     return () => {
       resizeObserver.disconnect();
-      window.removeEventListener('resize', handleResize);
+      bodyObserver.disconnect();
+      window.removeEventListener('resize', handleSync);
+      window.removeEventListener('codeclub:right-panel-toggled', handleSync);
       window.clearInterval(navigationPoll);
       stopListening?.();
       stopPageListening?.();
-      void webviewRef.current?.close();
-      webviewRef.current = null;
+      if (webviewRef.current) {
+        void webviewRef.current.close().catch(() => undefined);
+        webviewRef.current = null;
+      }
+      void invoke('codeclub_browser_close').catch(() => undefined);
     };
   }, [initialUrl]);
 
