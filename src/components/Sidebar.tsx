@@ -610,8 +610,10 @@ export default function Sidebar() {
   };
 
   const handleClearChats = async (projectPath: string) => {
+    if (false) {
     const project = projects.find((item) => item.path === projectPath);
     if (!(await confirmDialog(`¿Limpiar todos los chats de ${project?.name || "este proyecto"}?`, { title: "Limpiar chats", kind: "warning" }))) return;
+    }
     try {
       if (!projectPath) {
         await writeGlobalChats([]);
@@ -620,12 +622,6 @@ export default function Sidebar() {
         return;
       }
 
-      if (!projectPath) {
-        await writeGlobalChats((await readGlobalChats()).filter((entry) => entry.id !== itemId));
-        window.dispatchEvent(new CustomEvent("codeclub:open-blank"));
-        await loadProjects();
-        return;
-      }
       const metaData = await readProjectMeta(projectPath);
       if (!metaData) return;
       for (const chat of metaData.chats || []) {
@@ -921,7 +917,7 @@ export default function Sidebar() {
           {projectMenu.source !== "panel" && <>
           <div className="my-1 border-t border-[var(--color-surface-8)]" />
           <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => handleClearChats(projectMenu.path)}>
-            <Eraser size={13} /><span>Limpiar</span>
+            <Eraser size={13} /><span>Borrar todo</span>
           </button>
           <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => startStructureCreation(projectMenu.path, "", "file")}>
             <FileCode2 size={13} /><span>Nuevo archivo</span>
@@ -966,7 +962,7 @@ export default function Sidebar() {
           </button>
           <div className="my-1 border-t border-[var(--color-surface-8)]" />
           <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => handleClearChats(artifactMenu.projectPath)}>
-            <Eraser size={13} /><span>Limpiar</span>
+            <Eraser size={13} /><span>Borrar todo</span>
           </button>
         </div>,
         document.body
