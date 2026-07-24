@@ -1045,9 +1045,9 @@ export default function RightSidebar() {
   };
 
   return (
-    <aside className="right-sidebar relative z-40 row-start-2 col-start-3 h-full max-h-full min-w-0 min-h-0 overflow-hidden border-l border-[var(--color-surface-10)] bg-[var(--color-bg)] text-[#d8d8d8] shadow-[-4px_0_14px_rgba(0,0,0,0.16)]" aria-label="Panel lateral derecho">
+    <aside className="right-sidebar relative z-40 row-start-2 col-start-3 h-full max-h-full min-w-0 min-h-0 border-l border-[var(--color-surface-10)] bg-[var(--color-bg)] text-[#d8d8d8] shadow-[-4px_0_14px_rgba(0,0,0,0.16)]" aria-label="Panel lateral derecho">
       <div onPointerDown={startResize} className="absolute -left-[3px] top-0 z-20 h-full w-[6px] cursor-col-resize bg-transparent transition-colors hover:bg-[#2f2f2f]" aria-label="Redimensionar panel derecho" role="separator" />
-      <div className="flex h-full min-w-[264px] flex-col">
+      <div className="flex h-full min-w-[264px] flex-col overflow-hidden">
         <div className="terminal-tabs h-[34px] shrink-0 border-b border-[var(--color-surface-10)] px-1" style={{ overflow: 'visible' }}>
           {tabs.map((tab) => (
             <button key={tab} type="button" onDoubleClick={() => closeTab(tab)} onClick={() => setActiveTab(tab)} className={`terminal-tab h-[30px] min-w-0 flex-1 justify-center rounded-[6px] border-0 px-3 text-[10px] ${activeTab === tab ? 'is-active' : ''}`}>
