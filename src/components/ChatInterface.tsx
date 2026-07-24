@@ -1916,7 +1916,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 <button
                   type="button"
                   onClick={() => setBrowserReferences([])}
-                  className="shrink-0 rounded-full border border-[#2b2b2b] bg-[#161616] px-2.5 py-1 text-[10px] font-medium text-[#8fbfff] hover:bg-[#202020]"
+                  className="shrink-0 rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-[10px] text-[#cfcfcf] hover:bg-[#202020]"
                   title="Quitar todas las referencias"
                 >
                   +{browserReferences.length - maxVisibleBrowserRefs} referencias
