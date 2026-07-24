@@ -75,6 +75,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [activeToolName, setActiveToolName] = useState('');
   const [pendingApprovals, setPendingApprovals] = useState([]);
   const toolStateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const visualAnimationRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const generationIdRef = useRef(0);
   const [composerDocked, setComposerDocked] = useState(true);
@@ -853,6 +854,10 @@ const compactJson = (value) => {
   };
 
   const sendMessage = async (content, baseMessages = messages, shouldRenameChat = messages.length === 0, replaceHistory = false) => {
+    if (visualAnimationRef.current) {
+      clearInterval(visualAnimationRef.current);
+      visualAnimationRef.current = null;
+    }
     if (artifactReference) {
       content = `${content}\n\nReferencia de artifact: @${artifactReference.kind} "${artifactReference.title}" (id: ${artifactReference.id})`;
       setArtifactReference(null);
@@ -1076,7 +1081,24 @@ const compactJson = (value) => {
 
       if (!isCurrentGeneration() || abortController.signal.aborted) return;
       const assistantMessage = { role: 'assistant', content: assistantContent, tools: assistantTools, agentName: chatMode === 'business' ? 'Negocios' : 'Desarrollo', meta: { provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt, usage: latestUsage ? { inputTokens: latestUsage.inputTokens, outputTokens: latestUsage.outputTokens, totalTokens: latestUsage.totalTokens, reasoningTokens: latestUsage.reasoningTokens } : null } };
-      setMessages([...newMessages, assistantMessage]);
+      setMessages([...newMessages, { ...assistantMessage, displayContent: '' }]);
+      let visibleLength = 0;
+      visualAnimationRef.current = window.setInterval(() => {
+        const progress = assistantContent.length > 0 ? visibleLength / assistantContent.length : 1;
+        const charsPerTick = Math.min(5, Math.max(1, Math.floor(progress * 5) + 1));
+        visibleLength = Math.min(assistantContent.length, visibleLength + charsPerTick);
+        setMessages((current) => {
+          const updated = [...current];
+          const last = updated[updated.length - 1];
+          if (!last || last.role !== 'assistant' || last.content !== assistantContent) return current;
+          updated[updated.length - 1] = { ...last, displayContent: assistantContent.slice(0, visibleLength) };
+          return updated;
+        });
+        if (visibleLength >= assistantContent.length && visualAnimationRef.current) {
+          clearInterval(visualAnimationRef.current);
+          visualAnimationRef.current = null;
+        }
+      }, 24);
       if (toolStateTimerRef.current) {
         clearTimeout(toolStateTimerRef.current);
         toolStateTimerRef.current = null;
@@ -1150,6 +1172,10 @@ const compactJson = (value) => {
     }, 70_000);
     return () => window.clearTimeout(watchdog);
   }, [isStreaming]);
+
+  useEffect(() => () => {
+    if (visualAnimationRef.current) clearInterval(visualAnimationRef.current);
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -1416,7 +1442,7 @@ const compactJson = (value) => {
               </span>
               <div style={{ background: m.role === 'user' ? '#202020' : 'transparent', padding: m.role === 'user' ? '14px 20px' : '0', borderRadius: m.role === 'user' ? '24px 24px 4px 24px' : '0', color: '#eee', fontSize: '14px', width: 'fit-content', maxWidth: '100%', lineHeight: 1.5, overflowWrap: 'anywhere', wordBreak: 'break-word', boxShadow: m.role === 'user' ? '0 4px 14px rgba(0, 0, 0, 0.18)' : 'none' }}>
                 {m.role === 'assistant' && m.reasoning && <div style={{ margin: '0 0 12px', padding: '9px 11px', borderLeft: '2px solid #555555', color: 'rgba(216, 216, 216, 0.58)', fontSize: '12px', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}><div style={{ marginBottom: '4px', color: 'rgba(216, 216, 216, 0.42)', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Pensamiento</div>{m.reasoning}</div>}
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ p: ({ children }) => <p style={{ margin: m.role === 'user' ? 0 : '0 0 12px', lineHeight: m.role === 'user' ? 1.4 : 1.6 }}>{children}</p>, ul: ({ children }) => <ul style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ul>, ol: ({ children }) => <ol style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ol>, li: ({ children }) => <li style={{ margin: m.role === 'user' ? 0 : '4px 0' }}>{children}</li>, table: ({ children }) => <div style={{ overflowX: 'auto', margin: '12px 0' }}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>{children}</table></div>, th: ({ children }) => <th style={{ border: '1px solid #2b2b2b', padding: '7px 9px', background: '#1c1c1c', textAlign: 'left', fontWeight: 600 }}>{children}</th>, td: ({ children }) => <td style={{ border: '1px solid #2b2b2b', padding: '7px 9px', verticalAlign: 'top' }}>{children}</td>, h1: ({ children }) => <h1 style={{ margin: '18px 0 10px', fontSize: '20px' }}>{children}</h1>, h2: ({ children }) => <h2 style={{ margin: '16px 0 8px', fontSize: '17px' }}>{children}</h2>, h3: ({ children }) => <h3 style={{ margin: '14px 0 7px', fontSize: '15px' }}>{children}</h3> }}>{m.content}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ p: ({ children }) => <p style={{ margin: m.role === 'user' ? 0 : '0 0 12px', lineHeight: m.role === 'user' ? 1.4 : 1.6 }}>{children}</p>, ul: ({ children }) => <ul style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ul>, ol: ({ children }) => <ol style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ol>, li: ({ children }) => <li style={{ margin: m.role === 'user' ? 0 : '4px 0' }}>{children}</li>, table: ({ children }) => <div style={{ overflowX: 'auto', margin: '12px 0' }}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>{children}</table></div>, th: ({ children }) => <th style={{ border: '1px solid #2b2b2b', padding: '7px 9px', background: '#1c1c1c', textAlign: 'left', fontWeight: 600 }}>{children}</th>, td: ({ children }) => <td style={{ border: '1px solid #2b2b2b', padding: '7px 9px', verticalAlign: 'top' }}>{children}</td>, h1: ({ children }) => <h1 style={{ margin: '18px 0 10px', fontSize: '20px' }}>{children}</h1>, h2: ({ children }) => <h2 style={{ margin: '16px 0 8px', fontSize: '17px' }}>{children}</h2>, h3: ({ children }) => <h3 style={{ margin: '14px 0 7px', fontSize: '15px' }}>{children}</h3> }}>{m.displayContent ?? m.content}</ReactMarkdown>
                 {m.role === 'assistant' && isStreaming && i === messages.length - 1 && <span style={{ display: 'inline-block', marginTop: m.content ? '2px' : 0, color: 'rgba(216, 216, 216, 0.58)', fontSize: '13px' }}>{m.content ? '▌' : 'Generando respuesta…'}</span>}
               </div>
               {m.role === 'assistant' && <AskUserCards tools={m.tools} onSelect={(answer) => void sendMessage(answer)} disabled={isAgentBusy} />}
