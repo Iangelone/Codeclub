@@ -317,6 +317,33 @@ export function createBusinessTools(ctx: { recordToolEvent: (name: string, input
   };
 }
 
+export function selectToolsForPrompt(toolset: Record<string, any>, mode: 'business' | 'development', prompt: string) {
+  const text = prompt.toLowerCase();
+  const keys = new Set(mode === 'business'
+    ? ['listProjectFiles', 'readProjectFile', 'searchProjectText', 'getBusinessWorkspace', 'getAIUsageMetrics']
+    : ['listFiles', 'readFile', 'searchText', 'askUser', 'createPlan', 'updatePlan', 'todo', 'getTaskStatus']);
+
+  const add = (...names: string[]) => names.forEach((name) => keys.add(name));
+  const has = (...terms: string[]) => terms.some((term) => text.includes(term));
+
+  if (mode === 'business') {
+    if (has('cotiz', 'presupuesto', 'propuesta', 'precio', 'tarifa', 'estim')) add('createQuote', 'createBudget', 'updateBusinessWorkspace');
+    if (has('plan', 'hito', 'roadmap', 'estrateg')) add('createExecutionPlan', 'updateBusinessWorkspace');
+    if (has('whatsapp', 'cliente', 'conversación', 'conversacion', 'crm')) add('getWhatsAppBusinessContext');
+    if (has('proyecto', 'portfolio', 'cartera')) add('listIndexedProjects');
+    if (has('log', 'auditar', 'ejecución', 'ejecucion', 'herramientas')) add('getExecutionLog');
+    if (has('sub-ia', 'subia', 'especialista', 'deleg', 'investig')) add('delegateBusinessSpecialist');
+  } else {
+    if (has('editar', 'modific', 'crear archivo', 'escrib', 'implement', 'fix', 'correg', 'refactor')) add('writeFile');
+    if (has('terminal', 'comando', 'ejecut', 'build', 'compil', 'test', 'prueba', 'git', 'servidor', 'background', 'proceso')) add('runCommand', 'terminal');
+    if (has('sub-ia', 'subia', 'subagente', 'especialista', 'deleg')) add('subagent');
+    if (has('memoria', 'recordá', 'recorda', 'acordate', 'olvid', 'recuper')) add('remember', 'recall', 'forget');
+    if (has('log', 'auditar', 'ejecución', 'ejecucion', 'herramientas', 'debug')) add('getExecutionLog');
+  }
+
+  return Object.fromEntries([...keys].filter((name) => toolset[name]).map((name) => [name, toolset[name]]));
+}
+
 export function createTools(ctx: ToolContext) {
   const { projectPath, recordToolEvent, setAgentState, requestToolApproval, provider, modelId } = ctx;
 

@@ -20,7 +20,7 @@
         "decorations": false,
         "fullscreen": false,
         "maximized": true,
-        "dragDropEnabled": false,
+        "dragDropEnabled": true,
         "transparent": true,
         "windowEffects": {
           "effects": ["mica"],

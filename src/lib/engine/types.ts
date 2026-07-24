@@ -21,5 +21,6 @@ export interface EngineCallbacks {
   onToolCall?: () => void;
   onToolResult?: () => void;
   onUsage?: (usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number; reasoningTokens?: number; model?: string; durationMs: number }) => void | Promise<void>;
+  onStructuredOutput?: (output: any) => void | Promise<void>;
   onError?: (error: any) => void;
 }

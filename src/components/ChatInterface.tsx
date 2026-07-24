@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUpRight, ChevronDown, ChevronRight, Copy, FileCode2, Folders as FolderOpen, KeyRound, ListTodo, MessageSquare, RotateCcw, Search, Square, Terminal, Folder, FolderTree, Plus, RefreshCw, X } from 'lucide-react';
+import { ArrowUpRight, ChevronDown, ChevronRight, Copy, FileCode2, Folders as FolderOpen, KeyRound, ListTodo, MessageSquare, Paperclip, RotateCcw, Search, Square, Terminal, Folder, FolderTree, RefreshCw, X } from 'lucide-react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -14,14 +14,16 @@ import { sql } from '@codemirror/lang-sql';
 import { xml } from '@codemirror/lang-xml';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { exists, mkdir, readFile, readTextFile, remove, writeTextFile } from '@tauri-apps/plugin-fs';
 import { open } from '@tauri-apps/plugin-dialog';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
+import { jsonSchema, Output } from 'ai';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { createPortal } from 'react-dom';
 import mammoth from 'mammoth';
-import { createBusinessTools, createTools } from '../lib/engine/tools';
+import { createBusinessTools, createTools, selectToolsForPrompt } from '../lib/engine/tools';
 import { runStream } from '../lib/engine/run';
 import { getProjectFilePath, getSetting, logPersistence, setSetting } from '../lib/persistence';
 import { appendGenerationUsage, type GenerationUsageRecord } from '../lib/usage';
@@ -63,13 +65,122 @@ const AnimatedBraille = ({ kind }: { kind: keyof typeof SPINNER_FRAMES }) => {
 
 const formatDuration = (durationMs: number) => durationMs >= 60000 ? `${(durationMs / 60000).toFixed(1)} min` : `${Math.max(0.1, durationMs / 1000).toFixed(1)} s`;
 
+type ChatAttachment = { path: string; name: string; mediaType: string; size?: number; previewUrl?: string };
+
+const getAttachmentName = (path: string) => path.split(/[\\/]/).pop() || path;
+const getAttachmentMediaType = (name: string) => {
+  const extension = name.split('.').pop()?.toLowerCase();
+  const types: Record<string, string> = {
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif',
+    txt: 'text/plain', md: 'text/markdown', mdx: 'text/markdown', json: 'application/json', csv: 'text/csv',
+    js: 'text/javascript', jsx: 'text/javascript', ts: 'text/typescript', tsx: 'text/typescript', css: 'text/css',
+    html: 'text/html', htm: 'text/html', rs: 'text/plain', py: 'text/x-python', sql: 'text/plain',
+    pdf: 'application/pdf', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  };
+  return types[extension || ''] || 'application/octet-stream';
+};
+
+const bytesToBase64 = (bytes: Uint8Array) => {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+  return btoa(binary);
+};
+
+const readAttachmentParts = async (attachments: ChatAttachment[]) => {
+  const parts: any[] = [];
+  for (const attachment of attachments) {
+    try {
+      if (attachment.mediaType.startsWith('text/') || attachment.mediaType === 'application/json') {
+        const text = await readTextFile(attachment.path);
+        parts.push({ type: 'text', text: `Archivo ${attachment.name}:\n${text.slice(0, 120_000)}` });
+      } else {
+        const bytes = await readFile(attachment.path);
+        const data = bytesToBase64(bytes);
+        const dataUrl = `data:${attachment.mediaType};base64,${data}`;
+        parts.push(attachment.mediaType.startsWith('image/')
+          ? { type: 'image', image: dataUrl, mediaType: attachment.mediaType }
+          : { type: 'file', data: dataUrl, mediaType: attachment.mediaType, filename: attachment.name });
+      }
+    } catch (error) {
+      console.error(`No se pudo leer el archivo adjunto ${attachment.name}:`, error);
+      parts.push({ type: 'text', text: `No se pudo leer el archivo adjunto: ${attachment.name}` });
+    }
+  }
+  return parts;
+};
+
+const getArtifactOutputConfig = (mode: 'business' | 'development', prompt: string) => {
+  const text = prompt.toLowerCase();
+  if (mode === 'business' && /cotiz|presupuesto|propuesta|estimaci[oó]n/.test(text)) {
+    return Output.object({
+      name: 'QuoteArtifact',
+      description: 'A validated quotation summary for the project Artifacts panel.',
+      schema: jsonSchema({
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          description: { type: 'string' },
+          currency: { type: 'string' },
+          items: { type: 'array', items: { type: 'object', properties: { description: { type: 'string' }, quantity: { type: 'number' }, unitPrice: { type: 'number' }, total: { type: 'number' } }, required: ['description', 'quantity', 'unitPrice', 'total'], additionalProperties: false } },
+          total: { type: 'number' },
+        },
+        required: ['title', 'description', 'currency', 'items', 'total'],
+        additionalProperties: false,
+      }),
+    });
+  }
+  if (mode === 'development' && /todo|tareas?|pendientes?/.test(text)) {
+    return Output.object({
+      name: 'TodoArtifact',
+      description: 'A validated TODO summary for the project Artifacts panel.',
+      schema: jsonSchema({
+        type: 'object',
+        properties: {
+          items: { type: 'array', items: { type: 'object', properties: { title: { type: 'string' }, description: { type: 'string' }, status: { type: 'string', enum: ['pending', 'in_progress', 'completed', 'blocked'] } }, required: ['title', 'description', 'status'], additionalProperties: false } },
+        },
+        required: ['items'],
+        additionalProperties: false,
+      }),
+    });
+  }
+  if (mode === 'development' && /plan|planific|roadmap/.test(text)) {
+    return Output.object({
+      name: 'PlanArtifact',
+      description: 'A validated implementation plan summary for the project Artifacts panel.',
+      schema: jsonSchema({
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          objective: { type: 'string' },
+          steps: { type: 'array', items: { type: 'string' } },
+          status: { type: 'string', enum: ['pending', 'in_progress', 'completed', 'blocked'] },
+        },
+        required: ['title', 'objective', 'steps', 'status'],
+        additionalProperties: false,
+      }),
+    });
+  }
+  return null;
+};
+
+const formatArtifactOutput = (output: any) => {
+  if (output?.items && output?.total !== undefined) return `Cotización «${output.title}» preparada y validada para Artifacts.`;
+  if (output?.items) return `${output.items.length} TODO${output.items.length === 1 ? '' : 's'} estructurado${output.items.length === 1 ? '' : 's'} y validado${output.items.length === 1 ? '' : 's'} para Artifacts.`;
+  if (output?.steps) return `Plan «${output.title}» estructurado y validado para Artifacts.`;
+  return null;
+};
+
 export default function ChatInterface({ catalog, defaultProvider, defaultModel, panelId = 'left', eventPrefix = 'codeclub', selectedProject, blockedPanelState = 'blank' }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [artifactReference, setArtifactReference] = useState<{ kind: 'plan' | 'todo' | 'quote'; id: string; title: string } | null>(null);
   const [inputFocused, setInputFocused] = useState(false);
   const [avatarColor, setAvatarColor] = useState('#3b6bb5');
-  const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
+  const [attachedFiles, setAttachedFiles] = useState<ChatAttachment[]>([]);
+  const chatPanelRef = useRef<HTMLDivElement>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [agentState, setAgentState] = useState('idle');
   const [activeToolName, setActiveToolName] = useState('');
@@ -853,7 +964,7 @@ const compactJson = (value) => {
     }
   };
 
-  const sendMessage = async (content, baseMessages = messages, shouldRenameChat = messages.length === 0, replaceHistory = false) => {
+  const sendMessage = async (content, baseMessages = messages, shouldRenameChat = messages.length === 0, replaceHistory = false, attachments: ChatAttachment[] = []) => {
     if (visualAnimationRef.current) {
       clearInterval(visualAnimationRef.current);
       visualAnimationRef.current = null;
@@ -908,7 +1019,8 @@ const compactJson = (value) => {
       }));
     }
 
-    const userMessage = { role: 'user', content };
+    const attachmentParts = attachments.length > 0 ? await readAttachmentParts(attachments) : [];
+    const userMessage = { role: 'user', content, attachments: attachments.map(({ path, name, mediaType, size, previewUrl }) => ({ path, name, mediaType, size, previewUrl })) };
     const newMessages = [...baseMessages, userMessage];
     setComposerDocked(true);
     setMessages(newMessages);
@@ -979,9 +1091,10 @@ const compactJson = (value) => {
         provider,
         modelId: currentModel.id,
       });
-      const tools = chatMode === 'business'
+      const allTools = chatMode === 'business'
         ? createBusinessTools({ recordToolEvent, setAgentState: guardedSetAgentState, indexedProjects, projectPath: toolProjectPath, provider, modelId: currentModel.id })
         : developmentTools;
+      const tools = selectToolsForPrompt(allTools, chatMode === 'business' ? 'business' : 'development', content);
 
       const system = chatMode === 'business' ? [
         'Sos el asistente de negocios de Codeclub.',
@@ -1008,18 +1121,27 @@ const compactJson = (value) => {
         'Usa askUser solo cuando falte una decision importante; devuelve una solicitud estructurada sin asumir la respuesta.',
         'Las acciones riesgosas piden aprobacion humana antes de ejecutarse.',
       ].join(' ');
+      const structuredOutput = getArtifactOutputConfig(chatMode === 'business' ? 'business' : 'development', content);
+      let structuredArtifactOutput: any = null;
 
       const runAssistant = async () => {
         assistantContent = '';
         assistantReasoning = '';
         assistantTools = [];
+        structuredArtifactOutput = null;
         executionStartedAt = Date.now();
         updateAssistantMessage();
         return runStream({
           model: provider(currentModel.id),
           system,
-          messages: newMessages.map(({ role, content }) => ({ role, content })),
+          messages: newMessages.map((message, index) => ({
+            role: message.role,
+            content: index === newMessages.length - 1 && attachmentParts.length > 0
+              ? [{ type: 'text', text: message.content || 'Analizá los archivos adjuntos.' }, ...attachmentParts]
+              : message.content,
+          })),
           tools,
+          structuredOutput,
           signal: abortController.signal,
           callbacks: {
             onTextDelta: (content) => {
@@ -1031,6 +1153,9 @@ const compactJson = (value) => {
               if (!isCurrentGeneration()) return;
               assistantReasoning = content;
               updateAssistantMessage();
+            },
+            onStructuredOutput: (output) => {
+              structuredArtifactOutput = output;
             },
             onToolCall: () => {
               if (!isCurrentGeneration()) return;
@@ -1073,9 +1198,13 @@ const compactJson = (value) => {
         });
       };
       assistantContent = await runAssistant();
+      const structuredSummary = formatArtifactOutput(structuredArtifactOutput);
+      if (structuredSummary) assistantContent = structuredSummary;
       if (!abortController.signal.aborted && !assistantContent?.trim()) {
         setAgentState('streaming');
         assistantContent = await runAssistant();
+        const retryStructuredSummary = formatArtifactOutput(structuredArtifactOutput);
+        if (retryStructuredSummary) assistantContent = retryStructuredSummary;
       }
       if (!assistantContent?.trim()) throw new Error('El modelo no devolvió una respuesta después de reintentar.');
 
@@ -1208,10 +1337,8 @@ const compactJson = (value) => {
       return;
     }
 
-    const attachmentContext = attachedFiles.length > 0
-      ? `\n\nArchivos añadidos:\n${attachedFiles.map((file) => `- ${file}`).join('\n')}`
-      : '';
-    await sendMessage(`${input.trim() || 'Revisá los archivos añadidos.'}${attachmentContext}`);
+    const filesToSend = attachedFiles;
+    await sendMessage(input.trim(), messages, messages.length === 0, false, filesToSend);
     setAttachedFiles([]);
   };
 
@@ -1247,6 +1374,26 @@ const compactJson = (value) => {
     await sendMessage(message.content, messages.slice(0, messageIndex), false, true);
   };
 
+  const addAttachmentPaths = async (paths: string[]) => {
+    const attachments = await Promise.all(paths.map(async (path) => {
+      const name = getAttachmentName(path);
+      const mediaType = getAttachmentMediaType(path);
+      let previewUrl: string | undefined;
+      if (mediaType.startsWith('image/')) {
+        try {
+          previewUrl = `data:${mediaType};base64,${bytesToBase64(await readFile(path))}`;
+        } catch (error) {
+          console.error(`No se pudo crear la preview de ${name}:`, error);
+        }
+      }
+      return { path, name, mediaType, previewUrl };
+    }));
+    setAttachedFiles((current) => {
+      const next = [...current, ...attachments];
+      return next.filter((file, index, list) => list.findIndex((item) => item.path === file.path) === index);
+    });
+  };
+
   const handleAttachFiles = async () => {
     try {
       const selected = await open({
@@ -1256,11 +1403,45 @@ const compactJson = (value) => {
       });
       if (!selected) return;
       const files = Array.isArray(selected) ? selected : [selected];
-      setAttachedFiles((current) => [...new Set([...current, ...files])]);
+      await addAttachmentPaths(files);
     } catch (error) {
       console.error('Error seleccionando archivos:', error);
     }
   };
+
+  const handleComposerDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const artifactPayload = event.dataTransfer.getData('application/json') || event.dataTransfer.getData('text/plain');
+    if (artifactPayload) {
+      try {
+        const artifact = JSON.parse(artifactPayload);
+        if (artifact.kind && artifact.id && artifact.name) {
+          setArtifactReference({ kind: artifact.kind, id: artifact.id, title: artifact.name });
+          return;
+        }
+      } catch {
+        // No era un artifact; continuamos con archivos nativos.
+      }
+    }
+    const droppedFiles = Array.from(event.dataTransfer.files || []) as (File & { path?: string })[];
+    const paths = droppedFiles.map((file) => file.path).filter(Boolean) as string[];
+    if (paths.length > 0) void addAttachmentPaths(paths);
+  };
+
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    void listen<{ paths?: string[]; position?: { x: number; y: number } }>('tauri://drag-drop', (event) => {
+      const rect = chatPanelRef.current?.getBoundingClientRect();
+      const position = event.payload.position;
+      const scale = window.devicePixelRatio || 1;
+      const x = position ? position.x / scale : null;
+      const y = position ? position.y / scale : null;
+      const insideComposer = !position || !rect || (x !== null && y !== null && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom);
+      if (!insideComposer || !event.payload.paths?.length) return;
+      void addAttachmentPaths(event.payload.paths);
+    }).then((stop) => { unlisten = stop; });
+    return () => unlisten?.();
+  }, []);
 
   if (workspaceMode === 'blank' && !activeProject) {
     return (
@@ -1424,7 +1605,7 @@ const compactJson = (value) => {
   }
 
   return (
-    <div className="chat-interface-container" style={{ width: 'min(680px, calc(100% - 64px))', height: '100%', justifySelf: 'center', display: 'grid', gridTemplateRows: 'minmax(0, 1fr) auto', placeItems: 'stretch', gap: '10px', overflow: 'visible', paddingBottom: '5vh' }}>
+    <div ref={chatPanelRef} className="chat-interface-container" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleComposerDrop} style={{ width: 'min(680px, calc(100% - 64px))', height: '100%', justifySelf: 'center', display: 'grid', gridTemplateRows: 'minmax(0, 1fr) auto', placeItems: 'stretch', gap: '10px', overflow: 'visible', paddingBottom: '5vh' }}>
       
       {/* Zona de mensajes */}
       <div className="messages-area" style={{ position: 'relative', minHeight: 0, height: '100%', overflowY: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none', display: composerDocked ? 'flex' : 'none', flexDirection: 'column', gap: '6px', paddingBottom: '10px', overscrollBehavior: 'contain' }}>
@@ -1440,6 +1621,7 @@ const compactJson = (value) => {
               <span style={{ alignSelf: 'start', justifySelf: m.role === 'user' ? 'end' : 'start', color: m.role === 'user' ? avatarColor : '#ffffff', fontSize: '13px', fontWeight: 600, marginBottom: '2px', padding: m.role === 'user' ? '0 8px' : 0 }}>
                 {m.role === 'user' ? 'Tú' : (m.agentName || 'Desarrollo')}
               </span>
+              {m.role === 'user' && m.attachments?.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: '5px', maxWidth: '100%' }}>{m.attachments.map((file) => file.mediaType?.startsWith('image/') ? <img key={file.path || file.name} src={file.previewUrl || convertFileSrc(file.path)} alt={file.name} title={file.name} style={{ width: '34px', height: '34px', display: 'block', objectFit: 'cover', border: '1px solid #2b2b2b', borderRadius: '8px', background: '#161616' }} /> : <span key={file.path || file.name} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', maxWidth: '190px', padding: '5px 8px', border: '1px solid #2b2b2b', borderRadius: '8px', background: '#161616', color: '#cfcfcf', fontSize: '10px' }}><Paperclip size={11} strokeWidth={1.8} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span></span>)}</div>}
               <div style={{ background: m.role === 'user' ? '#202020' : 'transparent', padding: m.role === 'user' ? '14px 20px' : '0', borderRadius: m.role === 'user' ? '24px 24px 4px 24px' : '0', color: '#eee', fontSize: '14px', width: 'fit-content', maxWidth: '100%', lineHeight: 1.5, overflowWrap: 'anywhere', wordBreak: 'break-word', boxShadow: m.role === 'user' ? '0 4px 14px rgba(0, 0, 0, 0.18)' : 'none' }}>
                 {m.role === 'assistant' && m.reasoning && <div style={{ margin: '0 0 12px', padding: '9px 11px', borderLeft: '2px solid #555555', color: 'rgba(216, 216, 216, 0.58)', fontSize: '12px', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}><div style={{ marginBottom: '4px', color: 'rgba(216, 216, 216, 0.42)', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Pensamiento</div>{m.reasoning}</div>}
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ p: ({ children }) => <p style={{ margin: m.role === 'user' ? 0 : '0 0 12px', lineHeight: m.role === 'user' ? 1.4 : 1.6 }}>{children}</p>, ul: ({ children }) => <ul style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ul>, ol: ({ children }) => <ol style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ol>, li: ({ children }) => <li style={{ margin: m.role === 'user' ? 0 : '4px 0' }}>{children}</li>, table: ({ children }) => <div style={{ overflowX: 'auto', margin: '12px 0' }}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>{children}</table></div>, th: ({ children }) => <th style={{ border: '1px solid #2b2b2b', padding: '7px 9px', background: '#1c1c1c', textAlign: 'left', fontWeight: 600 }}>{children}</th>, td: ({ children }) => <td style={{ border: '1px solid #2b2b2b', padding: '7px 9px', verticalAlign: 'top' }}>{children}</td>, h1: ({ children }) => <h1 style={{ margin: '18px 0 10px', fontSize: '20px' }}>{children}</h1>, h2: ({ children }) => <h2 style={{ margin: '16px 0 8px', fontSize: '17px' }}>{children}</h2>, h3: ({ children }) => <h3 style={{ margin: '14px 0 7px', fontSize: '15px' }}>{children}</h3> }}>{m.displayContent ?? m.content}</ReactMarkdown>
@@ -1465,16 +1647,17 @@ const compactJson = (value) => {
 
       <div className="chat-composer" style={{ width: '100%', justifySelf: 'center', alignSelf: 'center', position: 'relative', display: 'grid', gap: '10px' }}>
         <div className="composer-row" style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }}>
-          <div className="composer-box [&>[aria-label='Referencia de artifact']]:relative [&>[aria-label='Referencia de artifact']]:z-50 [&>[aria-label='Referencia de artifact']>span]:hidden" style={{ minHeight: '40px', flex: '1 1 auto', minWidth: 0, padding: '1px', borderRadius: '22px', background: '#1a1a1a', boxShadow: '0 18px 52px rgba(0, 0, 0, 0.26)' } as React.CSSProperties}>
+          <div className="composer-box [&>[aria-label='Referencia de artifact']]:relative [&>[aria-label='Referencia de artifact']]:z-50 [&>[aria-label='Referencia de artifact']>span]:hidden" style={{ minHeight: '40px', flex: '1 1 auto', minWidth: 0, padding: '1px', borderRadius: '22px', background: '#1a1a1a', border: '1px solid transparent', boxShadow: '0 18px 52px rgba(0, 0, 0, 0.26)' } as React.CSSProperties}>
           {artifactReference && <div className="flex min-h-[28px] items-center gap-2 border-b border-[#202020] px-4 py-1.5" aria-label="Referencia de artifact"><span className="shrink-0 text-[10px] uppercase tracking-[0.08em] text-[#666]">Referencia</span><button type="button" onClick={() => setArtifactReference(null)} className="min-w-0 max-w-[260px] truncate rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-left text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar referencia">@{artifactReference.kind} · {artifactReference.title}</button></div>}
+           {attachedFiles.length > 0 && <div className="flex min-h-[28px] items-center gap-1.5 overflow-hidden border-b border-[#202020] px-3 py-1.5" aria-label="Archivos adjuntos">{attachedFiles.slice(0, 3).map((file, index) => <button key={file.path} type="button" onClick={() => setAttachedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} className="flex max-w-[180px] min-w-0 shrink items-center gap-1.5 truncate rounded-full border border-[#2b2b2b] bg-[#161616] px-2.5 py-1 text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar archivo">{file.mediaType.startsWith('image/') ? <img src={file.previewUrl || convertFileSrc(file.path)} alt={file.name} style={{ width: '18px', height: '18px', objectFit: 'cover', borderRadius: '4px' }} /> : <Paperclip size={11} strokeWidth={1.8} />}<span className="truncate">{file.name}</span></button>)}{attachedFiles.length > 3 && <span className="shrink-0 rounded-full border border-[#2b2b2b] bg-[#161616] px-2.5 py-1 text-[10px] text-[#999]">+{attachedFiles.length - 3} archivos</span>}</div>}
           <div ref={commandMenuHostRef} className="w-full" />
           <form onSubmit={handleSubmit} className="composer-box-inner [&>button.absolute]:hidden" style={{ minHeight: '40px', width: '100%', minWidth: 0, display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 6px 5px 16px', border: 0, borderRadius: '21px', background: '#121212', position: 'relative' }}>
-          {false && (
+           {false && (
           <button type="button" onClick={handleAttachFiles} className="text-white/40 hover:text-white transition-colors" aria-label="Añadir archivos" style={{ flex: '0 0 28px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, background: 'transparent', cursor: 'pointer' }}>
-            <Plus size={18} strokeWidth={2} />
+            <Paperclip size={16} strokeWidth={1.8} />
           </button>
           )}
-          {attachedFiles.length > 0 && (
+          {false && attachedFiles.length > 0 && (
             <button
               type="button"
               onClick={() => setAttachedFiles([])}

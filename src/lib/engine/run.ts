@@ -4,15 +4,16 @@ import type { EngineCallbacks } from './types';
 type RunStreamArgs = {
   model: any;
   system: string;
-  messages: { role: string; content: string }[];
+  messages: { role: string; content: any }[];
   tools: Record<string, any>;
+  structuredOutput?: any;
   callbacks: EngineCallbacks;
   signal?: AbortSignal;
 };
 
 const GENERATION_TIMEOUT_MS = 60_000;
 
-async function runStreamInternal({ model, system, messages, tools, callbacks, signal }: RunStreamArgs): Promise<string> {
+async function runStreamInternal({ model, system, messages, tools, structuredOutput, callbacks, signal }: RunStreamArgs): Promise<string> {
   let content = '';
   let reasoning = '';
   const startedAt = Date.now();
@@ -23,8 +24,9 @@ async function runStreamInternal({ model, system, messages, tools, callbacks, si
     system: `${system}${styleInstruction}`,
     messages,
     tools,
+    ...(structuredOutput ? { output: structuredOutput } : {}),
     abortSignal: signal,
-    stopWhen: stepCountIs(6),
+    stopWhen: stepCountIs(structuredOutput ? 7 : 6),
     timeout: {
       totalMs: 90_000,
       stepMs: 25_000,
@@ -55,8 +57,12 @@ async function runStreamInternal({ model, system, messages, tools, callbacks, si
     }
     if (delta) {
       content += delta;
-      callbacks.onTextDelta(content);
+      if (!structuredOutput) callbacks.onTextDelta(content);
     }
+  }
+
+  if (structuredOutput) {
+    callbacks.onStructuredOutput?.(await result.output);
   }
 
   if (signal?.aborted) {
