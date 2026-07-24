@@ -396,6 +396,7 @@ export default function RightSidebar() {
   useEffect(() => {
     const openArtifacts = (event: Event) => {
       const projectPath = (event as CustomEvent<{ projectPath?: string }>).detail?.projectPath;
+      window.dispatchEvent(new CustomEvent('codeclub:open-right-panel'));
       if (projectPath && projectPath !== activeProjectPath) setActiveProjectPath(projectPath);
       setTabs((current) => current.includes('artifacts') ? current : [...current, 'artifacts']);
       setActiveTab('artifacts');

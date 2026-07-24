@@ -974,6 +974,7 @@ const compactJson = (value) => {
       setArtifactReference(null);
     }
     const abortController = new AbortController();
+    const generationStartedAt = Date.now();
     const generationId = generationIdRef.current + 1;
     generationIdRef.current = generationId;
     abortControllerRef.current = abortController;
@@ -1157,6 +1158,35 @@ const compactJson = (value) => {
             onStructuredOutput: (output) => {
               structuredArtifactOutput = output;
             },
+            onAbort: ({ steps }) => {
+              if (!isCurrentGeneration()) return;
+              setPendingApprovals([]);
+              setActiveToolName('');
+              setAgentState('idle');
+              void appendExecutionLog({ projectPath: chat?.projectPath || '', chatId: chat?.chatId, tool: 'generation.abort', input: { steps: steps.length }, output: { status: 'aborted' } });
+            },
+            onEnd: () => {
+              if (!isCurrentGeneration()) return;
+              setActiveToolName('');
+            },
+            onStepEnd: ({ stepNumber, finishReason, toolCalls, usage, performance }) => {
+              if (!isCurrentGeneration()) return;
+              void appendExecutionLog({
+                projectPath: chat?.projectPath || '',
+                chatId: chat?.chatId,
+                tool: 'generation.step',
+                input: { stepNumber, tools: (toolCalls || []).map((toolCall) => toolCall.toolName) },
+                output: { finishReason, usage, performance: { stepTimeMs: performance?.stepTimeMs, responseTimeMs: performance?.responseTimeMs, outputTokensPerSecond: performance?.outputTokensPerSecond } },
+              });
+            },
+            onToolExecutionStart: ({ callId, toolCall }) => {
+              if (!isCurrentGeneration()) return;
+              void appendExecutionLog({ projectPath: chat?.projectPath || '', chatId: chat?.chatId, tool: 'tool.execution.start', input: { callId, toolCallId: toolCall?.toolCallId, toolName: toolCall?.toolName, input: toolCall?.input }, output: { status: 'started' } });
+            },
+            onToolExecutionEnd: ({ callId, toolCall, toolExecutionMs, toolOutput }) => {
+              if (!isCurrentGeneration()) return;
+              void appendExecutionLog({ projectPath: chat?.projectPath || '', chatId: chat?.chatId, tool: 'tool.execution.end', input: { callId, toolCallId: toolCall?.toolCallId, toolName: toolCall?.toolName }, output: { durationMs: toolExecutionMs, status: toolOutput?.type === 'tool-result' ? 'completed' : 'error' } });
+            },
             onToolCall: () => {
               if (!isCurrentGeneration()) return;
               if (toolStateTimerRef.current) clearTimeout(toolStateTimerRef.current);
@@ -1209,7 +1239,7 @@ const compactJson = (value) => {
       if (!assistantContent?.trim()) throw new Error('El modelo no devolvió una respuesta después de reintentar.');
 
       if (!isCurrentGeneration() || abortController.signal.aborted) return;
-      const assistantMessage = { role: 'assistant', content: assistantContent, tools: assistantTools, agentName: chatMode === 'business' ? 'Negocios' : 'Desarrollo', meta: { provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt, usage: latestUsage ? { inputTokens: latestUsage.inputTokens, outputTokens: latestUsage.outputTokens, totalTokens: latestUsage.totalTokens, reasoningTokens: latestUsage.reasoningTokens } : null } };
+      const assistantMessage = { role: 'assistant', content: assistantContent, tools: assistantTools, agentName: chatMode === 'business' ? 'Negocios' : 'Desarrollo', meta: { provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt, status: 'completed', usage: latestUsage ? { inputTokens: latestUsage.inputTokens, outputTokens: latestUsage.outputTokens, totalTokens: latestUsage.totalTokens, reasoningTokens: latestUsage.reasoningTokens } : null } };
       setMessages([...newMessages, { ...assistantMessage, displayContent: '' }]);
       let visibleLength = 0;
       visualAnimationRef.current = window.setInterval(() => {
@@ -1250,8 +1280,21 @@ const compactJson = (value) => {
       }
       setMessages((prev) => {
         const updated = [...prev];
-        if (updated.length > 0 && updated[updated.length - 1].content === '' && updated[updated.length - 1].role === 'assistant') {
-          updated.pop();
+        const last = updated[updated.length - 1];
+        if (last?.role === 'assistant' && last.content === '') {
+          if (abortController.signal.aborted) {
+            updated.pop();
+          } else updated[updated.length - 1] = {
+            ...last,
+            content: error?.name === 'TimeoutError' ? 'La respuesta tardó demasiado y fue cancelada.' : 'No pude completar la respuesta. Revisá el proveedor o intentá nuevamente.',
+            meta: {
+              provider: currentProvider.label || currentProvider.id,
+              model: currentModel.label || currentModel.id,
+              durationMs: Date.now() - generationStartedAt,
+              status: 'error',
+              errorName: error?.name || 'Error',
+            },
+          };
         }
         return updated;
       });

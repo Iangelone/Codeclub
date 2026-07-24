@@ -26,6 +26,21 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
     tools,
     ...(structuredOutput ? { output: structuredOutput } : {}),
     abortSignal: signal,
+    onAbort: async ({ steps }: any) => {
+      await callbacks.onAbort?.({ steps });
+    },
+    onEnd: async ({ steps, totalUsage }: any) => {
+      await callbacks.onEnd?.({ steps, totalUsage });
+    },
+    onStepEnd: async (info: any) => {
+      await callbacks.onStepEnd?.(info);
+    },
+    onToolExecutionStart: async (info: any) => {
+      await callbacks.onToolExecutionStart?.(info);
+    },
+    onToolExecutionEnd: async (info: any) => {
+      await callbacks.onToolExecutionEnd?.(info);
+    },
     stopWhen: stepCountIs(structuredOutput ? 7 : 6),
     timeout: {
       totalMs: 90_000,

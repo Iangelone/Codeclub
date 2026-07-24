@@ -22,5 +22,10 @@ export interface EngineCallbacks {
   onToolResult?: () => void;
   onUsage?: (usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number; reasoningTokens?: number; model?: string; durationMs: number }) => void | Promise<void>;
   onStructuredOutput?: (output: any) => void | Promise<void>;
+  onAbort?: (info: { steps: any[] }) => void | Promise<void>;
+  onEnd?: (info: { steps: any[]; totalUsage?: any }) => void | Promise<void>;
+  onStepEnd?: (info: any) => void | Promise<void>;
+  onToolExecutionStart?: (info: any) => void | Promise<void>;
+  onToolExecutionEnd?: (info: any) => void | Promise<void>;
   onError?: (error: any) => void;
 }

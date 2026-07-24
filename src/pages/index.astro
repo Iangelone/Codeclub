@@ -88,6 +88,7 @@ import ChatPanel from "../components/ChatPanel.astro";
           singlePanelButton?.classList.toggle('is-active', !open);
           splitPanelButton?.classList.toggle('is-active', open);
         };
+        window.addEventListener('codeclub:open-right-panel', () => setRightPanel(true));
         singlePanelButton?.addEventListener('click', () => setRightPanel(false));
         splitPanelButton?.addEventListener('click', () => setRightPanel(!document.body.classList.contains('has-right-panel')));
         dockButton?.addEventListener('click', () => {
