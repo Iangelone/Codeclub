@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Cpu, Folder, House, MessageSquarePlus, Server, Target, Terminal } from 'lucide-react';
+import { Cpu, Folder, House, MessageSquarePlus, Play, Server, Target, Terminal, X } from 'lucide-react';
 import { activeChatStore, chatsStore, type GlobalChat } from '../lib/store';
 import ChatInterface from './ChatInterface.tsx';
 import ProjectsPanel from './ProjectsPanel.tsx';
@@ -186,4 +186,50 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
       </div>
     </div>
   );
+}
+
+function DeveloperLoopPreviewLegacy({ onClose }: { onClose: () => void }) {
+  const steps = [
+    ['1', 'Entender', 'Lee el pedido y el contexto'],
+    ['2', 'Planificar', 'Crea pasos y TODOs'],
+    ['3', 'Actuar', 'Usa archivos, terminal y herramientas'],
+    ['4', 'Verificar', 'Ejecuta checks y revisa resultados'],
+    ['5', 'Entregar', 'Resume cambios y próximos pasos'],
+  ];
+  return <aside className="absolute right-4 top-14 z-[70] w-[320px] rounded-2xl border border-[#2b2b2b] bg-[#121212] p-3 shadow-2xl">
+    <div className="mb-3 flex items-center justify-between"><div><div className="text-xs font-medium text-[#eee]">Developer loop</div><div className="mt-1 text-[10px] text-[#666]">Previsualización del agente</div></div><button type="button" onClick={onClose} className="grid h-6 w-6 place-items-center rounded-md border-0 bg-transparent text-[#777] hover:bg-[#1e1e1e] hover:text-white" aria-label="Cerrar preview"><X size={13} /></button></div>
+    <div className="mb-3 rounded-xl border border-[#202020] bg-[#161616] p-2.5"><div className="mb-2 flex items-center gap-2 text-[10px] text-[#c7cbff]"><Play size={11} fill="currentColor" /> Chat mockup</div><div className="rounded-lg bg-[#202020] px-2.5 py-2 text-[11px] text-[#ddd]">“Implementá la mejora y verificá que compile.”</div><div className="mt-2 rounded-lg border border-[#2b2b2b] px-2.5 py-2 text-[11px] leading-4 text-[#aaa]">Analizo el proyecto → planifico → ejecuto herramientas → verifico → informo.</div></div>
+    <div className="grid gap-1.5">{steps.map(([number, title, description], index) => <div key={number} className="flex items-start gap-2.5 rounded-lg px-2 py-1.5 hover:bg-[#1c1c1c]"><div className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-[10px] ${index === 2 ? 'bg-[#c7cbff] text-[#181818]' : 'bg-[#202020] text-[#999]'}`}>{number}</div><div><div className="text-[11px] text-[#ddd]">{title}</div><div className="text-[10px] text-[#666]">{description}</div></div></div>)}</div>
+  </aside>;
+}
+
+function DeveloperLoopPreviewOld({ onClose }: { onClose: () => void }) {
+  const [selectedAskOption, setSelectedAskOption] = useState<string | null>(null);
+  const messages = [
+    { role: 'user', text: 'Implementá la mejora y verificá que compile.' },
+    { role: 'assistant', label: 'Entender', text: 'Reviso el pedido, el proyecto activo y los archivos relacionados.' },
+    { role: 'event', label: 'TODO', text: '1. Inspeccionar componentes\n2. Implementar el cambio\n3. Ejecutar verificaciones' },
+    { role: 'assistant', label: 'Planificar', text: 'Ya tengo el plan. Empiezo por el componente principal y sus estilos.' },
+    { role: 'tool', label: 'Acción · archivos', text: 'Abro src/components/ChatInterface.tsx' },
+    { role: 'tool', label: 'Terminal', text: '$ bun run typecheck\n> Revisando tipos…' },
+    { role: 'assistant', label: 'Ask user', text: 'Encontré dos variantes posibles. ¿Preferís mantener el diseño actual o usar tarjetas más compactas?' },
+    { role: 'user', text: 'Mantené el diseño actual y hacelo más claro.' },
+    { role: 'tool', label: 'Verificación', text: '$ bun run web:build\n✓ Build completado sin errores' },
+    { role: 'assistant', label: 'Entregar', text: 'Listo. Apliqué la mejora, actualicé el TODO y verifiqué que el proyecto compile.' },
+  ] as const;
+
+  return <aside className="absolute right-4 top-14 z-[70] flex max-h-[calc(100%-72px)] w-[380px] flex-col overflow-hidden rounded-2xl border border-[#2b2b2b] bg-[#121212] shadow-2xl">
+    <div className="flex items-center justify-between border-b border-[#202020] px-3 py-2.5"><div><div className="text-xs font-medium text-[#eee]">Chat mockup</div><div className="mt-0.5 text-[10px] text-[#666]">10 mensajes · solo previsualización · no se guarda</div></div><button type="button" onClick={onClose} className="grid h-6 w-6 place-items-center rounded-md border-0 bg-transparent text-[#777] hover:bg-[#1e1e1e] hover:text-white" aria-label="Cerrar mockup"><X size={13} /></button></div>
+    <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+      {messages.map((message, index) => <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+        <div className={`max-w-[92%] rounded-xl border px-2.5 py-2 text-[11px] leading-4 whitespace-pre-line ${message.role === 'user' ? 'border-[#34345a] bg-[#242442] text-[#e7e7f4]' : message.role === 'tool' ? 'border-[#29352e] bg-[#18201b] text-[#b9d6c0]' : message.role === 'event' ? 'border-[#493e26] bg-[#211d14] text-[#d6c79e]' : 'border-[#292929] bg-[#1b1b1b] text-[#c7c7c7]'}`}>
+          {'label' in message && <div className="mb-1 text-[9px] font-medium uppercase tracking-[0.08em] text-[#888]">{message.label}</div>}
+          {message.text}
+          {message.label === 'Ask user' && <div className="mt-2 grid grid-cols-2 gap-1.5">
+            {['Mantener diseño actual', 'Usar tarjetas compactas'].map((option) => <button key={option} type="button" aria-pressed={selectedAskOption === option} onClick={() => setSelectedAskOption(option)} className={`min-h-[48px] rounded-lg border px-2 text-left text-[10px] transition-colors ${selectedAskOption === option ? 'border-[#8b8fd8] bg-[#30305a] text-white' : 'border-[#353535] bg-[#202020] text-[#bdbdbd] hover:border-[#62629a] hover:bg-[#29294a]'}`}>{option}</button>)}
+          </div>}
+        </div>
+      </div>)}
+    </div>
+  </aside>;
 }

@@ -25,7 +25,8 @@ try {
     return Object.values(p.models).map((m: any) => ({
       id: m.id,
       label: m.name,
-      providerId: p.id
+      providerId: p.id,
+      cost: m.cost || null,
     }));
   });
 

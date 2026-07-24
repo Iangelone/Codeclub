@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUpRight, ChevronDown, ChevronRight, Copy, FileCode2, Folders as FolderOpen, KeyRound, MessageSquare, RotateCcw, Search, Terminal, Folder, FolderTree, Plus, RefreshCw, X } from 'lucide-react';
+import { ArrowUpRight, ChevronDown, ChevronRight, Copy, FileCode2, Folders as FolderOpen, KeyRound, ListTodo, MessageSquare, RotateCcw, Search, Square, Terminal, Folder, FolderTree, Plus, RefreshCw, X } from 'lucide-react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -23,6 +23,8 @@ import mammoth from 'mammoth';
 import { createBusinessTools, createTools } from '../lib/engine/tools';
 import { runStream } from '../lib/engine/run';
 import { getProjectFilePath, getSetting, logPersistence, setSetting } from '../lib/persistence';
+import { appendGenerationUsage, type GenerationUsageRecord } from '../lib/usage';
+import { appendExecutionLog } from '../lib/execution-log';
 import { getProjectChatPath, readGlobalChatHistory, readGlobalChats, readProjectIndex, readProjectMeta, writeGlobalChatHistory, writeGlobalChats, writeProjectMeta } from '../lib/projectManager';
 
 const SPINNER_FRAMES = {
@@ -63,6 +65,7 @@ const formatDuration = (durationMs: number) => durationMs >= 60000 ? `${(duratio
 export default function ChatInterface({ catalog, defaultProvider, defaultModel, panelId = 'left', eventPrefix = 'codeclub', selectedProject, blockedPanelState = 'blank' }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
+  const [artifactReference, setArtifactReference] = useState<{ kind: 'plan' | 'todo' | 'quote'; id: string; title: string } | null>(null);
   const [inputFocused, setInputFocused] = useState(false);
   const [avatarColor, setAvatarColor] = useState('#3b6bb5');
   const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
@@ -71,6 +74,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [activeToolName, setActiveToolName] = useState('');
   const [pendingApprovals, setPendingApprovals] = useState([]);
   const toolStateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const [composerDocked, setComposerDocked] = useState(true);
   const composerDockedRef = useRef(false);
 
@@ -125,6 +129,17 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   }[agentState] || "Listo cuando tú lo estés.";
   const isAgentBusy = ['streaming', 'tool_call', 'approval', 'running'].includes(agentState);
   useEffect(() => { window.dispatchEvent(new CustomEvent('codeclub:agent-activity', { detail: { state: agentState, tool: activeToolName, agent: chatMode === 'business' ? 'Negocios' : 'Desarrollo' } })); }, [agentState, activeToolName, chatMode]);
+  useEffect(() => {
+    const handleArtifactReference = (event: Event) => {
+      const detail = (event as CustomEvent<{ projectPath?: string; kind?: 'plan' | 'todo' | 'quote'; id?: string; title?: string }>).detail;
+      if (!detail?.kind || !detail.id || !detail.title) return;
+      if (detail.projectPath && detail.projectPath !== activeProject?.projectPath) return;
+      setArtifactReference({ kind: detail.kind, id: detail.id, title: detail.title });
+      requestAnimationFrame(() => chatInputRef.current?.focus());
+    };
+    window.addEventListener('codeclub:artifact-reference', handleArtifactReference);
+    return () => window.removeEventListener('codeclub:artifact-reference', handleArtifactReference);
+  }, [activeProject?.projectPath]);
   const approvalResolversRef = useRef(new Map());
   const lastModelFetchRef = useRef(null);
   const commandMenuRef = useRef(null);
@@ -812,6 +827,12 @@ const compactJson = (value) => {
   };
 
   const sendMessage = async (content, baseMessages = messages, shouldRenameChat = messages.length === 0, replaceHistory = false) => {
+    if (artifactReference) {
+      content = `${content}\n\nReferencia de artifact: @${artifactReference.kind} "${artifactReference.title}" (id: ${artifactReference.id})`;
+      setArtifactReference(null);
+    }
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
     let chat = activeChatRef.current;
     if (!chat && activeProject?.projectPath) {
       const title = content.trim().split(/\r?\n/)[0].slice(0, 60) || 'Nuevo chat';
@@ -883,6 +904,7 @@ const compactJson = (value) => {
       let assistantReasoning = '';
       let assistantTools = [];
       let executionStartedAt = Date.now();
+      let latestUsage: GenerationUsageRecord | null = null;
       const updateAssistantMessage = () => {
         setMessages([...newMessages, { role: 'assistant', content: assistantContent, reasoning: assistantReasoning, tools: assistantTools, agentName: chatMode === 'business' ? 'Negocios' : 'Desarrollo' }]);
       };
@@ -899,6 +921,10 @@ const compactJson = (value) => {
           },
         ];
         updateAssistantMessage();
+        void appendExecutionLog({ projectPath: chat?.projectPath || '', chatId: chat?.chatId, tool: name, input, output });
+        if (['todo', 'createPlan', 'updatePlan', 'createQuote', 'updateBusinessWorkspace'].includes(name)) {
+          window.dispatchEvent(new CustomEvent('codeclub:artifacts-changed', { detail: { projectPath: chat?.projectPath || '' } }));
+        }
       };
       updateAssistantMessage();
 
@@ -918,16 +944,18 @@ const compactJson = (value) => {
 
       const system = chatMode === 'business' ? [
         'Sos el asistente de negocios de Codeclub.',
+        'Usa getExecutionLog cuando necesites auditar quÃ© tools ejecutÃ³ la orquestaciÃ³n o una sub-IA; el log contiene trazas observables, no pensamiento privado.',
         'Responde en español, claro y orientado a decisiones.',
         `El proyecto activo es ${chat.projectPath || 'Sin proyecto'}.`,
         `Proyectos indexados disponibles: ${indexedProjects.map((project) => `${project.name} (${project.path})`).join(', ') || 'ninguno'}.`,
-        'Usa listIndexedProjects para consultar el portfolio, getBusinessWorkspace para leer la economía, updateBusinessWorkspace para mantenerla, createExecutionPlan para planes y createBudget para presupuestos.',
+        'Usa listIndexedProjects para consultar el portfolio, getBusinessWorkspace para leer la economía, getAIUsageMetrics para medir tokens, duración y costo estimado por período, updateBusinessWorkspace para mantenerla, createExecutionPlan para planes y createBudget para presupuestos.',
         'Usa getWhatsAppBusinessContext para consultar conversaciones en tiempo real. Es estrictamente solo lectura: nunca envía mensajes.',
         'Usa listProjectFiles, readProjectFile y searchProjectText para entender la implementación, capacidades y límites técnicos. Son herramientas de solo lectura: no edites código desde Negocios.',
         'Delegá investigaciones amplias a sub-IA especialistas: en Código usa explorer, frontend, backend, qa, security o documentation; en Negocios usa delegateBusinessSpecialist con commercial, pricing, finance, operations, crm_whatsapp o strategy.',
-        'Actuá como asesor comercial: analizá rentabilidad, costos, horas, alcance, precio fijo, precio por hora, hitos, abonos y valor entregado. Tus resultados son borradores estructurados y deben explicar supuestos cuando falten datos.',
+        'Actuá como asesor comercial: analizá rentabilidad, costos, horas, alcance, precio fijo, precio por hora, hitos, abonos y valor entregado. Cuando te pidan una cotización, usá createQuote con título, descripción e ítems; no la simules solo en texto. Tus resultados son borradores estructurados y deben explicar supuestos cuando falten datos.',
       ].join(' ') : [
         'Sos el agente IDE de Codeclub.',
+        'Usa getExecutionLog para consultar las tools ejecutadas por la orquestadora o sub-IA; el log contiene trazas observables, no pensamiento privado.',
         'Responde en español, breve y util.',
         'Tenes herramientas para inspeccionar y modificar el workspace activo.',
         'Usa listFiles, readFile y searchText antes de tocar codigo cuando falte contexto.',
@@ -935,6 +963,7 @@ const compactJson = (value) => {
         'Para comandos usa runCommand sin pedir confirmación; puede ejecutar cualquier comando disponible en el sistema.',
         'Para procesos persistentes, servidores o trabajo interactivo usa la tool terminal; crea procesos background sin abrir UI.',
         'Usa createPlan, updatePlan, todo y getTaskStatus para organizar tareas de programacion.',
+        'Cuando el usuario pida crear o actualizar TODOs, ejecuta la tool todo y usa los IDs exactos que devuelva; no reemplaces la acción por una tabla o explicación en Markdown.',
         'Usa askUser solo cuando falte una decision importante; devuelve una solicitud estructurada sin asumir la respuesta.',
         'Las acciones riesgosas piden aprobacion humana antes de ejecutarse.',
       ].join(' ');
@@ -950,6 +979,7 @@ const compactJson = (value) => {
           system,
           messages: newMessages.map(({ role, content }) => ({ role, content })),
           tools,
+          signal: abortController.signal,
           callbacks: {
             onTextDelta: (content) => {
               assistantContent = content;
@@ -970,17 +1000,39 @@ const compactJson = (value) => {
                 setAgentState('streaming');
               }, 2000);
             },
+            onUsage: async (usage) => {
+              const record: GenerationUsageRecord = {
+                id: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+                at: new Date().toISOString(),
+                projectPath: chat?.projectPath || '',
+                chatId: chat?.chatId || '',
+                mode: chatMode,
+                provider: currentProvider.label || currentProvider.id,
+                model: usage.model || currentModel.label || currentModel.id,
+                inputTokens: usage.inputTokens ?? null,
+                outputTokens: usage.outputTokens ?? null,
+                totalTokens: usage.totalTokens ?? null,
+                reasoningTokens: usage.reasoningTokens ?? null,
+                inputCostPerMillion: Number.isFinite(Number(currentModel.cost?.input)) ? Number(currentModel.cost.input) : null,
+                outputCostPerMillion: Number.isFinite(Number(currentModel.cost?.output)) ? Number(currentModel.cost.output) : null,
+                durationMs: usage.durationMs,
+                status: 'completed',
+              };
+              latestUsage = record;
+              await appendGenerationUsage(record);
+            },
           },
         });
       };
       assistantContent = await runAssistant();
-      if (!assistantContent?.trim()) {
+      if (!abortController.signal.aborted && !assistantContent?.trim()) {
         setAgentState('streaming');
         assistantContent = await runAssistant();
       }
       if (!assistantContent?.trim()) throw new Error('El modelo no devolvió una respuesta después de reintentar.');
 
-      const assistantMessage = { role: 'assistant', content: assistantContent, tools: assistantTools, agentName: chatMode === 'business' ? 'Negocios' : 'Desarrollo', meta: { provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt } };
+      if (abortController.signal.aborted) return;
+      const assistantMessage = { role: 'assistant', content: assistantContent, tools: assistantTools, agentName: chatMode === 'business' ? 'Negocios' : 'Desarrollo', meta: { provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt, usage: latestUsage ? { inputTokens: latestUsage.inputTokens, outputTokens: latestUsage.outputTokens, totalTokens: latestUsage.totalTokens, reasoningTokens: latestUsage.reasoningTokens } : null } };
       setMessages([...newMessages, assistantMessage]);
       if (replaceHistory) {
         await writeChatJsonl([...newMessages, assistantMessage]);
@@ -988,8 +1040,10 @@ const compactJson = (value) => {
         await appendToJsonl(assistantMessage);
       }
     } catch (error) {
-      console.error(formatDebugError(error));
-      setAgentState('error');
+      if (!abortController.signal.aborted) {
+        console.error(formatDebugError(error));
+        setAgentState('error');
+      }
       setMessages((prev) => {
         const updated = [...prev];
         if (updated.length > 0 && updated[updated.length - 1].content === '' && updated[updated.length - 1].role === 'assistant') {
@@ -998,10 +1052,20 @@ const compactJson = (value) => {
         return updated;
       });
     } finally {
+      if (abortControllerRef.current === abortController) abortControllerRef.current = null;
       setIsStreaming(false);
       setActiveToolName('');
-      setAgentState((state) => state === 'error' ? 'error' : 'idle');
+      setAgentState((state) => state === 'error' && !abortController.signal.aborted ? 'error' : 'idle');
     }
+  };
+
+  const cancelGeneration = () => {
+    const controller = abortControllerRef.current;
+    if (!controller) return;
+    controller.abort();
+    setIsStreaming(false);
+    setActiveToolName('');
+    setAgentState('idle');
   };
 
   const handleSubmit = async (e) => {
@@ -1041,6 +1105,26 @@ const compactJson = (value) => {
     await sendMessage(`${input.trim() || 'Revisá los archivos añadidos.'}${attachmentContext}`);
     setAttachedFiles([]);
   };
+
+  useEffect(() => {
+    if (panelId !== 'left') return undefined;
+    const handleTestingAction = (event: Event) => {
+      const action = (event as CustomEvent).detail?.action;
+      if (isAgentBusy) return;
+      const prompts: Record<string, string> = {
+        'ask-user': '[TESTING] Usá la herramienta askUser ahora. Preguntame qué estilo de tarjetas preferís y ofrecé exactamente estas opciones: Minimalista, Compacto y Detallado.',
+        subagents: '[TESTING] Delegá esta tarea a un subagente especialista y mostrámelo trabajando: revisá la estructura del proyecto y devolvé un resumen breve.',
+        approval: '[TESTING] Intentá ejecutar una acción que requiera aprobación humana antes de continuar. Mostrá la tarjeta de aprobación.',
+        streaming: '[TESTING] Analizá paso a paso esta mejora y explicá tu razonamiento mientras trabajás, para poder probar el estado de streaming y pensamiento.',
+        todo: '[TESTING] No describas ni simules nada en Markdown. Ejecutá obligatoriamente las tools reales en este orden: 1) todo con action clear; 2) todo con action add para tres tareas; 3) usá los IDs exactos devueltos por esas llamadas para ejecutar todo con action update y status in_progress sobre la primera tarea; 4) ejecutá getTaskStatus. No respondas con una tabla escrita: el objetivo es generar eventos tool y mostrar la tarjeta TODO visual.',
+        'plan-mode': '[TESTING] Entrá en modo plan y proponé un plan de implementación con pasos, riesgos y verificaciones, sin modificar archivos todavía.',
+        quote: '[TESTING] Usá obligatoriamente la tool createQuote ahora. Generá una cotización de prueba persistida para este proyecto con título, descripción clara y exactamente tres ítems con cantidad, precio unitario y total. No la simules en Markdown: la prueba termina cuando createQuote devuelve la cotización.',
+      };
+      if (prompts[action]) void sendMessage(prompts[action]);
+    };
+    window.addEventListener('codeclub:testing-action', handleTestingAction);
+    return () => window.removeEventListener('codeclub:testing-action', handleTestingAction);
+  }, [panelId, isAgentBusy, sendMessage]);
 
   const handleCopyMessage = async (content) => {
     await navigator.clipboard?.writeText(content);
@@ -1249,11 +1333,16 @@ const compactJson = (value) => {
               <div style={{ background: m.role === 'user' ? '#202020' : 'transparent', padding: m.role === 'user' ? '14px 20px' : '0', borderRadius: m.role === 'user' ? '24px 24px 4px 24px' : '0', color: '#eee', fontSize: '14px', width: 'fit-content', maxWidth: '100%', lineHeight: 1.5, overflowWrap: 'anywhere', wordBreak: 'break-word', boxShadow: m.role === 'user' ? '0 4px 14px rgba(0, 0, 0, 0.18)' : 'none' }}>
                 {m.role === 'assistant' && m.reasoning && <div style={{ margin: '0 0 12px', padding: '9px 11px', borderLeft: '2px solid #555555', color: 'rgba(216, 216, 216, 0.58)', fontSize: '12px', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}><div style={{ marginBottom: '4px', color: 'rgba(216, 216, 216, 0.42)', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Pensamiento</div>{m.reasoning}</div>}
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ p: ({ children }) => <p style={{ margin: m.role === 'user' ? 0 : '0 0 12px', lineHeight: m.role === 'user' ? 1.4 : 1.6 }}>{children}</p>, ul: ({ children }) => <ul style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ul>, ol: ({ children }) => <ol style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ol>, li: ({ children }) => <li style={{ margin: m.role === 'user' ? 0 : '4px 0' }}>{children}</li>, table: ({ children }) => <div style={{ overflowX: 'auto', margin: '12px 0' }}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>{children}</table></div>, th: ({ children }) => <th style={{ border: '1px solid #2b2b2b', padding: '7px 9px', background: '#1c1c1c', textAlign: 'left', fontWeight: 600 }}>{children}</th>, td: ({ children }) => <td style={{ border: '1px solid #2b2b2b', padding: '7px 9px', verticalAlign: 'top' }}>{children}</td>, h1: ({ children }) => <h1 style={{ margin: '18px 0 10px', fontSize: '20px' }}>{children}</h1>, h2: ({ children }) => <h2 style={{ margin: '16px 0 8px', fontSize: '17px' }}>{children}</h2>, h3: ({ children }) => <h3 style={{ margin: '14px 0 7px', fontSize: '15px' }}>{children}</h3> }}>{m.content}</ReactMarkdown>
+                {m.role === 'assistant' && isStreaming && i === messages.length - 1 && <span style={{ display: 'inline-block', marginTop: m.content ? '2px' : 0, color: 'rgba(216, 216, 216, 0.58)', fontSize: '13px' }}>{m.content ? '▌' : 'Generando respuesta…'}</span>}
               </div>
+              {m.role === 'assistant' && <AskUserCards tools={m.tools} onSelect={(answer) => void sendMessage(answer)} disabled={isAgentBusy} />}
+              {m.role === 'assistant' && <SubagentCards tools={m.tools} />}
+              {m.role === 'assistant' && i === messages.length - 1 && <ApprovalCards approvals={pendingApprovals} onResolve={resolveToolApproval} />}
               <div style={{ alignSelf: m.role === 'user' ? 'end' : 'start', display: 'flex', alignItems: 'center', gap: '4px', opacity: 0.72 }}>
                 <button type="button" aria-label="Copiar mensaje" onClick={() => handleCopyMessage(m.content)} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: 'pointer' }}>
                   <Copy size={13} strokeWidth={2} />
                 </button>
+                {m.role === 'assistant' && <button type="button" aria-label="Abrir Artifacts" title="Abrir Artifacts" onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-artifacts', { detail: { projectPath: activeProject?.projectPath || '' } }))} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: 'pointer' }}><ListTodo size={13} strokeWidth={1.8} /></button>}
                 {m.role === 'user' && <button type="button" aria-label="Reintentar desde este mensaje" onClick={() => handleRetryMessage(i)} disabled={isAgentBusy} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: isAgentBusy ? 'not-allowed' : 'pointer' }}>
                   <RotateCcw size={13} strokeWidth={2} />
                 </button>}
@@ -1261,30 +1350,14 @@ const compactJson = (value) => {
             </div>
           </React.Fragment>
         ))}
-        {pendingApprovals.map((approval) => (
-          <div key={approval.id} style={{ alignSelf: 'flex-start', display: 'grid', gap: '6px', maxWidth: '80%', border: '1px solid rgba(253, 230, 138, 0.18)', borderRadius: '8px', padding: '10px', background: 'rgba(253, 230, 138, 0.045)', color: '#eee', fontSize: '12px' }}>
-            <div style={{ display: 'grid', gap: '4px' }}>
-              <span style={{ color: 'rgba(238, 238, 238, 0.88)', fontWeight: 600 }}>{approval.toolName}</span>
-              <span style={{ color: 'rgba(216, 216, 216, 0.66)' }}>{approval.summary}</span>
-              <pre style={{ margin: 0, padding: '6px 8px', background: 'rgba(0,0,0,0.25)', borderRadius: '6px', fontSize: '11px', lineHeight: 1.4, overflow: 'auto', maxHeight: '120px', whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: '#d8d8d8' }}>{JSON.stringify(approval.input, null, 2)}</pre>
-            </div>
-            <div style={{ display: 'flex', gap: '6px' }}>
-              <button type="button" onClick={() => resolveToolApproval(approval.id, true)} style={{ minHeight: '26px', border: 0, borderRadius: '7px', padding: '0 10px', background: '#2c2c2c', color: '#ffffff', cursor: 'pointer', fontSize: '12px' }}>
-                Aprobar
-              </button>
-              <button type="button" onClick={() => resolveToolApproval(approval.id, false)} style={{ minHeight: '26px', border: 0, borderRadius: '7px', padding: '0 10px', background: 'transparent', color: 'rgba(216, 216, 216, 0.72)', cursor: 'pointer', fontSize: '12px' }}>
-                Cancelar
-              </button>
-            </div>
-          </div>
-        ))}
         <div ref={messagesEndRef} aria-hidden="true" />
       </div>
 
       <div className="chat-composer" style={{ width: '100%', justifySelf: 'center', alignSelf: 'center', position: 'relative', display: 'grid', gap: '10px' }}>
         <div className="composer-row" style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }}>
-          <div className="composer-box" style={{ minHeight: '40px', flex: '1 1 auto', minWidth: 0, padding: '1px', borderRadius: '22px', background: '#202020', boxShadow: '0 18px 52px rgba(0, 0, 0, 0.26)' } as React.CSSProperties}>
-          <form onSubmit={handleSubmit} className="composer-box-inner" style={{ minHeight: '40px', width: '100%', minWidth: 0, display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 6px 5px 16px', border: 0, borderRadius: '21px', background: '#121212', position: 'relative' }}>
+          <div className="composer-box [&>[aria-label='Referencia de artifact']]:relative [&>[aria-label='Referencia de artifact']]:z-50 [&>[aria-label='Referencia de artifact']>span]:hidden" style={{ minHeight: '40px', flex: '1 1 auto', minWidth: 0, padding: '1px', borderRadius: '22px', background: '#202020', boxShadow: '0 18px 52px rgba(0, 0, 0, 0.26)' } as React.CSSProperties}>
+          {artifactReference && <div className="flex min-h-[28px] items-center gap-2 border-b border-[#202020] px-4 py-1.5" aria-label="Referencia de artifact"><span className="shrink-0 text-[10px] uppercase tracking-[0.08em] text-[#666]">Referencia</span><button type="button" onClick={() => setArtifactReference(null)} className="min-w-0 max-w-[260px] truncate rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-left text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar referencia">@{artifactReference.kind} · {artifactReference.title}</button></div>}
+          <form onSubmit={handleSubmit} className="composer-box-inner [&>button.absolute]:hidden" style={{ minHeight: '40px', width: '100%', minWidth: 0, display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 6px 5px 16px', border: 0, borderRadius: '21px', background: '#121212', position: 'relative' }}>
           {false && (
           <button type="button" onClick={handleAttachFiles} className="text-white/40 hover:text-white transition-colors" aria-label="Añadir archivos" style={{ flex: '0 0 28px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, background: 'transparent', cursor: 'pointer' }}>
             <Plus size={18} strokeWidth={2} />
@@ -1300,6 +1373,11 @@ const compactJson = (value) => {
               style={{ minHeight: '24px', display: 'flex', alignItems: 'center', padding: '0 9px', border: '1px solid var(--color-surface-8, #2b2b2b)', borderRadius: '999px', fontSize: '11px', cursor: 'pointer' }}
             >
               Añadido {attachedFiles.length}
+            </button>
+          )}
+          {false && artifactReference && (
+            <button type="button" onClick={() => setArtifactReference(null)} className="shrink-0 max-w-[160px] truncate rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar referencia">
+              @{artifactReference.kind} · {artifactReference.title}
             </button>
           )}
           {isAgentBusy && (
@@ -1322,6 +1400,7 @@ const compactJson = (value) => {
             onChange={(e) => {
               const value = e.target.value;
               setInput(value);
+              if (!value.trim()) setArtifactReference(null);
               if (value === '/' || (value.startsWith('/') && !value.includes(' '))) {
                 setCommandKind('command');
                 setSearchQuery(value.slice(1));
@@ -1353,8 +1432,9 @@ const compactJson = (value) => {
             aria-label="Mensaje"
             style={{ appearance: 'none', flex: '1 1 auto', minWidth: 0, width: '100%', height: '22px', maxHeight: '140px', alignSelf: 'center', resize: 'none', border: 0, outline: 'none', background: 'transparent', color: '#eeeeee', fontSize: '12px', lineHeight: 1.4, padding: '4px 10px 4px 0', fontFamily: 'inherit', overflowY: 'hidden', scrollbarWidth: 'none', opacity: isAgentBusy ? 0.55 : 1 }}
           />
-          <button type="submit" disabled={isAgentBusy} className="send-button text-white/35 hover:text-white transition-colors" aria-label={credentialProvider ? "Guardar credencial" : "Enviar"} style={{ flex: '0 0 36px', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, borderRadius: '50%', background: 'transparent', cursor: isAgentBusy ? 'not-allowed' : 'pointer' }}>
-            <ArrowUpRight size={18} strokeWidth={2} />
+          {artifactReference && <button type="button" onClick={() => setArtifactReference(null)} className="absolute left-[16px] top-1/2 z-10 max-w-[130px] -translate-y-1/2 truncate rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar referencia">@{artifactReference.kind} · {artifactReference.title}</button>}
+          <button type={isAgentBusy ? 'button' : 'submit'} onClick={isAgentBusy ? cancelGeneration : undefined} disabled={!isAgentBusy && !input.trim() && !credentialProvider} className="send-button text-white/35 hover:text-white transition-colors" aria-label={isAgentBusy ? "Cancelar generación" : credentialProvider ? "Guardar credencial" : "Enviar"} title={isAgentBusy ? "Cancelar generación" : credentialProvider ? "Guardar credencial" : "Enviar"} style={{ flex: '0 0 36px', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, borderRadius: '50%', background: 'transparent', cursor: 'pointer' }}>
+            {isAgentBusy ? <Square size={15} strokeWidth={2.4} fill="currentColor" /> : <ArrowUpRight size={18} strokeWidth={2} />}
           </button>
           </form>
           </div>
@@ -1515,6 +1595,87 @@ function parseCsv(content: string): string[][] {
   }
   if (cell || row.length) { row.push(cell); rows.push(row); }
   return rows;
+}
+
+function AskUserCards({ tools = [], onSelect, disabled }: { tools?: any[]; onSelect: (answer: string) => void; disabled: boolean }) {
+  const questions = tools.filter((event) => event.name === 'askUser' && event.output?.status === 'awaiting_user');
+  if (!questions.length) return null;
+  return <div style={{ display: 'grid', gap: '8px', width: 'min(520px, 100%)', margin: '2px 0 2px' }}>
+    {questions.map((event) => <div key={event.id} style={{ display: 'grid', gap: '8px', padding: '4px 0', border: 0, borderRadius: 0, background: 'transparent' }}>
+      <div style={{ color: '#d8d8d8', fontSize: '12px', lineHeight: 1.4 }}>{event.output.question}</div>
+      {event.output.context && <div style={{ color: '#777', fontSize: '10px' }}>{event.output.context}</div>}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '7px' }}>
+        {(event.output.options?.length ? event.output.options : ['Responder en el chat']).map((option: string) => <button key={option} type="button" onClick={() => onSelect(option)} onMouseEnter={(event) => { event.currentTarget.style.background = '#202020'; event.currentTarget.style.borderColor = '#4a4a4a'; }} onMouseLeave={(event) => { event.currentTarget.style.background = '#151515'; event.currentTarget.style.borderColor = '#252525'; }} style={{ display: 'flex', alignItems: 'center', minHeight: '36px', padding: '5px 9px', border: '1px solid #252525', borderRadius: '8px', background: '#151515', color: '#ddd', cursor: 'pointer', textAlign: 'left', fontSize: '11px', transition: 'background 120ms ease, border-color 120ms ease' }}>{option}</button>)}
+      </div>
+    </div>)}
+  </div>;
+}
+
+function SubagentCards({ tools = [] }: { tools?: any[] }) {
+  const latestBySpecialist = new Map<string, any>();
+  tools.filter((event) => event.name === 'subagent').forEach((event) => {
+    latestBySpecialist.set(event.input?.specialist || 'subagent', event);
+  });
+  const subagents = Array.from(latestBySpecialist.values());
+  if (!subagents.length) return null;
+
+  return <div style={{ display: 'grid', gap: '7px', width: 'min(520px, 100%)', margin: '4px 0 2px' }}>
+    {subagents.map((event) => {
+      const running = event.output?.status === 'running';
+      const failed = event.output?.status === 'error' || Boolean(event.output?.error);
+      const specialist = event.input?.specialist || 'Subagente';
+      const result = typeof event.output?.result === 'string' ? event.output.result : event.output?.result ? JSON.stringify(event.output.result) : '';
+      const text = running ? `Está analizando: ${event.input?.task || 'la tarea asignada'}` : failed ? String(event.output?.error || 'No pudo completar el análisis.') : result || 'Terminó su análisis.';
+      return <div key={event.id} style={{ display: 'grid', gap: '4px', minWidth: 0, padding: '8px 10px', border: '1px solid #2b2b2b', borderRadius: '9px', background: '#151515' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', minWidth: 0 }}>
+          <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#d8d8d8', fontSize: '11px', fontWeight: 600 }}>{specialist}</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', flexShrink: 0, color: failed ? '#c88787' : running ? '#aaa' : '#8fbe9b', fontSize: '10px' }}><span aria-hidden="true" style={{ color: failed ? '#d98b8b' : running ? '#d8d8d8' : '#8fbe9b', fontSize: '12px', lineHeight: 1 }}>{failed ? '×' : running ? '•' : '✓'}</span>{failed ? 'Error' : running ? 'Trabajando…' : 'Finalizado'}</span>
+        </div>
+        <div title={text} style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#777', fontSize: '10px' }}>{text}</div>
+      </div>;
+    })}
+  </div>;
+}
+
+function ApprovalCards({ approvals = [], onResolve }: { approvals?: any[]; onResolve: (id: string, approved: boolean) => void }) {
+  if (!approvals.length) return null;
+  return <div style={{ display: 'grid', gap: '7px', width: 'min(520px, 100%)', margin: '4px 0 2px' }}>
+    {approvals.map((approval) => <div key={approval.id} style={{ display: 'grid', gap: '6px', minWidth: 0, padding: '8px 10px', border: '1px solid #2b2b2b', borderRadius: '9px', background: '#151515', color: '#eee', fontSize: '11px' }}>
+      <div style={{ display: 'grid', gap: '4px', minWidth: 0 }}>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#d8d8d8', fontWeight: 600 }}>{approval.toolName}</span>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#777' }}>{approval.summary}</span>
+        <pre style={{ margin: 0, padding: '6px 8px', background: '#111', borderRadius: '6px', fontSize: '10px', lineHeight: 1.4, overflow: 'auto', maxHeight: '90px', whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: '#aaa' }}>{JSON.stringify(approval.input, null, 2)}</pre>
+      </div>
+      <div style={{ display: 'flex', gap: '6px' }}>
+        <button type="button" onClick={() => onResolve(approval.id, true)} style={{ minHeight: '26px', border: 0, borderRadius: '7px', padding: '0 10px', background: '#2c2c2c', color: '#fff', cursor: 'pointer', fontSize: '11px' }}>Aprobar</button>
+        <button type="button" onClick={() => onResolve(approval.id, false)} style={{ minHeight: '26px', border: 0, borderRadius: '7px', padding: '0 10px', background: 'transparent', color: '#999', cursor: 'pointer', fontSize: '11px' }}>Cancelar</button>
+      </div>
+    </div>)}
+  </div>;
+}
+
+function TodoCards({ tools = [] }: { tools?: any[] }) {
+  const todoEvents = tools.filter((event) => event.name === 'todo' && Array.isArray(event.output?.todos));
+  const latest = todoEvents[todoEvents.length - 1];
+  const todos = latest?.output?.todos || [];
+  if (!todos.length) return null;
+
+  const statusLabel = { pending: 'Pendiente', in_progress: 'En curso', completed: 'Completado', blocked: 'Bloqueado' };
+  const statusIcon = { pending: '•', in_progress: '◐', completed: '✓', blocked: '×' };
+  return <div style={{ display: 'grid', gap: '7px', width: 'min(520px, 100%)', margin: '4px 0 2px' }}>
+    <div style={{ display: 'grid', gap: '6px', padding: '8px 10px', border: '1px solid #2b2b2b', borderRadius: '9px', background: '#151515' }}>
+      <div style={{ color: '#d8d8d8', fontSize: '11px', fontWeight: 600 }}>TODO</div>
+      {todos.map((todo: any) => {
+        const status = todo.status || 'pending';
+        const color = status === 'completed' ? '#8fbe9b' : status === 'blocked' ? '#d98b8b' : status === 'in_progress' ? '#d8d8d8' : '#777';
+        return <div key={todo.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, minHeight: '30px', padding: '4px 7px', borderRadius: '7px', background: '#111' }}>
+          <span aria-hidden="true" style={{ display: 'grid', placeItems: 'center', flex: '0 0 16px', width: '16px', height: '16px', color, fontSize: '14px', lineHeight: 1 }}>{statusIcon[status] || '•'}</span>
+          <span title={todo.title} style={{ minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#ccc', fontSize: '11px' }}>{todo.title}</span>
+          <span style={{ flexShrink: 0, color, fontSize: '10px' }}>{statusLabel[status] || status}</span>
+        </div>;
+      })}
+    </div>
+  </div>;
 }
 
 function FilePreview({ projectPath, file, onChange }: { projectPath: string; file: OpenFile; onChange?: (content: string) => void }) {

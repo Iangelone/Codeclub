@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Activity, ArrowUpRight, CheckCircle2, ChevronDown, MapPin, Mail, TrendingUp } from "lucide-react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, RadialBar, RadialBarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { readBusinessWorkspace, readProjectIndex, type BusinessWorkspace, type ProjectEntry } from "../lib/projectManager";
+import { readGenerationUsage, summarizeGenerationUsage, type GenerationUsageRecord } from "../lib/usage";
 
 const chartTooltip = { backgroundColor: "#161616", border: "1px solid #2b2b2b", borderRadius: 8, color: "#ddd", fontSize: 11 };
 const chartGrid = "#242424";
@@ -11,19 +12,25 @@ const colors = ["#c7cbff", "#86efac", "#fde68a", "#f9a8d4"];
 export default function BusinessPanel() {
   const [projects, setProjects] = useState<ProjectEntry[]>([]);
   const [business, setBusiness] = useState<Record<string, BusinessWorkspace | null>>({});
+  const [usage, setUsage] = useState<Record<string, GenerationUsageRecord[]>>({});
   const [selectedProjectPath, setSelectedProjectPath] = useState("*");
+  const [usageFrom, setUsageFrom] = useState("");
+  const [usageTo, setUsageTo] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const load = async () => { const nextProjects = await readProjectIndex(); setProjects(nextProjects); const entries = await Promise.all(nextProjects.map(async (project) => [project.path, await readBusinessWorkspace(project.path)] as const)); setBusiness(Object.fromEntries(entries)); setLoading(false); };
+    const load = async () => { const nextProjects = await readProjectIndex(); setProjects(nextProjects); const entries = await Promise.all(nextProjects.map(async (project) => [project.path, await readBusinessWorkspace(project.path)] as const)); const usageEntries = await Promise.all(nextProjects.map(async (project) => [project.path, await readGenerationUsage(project.path)] as const)); setBusiness(Object.fromEntries(entries)); setUsage(Object.fromEntries(usageEntries)); setLoading(false); };
     void load();
     window.addEventListener("codeclub:project-indexed", load);
     window.addEventListener("codeclub:business-updated", load);
-    return () => { window.removeEventListener("codeclub:project-indexed", load); window.removeEventListener("codeclub:business-updated", load); };
+    window.addEventListener("codeclub:usage-updated", load);
+    return () => { window.removeEventListener("codeclub:project-indexed", load); window.removeEventListener("codeclub:business-updated", load); window.removeEventListener("codeclub:usage-updated", load); };
   }, []);
 
   const visibleProjects = selectedProjectPath === "*" ? projects : projects.filter((project) => project.path === selectedProjectPath);
   const visibleBusiness = visibleProjects.map((project) => business[project.path]).filter(Boolean) as BusinessWorkspace[];
+  const visibleUsage = visibleProjects.flatMap((project) => usage[project.path] || []);
+  const usageSummary = summarizeGenerationUsage(visibleUsage, usageFrom || undefined, usageTo || undefined);
   const totalFiles = visibleProjects.reduce((sum, project) => sum + (project.file_count || 0), 0);
   const totalRevenue = visibleBusiness.flatMap((item) => item.invoices).reduce((sum, item: any) => sum + Number(item.amount || item.total || 0), 0);
   const totalExpenses = visibleBusiness.flatMap((item) => item.expenses).reduce((sum, item: any) => sum + Number(item.amount || 0), 0);
@@ -48,6 +55,14 @@ export default function BusinessPanel() {
 
       <div className="relative"><div className="absolute right-5 top-5 z-10"><ProjectFilterMenu projects={projects} selectedProjectPath={selectedProjectPath} onProjectChange={setSelectedProjectPath} /></div><DeveloperCard projects={projects} selectedProjectPath={selectedProjectPath} onProjectChange={setSelectedProjectPath} /></div>
 
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[#202020] p-3 text-[11px] text-[#777]">
+        <span>Período IA</span>
+        <input type="date" value={usageFrom} onChange={(event) => setUsageFrom(event.target.value)} className="rounded-lg border border-[#2b2b2b] bg-[#161616] px-2 py-1.5 text-[#ccc]" aria-label="Desde" />
+        <span>—</span>
+        <input type="date" value={usageTo} onChange={(event) => setUsageTo(event.target.value)} className="rounded-lg border border-[#2b2b2b] bg-[#161616] px-2 py-1.5 text-[#ccc]" aria-label="Hasta" />
+        {(usageFrom || usageTo) && <button type="button" onClick={() => { setUsageFrom(""); setUsageTo(""); }} className="rounded-lg px-2 py-1.5 text-[#aaa] hover:bg-[#1c1c1c]">Limpiar</button>}
+      </div>
+
       <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
         <Panel title="Ingresos" subtitle="Facturas y cobros registrados"><Metric label="Total" value={formatMoney(totalRevenue)} /></Panel>
         <Panel title="Gastos" subtitle="Costos cargados en proyectos"><Metric label="Total" value={formatMoney(totalExpenses)} /></Panel>
@@ -55,10 +70,19 @@ export default function BusinessPanel() {
         <Panel title="Abonos" subtitle={`${quoteCount} cotización${quoteCount === 1 ? "" : "es"}`}><Metric label="Mensual" value={formatMoney(monthlyFees)} /></Panel>
       </div>
 
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+        <Panel title="Generaciones IA" subtitle="Outputs producidos"><Metric label="Ejecuciones" value={String(usageSummary.generations)} /></Panel>
+        <Panel title="Tokens" subtitle="Entrada + salida"><Metric label="Total" value={formatCompact(usageSummary.totalTokens)} /></Panel>
+        <Panel title="Costo IA estimado" subtitle="Según tarifa del modelo"><Metric label="USD" value={formatMoney(usageSummary.estimatedCost)} /></Panel>
+        <Panel title="Tiempo IA" subtitle="Duración acumulada"><Metric label="Total" value={formatDuration(usageSummary.durationMs)} /></Panel>
+      </div>
+
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.65fr_1fr]">
         <Panel title="Actividad registrada" subtitle="Cotizaciones y movimientos reales"><ResponsiveContainer width="100%" height={260}><AreaChart data={activity} margin={{ top: 12, right: 8, left: -20, bottom: 0 }}><defs><linearGradient id="businessGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#c7cbff" stopOpacity={0.3} /><stop offset="100%" stopColor="#c7cbff" stopOpacity={0} /></linearGradient></defs><CartesianGrid stroke={chartGrid} vertical={false} /><XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#666", fontSize: 10 }} /><YAxis axisLine={false} tickLine={false} tick={{ fill: "#666", fontSize: 10 }} /><Tooltip contentStyle={chartTooltip} /><Area type="monotone" dataKey="quotes" stroke="#c7cbff" strokeWidth={2} fill="url(#businessGradient)" /><Area type="monotone" dataKey="movements" stroke="#86efac" strokeWidth={2} fill="none" /></AreaChart></ResponsiveContainer></Panel>
         <Panel title="Distribución" subtitle="Estado actual de los negocios"><ResponsiveContainer width="100%" height={260}><PieChart><Pie data={statusData} dataKey="value" nameKey="name" cx="50%" cy="48%" innerRadius={65} outerRadius={95} paddingAngle={3} stroke="none">{statusData.map((entry, index) => <Cell key={entry.name} fill={colors[index]} />)}</Pie><Tooltip contentStyle={chartTooltip} /><text x="50%" y="47%" textAnchor="middle" dominantBaseline="middle" fill="#eee" fontSize="22" fontWeight="600">{projects.length}</text><text x="50%" y="57%" textAnchor="middle" dominantBaseline="middle" fill="#666" fontSize="10">total</text></PieChart></ResponsiveContainer><div className="grid grid-cols-2 gap-2 px-2 pb-1">{statusData.map((status, index) => <div key={status.name} className="flex items-center gap-2 text-[10px] text-[#777]"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: colors[index] }} />{status.name}</div>)}</div></Panel>
       </div>
+
+      <Panel title="Actividad de IA por proyecto" subtitle="Generaciones, tokens y costo estimado"><ResponsiveContainer width="100%" height={240}><LineChart data={buildUsageActivity(usageSummary.records)} margin={{ top: 12, right: 8, left: -20, bottom: 0 }}><CartesianGrid stroke={chartGrid} vertical={false} /><XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#666", fontSize: 10 }} /><YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{ fill: "#666", fontSize: 10 }} /><YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{ fill: "#666", fontSize: 10 }} /><Tooltip contentStyle={chartTooltip} /><Line yAxisId="left" type="monotone" dataKey="generations" stroke="#c7cbff" strokeWidth={2} dot={{ fill: "#c7cbff", r: 3 }} /><Line yAxisId="left" type="monotone" dataKey="tokens" stroke="#86efac" strokeWidth={2} dot={{ fill: "#86efac", r: 3 }} /><Line yAxisId="right" type="monotone" dataKey="cost" stroke="#fde68a" strokeWidth={2} dot={{ fill: "#fde68a", r: 3 }} /></LineChart></ResponsiveContainer></Panel>
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         <Panel title="Archivos por proyecto" subtitle="Distribución del contenido indexado"><ResponsiveContainer width="100%" height={220}><BarChart data={projectBars} margin={{ top: 12, right: 8, left: -20, bottom: 0 }}><CartesianGrid stroke={chartGrid} vertical={false} /><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: "#666", fontSize: 10 }} /><YAxis axisLine={false} tickLine={false} tick={{ fill: "#666", fontSize: 10 }} /><Tooltip contentStyle={chartTooltip} /><Bar dataKey="files" fill="#c7cbff" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></Panel>
@@ -133,4 +157,20 @@ function Record({ label, value }: { label: string; value: number }) {
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat("es-AR", { maximumFractionDigits: 2 }).format(value);
+}
+
+function formatCompact(value: number) {
+  return new Intl.NumberFormat("es-AR", { notation: "compact", maximumFractionDigits: 1 }).format(value);
+}
+
+function formatDuration(durationMs: number) {
+  const seconds = durationMs / 1000;
+  return seconds >= 60 ? `${(seconds / 60).toFixed(1)} min` : `${seconds.toFixed(1)} s`;
+}
+
+function buildUsageActivity(records: GenerationUsageRecord[]) {
+  const months = Array.from({ length: 6 }, (_, index) => { const date = new Date(); date.setMonth(date.getMonth() - (5 - index)); return { key: `${date.getFullYear()}-${date.getMonth()}`, month: date.toLocaleDateString("es-AR", { month: "short" }), generations: 0, tokens: 0, cost: 0 }; });
+  const byKey = new Map(months.map((item) => [item.key, item]));
+  records.forEach((record) => { const date = new Date(record.at); const bucket = byKey.get(`${date.getFullYear()}-${date.getMonth()}`); if (!bucket) return; bucket.generations += 1; bucket.tokens += Number(record.totalTokens || 0); bucket.cost += (Number(record.inputTokens || 0) / 1_000_000) * Number(record.inputCostPerMillion || 0) + (Number(record.outputTokens || 0) / 1_000_000) * Number(record.outputCostPerMillion || 0); });
+  return months;
 }

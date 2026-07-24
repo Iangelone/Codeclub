@@ -7,7 +7,7 @@ The engine is the AI execution layer, separated from the React UI. Lives in `src
 | File | Purpose |
 |---|---|
 | `types.ts` | Shared types: `ToolEvent`, `ToolContext`, `EngineCallbacks` |
-| `tools.ts` | `createTools(ctx)` — 15 tools: workspace, planning, subagent y memory CRUD |
+| `tools.ts` | `createTools(ctx)` — workspace, planning, subagent, terminal and memory tools |
 | `run.ts` | `runStream(params)` — AI SDK `streamText` loop, returns assistant content |
 | `memory.ts` | `saveMemory`, `loadMemory`, `searchMemory`, `deleteMemory`, `deleteMemoriesByTag` |
 
@@ -33,7 +33,7 @@ ChatInterface.tsx (orchestrator)
 | `remember` | `saveMemory` | No | Guarda en la carpeta de configuración del SO, por proyecto |
 | `recall` | `searchMemory` | No | Busca por key o tag |
 | `forget` | `deleteMemory` | No | Elimina por key exacta |
-| `askUser` | Solicitud estructurada | No | Devuelve una pregunta pendiente sin UI |
+| `askUser` | Solicitud estructurada | No | Renderiza tarjetas de opciones debajo del mensaje del agente |
 | `createPlan` | `agent-state.json` en configuración del SO | No | Crea un plan persistente |
 | `updatePlan` | `agent-state.json` en configuración del SO | No | Actualiza plan o paso |
 | `todo` | `agent-state.json` en configuración del SO | No | CRUD de TODOs persistentes |
@@ -46,12 +46,29 @@ Cada tool recibe `ToolContext`:
 - `requestToolApproval`: pausa y pide aprobación humana antes de ejecutar
 - `provider` / `modelId`: (opcional) para tools que spawnnean sub-agentes
 
+## Project artifacts
+
+`createPlan`, `updatePlan`, `todo` and `getTaskStatus` persist the active project state in `agent-state.json`. The right sidebar exposes this state through the `Artifacts` tab, showing the active plan, plan steps and TODO statuses. The chat only shows a compact Artifacts action when a message contains planning events; the full state lives in the sidebar.
+
+When a planning tool changes state, the UI emits `codeclub:artifacts-changed` so Artifacts refreshes immediately. It is project-scoped; a chat without a project uses the system-root fallback used by the engine.
+
+## Usage and diagnosis
+
+Every generation records local JSONL usage in `usage.jsonl`: provider, model, project, chat, mode, input/output/total/reasoning tokens, duration and status. Project usage is kept in the project data directory; global usage is kept in the application config directory. `BusinessPanel` aggregates these records into generations, tokens, estimated model cost and activity charts. No Gateway or cloud telemetry is required.
+
+This data supports diagnosis of an application's build process and AI operating cost. It does not yet calculate a selling price or prove customer value automatically; those are product/business layers built on top of the evidence.
+
+## Testing surface
+
+The topbar `Testing` menu sends reproducible prompts for `askUser`, subagents, approvals, streaming/reasoning, TODO states and plan mode. It exists to inspect real chat states without manually repeating a conversation.
+
 ## Engine Callbacks
 
 `runStream` acepta `EngineCallbacks`:
 - `onTextDelta(content)` — cada chunk de texto del stream
 - `onToolCall()` — cuando el agente inicia una tool
 - `onToolResult()` — cuando una tool retorna
+- `onUsage(usage)` — tokens, modelo y duración de la generación
 - `onError(error)` — opcional, si no se provee lanza el error
 
 ## Memory

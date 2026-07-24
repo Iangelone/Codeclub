@@ -28,6 +28,7 @@ export interface TodoItem {
 
 export interface AgentState {
   plan: AgentPlan | null;
+  plans: AgentPlan[];
   todos: TodoItem[];
 }
 
@@ -36,11 +37,13 @@ const statePath = (projectPath: string) => getProjectFilePath(projectPath, 'agen
 export async function readAgentState(projectPath: string): Promise<AgentState> {
   const { exists, readTextFile } = await import('@tauri-apps/plugin-fs');
   const path = await statePath(projectPath);
-  if (!(await exists(path))) return { plan: null, todos: [] };
+  if (!(await exists(path))) return { plan: null, plans: [], todos: [] };
   try {
-    return JSON.parse(await readTextFile(path));
+    const data = JSON.parse(await readTextFile(path));
+    const plans = Array.isArray(data.plans) ? data.plans : data.plan ? [data.plan] : [];
+    return { ...data, plans, plan: plans[plans.length - 1] || null, todos: Array.isArray(data.todos) ? data.todos : [] };
   } catch {
-    return { plan: null, todos: [] };
+    return { plan: null, plans: [], todos: [] };
   }
 }
 

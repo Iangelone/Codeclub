@@ -3,6 +3,8 @@ import { ArrowUpRight, ChevronRight, File, FileCode2, FileImage, FileText, Folde
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { whatsappContextStore } from '../lib/store';
+import { readAgentState, writeAgentState, type AgentState, type TaskStatus } from '../lib/engine/planning';
+import { readBusinessWorkspace, writeBusinessWorkspace, type BusinessWorkspace } from '../lib/projectManager';
 
 type FileEntry = { path: string; kind: 'file' | 'directory' };
 type FileNode = FileEntry & { name: string; children: FileNode[] };
@@ -301,13 +303,15 @@ function LegacyWhatsAppView() {
 }
 
 export default function RightSidebar() {
-  type RightTab = 'files' | 'review' | 'browser' | 'quotes' | 'whatsapp';
-  const labels: Record<RightTab, string> = { files: 'Archivos', review: 'Revisar', browser: 'Navegador', quotes: 'Cotizaciones', whatsapp: 'WhatsApp' };
-  const availableTabs: RightTab[] = ['files', 'review', 'browser', 'quotes', 'whatsapp'];
+  type RightTab = 'files' | 'review' | 'browser' | 'artifacts' | 'whatsapp';
+  const labels: Record<RightTab, string> = { files: 'Archivos', review: 'Revisar', browser: 'Navegador', artifacts: 'Artifacts', whatsapp: 'WhatsApp' };
+  const availableTabs: RightTab[] = ['files', 'review', 'browser', 'artifacts', 'whatsapp'];
   const [tabs, setTabs] = React.useState<RightTab[]>([]);
   const [activeTab, setActiveTab] = React.useState<RightTab | null>(null);
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [activeProjectPath, setActiveProjectPath] = useState('');
+  const [artifactState, setArtifactState] = useState<AgentState>({ plan: null, plans: [], todos: [] });
+  const [businessState, setBusinessState] = useState<BusinessWorkspace | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const resizingRef = useRef(false);
 
@@ -329,6 +333,24 @@ export default function RightSidebar() {
       window.removeEventListener('pointerup', stopResize);
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadArtifacts = async () => {
+      if (!activeProjectPath) { setArtifactState({ plan: null, plans: [], todos: [] }); setBusinessState(null); return; }
+      const next = await readAgentState(activeProjectPath);
+      if (!cancelled) setArtifactState(next);
+      const business = await readBusinessWorkspace(activeProjectPath);
+      if (!cancelled) setBusinessState(business);
+    };
+    void loadArtifacts();
+    const handleArtifactsChanged = (event: Event) => {
+      const projectPath = (event as CustomEvent<{ projectPath?: string }>).detail?.projectPath;
+      if (!projectPath || projectPath === activeProjectPath) void loadArtifacts();
+    };
+    window.addEventListener('codeclub:artifacts-changed', handleArtifactsChanged);
+    return () => { cancelled = true; window.removeEventListener('codeclub:artifacts-changed', handleArtifactsChanged); };
+  }, [activeProjectPath, activeTab]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -365,6 +387,18 @@ export default function RightSidebar() {
     setMenuOpen(false);
   };
 
+  useEffect(() => {
+    const openArtifacts = (event: Event) => {
+      const projectPath = (event as CustomEvent<{ projectPath?: string }>).detail?.projectPath;
+      if (projectPath && projectPath !== activeProjectPath) setActiveProjectPath(projectPath);
+      setTabs((current) => current.includes('artifacts') ? current : [...current, 'artifacts']);
+      setActiveTab('artifacts');
+      setMenuOpen(false);
+    };
+    window.addEventListener('codeclub:open-artifacts', openArtifacts);
+    return () => window.removeEventListener('codeclub:open-artifacts', openArtifacts);
+  }, [activeProjectPath]);
+
   const closeTab = (tab: RightTab) => {
     setTabs((current) => current.filter((item) => item !== tab));
     setActiveTab((current) => current === tab ? null : current);
@@ -391,15 +425,67 @@ export default function RightSidebar() {
         </div>
         <div className="flex h-0 min-h-0 flex-1 flex-col overflow-hidden">
           {activeTab === 'files' && <FilesView projectPath={activeProjectPath} />}
+          {activeTab === 'artifacts' && <ArtifactsView state={artifactState} business={businessState} projectPath={activeProjectPath} hasProject={Boolean(activeProjectPath)} />}
           {tabs.includes('whatsapp') && <div className={activeTab === 'whatsapp' ? 'flex h-full min-h-0 flex-1' : 'hidden'}><WhatsAppTerminalView /></div>}
           {tabs.length === 0 && <div className="flex flex-1 items-center justify-center">
             <button type="button" onClick={() => setMenuOpen(true)} className="min-h-[30px] rounded-lg border border-[#202020] bg-transparent px-3 text-[11px] text-[#777777] transition-colors hover:bg-[#1c1c1c] hover:text-[#eeeeee]">
               Crear panel
             </button>
           </div>}
-          {activeTab && activeTab !== 'files' && activeTab !== 'whatsapp' && <div className="flex flex-1 items-center justify-center p-3 text-xs text-[#777777]">Panel {labels[activeTab]}</div>}
+          {activeTab && !['files', 'artifacts', 'whatsapp'].includes(activeTab) && <div className="flex flex-1 items-center justify-center p-3 text-xs text-[#777777]">Panel {labels[activeTab]}</div>}
         </div>
       </div>
     </aside>
   );
+}
+
+function ArtifactsView({ state, business, projectPath, hasProject }: { state: AgentState; business: BusinessWorkspace | null; projectPath: string; hasProject: boolean }) {
+  const pushReference = (kind: 'plan' | 'todo' | 'quote', id: string, title: string) => {
+    window.dispatchEvent(new CustomEvent('codeclub:artifact-reference', { detail: { projectPath, kind, id, title } }));
+  };
+  const plans = state.plans?.length ? state.plans : state.plan ? [state.plan] : [];
+  const removePlan = async (id: string) => {
+    const current = await readAgentState(projectPath);
+    const nextPlans = (current.plans || (current.plan ? [current.plan] : [])).filter((plan) => plan.id !== id);
+    await writeAgentState(projectPath, { ...current, plans: nextPlans, plan: nextPlans[nextPlans.length - 1] || null });
+    window.dispatchEvent(new CustomEvent('codeclub:artifacts-changed', { detail: { projectPath } }));
+  };
+  const removeTodo = async (id: string) => {
+    const current = await readAgentState(projectPath);
+    await writeAgentState(projectPath, { ...current, todos: current.todos.filter((todo) => todo.id !== id) });
+    window.dispatchEvent(new CustomEvent('codeclub:artifacts-changed', { detail: { projectPath } }));
+  };
+  const removeQuote = async (id: string) => {
+    const current = await readBusinessWorkspace(projectPath);
+    if (!current) return;
+    await writeBusinessWorkspace(projectPath, { ...current, quotes: current.quotes.filter((quote: any) => quote.id !== id) });
+    window.dispatchEvent(new CustomEvent('codeclub:artifacts-changed', { detail: { projectPath } }));
+  };
+  if (!hasProject) return <div className="flex flex-1 items-center justify-center p-5 text-center text-[11px] text-[#777]">Seleccioná un proyecto para ver sus artifacts.</div>;
+  return <div onDoubleClick={(event) => { const row = (event.target as HTMLElement).closest('div.rounded-md'); const title = row?.querySelector('[title]')?.getAttribute('title'); const todo = title ? state.todos.find((item) => item.title === title) : null; if (todo) void removeTodo(todo.id); }} onContextMenu={(event) => { const row = (event.target as HTMLElement).closest('div.rounded-md'); const title = row?.querySelector('[title]')?.getAttribute('title'); const todo = title ? state.todos.find((item) => item.title === title) : null; if (todo) { event.preventDefault(); pushReference('todo', todo.id, todo.title); } }} onMouseMove={(event) => { const row = (event.target as HTMLElement).closest('div.rounded-md') as HTMLElement | null; if (row) row.style.cursor = 'pointer'; }} className="h-full max-h-full min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 [scrollbar-width:thin] [scrollbar-color:#2b2b2b_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#2b2b2b]">
+    <div className="mb-4 flex items-center justify-between">
+      <div><div className="text-[12px] font-medium text-[#eee]">Artifacts</div><div className="mt-0.5 text-[10px] text-[#666]">TODOs y planes del proyecto</div></div>
+      <span className="text-[10px] text-[#555]">{state.todos.length} TODO{state.todos.length === 1 ? '' : 's'}</span>
+    </div>
+    {plans.length > 0 && <section className="mb-4"><div className="mb-2 text-[10px] font-medium uppercase tracking-[0.08em] text-[#666]">PLAN</div><div className="grid gap-3">{plans.map((plan) => <div key={plan.id} onDoubleClick={() => void removePlan(plan.id)} onContextMenu={(event) => { event.preventDefault(); pushReference('plan', plan.id, plan.title); }} className="cursor-pointer rounded-lg border border-[#202020] bg-[#151515] p-2.5">
+      <div className="mb-2 flex items-center justify-between gap-2"><span className="min-w-0 truncate text-[11px] font-medium text-[#ddd]">{plan.title}</span><ArtifactStatus status={plan.status} /></div>
+      <div className="grid gap-1.5">{plan.steps.map((step) => <div key={step.id} className="flex min-w-0 items-center gap-2 text-[10px]"><ArtifactStatus status={step.status} /><span title={step.title} className="min-w-0 truncate text-[#999]">{step.title}</span></div>)}</div>
+    </div>)}</div><div className="mt-4 h-px bg-[#202020]" /></section>}
+    {state.todos.length > 0 ? <section className="grid gap-1.5"><div className="mb-1 text-[10px] font-medium uppercase tracking-[0.08em] text-[#666]">TODO</div>{state.todos.map((todo) => <div key={todo.id} className="flex min-w-0 items-center gap-2 rounded-md bg-[#151515] px-2 py-1.5"><ArtifactStatus status={todo.status} /><span title={todo.title} className="min-w-0 flex-1 truncate text-[11px] text-[#bbb]">{todo.title}</span></div>)}</section> : !state.plan && <div className="rounded-lg border border-dashed border-[#252525] px-3 py-5 text-center text-[11px] text-[#666]">Todavía no hay TODOs ni planes.</div>}
+    {business?.quotes?.length ? <section className={`grid gap-2 ${state.plan || state.todos.length ? 'border-t border-[#202020] pt-4' : ''}`}><div className="text-[10px] font-medium uppercase tracking-[0.08em] text-[#666]">COTIZACIONES</div>{business.quotes.map((quote: any) => <QuoteArtifact key={quote.id} quote={quote} onRemove={() => void removeQuote(quote.id)} onReference={() => pushReference('quote', quote.id, quote.title || 'Cotización')} />)}</section> : null}
+  </div>;
+}
+
+function QuoteArtifact({ quote, onRemove, onReference }: { quote: any; onRemove: () => void; onReference: () => void }) {
+  const formatMoney = (value: number) => { try { return new Intl.NumberFormat('es-AR', { style: 'currency', currency: quote.currency || 'USD', maximumFractionDigits: 2 }).format(Number(value || 0)); } catch { return `${quote.currency || 'USD'} ${Number(value || 0).toFixed(2)}`; } };
+  return <section onDoubleClick={onRemove} onContextMenu={(event) => { event.preventDefault(); onReference(); }} className="overflow-hidden rounded-lg border border-[#202020] bg-[#151515] [&_thead]:bg-[#101010] [&_thead_tr]:text-[#777]">
+    <div className="border-b border-[#202020] px-2.5 py-2"><div className="truncate text-[11px] font-medium text-[#ddd]">{quote.title || 'Cotización'}</div><div title={quote.description} className="mt-1 overflow-hidden text-ellipsis whitespace-nowrap text-[10px] text-[#777]">{quote.description}</div></div>
+    <div className="overflow-x-auto"><table className="w-full border-collapse text-left text-[10px]"><thead><tr className="border-b border-[#202020] text-[#666]"><th className="px-2.5 py-1.5 font-medium">Ítem</th><th className="px-1 py-1.5 text-right font-medium">Cant.</th><th className="px-2.5 py-1.5 text-right font-medium">Total</th></tr></thead><tbody>{(quote.items || []).map((item: any, index: number) => <tr key={`${quote.id}-${index}`} className="border-b border-[#1d1d1d] text-[#aaa]"><td title={item.description} className="max-w-[130px] truncate px-2.5 py-1.5">{item.description}</td><td className="px-1 py-1.5 text-right">{item.quantity}</td><td className="px-2.5 py-1.5 text-right">{formatMoney(item.total ?? Number(item.quantity || 0) * Number(item.unitPrice || 0))}</td></tr>)}</tbody><tfoot><tr><td colSpan={2} className="px-2.5 py-2 text-right font-medium text-[#bbb]">Total</td><td className="px-2.5 py-2 text-right font-medium text-[#eee]">{formatMoney(quote.total)}</td></tr></tfoot></table></div>
+  </section>;
+}
+
+function ArtifactStatus({ status }: { status: TaskStatus }) {
+  const values: Record<TaskStatus, [string, string]> = { pending: ['•', '#777'], in_progress: ['◐', '#d8d8d8'], completed: ['✓', '#8fbe9b'], blocked: ['×', '#d98b8b'] };
+  const [icon, color] = values[status] || values.pending;
+  return <span title={status} style={{ color }} className="grid h-4 w-4 shrink-0 place-items-center text-[12px] leading-none">{icon}</span>;
 }

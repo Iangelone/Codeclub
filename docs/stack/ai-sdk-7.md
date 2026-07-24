@@ -83,6 +83,7 @@ Current chat usage is an IDE agent built on AI SDK Core:
 - Provider HTTP requests use a Tauri-backed fetch so desktop builds can surface status and response bodies instead of opaque WebView fetch errors.
 - Risky tools require explicit UI approval before running.
 - The composer spinner uses agent states: `idle`, `streaming`, `tool_call`, `approval`, `running`, and `error`.
+- The send button becomes a stop button during generation and aborts the active stream through `AbortController`.
 - Runtime errors are written back into the composer input with method, URL, request body, status, response headers, and response body for debugging.
 
 Harnesses and WorkflowAgent are not implemented yet.

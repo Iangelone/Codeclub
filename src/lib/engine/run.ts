@@ -11,21 +11,25 @@ export async function runStream({
   messages,
   tools,
   callbacks,
+  signal,
 }: {
   model: any;
   system: string;
   messages: { role: string; content: string }[];
   tools: Record<string, any>;
   callbacks: EngineCallbacks;
+  signal?: AbortSignal;
 }): Promise<string> {
   let content = '';
   let reasoning = '';
+  const startedAt = Date.now();
 
   const result = streamText({
     model,
     system,
     messages,
     tools,
+    abortSignal: signal,
     stopWhen: stepCountIs(6),
     timeout: {
       totalMs: 90_000,
@@ -48,8 +52,11 @@ export async function runStream({
     }
 
     if (streamPart.type === 'text-delta') {
-      content += streamPart.text;
-      callbacks.onTextDelta(content);
+      const delta = streamPart.text ?? streamPart.delta ?? streamPart.textDelta ?? '';
+      if (delta) {
+        content += delta;
+        callbacks.onTextDelta(content);
+      }
       continue;
     }
 
@@ -71,6 +78,22 @@ export async function runStream({
       }
     }
   }
+
+  if (signal?.aborted) {
+    const error = new Error('Generación cancelada por el usuario.');
+    error.name = 'AbortError';
+    throw error;
+  }
+
+  const [usage, response] = await Promise.all([result.usage, result.response]);
+  await callbacks.onUsage?.({
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    totalTokens: usage.totalTokens,
+    reasoningTokens: usage.outputTokenDetails?.reasoningTokens,
+    model: response.model,
+    durationMs: Date.now() - startedAt,
+  });
 
   return content;
 }

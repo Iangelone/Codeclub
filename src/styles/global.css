@@ -32,6 +32,17 @@ button {
   padding: 4px 0 !important;
 }
 
+.composer-box > [aria-label="Referencia de artifact"] > span {
+  display: none;
+}
+
+.command-menu {
+  border-color: #202020 !important;
+  border-radius: 12px 12px 0 0 !important;
+  background: #121212 !important;
+  box-shadow: 0 18px 52px rgba(0, 0, 0, 0.26) !important;
+}
+
 .credential-menu-input::placeholder {
   color: #777777;
   opacity: 1;

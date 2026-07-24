@@ -20,5 +20,6 @@ export interface EngineCallbacks {
   onReasoningDelta?: (content: string) => void;
   onToolCall?: () => void;
   onToolResult?: () => void;
+  onUsage?: (usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number; reasoningTokens?: number; model?: string; durationMs: number }) => void | Promise<void>;
   onError?: (error: any) => void;
 }

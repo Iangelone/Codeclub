@@ -4,8 +4,26 @@ import type { ToolContext } from './types';
 import { runStream } from './run';
 import { saveMemory, searchMemory, deleteMemory } from './memory';
 import { createId, readAgentState, writeAgentState, type TaskStatus } from './planning';
-import { readBusinessWorkspace, writeBusinessWorkspace } from '../projectManager';
+import { ensureBusinessWorkspace, readBusinessWorkspace, writeBusinessWorkspace } from '../projectManager';
+import { appendGenerationUsage, readGenerationUsage, summarizeGenerationUsage } from '../usage';
+import { readExecutionLog } from '../execution-log';
 import { whatsappContextStore } from '../store';
+
+const persistSubagentUsage = async (projectPath: string, modelId: string, mode: string, usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number; reasoningTokens?: number; model?: string; durationMs: number }) => appendGenerationUsage({
+  id: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+  at: new Date().toISOString(),
+  projectPath,
+  chatId: 'subagent',
+  mode,
+  provider: modelId,
+  model: usage.model || modelId,
+  inputTokens: usage.inputTokens ?? null,
+  outputTokens: usage.outputTokens ?? null,
+  totalTokens: usage.totalTokens ?? null,
+  reasoningTokens: usage.reasoningTokens ?? null,
+  durationMs: usage.durationMs,
+  status: 'completed',
+});
 
 function createSubagentTools(ctx: { projectPath: string; recordToolEvent: (name: string, input: any, output: any) => void; setAgentState: (state: string) => void }) {
   const { projectPath, recordToolEvent, setAgentState } = ctx;
@@ -152,6 +170,26 @@ export function createBusinessTools(ctx: { recordToolEvent: (name: string, input
         return output || { status: 'empty', message: 'El proyecto todavía no tiene datos comerciales.' };
       },
     }),
+    getAIUsageMetrics: tool({
+      description: 'Read local AI generation usage for this project and summarize tokens, duration and estimated provider cost for an optional date range.',
+      inputSchema: jsonSchema({ type: 'object', properties: { from: { type: 'string', description: 'Start date YYYY-MM-DD.' }, to: { type: 'string', description: 'End date YYYY-MM-DD.' } }, additionalProperties: false }),
+      execute: async ({ from, to }) => {
+        setAgentState('tool_call');
+        const output = summarizeGenerationUsage(await readGenerationUsage(projectPath), from, to);
+        recordToolEvent('getAIUsageMetrics', { from, to }, output);
+        return output;
+      },
+    }),
+    getExecutionLog: tool({
+      description: 'Read the structured execution log for the active project: tools used, inputs, outputs and timestamps. Use it to inspect delegated work without relying on private chain-of-thought.',
+      inputSchema: jsonSchema({ type: 'object', properties: { limit: { type: 'number' } }, additionalProperties: false }),
+      execute: async ({ limit }) => {
+        setAgentState('tool_call');
+        const output = await readExecutionLog(projectPath, limit);
+        recordToolEvent('getExecutionLog', { limit }, output);
+        return output;
+      },
+    }),
     updateBusinessWorkspace: tool({
       description: 'Update one business workspace section. Use for project status, monthly fees, quotes, milestones, payments, clients, pricing, opportunities, estimates, time entries, expenses, invoices or notes.',
       inputSchema: jsonSchema({
@@ -165,11 +203,34 @@ export function createBusinessTools(ctx: { recordToolEvent: (name: string, input
       }),
       execute: async ({ section, data }) => {
         setAgentState('tool_call');
-        const current = await readBusinessWorkspace(projectPath);
-        if (!current) return { ok: false, error: 'No existe el workspace comercial del proyecto.' };
+        const current = await ensureBusinessWorkspace(projectPath);
         const next = await writeBusinessWorkspace(projectPath, { ...current, [section]: data });
         recordToolEvent('updateBusinessWorkspace', { section, data }, next);
         return next;
+      },
+    }),
+    createQuote: tool({
+      description: 'Create and persist a project quotation with a description and line items. Use this tool in Economy mode when the user asks for a quote, estimate or proposal; do not only describe it in text.',
+      inputSchema: jsonSchema({
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          description: { type: 'string' },
+          currency: { type: 'string' },
+          items: { type: 'array', items: { type: 'object', properties: { description: { type: 'string' }, quantity: { type: 'number' }, unitPrice: { type: 'number' } }, required: ['description', 'quantity', 'unitPrice'], additionalProperties: false } },
+          status: { type: 'string', enum: ['draft', 'sent', 'accepted', 'rejected'] },
+        },
+        required: ['title', 'description', 'items'],
+        additionalProperties: false,
+      }),
+      execute: async ({ title, description, currency, items, status }) => {
+        setAgentState('tool_call');
+        const current = await ensureBusinessWorkspace(projectPath);
+        const normalizedItems = (items || []).map((item) => ({ description: item.description, quantity: Number(item.quantity || 0), unitPrice: Number(item.unitPrice || 0), total: Number(item.quantity || 0) * Number(item.unitPrice || 0) }));
+        const quote = { id: createId('quote'), title, description, currency: currency || current.currency || 'USD', items: normalizedItems, total: normalizedItems.reduce((sum, item) => sum + item.total, 0), status: status || 'draft', createdAt: new Date().toISOString() };
+        const next = await writeBusinessWorkspace(projectPath, { ...current, quotes: [...(current.quotes || []), quote] });
+        recordToolEvent('createQuote', { title, description, currency, items, status }, quote);
+        return { ok: true, quote, workspace: next };
       },
     }),
     getWhatsAppBusinessContext: tool({
@@ -244,7 +305,10 @@ export function createBusinessTools(ctx: { recordToolEvent: (name: string, input
           system: `Sos la sub-IA de ${specialist} del asesor de negocios de Codeclub. Investigá solo la tarea recibida. Podés leer código, datos comerciales y WhatsApp; nunca edites archivos ni envíes mensajes. Devolvé hallazgos, supuestos y recomendación en español.`,
           messages: [{ role: 'user', content: task }],
           tools: specialistTools,
-          callbacks: { onTextDelta: () => {} },
+          callbacks: {
+            onTextDelta: () => {},
+            onUsage: (usage) => persistSubagentUsage(projectPath, modelId, `business-${specialist}`, usage),
+          },
         });
         recordToolEvent('delegateBusinessSpecialist', { specialist, task }, result);
         return result;
@@ -357,6 +421,7 @@ export function createTools(ctx: ToolContext) {
           updatedAt: now,
         };
         const state = await readAgentState(projectPath);
+        state.plans = [...(state.plans || (state.plan ? [state.plan] : [])), plan];
         state.plan = plan;
         await writeAgentState(projectPath, state);
         recordToolEvent('createPlan', { title, steps }, plan);
@@ -380,17 +445,22 @@ export function createTools(ctx: ToolContext) {
         setAgentState('tool_call');
         const state = await readAgentState(projectPath);
         if (!state.plan || (planId && state.plan.id !== planId)) return { ok: false, error: 'No se encontró el plan indicado.' };
-        if (title) state.plan.title = title;
-        if (status) state.plan.status = status as TaskStatus;
+        const plans = state.plans || (state.plan ? [state.plan] : []);
+        const target = planId ? plans.find((item) => item.id === planId) : plans[plans.length - 1];
+        if (!target) return { ok: false, error: 'No se encontró el plan indicado.' };
+        if (title) target.title = title;
+        if (status) target.status = status as TaskStatus;
         if (stepId && stepStatus) {
-          const step = state.plan.steps.find((item) => item.id === stepId);
+          const step = target.steps.find((item) => item.id === stepId);
           if (!step) return { ok: false, error: 'No se encontró el paso indicado.' };
           step.status = stepStatus as TaskStatus;
         }
-        state.plan.updatedAt = new Date().toISOString();
+        target.updatedAt = new Date().toISOString();
+        state.plans = plans;
+        state.plan = target;
         await writeAgentState(projectPath, state);
-        recordToolEvent('updatePlan', { planId, title, status, stepId, stepStatus }, state.plan);
-        return state.plan;
+        recordToolEvent('updatePlan', { planId, title, status, stepId, stepStatus }, target);
+        return target;
       },
     }),
     todo: tool({
@@ -439,6 +509,16 @@ export function createTools(ctx: ToolContext) {
         const state = await readAgentState(projectPath);
         recordToolEvent('getTaskStatus', {}, state);
         return state;
+      },
+    }),
+    getExecutionLog: tool({
+      description: 'Read the structured execution log for the active project: tools used, inputs, outputs and timestamps. Use it to inspect delegated work without relying on private chain-of-thought.',
+      inputSchema: jsonSchema({ type: 'object', properties: { limit: { type: 'number' } }, additionalProperties: false }),
+      execute: async ({ limit }) => {
+        setAgentState('tool_call');
+        const output = await readExecutionLog(projectPath, limit);
+        recordToolEvent('getExecutionLog', { limit }, output);
+        return output;
       },
     }),
     writeFile: tool({
@@ -565,6 +645,7 @@ export function createTools(ctx: ToolContext) {
           tools: subTools,
           callbacks: {
             onTextDelta: () => {},
+            onUsage: (usage) => persistSubagentUsage(projectPath, modelId, `development-${specialist}`, usage),
           },
         });
 

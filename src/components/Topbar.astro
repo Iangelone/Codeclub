@@ -24,7 +24,7 @@ import {
 } from "lucide-astro";
 ---
 
-<header class="col-span-full h-[36px] grid grid-cols-[auto_1fr_auto_138px] bg-[var(--color-bg)] border-b border-[var(--color-surface-10)] select-none">
+<header class="relative z-[100] col-span-full h-[36px] grid grid-cols-[auto_1fr_auto_138px] bg-[var(--color-bg)] border-b border-[var(--color-surface-10)] select-none">
   <div class="flex items-center h-full pl-[6px]">
     <button class="w-[30px] h-[28px] grid place-items-center border-0 rounded-md bg-transparent text-[#d8d8d8] hover:bg-[var(--color-surface-7)]" type="button" aria-label="Toggle sidebar" data-action="toggle-sidebar">
       <PanelLeft size={15} strokeWidth={1.8} />
@@ -78,6 +78,19 @@ import {
           </a>
         </div>
       </div>
+
+      <div class="relative h-full flex items-center group/menu">
+        <button class="h-[28px] px-[9px] text-xs border-0 rounded-md bg-transparent text-[#d8d8d8] hover:bg-[var(--color-surface-7)]" type="button">Testing</button>
+        <div class="absolute top-[34px] left-0 min-w-[235px] flex flex-col gap-[3px] p-2 border border-[var(--color-surface-10)] rounded-lg bg-[rgba(18,18,18,0.96)] shadow-[0_18px_54px_rgba(0,0,0,0.38)] opacity-0 pointer-events-none -translate-y-1 transition-all duration-120 ease-out group-hover/menu:opacity-100 group-hover/menu:pointer-events-auto group-hover/menu:translate-y-0 z-20">
+          <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="ask-user"><Bug class="shrink-0" size={14} /> Probar Ask user</button>
+          <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="subagents">Subagentes</button>
+          <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="approval">Aprobación de acciones</button>
+          <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="streaming">Streaming / pensamiento</button>
+          <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="todo">TODO y estados</button>
+          <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="plan-mode">Plan mode</button>
+          <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="quote">Generar cotización</button>
+        </div>
+      </div>
     </nav>
   </div>
   
@@ -110,3 +123,52 @@ import {
     </button>
   </nav>
 </header>
+
+<script>
+  const topbarMenus = Array.from(document.querySelectorAll('.group\\/menu'));
+  topbarMenus.forEach((menu) => {
+    const trigger = menu.querySelector(':scope > button');
+    menu.addEventListener('pointerenter', () => menu.classList.add('menu-open'));
+    menu.addEventListener('pointerleave', () => {
+      if (!menu.matches(':focus-within')) menu.classList.remove('menu-open');
+    });
+    trigger?.addEventListener('click', (event) => {
+      event.stopPropagation();
+      topbarMenus.forEach((item) => { if (item !== menu) item.classList.remove('menu-open'); });
+      menu.classList.toggle('menu-open');
+    });
+  });
+  document.addEventListener('click', () => topbarMenus.forEach((menu) => menu.classList.remove('menu-open')));
+  document.querySelectorAll('[data-testing-action]').forEach((button) => {
+    button.addEventListener('click', () => window.dispatchEvent(new CustomEvent('codeclub:testing-action', { detail: { action: button.dataset.testingAction } })));
+  });
+</script>
+
+<style>
+  .group\/menu > div {
+    top: 28px !important;
+  }
+
+  .group\/menu::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 28px;
+    height: 8px;
+    pointer-events: auto;
+  }
+
+  .group\/menu.menu-open > div {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    transform: translateY(0) !important;
+  }
+
+  .group\/menu:hover > div,
+  .group\/menu:focus-within > div {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    transform: translateY(0) !important;
+  }
+</style>
