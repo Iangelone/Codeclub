@@ -23,7 +23,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { createPortal } from 'react-dom';
 import mammoth from 'mammoth';
-import { createBusinessTools, createTools, selectToolsForPrompt } from '../lib/engine/tools';
+import { createBusinessTools, createTools, verifyToolExecutionWithAI } from '../lib/engine/tools';
 import { runStream } from '../lib/engine/run';
 import { getProjectFilePath, getSetting, logPersistence, setSetting } from '../lib/persistence';
 import { appendGenerationUsage, type GenerationUsageRecord } from '../lib/usage';
@@ -770,7 +770,96 @@ const compactJson = (value) => {
     } catch {
       return String(value).slice(0, 260);
     }
-  };
+};
+
+const readWorkspaceChangeSummary = async (projectPath?: string) => {
+  if (!projectPath) return null;
+  try {
+    const result = await invoke<{ code?: number | null; stdout: string; stderr: string }>('codeclub_run_command', {
+      projectPath,
+      request: { command: 'git', args: ['diff', 'HEAD', '--numstat', '--'] },
+    });
+    if (result.code !== 0) return null;
+    let additions = 0;
+    let deletions = 0;
+    let files = 0;
+    result.stdout.split(/\r?\n/).filter(Boolean).forEach((line) => {
+      const [added, removed] = line.split('\t');
+      if (added === '-' || removed === '-') return;
+      const addedCount = Number(added);
+      const removedCount = Number(removed);
+      if (!Number.isFinite(addedCount) || !Number.isFinite(removedCount)) return;
+      additions += addedCount;
+      deletions += removedCount;
+      files += 1;
+    });
+    const statusResult = await invoke<{ code?: number | null; stdout: string }>('codeclub_run_command', {
+      projectPath,
+      request: { command: 'git', args: ['status', '--short', '--untracked-files=all'] },
+    });
+    const untracked = statusResult.code === 0 ? statusResult.stdout.split(/\r?\n/).filter((line) => line.startsWith('?? ')).map((line) => line.slice(3).trim()).filter(Boolean) : [];
+    for (const path of untracked) {
+      try {
+        const content = await invoke<string>('codeclub_read_file', { projectPath, path });
+        additions += content.split(/\r?\n/).length;
+        files += 1;
+      } catch { /* Los binarios nuevos no tienen conteo de líneas. */ }
+    }
+    return { additions, deletions, files };
+  } catch {
+    return null;
+  }
+};
+
+type WorkspaceSnapshot = Map<string, string | null>;
+
+const readWorkspaceSnapshot = async (projectPath: string): Promise<WorkspaceSnapshot> => {
+  const snapshot: WorkspaceSnapshot = new Map();
+  try {
+    const [filesResult, statusResult] = await Promise.all([
+      invoke<{ code?: number | null; stdout: string }>('codeclub_run_command', { projectPath, request: { command: 'git', args: ['ls-files', '-co', '--exclude-standard'] } }),
+      invoke<{ code?: number | null; stdout: string }>('codeclub_run_command', { projectPath, request: { command: 'git', args: ['status', '--short', '--untracked-files=all'] } }),
+    ]);
+    if (filesResult.code !== 0 && statusResult.code !== 0) return snapshot;
+    const trackedPaths = filesResult.stdout.split(/\r?\n/).filter(Boolean);
+    const changedPaths = statusResult.stdout.split(/\r?\n/).filter(Boolean).map((line) => line.slice(3).trim()).filter(Boolean);
+    const paths = [...new Set([...trackedPaths, ...changedPaths])];
+    await Promise.all(paths.map(async (path) => {
+      try { snapshot.set(path, await invoke<string>('codeclub_read_file', { projectPath, path })); }
+      catch { snapshot.set(path, null); }
+    }));
+  } catch { /* El resumen es informativo y no debe bloquear el chat. */ }
+  return snapshot;
+};
+
+const lineDelta = (before: string[], after: string[]) => {
+  if (before.length > 2500 || after.length > 2500) return { additions: Math.max(0, after.length - before.length), deletions: Math.max(0, before.length - after.length) };
+  let previous = new Array(after.length + 1).fill(0);
+  for (const beforeLine of before) {
+    const current = new Array(after.length + 1).fill(0);
+    for (let index = 1; index <= after.length; index += 1) current[index] = beforeLine === after[index - 1] ? previous[index - 1] + 1 : Math.max(previous[index], current[index - 1]);
+    previous = current;
+  }
+  const unchanged = previous[after.length];
+  return { additions: after.length - unchanged, deletions: before.length - unchanged };
+};
+
+const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnapshot) => {
+  let additions = 0;
+  let deletions = 0;
+  let files = 0;
+  const paths = new Set([...before.keys(), ...after.keys()]);
+  paths.forEach((path) => {
+    const beforeContent = before.get(path);
+    const afterContent = after.get(path);
+    if (beforeContent === null || afterContent === null || beforeContent === undefined || afterContent === undefined) return;
+    const delta = lineDelta((beforeContent || '').split(/\r?\n/), (afterContent || '').split(/\r?\n/));
+    additions += delta.additions;
+    deletions += delta.deletions;
+    if (delta.additions || delta.deletions) files += 1;
+  });
+  return { additions, deletions, files };
+};
 
   const escapeXml = (value) => String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -1076,6 +1165,7 @@ const compactJson = (value) => {
         ];
         updateAssistantMessage();
         void appendExecutionLog({ projectPath: chat?.projectPath || '', chatId: chat?.chatId, tool: name, input, output });
+        if (['writeFile', 'runCommand', 'terminal'].includes(name)) window.dispatchEvent(new CustomEvent('codeclub:workspace-changed', { detail: { projectPath: chat?.projectPath || '', tool: name } }));
         if (['todo', 'createPlan', 'updatePlan', 'createQuote', 'updateBusinessWorkspace'].includes(name)) {
           window.dispatchEvent(new CustomEvent('codeclub:artifacts-changed', { detail: { projectPath: chat?.projectPath || '' } }));
         }
@@ -1083,6 +1173,7 @@ const compactJson = (value) => {
       updateAssistantMessage();
 
       const toolProjectPath = chat.projectPath || await invoke<string>('codeclub_get_system_root');
+      const beforeWorkspaceSnapshot = await readWorkspaceSnapshot(toolProjectPath);
       const indexedProjects = await readProjectIndex();
       const developmentTools = createTools({
         projectPath: toolProjectPath,
@@ -1095,7 +1186,54 @@ const compactJson = (value) => {
       const allTools = chatMode === 'business'
         ? createBusinessTools({ recordToolEvent, setAgentState: guardedSetAgentState, indexedProjects, projectPath: toolProjectPath, provider, modelId: currentModel.id })
         : developmentTools;
-      const tools = selectToolsForPrompt(allTools, chatMode === 'business' ? 'business' : 'development', content);
+      const toolMode = chatMode === 'business' ? 'business' : 'development';
+      let tools: Record<string, any> = allTools;
+      let toolRoutingContext = 'La IA de intención no devolvió contexto adicional.';
+      let routingRequiresAction = false;
+      let routingUsedFallback = true;
+      let routingGoal = content;
+      let routingVerification = 'La tool correspondiente debe devolver un resultado exitoso.';
+      /*
+      try {
+        const routing = await resolveToolsWithAI({
+          model: provider(currentModel.id),
+          mode: toolMode,
+          prompt: content,
+          toolset: allTools,
+          signal: abortController.signal,
+          onUsage: async (usage) => {
+            await appendGenerationUsage({
+              id: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
+              at: new Date().toISOString(),
+              projectPath: chat?.projectPath || '',
+              chatId: chat?.chatId || '',
+              mode: `${toolMode}-tool-router`,
+              provider: currentProvider.id,
+              model: usage.model || currentModel.id,
+              inputTokens: usage.inputTokens ?? null,
+              outputTokens: usage.outputTokens ?? null,
+              totalTokens: usage.totalTokens ?? null,
+              reasoningTokens: usage.reasoningTokens ?? null,
+              durationMs: usage.durationMs,
+              status: 'completed',
+            });
+          },
+        });
+        tools = routing.tools;
+        routingRequiresAction = routing.requiresAction;
+        routingGoal = routing.goal;
+        routingVerification = routing.verification;
+        toolRoutingContext = `La IA de intención resolvió: ${routing.reason || 'intención detectada'} (confianza ${routing.confidence}). Tools habilitadas: ${Object.keys(tools).join(', ')}.`;
+        void appendExecutionLog({ projectPath: chat?.projectPath || '', chatId: chat?.chatId, tool: 'tool-router', input: { mode: toolMode, prompt: content }, output: { confidence: routing.confidence, reason: routing.reason, requiresAction: routing.requiresAction, tools: Object.keys(tools) } });
+      } catch (error) {
+        tools = allTools;
+        routingUsedFallback = true;
+        routingRequiresAction = false;
+        toolRoutingContext = `La IA de intención falló; se habilitó temporalmente el catálogo completo para no bloquear la tarea. Error: ${String(error)}`;
+        void appendExecutionLog({ projectPath: chat?.projectPath || '', chatId: chat?.chatId, tool: 'tool-router', input: { mode: toolMode, prompt: content }, output: { status: 'fallback-all-tools', error: String(error), tools: Object.keys(tools) } });
+      }
+      if (!routingUsedFallback && Object.keys(tools).some((name) => ['writeFile', 'runCommand', 'terminal'].includes(name))) routingRequiresAction = true;
+      */
 
       const system = chatMode === 'business' ? [
         'Sos el asistente de negocios de Codeclub.',
@@ -1110,6 +1248,10 @@ const compactJson = (value) => {
         'Actuá como asesor comercial: analizá rentabilidad, costos, horas, alcance, precio fijo, precio por hora, hitos, abonos y valor entregado. Cuando te pidan una cotización, usá createQuote con título, descripción e ítems; no la simules solo en texto. Tus resultados son borradores estructurados y deben explicar supuestos cuando falten datos.',
       ].join(' ') : [
         'Sos el agente IDE de Codeclub.',
+        'Si necesitas delegar implementacion, usa subagent con specialist developer. Elegi la especialista segun el contexto; no delegues por defecto.',
+        'La orquestadora recibe todas las tools disponibles y decide de forma autonoma si debe actuar, delegar o responder.',
+        `Contexto de la IA de intencion: ${toolRoutingContext}`,
+        'Tenes autonomia operativa: si la intencion esta clara, ejecuta todas las tools necesarias en este mismo turno y no esperes un "Adelante". No anuncies una accion para luego detenerte; llama la tool inmediatamente y continua hasta completar el pedido. Nunca afirmes que modificaste archivos, ejecutaste comandos o completaste una accion si no existe un resultado exitoso de la tool correspondiente.',
         'Usa getExecutionLog para consultar las tools ejecutadas por la orquestadora o sub-IA; el log contiene trazas observables, no pensamiento privado.',
         'Responde en español, breve y util.',
         'Tenes herramientas para inspeccionar y modificar el workspace activo.',
@@ -1125,19 +1267,20 @@ const compactJson = (value) => {
       const structuredOutput = getArtifactOutputConfig(chatMode === 'business' ? 'business' : 'development', content);
       let structuredArtifactOutput: any = null;
 
-      const runAssistant = async () => {
+      const runAssistant = async (retryInstruction = '') => {
         assistantContent = '';
         assistantReasoning = '';
         assistantTools = [];
         structuredArtifactOutput = null;
         executionStartedAt = Date.now();
         updateAssistantMessage();
+        const executionMessages = retryInstruction ? [...newMessages, { role: 'user', content: retryInstruction }] : newMessages;
         return runStream({
           model: provider(currentModel.id),
           system,
-          messages: newMessages.map((message, index) => ({
+          messages: executionMessages.map((message, index) => ({
             role: message.role,
-            content: index === newMessages.length - 1 && attachmentParts.length > 0
+            content: index === executionMessages.length - 1 && attachmentParts.length > 0 && !retryInstruction
               ? [{ type: 'text', text: message.content || 'Analizá los archivos adjuntos.' }, ...attachmentParts]
               : message.content,
           })),
@@ -1239,7 +1382,29 @@ const compactJson = (value) => {
       if (!assistantContent?.trim()) throw new Error('El modelo no devolvió una respuesta después de reintentar.');
 
       if (!isCurrentGeneration() || abortController.signal.aborted) return;
-      const assistantMessage = { role: 'assistant', content: assistantContent, tools: assistantTools, agentName: chatMode === 'business' ? 'Negocios' : 'Desarrollo', meta: { provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt, status: 'completed', usage: latestUsage ? { inputTokens: latestUsage.inputTokens, outputTokens: latestUsage.outputTokens, totalTokens: latestUsage.totalTokens, reasoningTokens: latestUsage.reasoningTokens } : null } };
+      const hasSuccessfulAction = () => assistantTools.some((event) => (event.name === 'writeFile' || event.name === 'terminal') && event.output?.ok === true || event.name === 'runCommand' && event.output?.code === 0);
+      let verificationResult: { completed?: boolean; retry?: boolean; reason?: string } | null = null;
+      if (routingRequiresAction) {
+        const verificationChanges = chat?.projectPath ? summarizeWorkspaceDelta(beforeWorkspaceSnapshot, await readWorkspaceSnapshot(toolProjectPath)) : null;
+        try {
+          verificationResult = await verifyToolExecutionWithAI({ model: provider(currentModel.id), prompt: content, goal: routingGoal, verification: routingVerification, toolEvents: assistantTools, changes: verificationChanges, signal: abortController.signal });
+        } catch (error) {
+          verificationResult = { completed: false, retry: true, reason: String(error) };
+        }
+        if (!hasSuccessfulAction() || verificationResult.retry || verificationResult.completed === false) {
+          setAgentState('streaming');
+          assistantContent = await runAssistant(`El verificador interno indicó que la tarea todavía no está comprobada. Motivo: ${verificationResult.reason || 'faltan evidencias'}. Ejecutá las tools necesarias ahora, verificá sus resultados y no respondas como completado hasta lograr el objetivo: ${routingGoal}`);
+          const retryStructuredSummary = formatArtifactOutput(structuredArtifactOutput);
+          if (retryStructuredSummary) assistantContent = retryStructuredSummary;
+        }
+      }
+      const changes = chat?.projectPath ? summarizeWorkspaceDelta(beforeWorkspaceSnapshot, await readWorkspaceSnapshot(toolProjectPath)) : null;
+      const executedAction = assistantTools.some((event) => (event.name === 'writeFile' || event.name === 'terminal') && event.output?.ok === true || event.name === 'runCommand' && event.output?.code === 0);
+      const actionToolsEnabled = !routingUsedFallback && Object.keys(tools).some((name) => ['writeFile', 'runCommand', 'terminal'].includes(name));
+      routingRequiresAction = routingRequiresAction || actionToolsEnabled;
+      if (routingRequiresAction && verificationResult?.completed === false && executedAction) assistantContent = `${assistantContent.trim()}\n\nVerificaciÃ³n incompleta: la IA verificadora no pudo confirmar el resultado.`.trim();
+      if (routingRequiresAction && !executedAction) assistantContent = `${assistantContent.trim()}\n\nAcción no verificada: no se ejecutó una tool de escritura o ejecución con resultado exitoso.`.trim();
+      const assistantMessage = { role: 'assistant', content: assistantContent, tools: assistantTools, agentName: chatMode === 'business' ? 'Negocios' : 'Desarrollo', meta: { provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt, status: 'completed', changes, usage: latestUsage ? { inputTokens: latestUsage.inputTokens, outputTokens: latestUsage.outputTokens, totalTokens: latestUsage.totalTokens, reasoningTokens: latestUsage.reasoningTokens } : null } };
       setMessages([...newMessages, { ...assistantMessage, displayContent: '' }]);
       let visibleLength = 0;
       visualAnimationRef.current = window.setInterval(() => {
@@ -1673,6 +1838,7 @@ const compactJson = (value) => {
               {m.role === 'assistant' && <AskUserCards tools={m.tools} onSelect={(answer) => void sendMessage(answer)} disabled={isAgentBusy} />}
               {m.role === 'assistant' && <SubagentCards tools={m.tools} />}
               {m.role === 'assistant' && i === messages.length - 1 && <ApprovalCards approvals={pendingApprovals} onResolve={resolveToolApproval} />}
+              {m.role === 'assistant' && <ChangeSummaryCard changes={m.meta?.changes} />}
               <div style={{ alignSelf: m.role === 'user' ? 'end' : 'start', display: 'flex', alignItems: 'center', gap: '4px', opacity: 0.72 }}>
                 <button type="button" aria-label="Copiar mensaje" onClick={() => handleCopyMessage(m.content)} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: 'pointer' }}>
                   <Copy size={13} strokeWidth={2} />
@@ -1991,6 +2157,16 @@ function ApprovalCards({ approvals = [], onResolve }: { approvals?: any[]; onRes
         <button type="button" onClick={() => onResolve(approval.id, false)} style={{ minHeight: '26px', border: 0, borderRadius: '7px', padding: '0 10px', background: 'transparent', color: '#999', cursor: 'pointer', fontSize: '11px' }}>Cancelar</button>
       </div>
     </div>)}
+  </div>;
+}
+
+function ChangeSummaryCard({ changes }: { changes?: { additions: number; deletions: number; files: number } | null }) {
+  if (!changes || changes.files === 0) return null;
+  return <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: 'min(520px, 100%)', margin: '2px 0 2px', padding: '7px 9px', border: '1px solid #252525', borderRadius: '8px', background: '#151515', color: '#777', fontSize: '10px' }}>
+    <span style={{ color: '#d8d8d8', fontWeight: 600 }}>Cambios</span>
+    <span style={{ color: '#8fbe9b' }}>+{changes.additions}</span>
+    <span style={{ color: '#d98b8b' }}>−{changes.deletions}</span>
+    <span>{changes.files} {changes.files === 1 ? 'archivo' : 'archivos'}</span>
   </div>;
 }
 

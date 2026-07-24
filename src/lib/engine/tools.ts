@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { jsonSchema, tool } from 'ai';
+import { jsonSchema, Output, tool } from 'ai';
 import type { ToolContext } from './types';
 import { runStream } from './run';
 import { saveMemory, searchMemory, deleteMemory } from './memory';
@@ -303,7 +303,7 @@ export function createBusinessTools(ctx: { recordToolEvent: (name: string, input
         const result = await runStream({
           model: provider(modelId),
           system: `Sos la sub-IA de ${specialist} del asesor de negocios de Codeclub. Investigá solo la tarea recibida. Podés leer código, datos comerciales y WhatsApp; nunca edites archivos ni envíes mensajes. Devolvé hallazgos, supuestos y recomendación en español.`,
-          messages: [{ role: 'user', content: task }],
+          messages: [{ role: 'user', content: specialist === 'developer' ? `Implementá la tarea en el workspace. Usá las tools de escritura o ejecución disponibles, verificá el resultado y no afirmes cambios sin evidencia.\n\n${task}` : task }],
           tools: specialistTools,
           callbacks: {
             onTextDelta: () => {},
@@ -334,7 +334,8 @@ export function selectToolsForPrompt(toolset: Record<string, any>, mode: 'busine
     if (has('log', 'auditar', 'ejecución', 'ejecucion', 'herramientas')) add('getExecutionLog');
     if (has('sub-ia', 'subia', 'especialista', 'deleg', 'investig')) add('delegateBusinessSpecialist');
   } else {
-    if (has('editar', 'modific', 'crear archivo', 'escrib', 'implement', 'fix', 'correg', 'refactor')) add('writeFile');
+    // Failsafe de escritura: el router IA sigue siendo la decisión principal.
+    if (has('editar', 'modific', 'crear', 'crea', 'creá', 'armar', 'armá', 'hacer', 'hacé', 'agregar', 'agrega', 'agregá', 'meter', 'mete', 'meté', 'carpeta', 'archivo', 'txt', 'escrib', 'implement', 'fix', 'correg', 'refactor', 'cambio')) add('writeFile');
     if (has('terminal', 'comando', 'ejecut', 'build', 'compil', 'test', 'prueba', 'git', 'servidor', 'background', 'proceso')) add('runCommand', 'terminal');
     if (has('sub-ia', 'subia', 'subagente', 'especialista', 'deleg')) add('subagent');
     if (has('memoria', 'recordá', 'recorda', 'acordate', 'olvid', 'recuper')) add('remember', 'recall', 'forget');
@@ -342,6 +343,83 @@ export function selectToolsForPrompt(toolset: Record<string, any>, mode: 'busine
   }
 
   return Object.fromEntries([...keys].filter((name) => toolset[name]).map((name) => [name, toolset[name]]));
+}
+
+const TOOL_ROUTER_CATALOG: Record<'business' | 'development', Record<string, string>> = {
+  development: {
+    listFiles: 'listar archivos del workspace', readFile: 'leer archivos', searchText: 'buscar texto en archivos', writeFile: 'crear o editar archivos; también crea carpetas padre', runCommand: 'ejecutar comandos, tests, Git o procesos', terminal: 'crear procesos persistentes en background', askUser: 'pedir una decisión al usuario', createPlan: 'crear planes de implementación', updatePlan: 'actualizar planes', todo: 'crear o actualizar tareas TODO', getTaskStatus: 'consultar estado de tareas', subagent: 'delegar investigación a un subagente', remember: 'guardar memoria', recall: 'consultar memoria', forget: 'borrar memoria', getExecutionLog: 'auditar ejecuciones y tools',
+  },
+  business: {
+    listProjectFiles: 'listar archivos del proyecto', readProjectFile: 'leer archivos del proyecto', searchProjectText: 'buscar texto en el proyecto', getBusinessWorkspace: 'leer datos económicos', getAIUsageMetrics: 'medir tokens, duración y costos', updateBusinessWorkspace: 'actualizar datos económicos', createQuote: 'crear cotizaciones', createBudget: 'crear presupuestos', createExecutionPlan: 'crear planes de ejecución', getWhatsAppBusinessContext: 'consultar contexto comercial de WhatsApp', listIndexedProjects: 'listar proyectos', getExecutionLog: 'auditar ejecuciones y tools', delegateBusinessSpecialist: 'delegar investigación comercial',
+  },
+};
+
+const toolRouterOutput = Output.object({
+  schema: jsonSchema({
+    type: 'object',
+    properties: {
+      tools: { type: 'array', items: { type: 'string' } },
+      confidence: { type: 'number' },
+      reason: { type: 'string' },
+      requiresAction: { type: 'boolean' },
+      goal: { type: 'string' },
+      verification: { type: 'string' },
+    },
+    required: ['tools', 'confidence', 'reason', 'requiresAction', 'goal', 'verification'],
+    additionalProperties: false,
+  }),
+});
+
+const toolVerificationOutput = Output.object({
+  schema: jsonSchema({
+    type: 'object',
+    properties: {
+      completed: { type: 'boolean' },
+      retry: { type: 'boolean' },
+      reason: { type: 'string' },
+    },
+    required: ['completed', 'retry', 'reason'],
+    additionalProperties: false,
+  }),
+});
+
+export async function resolveToolsWithAI({ model, mode, prompt, toolset, signal, onUsage }: { model: any; mode: 'business' | 'development'; prompt: string; toolset: Record<string, any>; signal?: AbortSignal; onUsage?: (usage: any) => void | Promise<void> }) {
+  const catalog = TOOL_ROUTER_CATALOG[mode];
+  let decision: { tools?: string[]; confidence?: number; reason?: string; requiresAction?: boolean; goal?: string; verification?: string } | null = null;
+  await runStream({
+    model,
+    system: `Sos el router de herramientas de Codeclub para el modo ${mode === 'business' ? 'Economía' : 'Desarrollo'}. Analizá la intención del usuario y elegí únicamente las tools necesarias del catálogo. No ejecutes tools ni respondas al usuario. Si una acción puede requerir escritura o terminal, habilitala. Siempre incluí las tools base de inspección y organización cuando sean relevantes. Devolvé JSON estructurado. Catálogo: ${Object.entries(catalog).map(([name, description]) => `${name}: ${description}`).join('; ')}`,
+    messages: [{ role: 'user', content: prompt }],
+    tools: {},
+    structuredOutput: toolRouterOutput,
+    signal,
+    callbacks: {
+      onTextDelta: () => {},
+      onStructuredOutput: (output) => { decision = output; },
+      onUsage,
+    },
+  });
+  const allowed = new Set(Object.keys(toolset));
+  const aliases: Record<string, string> = { write_file: 'writeFile', run_command: 'runCommand', ask_user: 'askUser', create_plan: 'createPlan', update_plan: 'updatePlan' };
+  const selected = (decision?.tools || []).map((name) => aliases[name] || name).filter((name) => allowed.has(name));
+  if (!selected.length) throw new Error('El router IA no habilitó ninguna tool válida.');
+  const actionTools = ['writeFile', 'runCommand', 'terminal', 'subagent'].filter((name) => allowed.has(name));
+  const resolved = [...new Set(decision?.requiresAction ? [...selected, ...actionTools] : selected)];
+  return { tools: Object.fromEntries(resolved.map((name) => [name, toolset[name]])), confidence: decision?.confidence ?? 0, reason: decision?.reason || 'intención detectada', requiresAction: decision?.requiresAction === true, goal: decision?.goal || prompt, verification: decision?.verification || 'La tool correspondiente debe devolver un resultado exitoso.' };
+}
+
+export async function verifyToolExecutionWithAI({ model, prompt, goal, verification, toolEvents, changes, signal, onUsage }: { model: any; prompt: string; goal: string; verification: string; toolEvents: any[]; changes: any; signal?: AbortSignal; onUsage?: (usage: any) => void | Promise<void> }) {
+  let result: { completed?: boolean; retry?: boolean; reason?: string } | null = null;
+  await runStream({
+    model,
+    system: 'Sos la IA verificadora de Codeclub. Compará el objetivo y el criterio de verificación con las tools realmente ejecutadas, sus resultados y el diff local. No supongas que el texto del agente es evidencia. Si falta una tool exitosa o el diff no respalda el trabajo, indicá retry=true. Devolvé JSON estructurado.',
+    messages: [{ role: 'user', content: JSON.stringify({ prompt, goal, verification, toolEvents: toolEvents.slice(-20), changes }) }],
+    tools: {},
+    structuredOutput: toolVerificationOutput,
+    signal,
+    callbacks: { onTextDelta: () => {}, onStructuredOutput: (output) => { result = output; }, onUsage },
+  });
+  return result || { completed: false, retry: true, reason: 'La IA verificadora no devolvió resultado.' };
 }
 
 export function createTools(ctx: ToolContext) {
@@ -549,7 +627,7 @@ export function createTools(ctx: ToolContext) {
       },
     }),
     writeFile: tool({
-      description: 'Write full UTF-8 content to a relative workspace file. Requires user approval.',
+      description: 'Write full UTF-8 content to a relative workspace file inside the active workspace.',
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
@@ -560,15 +638,6 @@ export function createTools(ctx: ToolContext) {
         additionalProperties: false,
       }),
       execute: async ({ path, content }) => {
-        const approved = await requestToolApproval({
-          toolName: 'writeFile',
-          input: { path, contentPreview: String(content).slice(0, 800) },
-          summary: `Escribir ${path}`,
-        });
-        if (!approved) {
-          recordToolEvent('writeFile', { path }, { denied: true });
-          return { ok: false, denied: true };
-        }
         setAgentState('running');
         await invoke('codeclub_write_file', { projectPath, path, content });
         const output = { ok: true, path };
@@ -650,7 +719,7 @@ export function createTools(ctx: ToolContext) {
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
-          specialist: { type: 'string', enum: ['explorer', 'frontend', 'backend', 'qa', 'security', 'documentation'] },
+          specialist: { type: 'string', enum: ['developer', 'explorer', 'frontend', 'backend', 'qa', 'security', 'documentation'] },
           task: { type: 'string', description: 'The task for the specialist.' },
         },
         required: ['specialist', 'task'],
@@ -663,7 +732,10 @@ export function createTools(ctx: ToolContext) {
         setAgentState('tool_call');
         recordToolEvent('subagent', { specialist, task }, { status: 'running' });
 
-        const subTools = createSubagentTools({ projectPath, recordToolEvent, setAgentState });
+        const developmentTools = createTools({ projectPath, recordToolEvent, setAgentState, requestToolApproval, provider, modelId });
+        const subTools = specialist === 'developer'
+          ? Object.fromEntries(['listFiles', 'readFile', 'searchText', 'writeFile', 'runCommand', 'terminal'].map((name) => [name, developmentTools[name]]).filter(([, toolDefinition]) => toolDefinition))
+          : createSubagentTools({ projectPath, recordToolEvent, setAgentState });
 
         const result = await runStream({
           model: provider(modelId),

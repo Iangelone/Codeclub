@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUpRight, ChevronRight, File, FileCode2, FileImage, FileText, Folder, FolderOpen, Folders, GitBranch, LockKeyhole, LogOut, MessageCircle, Plus, RefreshCw, Search } from 'lucide-react';
+import { ArrowUpRight, ChevronRight, File, FileCode2, FileImage, FileText, Folder, FolderOpen, Folders, GitBranch, GitCompare, LockKeyhole, LogOut, MessageCircle, Plus, RefreshCw, Search } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { whatsappContextStore } from '../lib/store';
@@ -143,6 +143,127 @@ function FilesView({ projectPath }: { projectPath: string }) {
         </div>
       </aside>
     </div>
+  </div>;
+}
+
+type ReviewFile = {
+  path: string;
+  status: string;
+  diff: string;
+  additions: number;
+  deletions: number;
+};
+
+type CommandResult = { code?: number | null; stdout: string; stderr: string };
+
+const reviewStatusLabel = (status: string) => {
+  if (status.includes('?')) return { label: 'U', title: 'Sin seguimiento', color: '#c8a96b' };
+  if (status.includes('D')) return { label: 'D', title: 'Eliminado', color: '#d77878' };
+  if (status.includes('R')) return { label: 'R', title: 'Renombrado', color: '#c084fc' };
+  if (status.includes('A')) return { label: 'A', title: 'Añadido', color: '#76c893' };
+  return { label: 'M', title: 'Modificado', color: '#7ab7e8' };
+};
+
+const parseReviewStatus = (output: string) => output.split(/\r?\n/).map((line) => line.trimEnd()).filter(Boolean).map((line) => {
+  const status = line.slice(0, 2);
+  const rawPath = line.slice(3).trim();
+  const path = rawPath.includes(' -> ') ? rawPath.split(' -> ').pop() || rawPath : rawPath;
+  return { path: path.replace(/^"|"$/g, ''), status };
+});
+
+const parseReviewDiff = (output: string) => {
+  const sections: Array<{ path: string; diff: string; additions: number; deletions: number }> = [];
+  let current: { path: string; lines: string[]; additions: number; deletions: number } | null = null;
+  for (const line of output.split(/\r?\n/)) {
+    if (line.startsWith('diff --git ')) {
+      if (current) sections.push({ path: current.path, diff: current.lines.join('\n'), additions: current.additions, deletions: current.deletions });
+      const match = line.match(/^diff --git a\/(.+) b\/(.+)$/);
+      current = { path: match?.[2] || line.replace(/^diff --git /, ''), lines: [], additions: 0, deletions: 0 };
+    }
+    if (!current) continue;
+    current.lines.push(line);
+    if (line.startsWith('+') && !line.startsWith('+++')) current.additions += 1;
+    if (line.startsWith('-') && !line.startsWith('---')) current.deletions += 1;
+  }
+  if (current) sections.push({ path: current.path, diff: current.lines.join('\n'), additions: current.additions, deletions: current.deletions });
+  return sections;
+};
+
+function ReviewView({ projectPath }: { projectPath: string }) {
+  const [files, setFiles] = useState<ReviewFile[]>([]);
+  const [selectedPath, setSelectedPath] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const loadReview = async () => {
+    if (!projectPath) { setFiles([]); setSelectedPath(''); return; }
+    setLoading(true);
+    setError('');
+    try {
+      const statusResult = await invoke<CommandResult>('codeclub_run_command', { projectPath, request: { command: 'git', args: ['status', '--short', '--untracked-files=all'] } });
+      if (statusResult.code !== 0 && !statusResult.stdout.trim()) throw new Error(statusResult.stderr || 'El proyecto no tiene un repositorio Git.');
+      const statusEntries = parseReviewStatus(statusResult.stdout);
+      const diffResult = await invoke<CommandResult>('codeclub_run_command', { projectPath, request: { command: 'git', args: ['diff', 'HEAD', '--no-ext-diff', '--unified=3', '--'] } });
+      const diffEntries = parseReviewDiff(diffResult.stdout);
+      const diffByPath = new Map(diffEntries.map((entry) => [entry.path.replace(/^b\//, ''), entry]));
+      const nextFiles: ReviewFile[] = [];
+      for (const entry of statusEntries) {
+        const path = entry.path.replace(/^b\//, '');
+        const diff = diffByPath.get(path);
+        if (diff) {
+          nextFiles.push({ path, status: entry.status, diff: diff.diff, additions: diff.additions, deletions: diff.deletions });
+          diffByPath.delete(path);
+          continue;
+        }
+        if (entry.status.includes('?')) {
+          try {
+            const content = await invoke<string>('codeclub_read_file', { projectPath, path });
+            const lines = content.split(/\r?\n/);
+            const syntheticDiff = [`diff --git a/${path} b/${path}`, 'new file mode 100644', '--- /dev/null', `+++ b/${path}`, `@@ -0,0 +1,${lines.length} @@`, ...lines.map((line) => `+${line}`)].join('\n');
+            nextFiles.push({ path, status: entry.status, diff: syntheticDiff, additions: lines.length, deletions: 0 });
+          } catch { nextFiles.push({ path, status: entry.status, diff: '', additions: 0, deletions: 0 }); }
+        } else nextFiles.push({ path, status: entry.status, diff: '', additions: 0, deletions: 0 });
+      }
+      for (const diff of diffByPath.values()) nextFiles.push({ path: diff.path, status: ' M', diff: diff.diff, additions: diff.additions, deletions: diff.deletions });
+      setFiles(nextFiles);
+      setSelectedPath((current) => nextFiles.some((file) => file.path === current) ? current : nextFiles[0]?.path || '');
+    } catch (reason) { setError(String(reason)); setFiles([]); setSelectedPath(''); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => {
+    void loadReview();
+    const refresh = (event: Event) => {
+      const changedProject = (event as CustomEvent<{ projectPath?: string }>).detail?.projectPath;
+      if (!changedProject || changedProject === projectPath) void loadReview();
+    };
+    window.addEventListener('codeclub:workspace-changed', refresh);
+    window.addEventListener('codeclub:artifacts-changed', refresh);
+    return () => {
+      window.removeEventListener('codeclub:workspace-changed', refresh);
+      window.removeEventListener('codeclub:artifacts-changed', refresh);
+    };
+  }, [projectPath]);
+
+  const selected = files.find((file) => file.path === selectedPath) || files[0];
+  const additions = files.reduce((total, file) => total + file.additions, 0);
+  const deletions = files.reduce((total, file) => total + file.deletions, 0);
+
+  if (!projectPath) return <div className="flex flex-1 items-center justify-center p-5 text-center text-[11px] text-[#777]">Seleccioná un proyecto para revisar sus cambios.</div>;
+  return <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#111111]">
+    <div className="flex h-[42px] shrink-0 items-center justify-between border-b border-[#2b2b2b] px-3">
+      <div className="flex min-w-0 items-center gap-2"><GitCompare size={14} className="shrink-0 text-[#a7a7a7]" /><div className="min-w-0"><div className="truncate text-[12px] text-[#eeeeee]">Cambios</div><div className="text-[10px] text-[#666]">{files.length} {files.length === 1 ? 'archivo' : 'archivos'} · <span className="text-[#76c893]">+{additions}</span> <span className="text-[#d77878]">-{deletions}</span></div></div></div>
+      <button type="button" onClick={() => void loadReview()} disabled={loading} className="grid h-7 w-7 shrink-0 place-items-center rounded-[7px] border-0 bg-[#202020] text-[#cfcfcf] hover:bg-[#2b2b2b] disabled:opacity-50" title="Actualizar cambios" aria-label="Actualizar cambios"><RefreshCw size={13} className={loading ? 'animate-spin' : ''} /></button>
+    </div>
+    {loading ? <div className="flex flex-1 items-center justify-center text-[11px] text-[#777]">Revisando cambios...</div> : error ? <div className="p-3 text-[11px] leading-5 text-[#c28d8d]">{error}</div> : !files.length ? <div className="flex flex-1 flex-col items-center justify-center gap-2 p-5 text-center text-[11px] text-[#777]"><GitCompare size={28} strokeWidth={1.5} /><span>Sin cambios pendientes.</span></div> : <div className="flex min-h-0 flex-1 overflow-hidden">
+      <div className="file-preview-scrollbar h-full w-[38%] min-w-[112px] shrink-0 overflow-y-auto border-r border-[#2b2b2b] p-1.5">
+        {files.map((file) => { const status = reviewStatusLabel(file.status); return <button key={file.path} type="button" onClick={() => setSelectedPath(file.path)} className={`flex w-full min-w-0 flex-col gap-1 rounded-md px-2 py-2 text-left hover:bg-[#1c1c1c] ${selected?.path === file.path ? 'bg-[#1e1e1e]' : ''}`} title={file.path}><div className="flex min-w-0 items-center gap-1.5"><span className="shrink-0 text-[10px] font-semibold" style={{ color: status.color }}>{status.label}</span><span className="truncate text-[10px] text-[#d8d8d8]">{file.path.split(/[\\/]/).pop()}</span></div><div className="truncate pl-[17px] text-[9px] text-[#666]">{/[/\\]/.test(file.path) ? file.path : status.title} <span className="text-[#76c893]">+{file.additions}</span> <span className="text-[#d77878]">-{file.deletions}</span></div></button>; })}
+      </div>
+      <div className="file-preview-scrollbar min-w-0 flex-1 overflow-auto bg-[#101010] p-2">
+        <div className="mb-2 truncate px-1 text-[10px] text-[#999]" title={selected?.path}>{selected?.path}</div>
+        {selected?.diff ? <pre className="m-0 whitespace-pre-wrap break-words font-mono text-[10px] leading-[1.55]">{selected.diff.split('\n').map((line, index) => <span key={`${index}-${line}`} className={`block -mx-2 px-2 ${line.startsWith('+') && !line.startsWith('+++') ? 'bg-[#16351f] text-[#a6e3b4]' : line.startsWith('-') && !line.startsWith('---') ? 'bg-[#3b1d22] text-[#f0a8ae]' : line.startsWith('@@') ? 'text-[#8fb9d8]' : 'text-[#b9b9b9]'}`}>{line || ' '}</span>)}</pre> : <div className="p-1 text-[10px] text-[#777]">No hay diff disponible para este archivo.</div>}
+      </div>
+    </div>}
   </div>;
 }
 
@@ -431,15 +552,16 @@ export default function RightSidebar() {
           </div>
         </div>
         <div className="flex h-0 min-h-0 flex-1 flex-col overflow-hidden">
-          {activeTab === 'files' && <FilesView projectPath={activeProjectPath} />}
-          {activeTab === 'artifacts' && <ArtifactsView state={artifactState} business={businessState} projectPath={activeProjectPath} projectName={activeProjectName} hasProject={Boolean(activeProjectPath)} />}
+           {activeTab === 'files' && <FilesView projectPath={activeProjectPath} />}
+           {activeTab === 'review' && <ReviewView projectPath={activeProjectPath} />}
+           {activeTab === 'artifacts' && <ArtifactsView state={artifactState} business={businessState} projectPath={activeProjectPath} projectName={activeProjectName} hasProject={Boolean(activeProjectPath)} />}
           {tabs.includes('whatsapp') && <div className={activeTab === 'whatsapp' ? 'flex h-full min-h-0 flex-1' : 'hidden'}><WhatsAppTerminalView /></div>}
           {tabs.length === 0 && <div className="flex flex-1 items-center justify-center">
             <button type="button" onClick={() => setMenuOpen(true)} className="min-h-[30px] rounded-lg border border-[#202020] bg-transparent px-3 text-[11px] text-[#777777] transition-colors hover:bg-[#1c1c1c] hover:text-[#eeeeee]">
               Crear panel
             </button>
           </div>}
-          {activeTab && !['files', 'artifacts', 'whatsapp'].includes(activeTab) && <div className="flex flex-1 items-center justify-center p-3 text-xs text-[#777777]">Panel {labels[activeTab]}</div>}
+           {activeTab && !['files', 'review', 'artifacts', 'whatsapp'].includes(activeTab) && <div className="flex flex-1 items-center justify-center p-3 text-xs text-[#777777]">Panel {labels[activeTab]}</div>}
         </div>
       </div>
     </aside>
