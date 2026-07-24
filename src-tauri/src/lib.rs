@@ -77,6 +77,7 @@ struct BrowserSelection {
     url: String,
     selector: String,
     tag: String,
+    is_multi_select: Option<bool>,
 }
 
 fn codeclub_browser_webview(app: &AppHandle) -> Result<tauri::Webview, String> {

@@ -177,7 +177,9 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [artifactReference, setArtifactReference] = useState<{ kind: 'plan' | 'todo' | 'quote'; id: string; title: string } | null>(null);
-  const [browserReference, setBrowserReference] = useState<{ title: string; text: string } | null>(null);
+  const [browserReferences, setBrowserReferences] = useState<{ id: string; title: string; text: string }[]>([]);
+  const browserRefContainerRef = useRef<HTMLDivElement>(null);
+  const [maxVisibleBrowserRefs, setMaxVisibleBrowserRefs] = useState(3);
   const [inputFocused, setInputFocused] = useState(false);
   const [avatarColor, setAvatarColor] = useState('#3b6bb5');
   const [attachedFiles, setAttachedFiles] = useState<ChatAttachment[]>([]);
@@ -256,10 +258,30 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     return () => window.removeEventListener('codeclub:artifact-reference', handleArtifactReference);
   }, [activeProject?.projectPath]);
   useEffect(() => {
+    if (!browserRefContainerRef.current) return;
+    const updateMaxVisible = () => {
+      const width = browserRefContainerRef.current?.clientWidth || 300;
+      const count = Math.max(1, Math.floor((width - 95) / 125));
+      setMaxVisibleBrowserRefs(count);
+    };
+    updateMaxVisible();
+    const observer = new ResizeObserver(updateMaxVisible);
+    observer.observe(browserRefContainerRef.current);
+    return () => observer.disconnect();
+  }, [browserReferences.length]);
+  useEffect(() => {
     const handleBrowserReference = (event: Event) => {
       const detail = (event as CustomEvent<{ title?: string; text?: string }>).detail;
       if (!detail?.text) return;
-      setBrowserReference({ title: detail.title || 'Referencia', text: detail.text });
+      const newItem = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        title: detail.title || 'Referencia',
+        text: detail.text,
+      };
+      setBrowserReferences((current) => {
+        if (current.some((item) => item.text === newItem.text)) return current;
+        return [...current, newItem];
+      });
       requestAnimationFrame(() => chatInputRef.current?.focus());
     };
     window.addEventListener('codeclub:browser-reference', handleBrowserReference);
@@ -1073,9 +1095,12 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       content = `${content}\n\nReferencia de artifact: @${artifactReference.kind} "${artifactReference.title}" (id: ${artifactReference.id})`;
       setArtifactReference(null);
     }
-    if (browserReference) {
-      content = `${content}\n\nReferencia: @${browserReference.title}\nContenido seleccionado:\n${browserReference.text}`;
-      setBrowserReference(null);
+    if (browserReferences.length > 0) {
+      const refsText = browserReferences
+        .map((ref, idx) => `Referencia ${idx + 1}: @${ref.title}\nContenido seleccionado:\n${ref.text}`)
+        .join('\n\n');
+      content = `${content}\n\n${refsText}`;
+      setBrowserReferences([]);
     }
     const abortController = new AbortController();
     const generationStartedAt = Date.now();
@@ -1873,7 +1898,32 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         <div className="composer-row" style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }}>
           <div className="composer-box [&>[aria-label='Referencia de artifact']]:relative [&>[aria-label='Referencia de artifact']]:z-50 [&>[aria-label='Referencia de artifact']>span]:hidden" style={{ minHeight: '40px', flex: '1 1 auto', minWidth: 0, padding: '1px', borderRadius: '22px', background: '#1a1a1a', border: '1px solid transparent', boxShadow: '0 18px 52px rgba(0, 0, 0, 0.26)' } as React.CSSProperties}>
           {artifactReference && <div className="flex min-h-[28px] items-center gap-2 border-b border-[#202020] px-4 py-1.5" aria-label="Referencia de artifact"><span className="shrink-0 text-[10px] uppercase tracking-[0.08em] text-[#666]">Referencia</span><button type="button" onClick={() => setArtifactReference(null)} className="min-w-0 max-w-[260px] truncate rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-left text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar referencia">@{artifactReference.kind} · {artifactReference.title}</button></div>}
-          {browserReference && <div className="flex min-h-[28px] items-center gap-2 border-b border-[#202020] px-4 py-1.5" aria-label="Referencia"><button type="button" onClick={() => setBrowserReference(null)} className="min-w-0 max-w-[320px] truncate rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-left text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar referencia">@{browserReference.title}</button></div>}
+          {browserReferences.length > 0 && (
+            <div ref={browserRefContainerRef} className="flex min-h-[28px] max-w-full items-center gap-1.5 overflow-hidden border-b border-[#202020] px-3 py-1.5" aria-label="Referencias de navegador">
+              {browserReferences.slice(0, maxVisibleBrowserRefs).map((ref) => (
+                <button
+                  key={ref.id}
+                  type="button"
+                  onClick={() => setBrowserReferences((current) => current.filter((item) => item.id !== ref.id))}
+                  className="flex max-w-[130px] min-w-0 shrink items-center gap-1.5 truncate rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-left text-[10px] text-[#cfcfcf] hover:bg-[#202020]"
+                  title={`Quitar @${ref.title}`}
+                >
+                  <span className="truncate">@{ref.title}</span>
+                  <span className="shrink-0 text-[#777] hover:text-[#eee]">×</span>
+                </button>
+              ))}
+              {browserReferences.length > maxVisibleBrowserRefs && (
+                <button
+                  type="button"
+                  onClick={() => setBrowserReferences([])}
+                  className="shrink-0 rounded-full border border-[#2b2b2b] bg-[#161616] px-2.5 py-1 text-[10px] font-medium text-[#8fbfff] hover:bg-[#202020]"
+                  title="Quitar todas las referencias"
+                >
+                  +{browserReferences.length - maxVisibleBrowserRefs} referencias
+                </button>
+              )}
+            </div>
+          )}
            {attachedFiles.length > 0 && <div className="flex min-h-[28px] items-center gap-1.5 overflow-hidden border-b border-[#202020] px-3 py-1.5" aria-label="Archivos adjuntos">{attachedFiles.slice(0, 3).map((file, index) => <button key={file.path} type="button" onClick={() => setAttachedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} className="flex max-w-[180px] min-w-0 shrink items-center gap-1.5 truncate rounded-full border border-[#2b2b2b] bg-[#161616] px-2.5 py-1 text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar archivo">{file.mediaType.startsWith('image/') ? <img src={file.previewUrl || convertFileSrc(file.path)} alt={file.name} style={{ width: '18px', height: '18px', objectFit: 'cover', borderRadius: '4px' }} /> : <Paperclip size={11} strokeWidth={1.8} />}<span className="truncate">{file.name}</span></button>)}{attachedFiles.length > 3 && <span className="shrink-0 rounded-full border border-[#2b2b2b] bg-[#161616] px-2.5 py-1 text-[10px] text-[#999]">+{attachedFiles.length - 3} archivos</span>}</div>}
           <div ref={commandMenuHostRef} className="w-full" />
           <form onSubmit={handleSubmit} className="composer-box-inner [&>button.absolute]:hidden" style={{ minHeight: '40px', width: '100%', minWidth: 0, display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 6px 5px 16px', border: 0, borderRadius: '21px', background: '#121212', position: 'relative' }}>

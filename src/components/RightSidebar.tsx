@@ -18,6 +18,7 @@ type BrowserDomSelection = {
   url: string;
   selector: string;
   tag: string;
+  isMultiSelect?: boolean;
 };
 
 const browserSelectionHash = '#__codeclub_selection=';
