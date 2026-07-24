@@ -15,6 +15,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
   const [chatMode, setChatMode] = useState<'development' | 'business'>('development');
   const [modeHovered, setModeHovered] = useState(false);
   const [dockVisible, setDockVisible] = useState(false);
+  const [commandMenuKind, setCommandMenuKind] = useState('');
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [availableProjects, setAvailableProjects] = useState<ProjectEntry[]>([]);
   const [recentChats, setRecentChats] = useState<GlobalChat[]>([]);
@@ -132,6 +133,15 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
   }, []);
 
   useEffect(() => {
+    const handleCommandMenuState = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      setCommandMenuKind(detail.open ? detail.kind || '' : '');
+    };
+    window.addEventListener('codeclub:command-menu-state', handleCommandMenuState);
+    return () => window.removeEventListener('codeclub:command-menu-state', handleCommandMenuState);
+  }, []);
+
+  useEffect(() => {
     const openInPanel = (kind: 'chat' | 'folders' | 'blank') => (event: Event) => {
       window.dispatchEvent(new CustomEvent(`codeclub:panel-left:open-${kind}`, {
         detail: (event as CustomEvent).detail || {},
@@ -154,9 +164,9 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
         <div className={`absolute left-1/2 top-1 flex h-11 -translate-x-1/2 items-start justify-center rounded-2xl px-1.5 pt-1.5 transition-opacity duration-150 ${dockVisible ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}>
         <div className="flex items-center gap-1 rounded-[14px] border border-[#202020] bg-[#111111] p-1">
           <button type="button" aria-label="Nuevo chat" title="Nuevo chat" onClick={() => window.dispatchEvent(new CustomEvent('codeclub:request-new-chat'))} className="grid h-7 w-7 place-items-center rounded-[9px] border-0 bg-transparent text-[#777777] transition-colors hover:bg-[#1e1e1e] hover:text-[#eeeeee]"><House size={14} strokeWidth={1.8} /></button>
-          <button type="button" aria-label="Seleccionar proveedor" title="Proveedor" onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-command-menu', { detail: { kind: 'provider' } }))} className="grid h-7 w-7 place-items-center rounded-[9px] border-0 bg-transparent text-[#777777] transition-colors hover:bg-[#1e1e1e] hover:text-[#eeeeee]"><Server size={14} strokeWidth={1.8} /></button>
-          <button type="button" aria-label="Seleccionar modelo" title="Modelo" onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-command-menu', { detail: { kind: 'model' } }))} className="grid h-7 w-7 place-items-center rounded-[9px] border-0 bg-transparent text-[#777777] transition-colors hover:bg-[#1e1e1e] hover:text-[#eeeeee]"><Cpu size={14} strokeWidth={1.8} /></button>
-          <button type="button" aria-label="Elegir proyecto del chat" title="Proyecto del chat" onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-command-menu', { detail: { kind: 'project' } }))} className="grid h-7 w-7 place-items-center rounded-[9px] border-0 bg-transparent text-[#777777] transition-colors hover:bg-[#1e1e1e] hover:text-[#eeeeee]"><Folder size={14} strokeWidth={1.8} /></button>
+          <button type="button" aria-pressed={commandMenuKind === 'provider'} aria-label={`Proveedor: ${commandMenuKind === 'provider' ? 'Activo' : 'Desactivado'}`} title={`Proveedor: ${commandMenuKind === 'provider' ? 'Activo' : 'Desactivado'}`} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-command-menu', { detail: { kind: 'provider' } }))} className={`grid h-7 w-7 place-items-center rounded-[9px] border-0 transition-colors ${commandMenuKind === 'provider' ? 'bg-[#1e1e1e] text-[#eeeeee]' : 'bg-transparent text-[#777777] hover:bg-[#1e1e1e] hover:text-[#eeeeee]'}`}><Server size={14} strokeWidth={1.8} /></button>
+          <button type="button" aria-pressed={commandMenuKind === 'model'} aria-label={`Modelo: ${commandMenuKind === 'model' ? 'Activo' : 'Desactivado'}`} title={`Modelo: ${commandMenuKind === 'model' ? 'Activo' : 'Desactivado'}`} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-command-menu', { detail: { kind: 'model' } }))} className={`grid h-7 w-7 place-items-center rounded-[9px] border-0 transition-colors ${commandMenuKind === 'model' ? 'bg-[#1e1e1e] text-[#eeeeee]' : 'bg-transparent text-[#777777] hover:bg-[#1e1e1e] hover:text-[#eeeeee]'}`}><Cpu size={14} strokeWidth={1.8} /></button>
+          <button type="button" aria-pressed={commandMenuKind === 'project'} aria-label={`Proyecto: ${commandMenuKind === 'project' ? 'Activo' : 'Desactivado'}`} title={`Proyecto: ${commandMenuKind === 'project' ? 'Activo' : 'Desactivado'}`} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-command-menu', { detail: { kind: 'project' } }))} className={`grid h-7 w-7 place-items-center rounded-[9px] border-0 transition-colors ${commandMenuKind === 'project' ? 'bg-[#1e1e1e] text-[#eeeeee]' : 'bg-transparent text-[#777777] hover:bg-[#1e1e1e] hover:text-[#eeeeee]'}`}><Folder size={14} strokeWidth={1.8} /></button>
           <button type="button" aria-label={`Modo ${chatMode === 'development' ? 'desarrollo' : 'negocios'}`} title={`Modo ${chatMode === 'development' ? 'desarrollo' : 'negocios'}`} onMouseEnter={() => setModeHovered(true)} onMouseLeave={() => setModeHovered(false)} onClick={() => setChatMode((mode) => mode === 'development' ? 'business' : 'development')} className="grid h-7 w-7 place-items-center rounded-[9px] border-0 bg-transparent text-[#777777] transition-colors hover:bg-[#1e1e1e]">
             {chatMode === 'development' ? <MessageSquarePlus size={13} strokeWidth={1.8} style={{ color: modeHovered ? '#eeeeee' : '#777777' }} /> : <Target size={13} strokeWidth={1.8} style={{ color: modeHovered ? '#eeeeee' : '#777777' }} />}
           </button>

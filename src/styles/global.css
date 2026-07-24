@@ -43,6 +43,10 @@ button {
   box-shadow: none !important;
 }
 
+button[title="Proveedor, modelo y proyecto"] {
+  display: none !important;
+}
+
 .credential-menu-input::placeholder {
   color: #777777;
   opacity: 1;

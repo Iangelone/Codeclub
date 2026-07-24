@@ -429,6 +429,12 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     setTimeout(() => commandMenuRef.current?.focus(), 10);
   };
 
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('codeclub:command-menu-state', {
+      detail: { open: menuOpen, kind: menuOpen ? commandKind : '' },
+    }));
+  }, [menuOpen, commandKind]);
+
   useEffect(() => () => {
     if (toolStateTimerRef.current) clearTimeout(toolStateTimerRef.current);
   }, []);
@@ -436,8 +442,15 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   useEffect(() => {
     const handleOpenCommandMenu = (event: Event) => {
       const kind = (event as CustomEvent).detail?.kind;
-      if (kind === 'provider' || kind === 'model') openCommandMenu(kind);
+      if (kind === 'provider' || kind === 'model') {
+        if (menuOpen && commandKind === kind) setMenuOpen(false);
+        else openCommandMenu(kind);
+      }
       if (kind === 'project') {
+        if (menuOpen && commandKind === kind) {
+          setMenuOpen(false);
+          return;
+        }
         void readProjectIndex().then((projects) => {
           setProjectOptions([{ id: '__none__', label: 'Sin proyecto', type: 'project', projectPath: null, isNone: true }, ...projects.map((project) => ({ id: project.path, label: project.name, type: 'project', projectPath: project.path }))]);
           openCommandMenu('project');
@@ -446,7 +459,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     };
     window.addEventListener('codeclub:open-command-menu', handleOpenCommandMenu);
     return () => window.removeEventListener('codeclub:open-command-menu', handleOpenCommandMenu);
-  }, []);
+  }, [menuOpen, commandKind]);
 
   const filteredCatalog = (commandKind === 'project' ? projectOptions : catalog).filter((item) => {
     const matchesKind = item.type === commandKind;
@@ -459,6 +472,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const slashCommands = [
     { id: 'proveedor', label: '/proveedor', description: 'Seleccionar proveedor', type: 'command' },
     { id: 'modelo', label: '/modelo', description: 'Seleccionar modelo', type: 'command' },
+    { id: 'proyecto', label: '/proyecto', description: 'Seleccionar proyecto', type: 'command' },
   ].filter((command) => command.label.toLowerCase().includes(searchQuery.toLowerCase()));
 
   useEffect(() => {
@@ -480,7 +494,9 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     if (!menuOpen) return;
 
     const handlePointerDown = (event) => {
-      if (commandMenuRef.current?.contains(event.target)) return;
+      const button = (event.target as HTMLElement).closest('button') as HTMLButtonElement | null;
+      const isCommandDockButton = /^(Proveedor|Modelo|Proyecto):/.test(button?.getAttribute('aria-label') || '');
+      if (commandMenuRef.current?.contains(event.target) || button?.title === 'Proveedor, modelo y proyecto' || isCommandDockButton) return;
       setMenuOpen(false);
     };
 
@@ -490,6 +506,13 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
 
   const handleItemClick = (item) => {
     if (item.type === 'command') {
+      if (item.id === 'proyecto') {
+        void readProjectIndex().then((projects) => {
+          setProjectOptions([{ id: '__none__', label: 'Sin proyecto', type: 'project', projectPath: null, isNone: true }, ...projects.map((project) => ({ id: project.path, label: project.name, type: 'project', projectPath: project.path }))]);
+          openCommandMenu('project');
+        });
+        return;
+      }
       setInput(`/${item.id}`);
       setMenuOpen(false);
       chatInputRef.current?.focus();
@@ -2040,4 +2063,3 @@ function ProjectDiffView({ kind, projectPath }: { kind: 'diff' | 'folders'; proj
     </div>
   );
 }
-
