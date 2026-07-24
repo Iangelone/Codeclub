@@ -347,7 +347,7 @@ export function selectToolsForPrompt(toolset: Record<string, any>, mode: 'busine
 
 const TOOL_ROUTER_CATALOG: Record<'business' | 'development', Record<string, string>> = {
   development: {
-    listFiles: 'listar archivos del workspace', readFile: 'leer archivos', searchText: 'buscar texto en archivos', writeFile: 'crear o editar archivos; también crea carpetas padre', runCommand: 'ejecutar comandos, tests, Git o procesos', terminal: 'crear procesos persistentes en background', askUser: 'pedir una decisión al usuario', createPlan: 'crear planes de implementación', updatePlan: 'actualizar planes', todo: 'crear o actualizar tareas TODO', getTaskStatus: 'consultar estado de tareas', subagent: 'delegar investigación a un subagente', remember: 'guardar memoria', recall: 'consultar memoria', forget: 'borrar memoria', getExecutionLog: 'auditar ejecuciones y tools',
+    listFiles: 'listar archivos del workspace', readFile: 'leer archivos', searchText: 'buscar texto en archivos', writeFile: 'crear o editar archivos; también crea carpetas padre', runCommand: 'ejecutar comandos, tests, Git o procesos', terminal: 'crear procesos persistentes en background', openBrowser: 'abrir una URL en la pestaña Navegador', askUser: 'pedir una decisión al usuario', createPlan: 'crear planes de implementación', updatePlan: 'actualizar planes', todo: 'crear o actualizar tareas TODO', getTaskStatus: 'consultar estado de tareas', subagent: 'delegar investigación a un subagente', remember: 'guardar memoria', recall: 'consultar memoria', forget: 'borrar memoria', getExecutionLog: 'auditar ejecuciones y tools',
   },
   business: {
     listProjectFiles: 'listar archivos del proyecto', readProjectFile: 'leer archivos del proyecto', searchProjectText: 'buscar texto en el proyecto', getBusinessWorkspace: 'leer datos económicos', getAIUsageMetrics: 'medir tokens, duración y costos', updateBusinessWorkspace: 'actualizar datos económicos', createQuote: 'crear cotizaciones', createBudget: 'crear presupuestos', createExecutionPlan: 'crear planes de ejecución', getWhatsAppBusinessContext: 'consultar contexto comercial de WhatsApp', listIndexedProjects: 'listar proyectos', getExecutionLog: 'auditar ejecuciones y tools', delegateBusinessSpecialist: 'delegar investigación comercial',
@@ -711,6 +711,25 @@ export function createTools(ctx: ToolContext) {
           commandSent: Boolean(command),
         };
         recordToolEvent('terminal', { shell, command, name }, output);
+        return output;
+      },
+    }),
+    openBrowser: tool({
+      description: 'Open a web URL in Codeclub’s Browser tab so the user can inspect it and reference the page or selected text in chat.',
+      inputSchema: jsonSchema({
+        type: 'object',
+        properties: { url: { type: 'string', description: 'Absolute http or https URL to open.' } },
+        required: ['url'],
+        additionalProperties: false,
+      }),
+      execute: async ({ url }) => {
+        const normalized = /^https?:\/\//i.test(url.trim()) ? url.trim() : `https://${url.trim()}`;
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('codeclub:open-right-panel'));
+          window.dispatchEvent(new CustomEvent('codeclub:browser-navigate', { detail: { url: normalized } }));
+        }
+        const output = { ok: true, url: normalized, openedIn: 'Navegador' };
+        recordToolEvent('openBrowser', { url: normalized }, output);
         return output;
       },
     }),

@@ -1,7 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUpRight, ChevronRight, File, FileCode2, FileImage, FileText, Folder, FolderOpen, Folders, GitBranch, GitCompare, LockKeyhole, LogOut, MessageCircle, Plus, RefreshCw, Search } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ArrowUpRight, ChevronRight, ExternalLink, File, FileCode2, FileImage, FileText, Folder, FolderOpen, Folders, GitBranch, GitCompare, Globe, LockKeyhole, LogOut, MessageCircle, Plus, RefreshCw, Search, X } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi';
+import { Webview } from '@tauri-apps/api/webview';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { whatsappContextStore } from '../lib/store';
 import { readAgentState, writeAgentState, type AgentState, type TaskStatus } from '../lib/engine/planning';
 import { readBusinessWorkspace, writeBusinessWorkspace, type BusinessWorkspace } from '../lib/projectManager';
@@ -267,6 +270,223 @@ function ReviewView({ projectPath }: { projectPath: string }) {
   </div>;
 }
 
+function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialUrl?: string }) {
+  const [address, setAddress] = useState(initialUrl);
+  const [history, setHistory] = useState([initialUrl]);
+  const [historyIndex, setHistoryIndex] = useState(0);
+  const [error, setError] = useState('');
+  const [inspectMode, setInspectMode] = useState(false);
+  const [selection, setSelection] = useState<{ title: string; text: string; html: string } | null>(null);
+  const hostRef = useRef<HTMLDivElement>(null);
+  const webviewRef = useRef<Webview | null>(null);
+  const requestRef = useRef(0);
+  const inspectModeRef = useRef(false);
+  const addressRef = useRef(initialUrl);
+  const historyIndexRef = useRef(0);
+  useEffect(() => { inspectModeRef.current = inspectMode; }, [inspectMode]);
+
+  const installInspector = async (active: boolean) => {
+    const script = `(function(){window.__codeclubInspect=${active ? 'true' : 'false'};var cursor='url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\'%3E%3Ccircle cx=\'12\' cy=\'12\' r=\'8\' fill=\'%234d9cff\' stroke=\'white\' stroke-width=\'2\'/%3E%3C/svg%3E") 12 12,crosshair';document.documentElement.style.cursor=window.__codeclubInspect?cursor:'';if(window.__codeclubInspectorInstalled)return;window.__codeclubInspectorInstalled=true;var hovered=null;document.addEventListener('mouseover',function(e){if(!window.__codeclubInspect)return;var el=e.target;if(!el||!el.style)return;if(hovered&&hovered!==el&&!hovered.hasAttribute('data-codeclub-selected')){hovered.style.removeProperty('outline');hovered.style.removeProperty('outline-offset')};hovered=el;el.style.setProperty('outline','2px solid #4d9cff','important');el.style.setProperty('outline-offset','2px','important')},true);document.addEventListener('mouseout',function(e){if(!window.__codeclubInspect)return;var el=e.target;if(el&&el!==hovered&&!el.hasAttribute('data-codeclub-selected')){el.style.removeProperty('outline');el.style.removeProperty('outline-offset')}},true);var block=function(e){if(window.__codeclubInspect){e.preventDefault();e.stopPropagation()}};document.addEventListener('pointerdown',block,true);document.addEventListener('mousedown',block,true);document.addEventListener('submit',block,true);document.addEventListener('click',function(e){if(!window.__codeclubInspect)return;e.preventDefault();e.stopPropagation();var el=e.target;if(!el||!el.outerHTML)return;document.querySelectorAll('[data-codeclub-selected]').forEach(function(node){node.removeAttribute('data-codeclub-selected');node.style.removeProperty('outline');node.style.removeProperty('outline-offset')});el.setAttribute('data-codeclub-selected','true');el.style.setProperty('outline','2px solid #4d9cff','important');el.style.setProperty('outline-offset','2px','important');var payload={title:document.title||location.hostname,text:(el.innerText||el.textContent||'').trim().slice(0,4000),html:el.outerHTML.slice(0,8000)};try{window.__TAURI_INTERNALS__.invoke('codeclub_browser_selection',payload)}catch(_){}} ,true)})();`;
+    try { await invoke('codeclub_browser_eval', { script }); } catch (reason) { setError(String(reason)); }
+  };
+
+  const syncWebview = async (view = webviewRef.current) => {
+    const host = hostRef.current;
+    if (!host || !view) return;
+    const rect = host.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    await view.setPosition(new LogicalPosition(rect.left, rect.top));
+    await view.setSize(new LogicalSize(rect.width, rect.height));
+  };
+
+  const openPage = async (rawUrl: string, push = true) => {
+    const url = /^https?:\/\//i.test(rawUrl.trim()) ? rawUrl.trim() : `https://${rawUrl.trim()}`;
+    if (!url) return;
+    const requestId = ++requestRef.current;
+    setAddress(url); addressRef.current = url; setError(''); setSelection(null); setInspectMode(false);
+    try {
+      await webviewRef.current?.close();
+      if (requestId !== requestRef.current) return;
+      const host = hostRef.current;
+      const rect = host?.getBoundingClientRect();
+      if (!host || !rect || rect.width <= 0 || rect.height <= 0) return;
+      const view = new Webview(getCurrentWindow(), 'codeclub-browser', {
+        url,
+        x: rect.left,
+        y: rect.top,
+        width: rect.width,
+        height: rect.height,
+        focus: false,
+        backgroundColor: '#202124',
+        dragDropEnabled: false,
+        zoomHotkeysEnabled: true,
+      });
+      webviewRef.current = view;
+      view.once('tauri://error', (event) => setError(`No se pudo abrir el navegador: ${JSON.stringify(event.payload || event)}`));
+      view.once('tauri://created', () => { [300, 1000, 2500, 5000].forEach((delay) => { window.setTimeout(() => { if (inspectModeRef.current) void installInspector(true); }, delay); }); });
+      if (push) {
+        setHistory((current) => [...current.slice(0, historyIndex + 1), url]);
+        setHistoryIndex((current) => { historyIndexRef.current = current + 1; return current + 1; });
+      }
+      await syncWebview(view);
+    } catch (reason) { setError(String(reason)); }
+  };
+
+  useEffect(() => {
+    let stopListening: (() => void) | undefined;
+    let stopPageListening: (() => void) | undefined;
+    void listen<{ title: string; text: string; html: string }>('codeclub-browser-selection', (event) => { setSelection(event.payload); setInspectMode(false); window.dispatchEvent(new CustomEvent('codeclub:browser-reference', { detail: { title: event.payload.title || 'Elemento seleccionado', text: JSON.stringify({ text: event.payload.text, html: event.payload.html }) } })); }).then((unlisten) => { stopListening = unlisten; });
+    void listen<string>('codeclub-browser-page-loaded', () => { if (inspectModeRef.current) void installInspector(true); }).then((unlisten) => { stopPageListening = unlisten; });
+    void openPage(initialUrl, false);
+    const resizeObserver = new ResizeObserver(() => { void syncWebview(); });
+    if (hostRef.current) resizeObserver.observe(hostRef.current);
+    const handleResize = () => { void syncWebview(); };
+    window.addEventListener('resize', handleResize);
+    const navigationPoll = window.setInterval(async () => {
+      try {
+        const currentUrl = await invoke<string>('codeclub_browser_get_url');
+        if (currentUrl && currentUrl !== addressRef.current) {
+          addressRef.current = currentUrl;
+          setAddress(currentUrl);
+          setHistory((current) => {
+            const next = [...current.slice(0, historyIndexRef.current + 1), currentUrl];
+            historyIndexRef.current = next.length - 1;
+            setHistoryIndex(historyIndexRef.current);
+            return next;
+          });
+        }
+        if (inspectModeRef.current) void installInspector(true);
+      } catch { /* El WebView todavía puede estar navegando o cerrado. */ }
+    }, 700);
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', handleResize);
+      window.clearInterval(navigationPoll);
+      stopListening?.();
+      stopPageListening?.();
+      void webviewRef.current?.close();
+      webviewRef.current = null;
+    };
+  }, [initialUrl]);
+
+  const goBack = () => { if (historyIndex > 0) void openPage(history[historyIndex - 1], false).then(() => setHistoryIndex((current) => { historyIndexRef.current = current - 1; return current - 1; })); };
+  const goForward = () => { if (historyIndex < history.length - 1) void openPage(history[historyIndex + 1], false).then(() => setHistoryIndex((current) => { historyIndexRef.current = current + 1; return current + 1; })); };
+  const referencePage = () => window.dispatchEvent(new CustomEvent('codeclub:browser-reference', { detail: selection ? { title: selection.title || 'Elemento seleccionado', text: JSON.stringify({ text: selection.text, html: selection.html }) } : { title: address.replace(/^https?:\/\//, '').split('/')[0] || 'Página', text: `Página abierta: ${address}` } }));
+
+  return <div className="flex h-full min-h-0 flex-col bg-[#111111] text-[#d8d8d8]">
+    <div className="flex shrink-0 items-center gap-1 border-b border-[#202020] px-2 py-2">
+      <button type="button" onClick={goBack} disabled={historyIndex === 0} className="grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent text-[#666] hover:bg-[#1c1c1c] hover:text-[#eee] disabled:opacity-30" title="Atrás"><ArrowLeft size={13} /></button>
+      <button type="button" onClick={goForward} disabled={historyIndex >= history.length - 1} className="grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent text-[#666] hover:bg-[#1c1c1c] hover:text-[#eee] disabled:opacity-30" title="Adelante"><ArrowRight size={13} /></button>
+      <form className="flex min-w-0 flex-1" onSubmit={(event) => { event.preventDefault(); void openPage(address); }}><input value={address} onChange={(event) => setAddress(event.target.value)} className="min-w-0 flex-1 rounded-md border border-[#202020] bg-[#161616] px-2.5 py-1.5 text-[10px] text-[#cfcfcf] outline-none focus:border-[#2f2f2f]" aria-label="Dirección web" /></form>
+      <button type="button" onClick={() => void openPage(address, false)} className="grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent text-[#777] hover:bg-[#1c1c1c] hover:text-[#eee]" title="Cargar"><RefreshCw size={12} /></button>
+      <button type="button" onClick={() => { const active = !inspectMode; setInspectMode(active); void installInspector(active); }} className={`grid h-7 w-7 place-items-center rounded-md border-0 text-[#777] hover:bg-[#1c1c1c] hover:text-[#eee] ${inspectMode ? 'bg-[#242424] text-[#eee]' : 'bg-transparent'}`} title="Seleccionar elemento de la página"><ArrowUpRight size={13} /></button>
+      <button type="button" onClick={referencePage} className="grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent text-[#777] hover:bg-[#1c1c1c] hover:text-[#eee]" title="Referenciar página"><Globe size={12} /></button>
+    </div>
+    {selection && <div className="flex shrink-0 items-center gap-2 border-b border-[#202020] px-3 py-2 text-[10px] text-[#999]"><div className="min-w-0 flex-1"><div className="mb-1 text-[#8fbfff]">Elemento referenciado</div><div className="truncate rounded-md border border-[#4d9cff] bg-[#172131] px-2 py-1 text-[#d8e8ff]">{selection.text.slice(0, 120) || selection.title}</div></div><button type="button" onClick={() => setSelection(null)} className="text-[#666] hover:text-[#eee]" aria-label="Quitar selección">×</button></div>}
+    <div ref={hostRef} className="relative min-h-0 flex-1 overflow-hidden bg-[#202124]">
+      {error && <div className="absolute inset-x-0 top-0 z-10 bg-[#2b1e1e] p-2 text-[10px] text-[#d49a9a]">{error}</div>}
+    </div>
+  </div>;
+}
+
+function BrowserView({ initialUrl = 'https://www.google.com' }: { initialUrl?: string }) {
+  const [address, setAddress] = useState(initialUrl);
+  const [url, setUrl] = useState(initialUrl);
+  const [page, setPage] = useState('');
+  const [title, setTitle] = useState('Navegador');
+  const [selection, setSelection] = useState('');
+  const [selectedBox, setSelectedBox] = useState('');
+  const [inspectMode, setInspectMode] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const inspectModeRef = useRef(false);
+  const historyRef = useRef([initialUrl]);
+  const historyIndexRef = useRef(0);
+  const selectedElementRef = useRef<HTMLElement | null>(null);
+  useEffect(() => { inspectModeRef.current = inspectMode; }, [inspectMode]);
+
+  const loadPage = async (nextUrl = address, pushHistory = true) => {
+    const normalized = /^https?:\/\//i.test(nextUrl.trim()) ? nextUrl.trim() : `https://${nextUrl.trim()}`;
+    setAddress(normalized); setUrl(normalized); setLoading(true); setError(''); setSelection(''); setSelectedBox('');
+    try {
+      const response = await invoke<{ status: number; body: string }>('codeclub_http_fetch', { request: { url: normalized, method: 'GET', headers: [], body: null } });
+      if (response.status >= 400) throw new Error(`HTTP ${response.status}`);
+      const body = response.body || '';
+      setPage(body.includes('<html') || body.includes('<!doctype') ? body : `<pre style="white-space:pre-wrap;font:13px system-ui;color:#ddd">${body.replace(/[&<>]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[char] || char))}</pre>`);
+      setTitle(normalized.replace(/^https?:\/\//, '').split('/')[0] || 'Navegador');
+      if (pushHistory && historyRef.current[historyIndexRef.current] !== normalized) {
+        historyRef.current = [...historyRef.current.slice(0, historyIndexRef.current + 1), normalized];
+        historyIndexRef.current = historyRef.current.length - 1;
+      }
+    } catch (reason) { setPage(''); setError(`No se pudo cargar la página: ${String(reason)}`); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => {
+    void loadPage(initialUrl, false);
+  }, [initialUrl]);
+
+  const goBack = () => {
+    if (historyIndexRef.current <= 0) return;
+    historyIndexRef.current -= 1;
+    void loadPage(historyRef.current[historyIndexRef.current], false);
+  };
+  const goForward = () => {
+    if (historyIndexRef.current >= historyRef.current.length - 1) return;
+    historyIndexRef.current += 1;
+    void loadPage(historyRef.current[historyIndexRef.current], false);
+  };
+
+  const readSelection = () => {
+    try { setSelection(frameRef.current?.contentWindow?.getSelection?.().toString().trim() || ''); } catch { setSelection(''); }
+  };
+  const selectBox = (event: MouseEvent) => {
+    if (!inspectModeRef.current) return;
+    event.preventDefault();
+    try {
+      const target = event.target as HTMLElement;
+      selectedElementRef.current?.classList.remove('codeclub-selected-element');
+      if (selectedElementRef.current) selectedElementRef.current.style.removeProperty('outline');
+      target.classList.add('codeclub-selected-element');
+      target.style.setProperty('outline', '2px solid #4d9cff', 'important');
+      target.style.setProperty('outline-offset', '2px', 'important');
+      selectedElementRef.current = target;
+      const text = target.innerText?.trim() || target.textContent?.trim() || '';
+      const html = target.outerHTML || '';
+      setSelectedBox(JSON.stringify({ tag: target.tagName.toLowerCase(), text: text.slice(0, 4000), html: html.slice(0, 8000) }));
+      setSelection('');
+    } catch { setSelectedBox(''); }
+  };
+  const bindFrame = () => {
+    const document = frameRef.current?.contentDocument;
+    if (!document) return;
+    document.addEventListener('mouseup', readSelection);
+    document.addEventListener('click', selectBox);
+  };
+  const pushReference = (text: string, referenceTitle: string) => {
+    if (!text.trim()) return;
+    window.dispatchEvent(new CustomEvent('codeclub:browser-reference', { detail: { title: referenceTitle, text: text.trim() } }));
+    setInspectMode(false);
+  };
+
+  return <div className="flex h-full min-h-0 flex-col bg-[#111111] text-[#d8d8d8]">
+    <div className="flex shrink-0 items-center gap-1 border-b border-[#202020] px-2 py-2">
+      <button type="button" onClick={goBack} disabled={historyIndexRef.current === 0} className="grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent text-[#666] hover:bg-[#1c1c1c] hover:text-[#eee] disabled:opacity-30" title="Atrás"><ArrowLeft size={13} /></button>
+      <button type="button" onClick={goForward} disabled={historyIndexRef.current >= historyRef.current.length - 1} className="grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent text-[#666] hover:bg-[#1c1c1c] hover:text-[#eee] disabled:opacity-30" title="Adelante"><ArrowRight size={13} /></button>
+      <form className="flex min-w-0 flex-1" onSubmit={(event) => { event.preventDefault(); void loadPage(); }}><input value={address} onChange={(event) => setAddress(event.target.value)} className="min-w-0 flex-1 rounded-md border border-[#202020] bg-[#161616] px-2.5 py-1.5 text-[10px] text-[#cfcfcf] outline-none focus:border-[#2f2f2f]" aria-label="Dirección web" /></form>
+      <button type="button" onClick={() => void loadPage(address, false)} className="grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent text-[#777] hover:bg-[#1c1c1c] hover:text-[#eee]" title="Cargar"><RefreshCw size={12} /></button>
+      <button type="button" onClick={() => pushReference(selectedBox || selection || title, selectedBox ? 'Elemento seleccionado' : selection ? 'Selección' : title)} className="grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent text-[#777] hover:bg-[#1c1c1c] hover:text-[#eee]" title="Enviar referencia al chat"><ArrowUpRight size={13} /></button>
+      <button type="button" onClick={() => setInspectMode((active) => !active)} className={`grid h-7 w-7 place-items-center rounded-md border-0 text-[#777] hover:bg-[#1c1c1c] hover:text-[#eee] ${inspectMode ? 'bg-[#242424] text-[#eee]' : 'bg-transparent'}`} title="Seleccionar elemento de la página"><Globe size={12} /></button>
+    </div>
+    {(selection || selectedBox) && <div className="flex shrink-0 items-center gap-2 border-b border-[#202020] px-3 py-1.5 text-[10px] text-[#999]"><span className="min-w-0 flex-1 truncate">{selectedBox ? 'Elemento listo para referenciar' : 'Selección lista para referenciar'}</span><button type="button" onClick={() => pushReference(selectedBox || selection, selectedBox ? 'Elemento seleccionado' : 'Selección')} className="rounded-md border-0 bg-[#1c1c1c] px-2 py-1 text-[#ddd] hover:bg-[#242424]">Agregar</button><button type="button" onClick={() => { setSelection(''); setSelectedBox(''); }} className="text-[#666] hover:text-[#eee]" aria-label="Quitar selección"><X size={12} /></button></div>}
+    <div className="relative min-h-0 flex-1 overflow-hidden bg-[#101010]">
+      {loading && <div className="absolute inset-0 z-10 grid place-items-center bg-[#101010]/80 text-[11px] text-[#777]">Cargando…</div>}
+      {error ? <div className="p-4 text-[11px] text-[#a87878]">{error}</div> : page ? <iframe ref={frameRef} title={title} srcDoc={`<base href="${url}"><meta name="color-scheme" content="dark"><style>html{color-scheme:dark!important;background:#202124!important}body{background:#202124!important;color:#e8eaed!important;font:13px system-ui;padding:18px;line-height:1.55}a{color:#8ab4f8}input,textarea,button{color-scheme:dark}</style>${page}`} sandbox="allow-same-origin" onLoad={bindFrame} className={`h-full w-full border-0 bg-[#101010] ${inspectMode ? 'cursor-crosshair' : ''}`} /> : <div className="grid h-full place-items-center text-[11px] text-[#666]">Escribí una dirección para navegar</div>}
+    </div>
+  </div>;
+}
+
 function WhatsAppTerminalView() {
   const [logs, setLogs] = useState<string[]>(['$ whatsapp bridge --persistent']);
   const [refreshing, setRefreshing] = useState(false);
@@ -434,6 +654,7 @@ export default function RightSidebar() {
   const [activeProjectName, setActiveProjectName] = useState('');
   const [artifactState, setArtifactState] = useState<AgentState>({ plan: null, plans: [], todos: [] });
   const [businessState, setBusinessState] = useState<BusinessWorkspace | null>(null);
+  const [browserUrl, setBrowserUrl] = useState('https://www.google.com');
   const menuRef = useRef<HTMLDivElement>(null);
   const resizingRef = useRef(false);
 
@@ -473,6 +694,19 @@ export default function RightSidebar() {
     window.addEventListener('codeclub:artifacts-changed', handleArtifactsChanged);
     return () => { cancelled = true; window.removeEventListener('codeclub:artifacts-changed', handleArtifactsChanged); };
   }, [activeProjectPath, activeTab]);
+
+  useEffect(() => {
+    const handleBrowserNavigate = (event: Event) => {
+      const url = (event as CustomEvent<{ url?: string }>).detail?.url;
+      if (!url) return;
+      setBrowserUrl(url);
+      setTabs((current) => current.includes('browser') ? current : [...current, 'browser']);
+      setActiveTab('browser');
+      setMenuOpen(false);
+    };
+    window.addEventListener('codeclub:browser-navigate', handleBrowserNavigate);
+    return () => window.removeEventListener('codeclub:browser-navigate', handleBrowserNavigate);
+  }, []);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -554,6 +788,7 @@ export default function RightSidebar() {
         <div className="flex h-0 min-h-0 flex-1 flex-col overflow-hidden">
            {activeTab === 'files' && <FilesView projectPath={activeProjectPath} />}
            {activeTab === 'review' && <ReviewView projectPath={activeProjectPath} />}
+           {activeTab === 'browser' && <NativeBrowserView initialUrl={browserUrl} />}
            {activeTab === 'artifacts' && <ArtifactsView state={artifactState} business={businessState} projectPath={activeProjectPath} projectName={activeProjectName} hasProject={Boolean(activeProjectPath)} />}
           {tabs.includes('whatsapp') && <div className={activeTab === 'whatsapp' ? 'flex h-full min-h-0 flex-1' : 'hidden'}><WhatsAppTerminalView /></div>}
           {tabs.length === 0 && <div className="flex flex-1 items-center justify-center">
@@ -561,7 +796,7 @@ export default function RightSidebar() {
               Crear panel
             </button>
           </div>}
-           {activeTab && !['files', 'review', 'artifacts', 'whatsapp'].includes(activeTab) && <div className="flex flex-1 items-center justify-center p-3 text-xs text-[#777777]">Panel {labels[activeTab]}</div>}
+           {activeTab && !['files', 'review', 'browser', 'artifacts', 'whatsapp'].includes(activeTab) && <div className="flex flex-1 items-center justify-center p-3 text-xs text-[#777777]">Panel {labels[activeTab]}</div>}
         </div>
       </div>
     </aside>

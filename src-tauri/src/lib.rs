@@ -8,7 +8,7 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{webview::{PageLoadEvent, WebviewBuilder}, AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, State, WebviewUrl};
 
 #[derive(Serialize)]
 struct FileEntry {
@@ -66,6 +66,31 @@ struct HttpFetchResponse {
     status_text: String,
     headers: Vec<HttpHeader>,
     body: String,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BrowserSelection {
+    title: String,
+    text: String,
+    html: String,
+}
+
+#[tauri::command]
+fn codeclub_browser_create(app: AppHandle, url: String, x: f64, y: f64, width: f64, height: f64) -> Result<(), String> {
+    if let Some(existing) = app.get_webview("codeclub-browser") {
+        let _ = existing.close();
+    }
+    let window = app.get_window("main").ok_or_else(|| "No se encontró la ventana principal.".to_string())?;
+    let parsed_url = url.parse().map_err(|error| format!("URL inválida: {error}"))?;
+    let builder = WebviewBuilder::new("codeclub-browser", WebviewUrl::External(parsed_url))
+        .on_page_load(|webview, payload| {
+            if matches!(payload.event(), PageLoadEvent::Finished) {
+                let _ = webview.emit("codeclub-browser-page-loaded", payload.url().to_string());
+            }
+        });
+    window.add_child(builder, LogicalPosition::new(x, y), LogicalSize::new(width, height)).map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 #[derive(Default)]
@@ -936,6 +961,28 @@ async fn codeclub_http_fetch(request: HttpFetchRequest) -> Result<HttpFetchRespo
 }
 
 #[tauri::command]
+fn codeclub_browser_eval(app: AppHandle, script: String) -> Result<(), String> {
+    let webview = app
+        .get_webview("codeclub-browser")
+        .ok_or_else(|| "El WebView del navegador no está disponible.".to_string())?;
+    webview.eval(script).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn codeclub_browser_get_url(app: AppHandle) -> Result<String, String> {
+    let webview = app
+        .get_webview("codeclub-browser")
+        .ok_or_else(|| "El WebView del navegador no está disponible.".to_string())?;
+    webview.url().map(|url| url.to_string()).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn codeclub_browser_selection(app: AppHandle, selection: BrowserSelection) -> Result<(), String> {
+    app.emit("codeclub-browser-selection", selection)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn codeclub_whatsapp_start(app: AppHandle, state: State<'_, WhatsAppRegistry>) -> Result<(), String> {
     let mut registry = state.child.lock().map_err(|error| error.to_string())?;
     if let Some(child) = registry.as_mut() {
@@ -1058,6 +1105,10 @@ pub fn run() {
             codeclub_terminal_stop,
             codeclub_terminal_delete,
             codeclub_http_fetch,
+            codeclub_browser_create,
+            codeclub_browser_eval,
+            codeclub_browser_get_url,
+            codeclub_browser_selection,
             codeclub_whatsapp_start,
             codeclub_whatsapp_send,
             codeclub_whatsapp_get_messages,
