@@ -76,6 +76,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [pendingApprovals, setPendingApprovals] = useState([]);
   const toolStateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const generationIdRef = useRef(0);
   const [composerDocked, setComposerDocked] = useState(true);
   const composerDockedRef = useRef(false);
 
@@ -128,7 +129,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     running: "Ejecutando...",
     error: "Algo salió mal.",
   }[agentState] || "Listo cuando tú lo estés.";
-  const isAgentBusy = ['streaming', 'tool_call', 'approval', 'running'].includes(agentState);
+  const isAgentBusy = isStreaming;
   useEffect(() => { window.dispatchEvent(new CustomEvent('codeclub:agent-activity', { detail: { state: agentState, tool: activeToolName, agent: chatMode === 'business' ? 'Negocios' : 'Desarrollo' } })); }, [agentState, activeToolName, chatMode]);
   useEffect(() => {
     const handleArtifactReference = (event: Event) => {
@@ -857,7 +858,17 @@ const compactJson = (value) => {
       setArtifactReference(null);
     }
     const abortController = new AbortController();
+    const generationId = generationIdRef.current + 1;
+    generationIdRef.current = generationId;
     abortControllerRef.current = abortController;
+    const isCurrentGeneration = () => generationIdRef.current === generationId && abortControllerRef.current === abortController;
+    const guardedSetAgentState = (state: string) => {
+      if (isCurrentGeneration()) setAgentState(state);
+    };
+    const guardedRequestToolApproval = (options) => {
+      if (!isCurrentGeneration()) return Promise.resolve(false);
+      return requestToolApproval(options);
+    };
     let chat = activeChatRef.current;
     if (!chat && activeProject?.projectPath) {
       const title = content.trim().split(/\r?\n/)[0].slice(0, 60) || 'Nuevo chat';
@@ -958,13 +969,13 @@ const compactJson = (value) => {
       const developmentTools = createTools({
         projectPath: toolProjectPath,
         recordToolEvent,
-        setAgentState,
-        requestToolApproval,
+        setAgentState: guardedSetAgentState,
+        requestToolApproval: guardedRequestToolApproval,
         provider,
         modelId: currentModel.id,
       });
       const tools = chatMode === 'business'
-        ? createBusinessTools({ recordToolEvent, setAgentState, indexedProjects, projectPath: toolProjectPath, provider, modelId: currentModel.id })
+        ? createBusinessTools({ recordToolEvent, setAgentState: guardedSetAgentState, indexedProjects, projectPath: toolProjectPath, provider, modelId: currentModel.id })
         : developmentTools;
 
       const system = chatMode === 'business' ? [
@@ -1007,21 +1018,26 @@ const compactJson = (value) => {
           signal: abortController.signal,
           callbacks: {
             onTextDelta: (content) => {
+              if (!isCurrentGeneration()) return;
               assistantContent = content;
               updateAssistantMessage();
             },
             onReasoningDelta: (content) => {
+              if (!isCurrentGeneration()) return;
               assistantReasoning = content;
               updateAssistantMessage();
             },
             onToolCall: () => {
+              if (!isCurrentGeneration()) return;
               if (toolStateTimerRef.current) clearTimeout(toolStateTimerRef.current);
               setAgentState('tool_call');
             },
             onToolResult: () => {
+              if (!isCurrentGeneration()) return;
               if (toolStateTimerRef.current) clearTimeout(toolStateTimerRef.current);
               toolStateTimerRef.current = setTimeout(() => {
                 toolStateTimerRef.current = null;
+                if (!isCurrentGeneration() || abortController.signal.aborted) return;
                 setAgentState('streaming');
               }, 2000);
             },
@@ -1043,8 +1059,10 @@ const compactJson = (value) => {
                 durationMs: usage.durationMs,
                 status: 'completed',
               };
-              latestUsage = record;
-              await appendGenerationUsage(record);
+              if (isCurrentGeneration()) latestUsage = record;
+              void appendGenerationUsage(record).catch((error) => {
+                console.error('No se pudo guardar el uso de tokens:', error);
+              });
             },
           },
         });
@@ -1056,15 +1074,25 @@ const compactJson = (value) => {
       }
       if (!assistantContent?.trim()) throw new Error('El modelo no devolvió una respuesta después de reintentar.');
 
-      if (abortController.signal.aborted) return;
+      if (!isCurrentGeneration() || abortController.signal.aborted) return;
       const assistantMessage = { role: 'assistant', content: assistantContent, tools: assistantTools, agentName: chatMode === 'business' ? 'Negocios' : 'Desarrollo', meta: { provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt, usage: latestUsage ? { inputTokens: latestUsage.inputTokens, outputTokens: latestUsage.outputTokens, totalTokens: latestUsage.totalTokens, reasoningTokens: latestUsage.reasoningTokens } : null } };
       setMessages([...newMessages, assistantMessage]);
-      if (replaceHistory) {
-        await writeChatJsonl([...newMessages, assistantMessage]);
-      } else {
-        await appendToJsonl(assistantMessage);
+      if (toolStateTimerRef.current) {
+        clearTimeout(toolStateTimerRef.current);
+        toolStateTimerRef.current = null;
       }
+      setIsStreaming(false);
+      setActiveToolName('');
+      setAgentState('idle');
+      const persistencePromise = replaceHistory
+        ? writeChatJsonl([...newMessages, assistantMessage])
+        : appendToJsonl(assistantMessage);
+      const persistenceTimeout = new Promise<void>((resolve) => window.setTimeout(resolve, 8_000));
+      void Promise.race([persistencePromise, persistenceTimeout]).catch((error) => {
+        console.error('No se pudo guardar el historial del chat:', error);
+      });
     } catch (error) {
+      if (!isCurrentGeneration()) return;
       if (!abortController.signal.aborted) {
         console.error(formatDebugError(error));
         setAgentState('error');
@@ -1077,6 +1105,11 @@ const compactJson = (value) => {
         return updated;
       });
     } finally {
+      if (!isCurrentGeneration()) return;
+      if (toolStateTimerRef.current) {
+        clearTimeout(toolStateTimerRef.current);
+        toolStateTimerRef.current = null;
+      }
       if (abortControllerRef.current === abortController) abortControllerRef.current = null;
       setIsStreaming(false);
       setActiveToolName('');
@@ -1087,11 +1120,36 @@ const compactJson = (value) => {
   const cancelGeneration = () => {
     const controller = abortControllerRef.current;
     if (!controller) return;
+    generationIdRef.current += 1;
+    abortControllerRef.current = null;
     controller.abort();
+    if (toolStateTimerRef.current) {
+      clearTimeout(toolStateTimerRef.current);
+      toolStateTimerRef.current = null;
+    }
+    approvalResolversRef.current.forEach((resolve) => resolve(false));
+    approvalResolversRef.current.clear();
+    setPendingApprovals([]);
     setIsStreaming(false);
     setActiveToolName('');
     setAgentState('idle');
   };
+
+  useEffect(() => {
+    if (!isStreaming) return undefined;
+    const watchdog = window.setTimeout(() => {
+      const controller = abortControllerRef.current;
+      controller?.abort();
+      approvalResolversRef.current.forEach((resolve) => resolve(false));
+      approvalResolversRef.current.clear();
+      setPendingApprovals([]);
+      setIsStreaming(false);
+      setActiveToolName('');
+      setAgentState('idle');
+      console.warn('La generación fue liberada por el watchdog del chat.');
+    }, 70_000);
+    return () => window.clearTimeout(watchdog);
+  }, [isStreaming]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -1137,6 +1195,7 @@ const compactJson = (value) => {
       const action = (event as CustomEvent).detail?.action;
       if (isAgentBusy) return;
       const prompts: Record<string, string> = {
+        terminal: '[TESTING] Usá obligatoriamente la tool terminal ahora. Creá un proceso persistente en background para poder observarlo visualmente: shell powershell, nombre "Testing background", comando "Write-Output \'Codeclub terminal testing\'; Start-Sleep -Seconds 45". No uses runCommand, no simules la ejecución en Markdown y confirmá el ID, shell, estado y que quedó en background.',
         'ask-user': '[TESTING] Usá la herramienta askUser ahora. Preguntame qué estilo de tarjetas preferís y ofrecé exactamente estas opciones: Minimalista, Compacto y Detallado.',
         subagents: '[TESTING] Delegá esta tarea a un subagente especialista y mostrámelo trabajando: revisá la estructura del proyecto y devolvé un resumen breve.',
         approval: '[TESTING] Intentá ejecutar una acción que requiera aprobación humana antes de continuar. Mostrá la tarjeta de aprobación.',

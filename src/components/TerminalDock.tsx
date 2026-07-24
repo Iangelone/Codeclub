@@ -132,7 +132,10 @@ export default function TerminalDock() {
     });
   }, []);
 
-  const visibleTerminals = terminals.filter((terminal) => !terminal.is_agent && (terminal.projectPath || null) === activeProjectPath);
+  const visibleTerminals = terminals.filter((terminal) => {
+    if (terminal.is_agent) return !activeProjectPath || terminal.projectPath === activeProjectPath;
+    return (terminal.projectPath || null) === activeProjectPath;
+  });
   const activeTerminal = visibleTerminals.find((terminal) => terminal.id === activeId) || null;
 
   const resolveActiveProjectPath = () => {
@@ -404,7 +407,7 @@ export default function TerminalDock() {
       const existing = await invoke<TerminalInfo[]>('codeclub_terminal_list');
       if (existing.length > 0) {
         setTerminals(existing);
-        setActiveId(existing.find((terminal) => !terminal.is_agent)?.id || null);
+        setActiveId(existing.find((terminal) => terminal.is_agent && (!activeProjectPathRef.current || terminal.projectPath === activeProjectPathRef.current))?.id || existing.find((terminal) => !terminal.is_agent)?.id || null);
         restoredRef.current = true;
       }
       loadedRef.current = true;
@@ -412,7 +415,6 @@ export default function TerminalDock() {
       cleanups = await Promise.all([
         listen<TerminalInfo>('codeclub-terminal-created', (event) => {
           setTerminals((items) => upsertTerminal(items, event.payload));
-          if (event.payload.is_agent) return;
           setActiveId(event.payload.id);
           setIsOpen(true);
         }),

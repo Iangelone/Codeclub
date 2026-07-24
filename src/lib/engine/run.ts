@@ -1,25 +1,18 @@
 import { streamText, stepCountIs } from 'ai';
 import type { EngineCallbacks } from './types';
 
-// Data from https://models.dev/api.json — live catalog fetched at runtime.
-// Providers and models are documented in src/lib/ai-catalog.ts.
-// The engine uses AI SDK 7's streamText for multi-step agent execution.
-
-export async function runStream({
-  model,
-  system,
-  messages,
-  tools,
-  callbacks,
-  signal,
-}: {
+type RunStreamArgs = {
   model: any;
   system: string;
   messages: { role: string; content: string }[];
   tools: Record<string, any>;
   callbacks: EngineCallbacks;
   signal?: AbortSignal;
-}): Promise<string> {
+};
+
+const GENERATION_TIMEOUT_MS = 60_000;
+
+async function runStreamInternal({ model, system, messages, tools, callbacks, signal }: RunStreamArgs): Promise<string> {
   let content = '';
   let reasoning = '';
   const startedAt = Date.now();
@@ -38,54 +31,31 @@ export async function runStream({
       chunkMs: 15_000,
       toolMs: 30_000,
     },
+    onChunk: ({ chunk }: any) => {
+      if (chunk.type === 'reasoning-delta') {
+        reasoning += chunk.text ?? '';
+        callbacks.onReasoningDelta?.(reasoning);
+      } else if (chunk.type === 'tool-call' || chunk.type === 'tool-input-start') {
+        callbacks.onToolCall?.();
+      } else if (chunk.type === 'tool-result') {
+        callbacks.onToolResult?.();
+      } else if (chunk.type === 'error') {
+        callbacks.onError?.(chunk.error);
+      }
+    },
   });
 
-  for await (const part of result.fullStream) {
+  // textStream es la ruta simple del AI SDK para una UI incremental.
+  // También consume internamente los pasos de tools hasta cerrar el stream.
+  for await (const delta of result.textStream) {
     if (signal?.aborted) {
       const error = new Error('Generación cancelada por el usuario.');
       error.name = 'AbortError';
       throw error;
     }
-    const streamPart = part as any;
-
-    if (streamPart.type === 'finish' || (streamPart.type === 'finish-step' && !['tool-calls', 'tool_call'].includes(streamPart.finishReason))) {
-      break;
-    }
-
-    if (streamPart.type === 'reasoning-delta') {
-      const delta = streamPart.text ?? streamPart.delta ?? '';
-      if (delta) {
-        reasoning += delta;
-        callbacks.onReasoningDelta?.(reasoning);
-      }
-      continue;
-    }
-
-    if (streamPart.type === 'text-delta') {
-      const delta = streamPart.text ?? streamPart.delta ?? streamPart.textDelta ?? '';
-      if (delta) {
-        content += delta;
-        callbacks.onTextDelta(content);
-      }
-      continue;
-    }
-
-    if (part.type === 'tool-call' || part.type === 'tool-input-start') {
-      callbacks.onToolCall?.();
-      continue;
-    }
-
-    if (part.type === 'tool-result') {
-      callbacks.onToolResult?.();
-      continue;
-    }
-
-    if (part.type === 'error') {
-      if (callbacks.onError) {
-        callbacks.onError(part.error);
-      } else {
-        throw part.error;
-      }
+    if (delta) {
+      content += delta;
+      callbacks.onTextDelta(content);
     }
   }
 
@@ -106,4 +76,39 @@ export async function runStream({
   });
 
   return content;
+}
+
+export async function runStream(args: RunStreamArgs): Promise<string> {
+  const controller = new AbortController();
+  let timedOut = false;
+  let timeoutId: number | undefined;
+  const forwardAbort = () => controller.abort();
+  args.signal?.addEventListener('abort', forwardAbort, { once: true });
+
+  const streamPromise = runStreamInternal({ ...args, signal: controller.signal });
+  const timeoutPromise = new Promise<string>((_, reject) => {
+    timeoutId = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+      const error = new Error('La generación superó el límite de 60 segundos.');
+      error.name = 'TimeoutError';
+      reject(error);
+    }, GENERATION_TIMEOUT_MS);
+  });
+
+  try {
+    return await Promise.race([streamPromise, timeoutPromise]);
+  } catch (error) {
+    if (timedOut) {
+      const timeoutError = new Error('La generación superó el límite de 60 segundos.');
+      timeoutError.name = 'TimeoutError';
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+    args.signal?.removeEventListener('abort', forwardAbort);
+    controller.abort();
+    void streamPromise.catch(() => undefined);
+  }
 }
