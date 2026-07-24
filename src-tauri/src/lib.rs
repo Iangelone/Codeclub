@@ -89,8 +89,38 @@ fn codeclub_browser_create(app: AppHandle, url: String, x: f64, y: f64, width: f
                 let _ = webview.emit("codeclub-browser-page-loaded", payload.url().to_string());
             }
         });
-    window.add_child(builder, LogicalPosition::new(x, y), LogicalSize::new(width, height)).map_err(|error| error.to_string())?;
+    let webview = window
+        .add_child(builder, LogicalPosition::new(x, y), LogicalSize::new(width, height))
+        .map_err(|error| error.to_string())?;
+    webview.show().map_err(|error| error.to_string())?;
     Ok(())
+}
+
+#[tauri::command]
+fn codeclub_browser_close(app: AppHandle) -> Result<(), String> {
+    if let Some(webview) = app.get_webview("codeclub-browser") {
+        webview.close().map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn codeclub_browser_set_bounds(
+    app: AppHandle,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    let webview = app
+        .get_webview("codeclub-browser")
+        .ok_or_else(|| "El WebView del navegador no está disponible.".to_string())?;
+    webview
+        .set_position(LogicalPosition::new(x, y))
+        .map_err(|error| error.to_string())?;
+    webview
+        .set_size(LogicalSize::new(width, height))
+        .map_err(|error| error.to_string())
 }
 
 #[derive(Default)]
@@ -1106,6 +1136,8 @@ pub fn run() {
             codeclub_terminal_delete,
             codeclub_http_fetch,
             codeclub_browser_create,
+            codeclub_browser_close,
+            codeclub_browser_set_bounds,
             codeclub_browser_eval,
             codeclub_browser_get_url,
             codeclub_browser_selection,

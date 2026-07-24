@@ -285,9 +285,10 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
   const historyIndexRef = useRef(0);
   useEffect(() => { inspectModeRef.current = inspectMode; }, [inspectMode]);
 
-  const installInspector = async (active: boolean) => {
+  const installInspector = async (active: boolean, view = webviewRef.current) => {
     const script = `(function(){window.__codeclubInspect=${active ? 'true' : 'false'};var cursor='url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\'%3E%3Ccircle cx=\'12\' cy=\'12\' r=\'8\' fill=\'%234d9cff\' stroke=\'white\' stroke-width=\'2\'/%3E%3C/svg%3E") 12 12,crosshair';document.documentElement.style.cursor=window.__codeclubInspect?cursor:'';if(window.__codeclubInspectorInstalled)return;window.__codeclubInspectorInstalled=true;var hovered=null;document.addEventListener('mouseover',function(e){if(!window.__codeclubInspect)return;var el=e.target;if(!el||!el.style)return;if(hovered&&hovered!==el&&!hovered.hasAttribute('data-codeclub-selected')){hovered.style.removeProperty('outline');hovered.style.removeProperty('outline-offset')};hovered=el;el.style.setProperty('outline','2px solid #4d9cff','important');el.style.setProperty('outline-offset','2px','important')},true);document.addEventListener('mouseout',function(e){if(!window.__codeclubInspect)return;var el=e.target;if(el&&el!==hovered&&!el.hasAttribute('data-codeclub-selected')){el.style.removeProperty('outline');el.style.removeProperty('outline-offset')}},true);var block=function(e){if(window.__codeclubInspect){e.preventDefault();e.stopPropagation()}};document.addEventListener('pointerdown',block,true);document.addEventListener('mousedown',block,true);document.addEventListener('submit',block,true);document.addEventListener('click',function(e){if(!window.__codeclubInspect)return;e.preventDefault();e.stopPropagation();var el=e.target;if(!el||!el.outerHTML)return;document.querySelectorAll('[data-codeclub-selected]').forEach(function(node){node.removeAttribute('data-codeclub-selected');node.style.removeProperty('outline');node.style.removeProperty('outline-offset')});el.setAttribute('data-codeclub-selected','true');el.style.setProperty('outline','2px solid #4d9cff','important');el.style.setProperty('outline-offset','2px','important');var payload={title:document.title||location.hostname,text:(el.innerText||el.textContent||'').trim().slice(0,4000),html:el.outerHTML.slice(0,8000)};try{window.__TAURI_INTERNALS__.invoke('codeclub_browser_selection',payload)}catch(_){}} ,true)})();`;
-    try { await invoke('codeclub_browser_eval', { script }); } catch (reason) { setError(String(reason)); }
+    if (!view) return;
+    try { await view.eval(script); } catch (reason) { setError(String(reason)); }
   };
 
   const syncWebview = async (view = webviewRef.current) => {
@@ -295,8 +296,12 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
     if (!host || !view) return;
     const rect = host.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
-    await view.setPosition(new LogicalPosition(rect.left, rect.top));
-    await view.setSize(new LogicalSize(rect.width, rect.height));
+    try {
+      await view.setPosition(new LogicalPosition(rect.left, rect.top));
+      await view.setSize(new LogicalSize(rect.width, rect.height));
+    } catch {
+      // El WebView puede no existir durante el cambio de página.
+    }
   };
 
   const openPage = async (rawUrl: string, push = true) => {
@@ -305,7 +310,7 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
     const requestId = ++requestRef.current;
     setAddress(url); addressRef.current = url; setError(''); setSelection(null); setInspectMode(false);
     try {
-      await webviewRef.current?.close();
+      await webviewRef.current?.close().catch(() => undefined);
       if (requestId !== requestRef.current) return;
       const host = hostRef.current;
       const rect = host?.getBoundingClientRect();
@@ -323,7 +328,7 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
       });
       webviewRef.current = view;
       view.once('tauri://error', (event) => setError(`No se pudo abrir el navegador: ${JSON.stringify(event.payload || event)}`));
-      view.once('tauri://created', () => { [300, 1000, 2500, 5000].forEach((delay) => { window.setTimeout(() => { if (inspectModeRef.current) void installInspector(true); }, delay); }); });
+      view.once('tauri://created', () => { [300, 1000, 2500, 5000].forEach((delay) => { window.setTimeout(() => { if (inspectModeRef.current) void installInspector(true, view); }, delay); }); });
       if (push) {
         setHistory((current) => [...current.slice(0, historyIndex + 1), url]);
         setHistoryIndex((current) => { historyIndexRef.current = current + 1; return current + 1; });
@@ -344,7 +349,9 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
     window.addEventListener('resize', handleResize);
     const navigationPoll = window.setInterval(async () => {
       try {
-        const currentUrl = await invoke<string>('codeclub_browser_get_url');
+        const view = webviewRef.current;
+        if (!view) return;
+        const currentUrl = (await view.url()).toString();
         if (currentUrl && currentUrl !== addressRef.current) {
           addressRef.current = currentUrl;
           setAddress(currentUrl);
@@ -355,7 +362,7 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
             return next;
           });
         }
-        if (inspectModeRef.current) void installInspector(true);
+        if (inspectModeRef.current) void installInspector(true, view);
       } catch { /* El WebView todavía puede estar navegando o cerrado. */ }
     }, 700);
     return () => {
@@ -700,6 +707,7 @@ export default function RightSidebar() {
       const url = (event as CustomEvent<{ url?: string }>).detail?.url;
       if (!url) return;
       setBrowserUrl(url);
+      window.dispatchEvent(new CustomEvent('codeclub:open-right-panel'));
       setTabs((current) => current.includes('browser') ? current : [...current, 'browser']);
       setActiveTab('browser');
       setMenuOpen(false);
@@ -743,6 +751,7 @@ export default function RightSidebar() {
   };
 
   const createTab = (tab: RightTab) => {
+    window.dispatchEvent(new CustomEvent('codeclub:open-right-panel'));
     setTabs((current) => current.includes(tab) ? current : [...current, tab]);
     setActiveTab(tab);
     setMenuOpen(false);
