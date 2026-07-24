@@ -995,6 +995,10 @@ export default function RightSidebar() {
   }, [menuOpen]);
 
   useEffect(() => {
+    void invoke('codeclub_browser_set_visible', { visible: !menuOpen }).catch(() => undefined);
+  }, [menuOpen]);
+
+  useEffect(() => {
     const handleProject = (event: Event) => {
       const detail = (event as CustomEvent<{ projectPath?: string; projectName?: string }>).detail;
       const projectPath = detail?.projectPath || '';

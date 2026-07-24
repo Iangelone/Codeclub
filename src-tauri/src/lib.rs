@@ -119,6 +119,18 @@ fn codeclub_browser_close(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn codeclub_browser_set_visible(app: AppHandle, visible: bool) -> Result<(), String> {
+    if let Ok(webview) = codeclub_browser_webview(&app) {
+        if visible {
+            webview.show().map_err(|error| error.to_string())?;
+        } else {
+            webview.hide().map_err(|error| error.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn codeclub_browser_set_bounds(
     app: AppHandle,
     x: f64,
@@ -1147,6 +1159,7 @@ pub fn run() {
             codeclub_http_fetch,
             codeclub_browser_create,
             codeclub_browser_close,
+            codeclub_browser_set_visible,
             codeclub_browser_set_bounds,
             codeclub_browser_eval,
             codeclub_browser_get_url,
