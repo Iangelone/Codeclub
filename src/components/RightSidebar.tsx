@@ -41,9 +41,7 @@ const browserInspectorScript = (active: boolean) => {
         style.textContent =
           'html[' + activeAttribute + '="true"], html[' + activeAttribute + '="true"] * { cursor: ${cursor} !important; }' +
           'html[' + activeAttribute + '="true"] body *:hover:not(:has(*:hover)):not(#' + overlayId + '):not(#' + overlayId + ' *) { outline: 2px solid #1687ff !important; outline-offset: -2px !important; box-shadow: inset 0 0 0 9999px rgba(22, 135, 255, .10) !important; }' +
-          '#' + overlayId + ' { position: fixed; display: none; pointer-events: none; box-sizing: border-box; border: 2px solid #1687ff; background: rgba(22, 135, 255, .10); z-index: 2147483647; }' +
-          '#' + overlayId + ' > span { position: absolute; left: 50%; bottom: -13px; width: 24px; height: 24px; transform: translateX(-50%); border: 2px solid white; border-radius: 50%; background: #1687ff; box-shadow: 0 2px 8px rgba(0,0,0,.35); }' +
-          '#' + overlayId + ' > span::after { content: ""; position: absolute; left: 3px; bottom: -3px; width: 7px; height: 7px; border-left: 2px solid white; border-bottom: 2px solid white; border-radius: 0 0 0 5px; background: #1687ff; transform: rotate(-18deg); }';
+          '#' + overlayId + ' { position: fixed; display: none; pointer-events: none; box-sizing: border-box; border: 2px solid #1687ff; background: rgba(22, 135, 255, .10); z-index: 2147483647; }';
         (document.head || root).appendChild(style);
       }
     };
@@ -54,7 +52,6 @@ const browserInspectorScript = (active: boolean) => {
         overlay = document.createElement('div');
         overlay.id = overlayId;
         overlay.setAttribute('aria-hidden', 'true');
-        overlay.innerHTML = '<span></span>';
         (document.body || root).appendChild(overlay);
       }
       return overlay;
