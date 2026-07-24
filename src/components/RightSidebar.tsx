@@ -661,7 +661,6 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
       }} aria-pressed={inspectMode} className={`grid h-7 w-7 place-items-center rounded-md border-0 text-[#777] hover:bg-[#1c1c1c] hover:text-[#eee] ${inspectMode ? 'bg-[#242424] text-[#eee]' : 'bg-transparent'}`} title="Seleccionar elemento de la página"><ArrowUpRight size={13} /></button>
       <button type="button" onClick={referencePage} className="grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent text-[#777] hover:bg-[#1c1c1c] hover:text-[#eee]" title="Referenciar página"><Globe size={12} /></button>
     </div>
-    {selection && <div className="flex shrink-0 items-center gap-2 border-b border-[#202020] px-3 py-2 text-[10px] text-[#999]"><div className="min-w-0 flex-1"><div className="mb-1 text-[#8fbfff]">Elemento referenciado</div><div className="truncate rounded-md border border-[#4d9cff] bg-[#172131] px-2 py-1 text-[#d8e8ff]">{selection.text.slice(0, 120) || selection.title}</div></div><button type="button" onClick={() => setSelection(null)} className="text-[#666] hover:text-[#eee]" aria-label="Quitar selección">×</button></div>}
     <div ref={hostRef} className="relative min-h-0 flex-1 overflow-hidden bg-[#202124]">
       {error && <div className="absolute inset-x-0 top-0 z-10 bg-[#2b1e1e] p-2 text-[10px] text-[#d49a9a]">{error}</div>}
     </div>
