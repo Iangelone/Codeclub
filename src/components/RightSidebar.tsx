@@ -11,6 +11,186 @@ import { readBusinessWorkspace, writeBusinessWorkspace, type BusinessWorkspace }
 
 type FileEntry = { path: string; kind: 'file' | 'directory' };
 type FileNode = FileEntry & { name: string; children: FileNode[] };
+type BrowserDomSelection = {
+  title: string;
+  text: string;
+  html: string;
+  url: string;
+  selector: string;
+  tag: string;
+};
+
+const browserSelectionHash = '#__codeclub_selection=';
+
+const browserInspectorScript = (active: boolean) => {
+  const cursor = `url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2228%22 height=%2228%22 viewBox=%220 0 28 28%22%3E%3Cpath d=%22M14 3C7.9 3 3 7.3 3 12.7c0 3.1 1.6 5.8 4.1 7.6L6 25l5.2-2.2c.9.2 1.8.3 2.8.3 6.1 0 11-4.6 11-10.4S20.1 3 14 3Z%22 fill=%22%231687ff%22 stroke=%22white%22 stroke-width=%222%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E") 9 9, crosshair`;
+  return `(() => {
+    const active = ${active ? 'true' : 'false'};
+    const root = document.documentElement;
+    const overlayId = '__codeclub-dom-overlay';
+    const styleId = '__codeclub-dom-style';
+    const activeAttribute = 'data-codeclub-inspect';
+    let hovered = null;
+    let selected = null;
+
+    const ensureStyle = () => {
+      let style = document.getElementById(styleId);
+      if (!style) {
+        style = document.createElement('style');
+        style.id = styleId;
+        style.textContent =
+          'html[' + activeAttribute + '="true"], html[' + activeAttribute + '="true"] * { cursor: ${cursor} !important; }' +
+          'html[' + activeAttribute + '="true"] body *:hover:not(:has(*:hover)):not(#' + overlayId + '):not(#' + overlayId + ' *) { outline: 2px solid #1687ff !important; outline-offset: -2px !important; box-shadow: inset 0 0 0 9999px rgba(22, 135, 255, .10) !important; }' +
+          '#' + overlayId + ' { position: fixed; display: none; pointer-events: none; box-sizing: border-box; border: 2px solid #1687ff; background: rgba(22, 135, 255, .10); z-index: 2147483647; }' +
+          '#' + overlayId + ' > span { position: absolute; left: 50%; bottom: -13px; width: 24px; height: 24px; transform: translateX(-50%); border: 2px solid white; border-radius: 50%; background: #1687ff; box-shadow: 0 2px 8px rgba(0,0,0,.35); }' +
+          '#' + overlayId + ' > span::after { content: ""; position: absolute; left: 3px; bottom: -3px; width: 7px; height: 7px; border-left: 2px solid white; border-bottom: 2px solid white; border-radius: 0 0 0 5px; background: #1687ff; transform: rotate(-18deg); }';
+        (document.head || root).appendChild(style);
+      }
+    };
+
+    const ensureOverlay = () => {
+      let overlay = document.getElementById(overlayId);
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = overlayId;
+        overlay.setAttribute('aria-hidden', 'true');
+        overlay.innerHTML = '<span></span>';
+        (document.body || root).appendChild(overlay);
+      }
+      return overlay;
+    };
+
+    const placeOverlay = (element) => {
+      if (!(element instanceof Element)) return;
+      const rect = element.getBoundingClientRect();
+      const overlay = ensureOverlay();
+      if (rect.width < 1 || rect.height < 1) {
+        overlay.style.display = 'none';
+        return;
+      }
+      overlay.style.display = 'block';
+      overlay.style.left = Math.max(0, rect.left) + 'px';
+      overlay.style.top = Math.max(0, rect.top) + 'px';
+      overlay.style.width = Math.min(rect.width, innerWidth - Math.max(0, rect.left)) + 'px';
+      overlay.style.height = Math.min(rect.height, innerHeight - Math.max(0, rect.top)) + 'px';
+    };
+
+    const setActive = (next) => {
+      window.__codeclubInspect = next;
+      if (next) {
+        selected = null;
+        ensureStyle();
+        root.setAttribute(activeAttribute, 'true');
+        ensureOverlay().style.display = 'none';
+      } else {
+        root.removeAttribute(activeAttribute);
+        if (!selected) ensureOverlay().style.display = 'none';
+      }
+    };
+
+    window.__codeclubSetInspectMode = setActive;
+    setActive(active);
+    if (window.__codeclubInspectorInstalled) return;
+    window.__codeclubInspectorInstalled = true;
+
+    const eventElement = (event) => {
+      const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
+      const target = path[0] || event.target;
+      return target instanceof Element && !target.closest('#' + overlayId) ? target : null;
+    };
+
+    const selectorFor = (element) => {
+      const parts = [];
+      let node = element;
+      while (node && node.nodeType === 1 && parts.length < 6) {
+        let part = node.tagName.toLowerCase();
+        if (node.id) {
+          const escaped = window.CSS?.escape ? CSS.escape(node.id) : node.id.replace(/[^a-zA-Z0-9_-]/g, '\\$&');
+          parts.unshift(part + '#' + escaped);
+          break;
+        }
+        const parent = node.parentElement;
+        if (parent) {
+          const siblings = Array.from(parent.children).filter((child) => child.tagName === node.tagName);
+          if (siblings.length > 1) part += ':nth-of-type(' + (siblings.indexOf(node) + 1) + ')';
+        }
+        parts.unshift(part);
+        node = parent;
+      }
+      return parts.join(' > ');
+    };
+
+    const elementTitle = (element) => {
+      const text = (element.getAttribute('aria-label') || element.getAttribute('title') || element.innerText || element.textContent || '').trim().replace(/\\s+/g, ' ');
+      return (text || element.id || element.tagName.toLowerCase()).slice(0, 90);
+    };
+
+    const sendSelection = (payload) => {
+      const fallback = () => {
+        const encoded = encodeURIComponent(JSON.stringify(payload));
+        history.replaceState(history.state, '', location.pathname + location.search + '${browserSelectionHash}' + encoded);
+      };
+      try {
+        const invoke = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke;
+        if (typeof invoke !== 'function') {
+          fallback();
+          return;
+        }
+        Promise.resolve(invoke('codeclub_browser_selection', { selection: payload })).catch(fallback);
+      } catch (_) {
+        fallback();
+      }
+    };
+
+    const previewElement = (event) => {
+      if (!window.__codeclubInspect) return;
+      const element = eventElement(event);
+      if (!element) return;
+      hovered = element;
+      placeOverlay(element);
+    };
+    ['pointerover', 'pointermove', 'mouseover', 'mousemove'].forEach((name) => {
+      document.addEventListener(name, previewElement, true);
+    });
+
+    const block = (event) => {
+      if (!window.__codeclubInspect) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'contextmenu', 'dblclick', 'submit'].forEach((name) => {
+      document.addEventListener(name, block, true);
+    });
+
+    document.addEventListener('click', (event) => {
+      if (!window.__codeclubInspect) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const element = eventElement(event);
+      if (!element) return;
+      selected = element;
+      hovered = element;
+      placeOverlay(element);
+      const payload = {
+        title: elementTitle(element),
+        text: (element.innerText || element.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 3000),
+        html: element.outerHTML.slice(0, 6000),
+        url: location.href,
+        selector: selectorFor(element),
+        tag: element.tagName.toLowerCase()
+      };
+      setActive(false);
+      sendSelection(payload);
+    }, true);
+
+    const refreshOverlay = () => {
+      if (window.__codeclubInspect && hovered) placeOverlay(hovered);
+      else if (selected) placeOverlay(selected);
+    };
+    addEventListener('scroll', refreshOverlay, true);
+    addEventListener('resize', refreshOverlay);
+  })();`;
+};
 
 const buildTree = (entries: FileEntry[]) => {
   const roots: FileNode[] = [];
@@ -276,19 +456,45 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
   const [historyIndex, setHistoryIndex] = useState(0);
   const [error, setError] = useState('');
   const [inspectMode, setInspectMode] = useState(false);
-  const [selection, setSelection] = useState<{ title: string; text: string; html: string } | null>(null);
+  const [selection, setSelection] = useState<BrowserDomSelection | null>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const webviewRef = useRef<Webview | null>(null);
   const requestRef = useRef(0);
   const inspectModeRef = useRef(false);
   const addressRef = useRef(initialUrl);
   const historyIndexRef = useRef(0);
+  const selectionKeyRef = useRef('');
   useEffect(() => { inspectModeRef.current = inspectMode; }, [inspectMode]);
 
   const installInspector = async (active: boolean, view = webviewRef.current) => {
-    const script = `(function(){window.__codeclubInspect=${active ? 'true' : 'false'};var cursor='url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\'%3E%3Ccircle cx=\'12\' cy=\'12\' r=\'8\' fill=\'%234d9cff\' stroke=\'white\' stroke-width=\'2\'/%3E%3C/svg%3E") 12 12,crosshair';document.documentElement.style.cursor=window.__codeclubInspect?cursor:'';if(window.__codeclubInspectorInstalled)return;window.__codeclubInspectorInstalled=true;var hovered=null;document.addEventListener('mouseover',function(e){if(!window.__codeclubInspect)return;var el=e.target;if(!el||!el.style)return;if(hovered&&hovered!==el&&!hovered.hasAttribute('data-codeclub-selected')){hovered.style.removeProperty('outline');hovered.style.removeProperty('outline-offset')};hovered=el;el.style.setProperty('outline','2px solid #4d9cff','important');el.style.setProperty('outline-offset','2px','important')},true);document.addEventListener('mouseout',function(e){if(!window.__codeclubInspect)return;var el=e.target;if(el&&el!==hovered&&!el.hasAttribute('data-codeclub-selected')){el.style.removeProperty('outline');el.style.removeProperty('outline-offset')}},true);var block=function(e){if(window.__codeclubInspect){e.preventDefault();e.stopPropagation()}};document.addEventListener('pointerdown',block,true);document.addEventListener('mousedown',block,true);document.addEventListener('submit',block,true);document.addEventListener('click',function(e){if(!window.__codeclubInspect)return;e.preventDefault();e.stopPropagation();var el=e.target;if(!el||!el.outerHTML)return;document.querySelectorAll('[data-codeclub-selected]').forEach(function(node){node.removeAttribute('data-codeclub-selected');node.style.removeProperty('outline');node.style.removeProperty('outline-offset')});el.setAttribute('data-codeclub-selected','true');el.style.setProperty('outline','2px solid #4d9cff','important');el.style.setProperty('outline-offset','2px','important');var payload={title:document.title||location.hostname,text:(el.innerText||el.textContent||'').trim().slice(0,4000),html:el.outerHTML.slice(0,8000)};try{window.__TAURI_INTERNALS__.invoke('codeclub_browser_selection',payload)}catch(_){}} ,true)})();`;
     if (!view) return;
-    try { await view.eval(script); } catch (reason) { setError(String(reason)); }
+    try {
+      await invoke('codeclub_browser_eval', { script: browserInspectorScript(active) });
+      setError('');
+    } catch (reason) {
+      setError(String(reason));
+    }
+  };
+
+  const applySelection = (next: BrowserDomSelection) => {
+    const key = `${next.url}|${next.selector}|${next.html.slice(0, 80)}`;
+    if (selectionKeyRef.current === key) return;
+    selectionKeyRef.current = key;
+    inspectModeRef.current = false;
+    setInspectMode(false);
+    setSelection(next);
+    window.dispatchEvent(new CustomEvent('codeclub:browser-reference', {
+      detail: {
+        title: next.title || next.selector || 'Elemento seleccionado',
+        text: JSON.stringify({
+          url: next.url,
+          selector: next.selector,
+          tag: next.tag,
+          text: next.text,
+          html: next.html,
+        }),
+      },
+    }));
   };
 
   const syncWebview = async (view = webviewRef.current) => {
@@ -309,6 +515,8 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
     if (!url) return;
     const requestId = ++requestRef.current;
     setAddress(url); addressRef.current = url; setError(''); setSelection(null); setInspectMode(false);
+    inspectModeRef.current = false;
+    selectionKeyRef.current = '';
     try {
       await webviewRef.current?.close().catch(() => undefined);
       if (requestId !== requestRef.current) return;
@@ -340,7 +548,9 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
   useEffect(() => {
     let stopListening: (() => void) | undefined;
     let stopPageListening: (() => void) | undefined;
-    void listen<{ title: string; text: string; html: string }>('codeclub-browser-selection', (event) => { setSelection(event.payload); setInspectMode(false); window.dispatchEvent(new CustomEvent('codeclub:browser-reference', { detail: { title: event.payload.title || 'Elemento seleccionado', text: JSON.stringify({ text: event.payload.text, html: event.payload.html }) } })); }).then((unlisten) => { stopListening = unlisten; });
+    void listen<BrowserDomSelection>('codeclub-browser-selection', (event) => {
+      applySelection(event.payload);
+    }).then((unlisten) => { stopListening = unlisten; });
     void listen<string>('codeclub-browser-page-loaded', () => { if (inspectModeRef.current) void installInspector(true); }).then((unlisten) => { stopPageListening = unlisten; });
     void openPage(initialUrl, false);
     const resizeObserver = new ResizeObserver(() => { void syncWebview(); });
@@ -351,7 +561,21 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
       try {
         const view = webviewRef.current;
         if (!view) return;
-        const currentUrl = (await view.url()).toString();
+        const currentUrl = await invoke<string>('codeclub_browser_get_url');
+        const selectionMarker = currentUrl.indexOf(browserSelectionHash);
+        if (selectionMarker >= 0) {
+          try {
+            const encoded = currentUrl.slice(selectionMarker + browserSelectionHash.length);
+            const nextSelection = JSON.parse(decodeURIComponent(encoded)) as BrowserDomSelection;
+            applySelection(nextSelection);
+            await invoke('codeclub_browser_eval', {
+              script: `history.replaceState(history.state, '', ${JSON.stringify(nextSelection.url)});`,
+            });
+          } catch (reason) {
+            setError(`No se pudo leer la selección: ${String(reason)}`);
+          }
+          return;
+        }
         if (currentUrl && currentUrl !== addressRef.current) {
           addressRef.current = currentUrl;
           setAddress(currentUrl);
@@ -378,7 +602,10 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
 
   const goBack = () => { if (historyIndex > 0) void openPage(history[historyIndex - 1], false).then(() => setHistoryIndex((current) => { historyIndexRef.current = current - 1; return current - 1; })); };
   const goForward = () => { if (historyIndex < history.length - 1) void openPage(history[historyIndex + 1], false).then(() => setHistoryIndex((current) => { historyIndexRef.current = current + 1; return current + 1; })); };
-  const referencePage = () => window.dispatchEvent(new CustomEvent('codeclub:browser-reference', { detail: selection ? { title: selection.title || 'Elemento seleccionado', text: JSON.stringify({ text: selection.text, html: selection.html }) } : { title: address.replace(/^https?:\/\//, '').split('/')[0] || 'Página', text: `Página abierta: ${address}` } }));
+  const referencePage = () => window.dispatchEvent(new CustomEvent('codeclub:browser-reference', { detail: selection ? {
+    title: selection.title || selection.selector || 'Elemento seleccionado',
+    text: JSON.stringify({ url: selection.url, selector: selection.selector, tag: selection.tag, text: selection.text, html: selection.html }),
+  } : { title: address.replace(/^https?:\/\//, '').split('/')[0] || 'Página', text: `Página abierta: ${address}` } }));
 
   return <div className="flex h-full min-h-0 flex-col bg-[#111111] text-[#d8d8d8]">
     <div className="flex shrink-0 items-center gap-1 border-b border-[#202020] px-2 py-2">
@@ -386,7 +613,14 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
       <button type="button" onClick={goForward} disabled={historyIndex >= history.length - 1} className="grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent text-[#666] hover:bg-[#1c1c1c] hover:text-[#eee] disabled:opacity-30" title="Adelante"><ArrowRight size={13} /></button>
       <form className="flex min-w-0 flex-1" onSubmit={(event) => { event.preventDefault(); void openPage(address); }}><input value={address} onChange={(event) => setAddress(event.target.value)} className="min-w-0 flex-1 rounded-md border border-[#202020] bg-[#161616] px-2.5 py-1.5 text-[10px] text-[#cfcfcf] outline-none focus:border-[#2f2f2f]" aria-label="Dirección web" /></form>
       <button type="button" onClick={() => void openPage(address, false)} className="grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent text-[#777] hover:bg-[#1c1c1c] hover:text-[#eee]" title="Cargar"><RefreshCw size={12} /></button>
-      <button type="button" onClick={() => { const active = !inspectMode; setInspectMode(active); void installInspector(active); }} className={`grid h-7 w-7 place-items-center rounded-md border-0 text-[#777] hover:bg-[#1c1c1c] hover:text-[#eee] ${inspectMode ? 'bg-[#242424] text-[#eee]' : 'bg-transparent'}`} title="Seleccionar elemento de la página"><ArrowUpRight size={13} /></button>
+      <button type="button" onClick={() => {
+        const active = !inspectModeRef.current;
+        inspectModeRef.current = active;
+        selectionKeyRef.current = '';
+        if (active) setSelection(null);
+        setInspectMode(active);
+        void installInspector(active);
+      }} aria-pressed={inspectMode} className={`grid h-7 w-7 place-items-center rounded-md border-0 text-[#777] hover:bg-[#1c1c1c] hover:text-[#eee] ${inspectMode ? 'bg-[#242424] text-[#eee]' : 'bg-transparent'}`} title="Seleccionar elemento de la página"><ArrowUpRight size={13} /></button>
       <button type="button" onClick={referencePage} className="grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent text-[#777] hover:bg-[#1c1c1c] hover:text-[#eee]" title="Referenciar página"><Globe size={12} /></button>
     </div>
     {selection && <div className="flex shrink-0 items-center gap-2 border-b border-[#202020] px-3 py-2 text-[10px] text-[#999]"><div className="min-w-0 flex-1"><div className="mb-1 text-[#8fbfff]">Elemento referenciado</div><div className="truncate rounded-md border border-[#4d9cff] bg-[#172131] px-2 py-1 text-[#d8e8ff]">{selection.text.slice(0, 120) || selection.title}</div></div><button type="button" onClick={() => setSelection(null)} className="text-[#666] hover:text-[#eee]" aria-label="Quitar selección">×</button></div>}

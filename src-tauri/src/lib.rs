@@ -74,6 +74,19 @@ struct BrowserSelection {
     title: String,
     text: String,
     html: String,
+    url: String,
+    selector: String,
+    tag: String,
+}
+
+fn codeclub_browser_webview(app: &AppHandle) -> Result<tauri::Webview, String> {
+    app.get_webview("codeclub-browser")
+        .or_else(|| {
+            app.get_window("main")?.webviews().into_iter().find(|webview| {
+                webview.label() == "codeclub-browser"
+            })
+        })
+        .ok_or_else(|| "El WebView del navegador no está disponible.".to_string())
 }
 
 #[tauri::command]
@@ -98,7 +111,7 @@ fn codeclub_browser_create(app: AppHandle, url: String, x: f64, y: f64, width: f
 
 #[tauri::command]
 fn codeclub_browser_close(app: AppHandle) -> Result<(), String> {
-    if let Some(webview) = app.get_webview("codeclub-browser") {
+    if let Ok(webview) = codeclub_browser_webview(&app) {
         webview.close().map_err(|error| error.to_string())?;
     }
     Ok(())
@@ -992,17 +1005,13 @@ async fn codeclub_http_fetch(request: HttpFetchRequest) -> Result<HttpFetchRespo
 
 #[tauri::command]
 fn codeclub_browser_eval(app: AppHandle, script: String) -> Result<(), String> {
-    let webview = app
-        .get_webview("codeclub-browser")
-        .ok_or_else(|| "El WebView del navegador no está disponible.".to_string())?;
+    let webview = codeclub_browser_webview(&app)?;
     webview.eval(script).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
 fn codeclub_browser_get_url(app: AppHandle) -> Result<String, String> {
-    let webview = app
-        .get_webview("codeclub-browser")
-        .ok_or_else(|| "El WebView del navegador no está disponible.".to_string())?;
+    let webview = codeclub_browser_webview(&app)?;
     webview.url().map(|url| url.to_string()).map_err(|error| error.to_string())
 }
 
