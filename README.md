@@ -2,7 +2,7 @@
 
 Open source desktop IDE for building applications with AI, made in Argentina.
 
-[Ko-fi](https://ko-fi.com/codeclubide)
+[Ko-fi](https://ko-fi.com/codeclubide) · [Licencia](LICENSE.md)
 
 ## What is Codeclub
 
@@ -125,3 +125,12 @@ Providers and models are sourced live from [models.dev](https://models.dev):
 ## AI SDK
 
 AI SDK documentation: https://ai-sdk.dev/docs
+
+## License
+
+**Dual license** — see [LICENSE.md](LICENSE.md) for full terms.
+
+- **Gratis**: uso personal, educativo, freelancers (< USD 60k/año), ONGs, open source.
+- **Comercial paga**: empresas, corporaciones, uso comercial, SaaS, freelancers (> USD 60k/año).
+
+Contacto para licencias comerciales: **codeclubide@gmail.com**
