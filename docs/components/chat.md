@@ -1,6 +1,6 @@
 # Chat
 
-The chat panel is the main workspace area. It displays the message history, a composer input, and provider/model controls.
+The chat panel is the main workspace area. It displays the message history, a composer input, provider/model controls, and inline cards for tool execution.
 
 ## Chat Panel
 
@@ -43,6 +43,7 @@ Scrollable message list between user and assistant.
 - Radius: `8px`.
 - Color: `#eee`.
 - Max width: `80%`.
+- Renders Markdown via `react-markdown` + `remark-gfm`.
 
 ## Chat Composer
 
@@ -61,6 +62,10 @@ Status text shown above the input box.
 - Font size: `16px`.
 - Color: `rgba(216, 216, 216, 0.82)`.
 - Contains the braille spinner indicator.
+
+### Mode Toggle
+
+Switch between Development and Business/Economy chat modes via a button in the composer row.
 
 ### Provider/Model Status
 
@@ -97,8 +102,10 @@ The form container with input and send button.
 - Placeholder: "Preguntá, pedí código o describí una tarea".
 
 Triggers command menu when typing `/proveedor` or `/modelo`.
+Accepts file drops from native `tauri://drag-drop` events.
+Accepts artifact references and browser references.
 
-#### Send Button
+#### Send / Stop Button
 
 - Width: `28px`, height: `28px`.
 - Layout: `grid`, `place-items: center`.
@@ -106,12 +113,53 @@ Triggers command menu when typing `/proveedor` or `/modelo`.
 - Radius: `7px`.
 - Background: `var(--color-surface-8, #2c2c2c)`.
 - Color: `#ffffff`.
-- Disabled cursor: `not-allowed` when streaming.
-- Icon: `ArrowUp`, size `15`, stroke `2`.
+- Icon: `ArrowUp` during idle, `Square` during streaming.
+- During streaming, acts as a stop button that aborts via `AbortController`.
+
+## File Attachments
+
+Files dragged onto the composer area are captured via `tauri://drag-drop` Tauri events or HTML drag-and-drop.
+
+- Supported: text files, images (PNG, JPG, GIF, SVG, WebP), PDFs, DOCX.
+- DOCX files are converted to HTML via `mammoth`.
+- File content is inlined as message context (120K character limit).
+- Attached files are displayed as preview chips above the composer.
+- File picker available via button or `/archivo` command.
+
+## Tool Approval UI
+
+When a risky tool (`writeFile`, `runCommand`, `terminal`) needs approval, an `ApprovalCards` component renders inline below the agent message:
+
+- Shows tool name, description, and preview of the operation.
+- Two buttons: **Approve** (executes the tool) and **Cancel** (rejects it).
+- While pending, the spinner shows `approval` state (yellow).
+
+## Sub-agent Output
+
+When a `subagent` is invoked, a `SubagentCards` component renders inline:
+
+- **Running**: shows agent type and activity spinner.
+- **Error**: shows the error message.
+- **Success**: shows the sub-agent's findings and completion status.
+
+## AskUser Cards
+
+When the `askUser` tool fires, `AskUserCards` renders inline option cards below the agent message:
+
+- Each option is a clickable button.
+- Supports single and multi-select.
+- Response is sent back to the agent as structured input.
+
+## Artifact Cards
+
+Structured output (quotes, plans, TODOs) generates inline cards in the chat:
+
+- **TodoCards**: shows TODO items with status indicators.
+- **ChangeSummaryCard**: shows additions, deletions, and files changed after tool execution.
 
 ## Command Menu
 
-Floating menu triggered by `/proveedor` or `/modelo` commands in the input.
+Floating menu triggered by `/proveedor`, `/modelo`, or `/proyecto` commands in the input.
 
 - Position: absolute below the composer.
 - Left: `0`, right: `0`.
@@ -119,10 +167,9 @@ Floating menu triggered by `/proveedor` or `/modelo` commands in the input.
 - Display: `none` by default, `grid` when `.is-open`.
 - Gap: `8px`.
 - Padding: `9px`.
-- Border: `1px solid var(--color-surface-9, #2f2f2f)`.
-- Radius: `8px`.
-- Background: `#121212`.
-- Shadow: `0 20px 58px rgba(0, 0, 0, 0.34)`.
+- Border: none.
+- Radius: `12px 12px 8px 8px`.
+- Background: `#1A1A1A`.
 - Z-index: `10`.
 
 ### Command Search Input
@@ -160,6 +207,15 @@ Scrollable list of filtered providers/models.
 - Hover: background `var(--color-surface-7, #2c2c2c)`, color `#ffffff`.
 - Small label: `proveedor` or `modelo`, color `rgba(216, 216, 216, 0.36)`, font size `11px`.
 
+## Custom Provider Configuration
+
+When `Custom` provider is selected, a configuration panel appears:
+
+- **URL**: OpenAI-compatible endpoint URL.
+- **Header name**: Authorization header name (default: `Authorization`).
+- **Body format**: JSON or XML request body format.
+- **API Key**: credential input managed via `credential-menu-input`.
+
 ## Braille Spinner
 
 Loading indicator shown during streaming.
@@ -186,3 +242,5 @@ Animation cycles through braille characters every `880ms`:
 | 62.5% | `⠴` |
 | 75% | `⠦` |
 | 87.5% | `⠧` |
+
+Agent states change the spinner color (see [spinner.md](spinner.md)).

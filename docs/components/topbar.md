@@ -1,8 +1,8 @@
 # Topbar
 
-The topbar is the only visible app chrome for the empty shell. It spans the full width across both grid columns.
+The topbar is the only visible app chrome for the empty shell. It spans the full width across all grid columns and acts as a custom titlebar (window decorations are disabled).
 
-- File: `src/pages/index.astro`
+- File: `src/components/Topbar.astro` (Astro component, server-rendered)
 - Height: `36px`.
 - Layout: `grid`, columns `auto 1fr 138px`.
 - Grid column: `1 / -1`.
@@ -34,9 +34,17 @@ Left-side navigation buttons using Lucide icons.
 
 Icons:
 
-- Sidebar toggle: `PanelLeft`, size `15`, stroke `1.8`.
+- Sidebar toggle: `PanelLeft`, size `15`, stroke `1.8`. Toggles `.has-sidebar` on body.
 - Back: `ArrowLeft`, size `15`, stroke `1.8`.
 - Forward: `ArrowRight`, size `15`, stroke `1.8`.
+
+### Panel Toggle Buttons
+
+Additional buttons for toggling panels:
+
+- Right panel toggle (`#panel-split`): toggles `.has-right-panel` on body. Dispatches `codeclub:right-panel-toggled`.
+- Close right panel (`#panel-single`): removes right panel. Dispatches `codeclub:right-panel-toggled`.
+- Dock toggle (`#panel-dock`): toggles panel dock mode. Dispatches `codeclub:toggle-panel-dock`.
 
 ### App Menus
 
@@ -46,7 +54,7 @@ Menu labels sit beside the tool buttons.
 - Height: `100%`.
 - Position: `relative`.
 
-Labels: `Archivo`, `Editar`, `Ver`, `Ayuda`.
+Labels: `Archivo`, `Editar`, `Ver`, `Testing`, `Ayuda`.
 
 - Button height: `28px`.
 - Horizontal padding: `0 9px`.
@@ -83,6 +91,17 @@ Right-side native-style window control buttons.
 
 Icons:
 
-- Minimize: `Minus`, size `14`, stroke `1.8`.
-- Maximize: `Square`, size `12`, stroke `1.8`.
-- Close: `X`, size `14`, stroke `1.8`.
+- Minimize: `Minus`, size `14`, stroke `1.8` → `window.minimize()`.
+- Maximize: `Square`, size `12`, stroke `1.8` → `window.toggleMaximize()`.
+- Close: `X`, size `14`, stroke `1.8` → `window.close()`.
+
+## Keyboard Shortcuts
+
+- `F11` → toggle fullscreen via `window.setSimpleFullscreen()`.
+
+## Project Context
+
+Elements with `[data-project-required]` attribute are disabled when no project is selected. `data-action` attributes route click handlers:
+
+- `[data-action="toggle-terminal"]` → dispatches `codeclub:open-terminal-dock`.
+- `[data-action="toggle-sidebar"]` → toggles sidebar visibility.

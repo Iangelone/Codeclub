@@ -55,30 +55,36 @@ AI SDK 7 also adds experimental provider-agnostic realtime support and experimen
 
 ## Codeclub Notes
 
-Codeclub already uses AI SDK 7 packages:
+Codeclub uses AI SDK 7 packages:
 
 - `ai`
 - `@ai-sdk/react`
 - `@ai-sdk/openai-compatible`
+- `@ai-sdk/devtools`
+- `@ai-sdk/tui`
 
 ### DevTools
 
-`@ai-sdk/devtools` instalado con telemetry registrado desde `ChatInterface.tsx`.
-Correr `npx @ai-sdk/devtools` y abrir `http://localhost:4983` para inspeccionar llamadas AI SDK en vivo.
+`@ai-sdk/devtools` installed with telemetry registered from `ChatInterface.tsx`.
+Run `npx @ai-sdk/devtools` and open `http://localhost:4983` to inspect live AI SDK calls.
 
 ### Engine
 
-El engine propio está en `src/lib/engine/` — ver [../engine/](../engine/).
+The custom engine lives in `src/lib/engine/` — see [../engine/](../engine/).
 
 ### Models
 
-El catálogo de modelos/proveedores está en `src/lib/ai-catalog.ts` — ver [../models/](../models/).
+The model/provider catalog is in `src/lib/ai-catalog.ts` — see [../models/](../models/).
 
-Current chat usage is an IDE agent built on AI SDK Core:
+### Current Chat Usage
+
+An IDE agent built on AI SDK Core:
 
 - `streamText` streams assistant text and tool events (wrapped in `runStream`).
 - `tool` and `jsonSchema` define workspace tools (in `tools.ts`).
-- `stepCountIs(6)` enables multi-step tool loops.
+- `stepCountIs(6)` enables multi-step tool loops for development mode.
+- `stepCountIs(7)` enables multi-step tool loops for structured output mode (quotes, plans, budgets).
+- `Output.object` with JSON Schema auto-detects structured output artifacts (quotes, plans, TODOs).
 - Tool execution is backed by Tauri commands.
 - Provider HTTP requests use a Tauri-backed fetch so desktop builds can surface status and response bodies instead of opaque WebView fetch errors.
 - Risky tools require explicit UI approval before running.
@@ -86,9 +92,27 @@ Current chat usage is an IDE agent built on AI SDK Core:
 - The send button becomes a stop button during generation and aborts the active stream through `AbortController`.
 - Runtime errors are written back into the composer input with method, URL, request body, status, response headers, and response body for debugging.
 
+### Tool Router & Verification
+
+- **Tool Router**: Uses a lightweight AI model with structured output to select relevant tools based on user intent before each generation (`resolveToolsWithAI`). Fallback: heuristic keyword matching (`selectToolsForPrompt`).
+- **Tool Verification**: After tool execution, a verification AI checks whether the tool accomplished its goal (`verifyToolExecutionWithAI`). Enables retry loops.
+- Both use `Output.object` with `jsonSchema` for structured output schemas.
+
+### Agent Timeouts
+
+Configured in `run.ts`:
+- Total generation: 60s race timeout + 90s stream timeout.
+- Step: 25s.
+- Chunk: 15s.
+- Tool: 30s.
+
+### Multi-step Tool Loops
+
+`stepCountIs(6)` is the default for chat conversations. For structured output generation (business mode creating quotes/budgets/plans), `stepCountIs(7)` is used to accommodate the extra structured output step.
+
 Harnesses and WorkflowAgent are not implemented yet.
 
-Recommended direction:
+### Recommended Direction
 
 - Treat all AI SDK 7 surfaces as relevant because Codeclub is an IDE, not only a chat app.
 - Keep `streamText` as the primary agent stream while the UI matures.

@@ -2,6 +2,58 @@
 
 AI-focused IDE made in Argentina. Open source, simple by design.
 
+## Architecture
+
+```
+src/pages/index.astro            → App shell (Astro, CSS Grid layout)
+  ├── Topbar.astro               → App menu bar with window controls
+  ├── Sidebar.tsx                → Left panel: projects, chats, files
+  ├── ChatPanel.astro            → Chat wrapper (hosts ChatInterface)
+  ├── RightSidebar.tsx           → Right panel: files, review, browser, artifacts, WhatsApp
+  └── TerminalDock.tsx           → Floating terminal (multi-tab, draggable)
+
+src/lib/engine/                  → AI execution layer
+  ├── types.ts                   → ToolEvent, ToolContext, EngineCallbacks
+  ├── tools.ts                   → createTools, createBusinessTools, tool router
+  ├── run.ts                     → runStream (streamText wrapper)
+  ├── memory.ts                  → Persistent agent memory
+  └── planning.ts                → Plans, TODOs, agent state
+
+src-tauri/src/lib.rs             → Rust backend (Tauri commands)
+```
+
+### Data Flow
+
+```
+User message → ChatInterface.tsx
+  → resolveToolsWithAI (AI-powered tool selection)
+  → runStream({ model, system, messages, tools, callbacks })
+    → streamText (AI SDK v7)
+    → Tool execution → Tauri invoke → Rust command → Native OS
+  → verifyToolExecutionWithAI (AI-powered verification)
+  → Record to usage.jsonl + execution.jsonl
+  → UI updates via custom events (codeclub:*)
+```
+
+### Event System
+
+Components communicate via custom DOM events (`window.dispatchEvent` / `window.addEventListener`) using the `codeclub:` namespace. Backend-to-frontend communication uses Tauri events (`listen` from `@tauri-apps/api/event`).
+
+### Persistence
+
+All data stored locally in OS app config/cache directories (`appConfigDir`, `appCacheDir` via Tauri).
+
+| File | Location | Content |
+|---|---|---|
+| `settings.json` | appConfigDir | User settings (API keys, preferences) |
+| `projects.json` | appConfigDir | Project index (with backup) |
+| `meta.json` | per-project | Project metadata, chat list |
+| `agent-state.json` | per-project | Plans, TODOs |
+| `usage.jsonl` | per-project / global | Generation usage (tokens, cost, duration) |
+| `execution.jsonl` | per-project | Tool execution audit log |
+| `business.json` | per-project | Business workspace data |
+| `persistence-log.jsonl` | appCacheDir | Persistence diagnostics |
+
 ## Color Tokens
 
 - `#111111` -> base app background.
@@ -17,16 +69,33 @@ AI-focused IDE made in Argentina. Open source, simple by design.
 - `#2C2C2C` -> clear border.
 - `#2F2F2F` -> strongest dark border.
 
+## Tech Stack
+
 - Rust: https://doc.rust-lang.org/ - Native backend, commands, filesystem, and performance logic.
 - Astro 7: https://docs.astro.build/ - UI shell and static frontend structure.
+- React 19: https://react.dev/ - Interactive components (chat, sidebar, panels, terminal).
 - Tailwind CSS: https://tailwindcss.com/docs - App styling, layout, spacing, and design tokens.
 - Bun: https://bun.com/docs - JavaScript runtime, package manager, and script runner.
 - Tauri 2: https://v2.tauri.app/ - Desktop window, native APIs, packaging, and Rust bridge.
 - Models.dev: https://models.dev/models/ - An open-source database of AI models.
 - AI SDK v7: https://ai-sdk.dev/docs/introduction - The TypeScript toolkit designed to help developers build AI-powered applications and agents with React, Next.js, Vue, Svelte, Node.js, and more.
 
+## Key Libraries
+
+- **CodeMirror 6** — Code editor with syntax highlighting
+- **xterm.js 6** — Terminal emulator
+- **Recharts 3** — Business dashboard charts
+- **react-markdown + remark-gfm** — Markdown rendering
+- **mammoth** — DOCX conversion
+- **lucide-react / lucide-astro** — Icons
+- **@whiskeysockets/baileys** — WhatsApp Web bridge
+
 ## Commands
 
 - `bun run dev` -> start the desktop app.
 - `bun run build` -> build the desktop app.
 - `bun install` -> install dependencies.
+- `bun run stop` -> stop all running processes.
+- `bun run web:dev` -> start Astro dev server only.
+- `bun run web:build` -> build frontend only.
+- `bun run whatsapp:debug` -> debug WhatsApp bridge.

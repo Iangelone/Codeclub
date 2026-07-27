@@ -1,31 +1,43 @@
-# Codeclub — Documentación de Componentes
+# Codeclub — Component Documentation
 
-Proyecto open-source. Editor/IDE con IA, hecho en Argentina.
+Open-source project. AI-powered desktop IDE, made in Argentina.
 
 ## Stack
 
-- **Rust** — backend nativo, comandos, filesystem.
-- **Astro 7** — shell de UI y estructura frontend estática.
-- **React 19** — componentes interactivos (chat).
-- **Tailwind CSS** — *planeado* (actualmente todo el estilo es raw CSS en `<style>` tags).
-- **Bun** — runtime JS, package manager, scripts.
-- **Tauri 2** — ventana desktop, APIs nativas, puente Rust.
+- **Rust** — native backend, commands, filesystem, HTTP fetch, browser, WhatsApp.
+- **Astro 7** — UI shell and static frontend structure.
+- **React 19** — interactive components (chat, sidebar, panels, terminal).
+- **Tailwind CSS 4** — utility-first styling with custom `@theme` tokens.
+- **Bun** — JS runtime, package manager, scripts.
+- **Tauri 2** — desktop window, native APIs, Rust bridge.
 
-## Componentes
+## Components
 
-| Componente | Archivo |
+| Component | File | Description |
+|---|---|---|
+| [Topbar](topbar.md) | `src/components/Topbar.astro` | App menu bar, window controls, tools |
+| [Sidebar](sidebar.md) | `src/components/Sidebar.tsx` | Left panel: projects, chats, file tree, settings |
+| [Chat](chat.md) | `src/components/ChatPanel.astro`, `ChatInterface.tsx` | Main chat workspace, composer, command menu |
+| [Dropdown](dropdown.md) | `src/pages/index.astro` | App menu dropdowns |
+| BusinessPanel | `src/components/BusinessPanel.tsx` | Business dashboard: metrics, charts, activity |
+| RightSidebar | `src/components/RightSidebar.tsx` | Right panel: files, review, browser, artifacts, WhatsApp |
+| TerminalDock | `src/components/TerminalDock.tsx` | Floating multi-tab terminal (PowerShell, CMD, Git Bash, WSL2) |
+| WorkspaceManager | `src/components/WorkspaceManager.tsx` | Workspace orchestrator (project/chat/business mode) |
+
+## Layout Shell
+
+| File | Description |
 |---|---|
-| [Topbar](topbar.md) | `src/pages/index.astro` |
-| [Sidebar](sidebar.md) | `src/pages/index.astro` |
-| [Dropdown](dropdown.md) | `src/pages/index.astro` |
-| [Chat](chat.md) | `src/components/ChatPanel.astro`, `src/components/ChatInterface.tsx` |
+| `src/pages/index.astro` | CSS Grid layout: topbar + left sidebar + workspace + right sidebar |
+| `src/styles/global.css` | Tailwind `@theme` tokens, global classes, scrollbar styles, animations |
 
 ## Design Tokens
 
-| Token | Archivo |
+| Token | File |
 |---|---|
-| [Colores](color-tokens.md) | Paleta completa con hex y usos |
-| [Tipografía](typography.md) | Font stack, tamaños, pesos |
-| [Layout](layout.md) | Grid del body, sidebar, espaciado |
-| [Sombras](shadows.md) | Box shadows de cada elemento |
-| [CSS Custom Properties](css-custom-properties.md) | Variables CSS del `:root` mapeadas a su uso |
+| [Colors](color-tokens.md) | Complete palette with hex and usage |
+| [Typography](typography.md) | Font stack, sizes, weights |
+| [Layout](layout.md) | Body grid, multi-panel system, spacing |
+| [Shadows](shadows.md) | Box shadows for every element |
+| [CSS Custom Properties](css-custom-properties.md) | CSS variables mapped to usage |
+| [Spinner](spinner.md) | Braille spinner palette and states |
