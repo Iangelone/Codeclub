@@ -69,14 +69,29 @@ All hex values used across the app UI.
 | `#D8B4FE` | Tool running indicator (purple). |
 | `#FCA5A5` | Error indicator (red). |
 
-## Accent Colors
+## Spinner and Interaction Colors
 
 | Hex | Usage |
 |---|---|
-| `#1687ff` | Primary accent. Browser/PC mouse cursor, inspection outline, selection border, active interaction glow. |
 | `#c7cbff` | Braille spinner text (idle). |
 | `rgba(123, 130, 255, 0.42)` | Braille spinner glow shadow 1. |
 | `rgba(255, 117, 181, 0.18)` | Braille spinner glow shadow 2. |
+
+## Syntax Highlighting Palette
+
+Material Theme / Material Palenight colors used by Markdown code blocks and the Files viewer:
+
+| Hex | Syntax role |
+|---|---|
+| `#C792EA` | Keywords, control flow, language constructs. |
+| `#82AAFF` | Functions and function calls. |
+| `#C3E88D` | Strings, template values and attributes. |
+| `#F78C6C` | Numbers, variables and regular expressions. |
+| `#FFCB6B` | Built-ins, types and classes. |
+| `#7F8C98` | Comments and quoted documentation. |
+| `#89DDFF` | Metadata and symbols. |
+| `#151515` | Code block background. |
+| `#2B2B2B` | Code block border. |
 
 ## Spinner Agent States
 

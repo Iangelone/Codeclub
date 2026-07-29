@@ -1,5 +1,48 @@
 @import "tailwindcss";
 
+@property --codeclub-accent {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #c792ea;
+}
+
+:root {
+  --codeclub-accent-keyword: #c792ea;
+  --codeclub-accent-function: #82aaff;
+  --codeclub-accent-string: #c3e88d;
+  --codeclub-accent-number: #f78c6c;
+  --codeclub-accent-builtin: #ffcb6b;
+  --codeclub-accent-comment: #7f8c98;
+  --codeclub-accent-meta: #89ddff;
+  --codeclub-accent: var(--codeclub-accent-keyword);
+  animation: codeclub-accent-cycle 22s ease-in-out infinite;
+}
+
+@keyframes codeclub-accent-cycle {
+  0%, 100% { --codeclub-accent: #c792ea; }
+  14% { --codeclub-accent: #82aaff; }
+  28% { --codeclub-accent: #c3e88d; }
+  42% { --codeclub-accent: #ffcb6b; }
+  57% { --codeclub-accent: #f78c6c; }
+  72% { --codeclub-accent: #89ddff; }
+  86% { --codeclub-accent: #c792ea; }
+}
+
+.codeclub-accent-transition {
+  color: var(--codeclub-accent);
+  transition: color 700ms ease, background-color 700ms ease, border-color 700ms ease, box-shadow 700ms ease;
+}
+
+.codeclub-accent-surface {
+  background-color: color-mix(in srgb, var(--codeclub-accent) 18%, transparent);
+  color: var(--codeclub-accent);
+}
+
+.codeclub-accent-hover:hover {
+  background-color: color-mix(in srgb, var(--codeclub-accent) 18%, transparent);
+  color: var(--codeclub-accent);
+}
+
 @theme {
   --color-bg: #111111;
   --color-surface-0: #101010;
@@ -53,7 +96,19 @@ button[title="Proveedor, modelo y proyecto"] {
 }
 
 .credential-key-icon {
-  animation: spinner-idle-color 10s ease-in-out infinite;
+  color: var(--codeclub-accent);
+  animation: codeclub-spinner-pulse 1.8s ease-in-out infinite;
+  transition: color 700ms ease;
+}
+
+.animate-spin {
+  color: var(--codeclub-accent);
+  transition: color 700ms ease;
+}
+
+@keyframes codeclub-spinner-pulse {
+  0%, 100% { opacity: 0.62; }
+  50% { opacity: 1; }
 }
 
 .custom-body-input {

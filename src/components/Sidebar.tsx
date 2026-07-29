@@ -35,6 +35,28 @@ import {
 } from "lucide-react";
 import { activeChatStore, chatsStore, type GlobalChat } from "../lib/store";
 
+const AGENT_AVATAR_COLORS = ['#A98BC6', '#6F91CC', '#A9C978', '#D17A60', '#D4A956', '#6F7C86', '#74BBD1'];
+const getAgentAvatarColor = (chatId: string) => {
+  let hash = 0;
+  for (let index = 0; index < chatId.length; index += 1) hash = (hash * 31 + chatId.charCodeAt(index)) | 0;
+  const fallback = AGENT_AVATAR_COLORS[Math.abs(hash) % AGENT_AVATAR_COLORS.length];
+  try {
+    const overrides = JSON.parse(window.localStorage.getItem('codeclub:chat-avatar-colors') || '{}');
+    return AGENT_AVATAR_COLORS.includes(overrides[chatId]) ? overrides[chatId] : fallback;
+  } catch { return fallback; }
+};
+const cycleAgentAvatarColor = (chatId: string) => {
+  const current = getAgentAvatarColor(chatId);
+  const next = AGENT_AVATAR_COLORS[(AGENT_AVATAR_COLORS.indexOf(current) + 1) % AGENT_AVATAR_COLORS.length];
+  try {
+    const overrides = JSON.parse(window.localStorage.getItem('codeclub:chat-avatar-colors') || '{}');
+    overrides[chatId] = next;
+    window.localStorage.setItem('codeclub:chat-avatar-colors', JSON.stringify(overrides));
+  } catch { /* localStorage unavailable */ }
+  window.dispatchEvent(new CustomEvent('codeclub:chat-avatar-color-changed', { detail: { chatId, color: next } }));
+};
+const getAgentActivityLabel = (activity: { state: string; tool?: string; agent?: string }) => activity.tool || ({ connecting: 'Conectando con el proveedor…', streaming: 'Generando respuesta…', tool_call: 'Usando herramienta…', approval: 'Esperando aprobación…', running: 'Ejecutando…', error: 'Revisando error…' }[activity.state] || activity.agent || 'Trabajando…');
+
 // --- Types ---
 type Artifact = { id: string; name: string };
 type StructureEntry = { path: string; isDirectory: boolean };
@@ -59,14 +81,21 @@ export default function Sidebar() {
   const structureMenuRef = useRef<HTMLDivElement | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [activeArtifactId, setActiveArtifactId] = useState<string | null>(null);
-  const [agentActivity, setAgentActivity] = useState<{ state: string; tool?: string; agent?: string }>({ state: "idle" });
+  const [, setAvatarColorVersion] = useState(0);
+  const [agentActivities, setAgentActivities] = useState<Record<string, { state: string; tool?: string; agent?: string; ready?: boolean }>>({});
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeSection, setActiveSection] = useState<"chat" | "projects" | "businesses">("projects");
 
   useEffect(() => {
-    const handleAgentActivity = (event: Event) => setAgentActivity((event as CustomEvent).detail || { state: "idle" });
+    const handleAgentActivity = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      if (!detail.chatId) return;
+      setAgentActivities((current) => ({ ...current, [detail.chatId]: { ...detail, ready: detail.state === 'idle' } }));
+    };
     window.addEventListener("codeclub:agent-activity", handleAgentActivity);
-    return () => window.removeEventListener("codeclub:agent-activity", handleAgentActivity);
+    const handleAvatarColorChange = () => setAvatarColorVersion((version) => version + 1);
+    window.addEventListener('codeclub:chat-avatar-color-changed', handleAvatarColorChange);
+    return () => { window.removeEventListener("codeclub:agent-activity", handleAgentActivity); window.removeEventListener('codeclub:chat-avatar-color-changed', handleAvatarColorChange); };
   }, []);
 
   const [creatingProject, setCreatingProject] = useState(false);
@@ -728,6 +757,7 @@ export default function Sidebar() {
   };
 
   const openGlobalChat = (chat: GlobalChat) => {
+    setAgentActivities((current) => { if (!current[chat.id]) return current; const next = { ...current }; delete next[chat.id]; return next; });
     if (!chat.projectPath) {
       setActiveSection("chat");
       setActiveArtifactId(chat.id);
@@ -895,14 +925,8 @@ export default function Sidebar() {
             <div className="flex flex-col gap-1">
               {[...globalChats].reverse().map((chat) => (
                 <button key={`${chat.projectPath}:${chat.id}`} type="button" className={`w-full min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left text-[#777777] hover:bg-white/2 bg-transparent border-0 appearance-none ${activeArtifactId === chat.id ? "bg-white/5 text-[#eeeeee]" : ""}`} onClick={() => openGlobalChat(chat)} onContextMenu={(event) => { event.preventDefault(); openArtifactMenu(event, "chat", { id: chat.id, name: chat.name }, { name: chat.projectName, path: chat.projectPath, chats: [] }); }} title={chat.projectName}>
-                  {activeArtifactId === chat.id ? (
-                    <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center" aria-label="Chat activo">
-                      <span className="braille-spinner" data-state={agentActivity.state} aria-label={agentActivity.tool || agentActivity.agent || "Chat activo"} title={agentActivity.tool || agentActivity.agent || "Chat activo"} />
-                    </span>
-                  ) : (
-                    <span className="chat-dot flex h-[22px] w-[22px] shrink-0 items-center justify-center" aria-hidden="true" />
-                  )}
-                  <span className="min-w-0 flex-1 truncate">{chat.name}</span>
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-[6px] border-0 text-[8px] font-medium uppercase" style={{ backgroundColor: activeArtifactId === chat.id ? getAgentAvatarColor(chat.id) : '#2b2b2b', color: '#ffffff' }} aria-hidden="true">{chat.name.trim().charAt(0).toUpperCase() || 'C'}</span>
+                  <span className="min-w-0 flex-1 truncate">{activeArtifactId === chat.id ? chat.name : agentActivities[chat.id]?.ready ? 'Listo para revisión' : agentActivities[chat.id]?.state && agentActivities[chat.id].state !== 'idle' ? getAgentActivityLabel(agentActivities[chat.id]) : chat.name}</span>
                 </button>
               ))}
             </div>
@@ -969,6 +993,9 @@ export default function Sidebar() {
           <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => { setRenamingItemId(`${artifactMenu.kind}-${artifactMenu.id}`); setRenameInput(artifactMenu.name); setRenamingArtifact(artifactMenu); }}>
             <FileText size={13} /><span>Renombrar</span>
           </button>
+          {artifactMenu.kind === 'chat' && <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => cycleAgentAvatarColor(artifactMenu.id)}>
+            <span className="h-[13px] w-[13px] shrink-0 rounded-[4px]" style={{ backgroundColor: getAgentAvatarColor(artifactMenu.id) }} aria-hidden="true" /><span>Cambiar</span>
+          </button>}
           <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => handleDelete(artifactMenu.kind, artifactMenu.id, artifactMenu.projectPath)}>
             <Trash2 size={13} /><span>Eliminar</span>
           </button>

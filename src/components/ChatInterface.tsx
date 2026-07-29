@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUpRight, Bot, BriefcaseBusiness, Calculator, ChartNoAxesCombined, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, Folders as FolderOpen, Globe, KeyRound, ListChecks, ListTodo, MessageSquare, MousePointer2, Paperclip, Pencil, ReceiptText, RotateCcw, Search, ScrollText, Square, Terminal, Folder, FolderTree, RefreshCw, X } from 'lucide-react';
+import { ArrowUpRight, Bot, BriefcaseBusiness, Bug, Calculator, ChartNoAxesCombined, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, Folders as FolderOpen, Globe, KeyRound, ListChecks, ListTodo, MessageSquare, MousePointer2, Paperclip, Pencil, ReceiptText, RotateCcw, Search, ScrollText, Square, Terminal, Folder, FolderTree, RefreshCw, X } from 'lucide-react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -21,6 +21,7 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { jsonSchema, Output } from 'ai';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
 import { createPortal } from 'react-dom';
 import mammoth from 'mammoth';
 import { createBusinessTools, createTools, inferAgentMode, inferAgentSpecialist, resolveAgentRouteWithAI, selectToolsForPrompt, verifyToolExecutionWithAI, resolveToolsWithAI, type AgentMode, type AgentSpecialist } from '../lib/engine/tools';
@@ -66,6 +67,15 @@ const AnimatedBraille = ({ kind }: { kind: keyof typeof SPINNER_FRAMES }) => {
 const formatDuration = (durationMs: number) => durationMs >= 60000 ? `${(durationMs / 60000).toFixed(1)} min` : `${Math.max(0.1, durationMs / 1000).toFixed(1)} s`;
 
 type ChatAttachment = { path: string; name: string; mediaType: string; size?: number; previewUrl?: string };
+type ChatRuntime = {
+  controller: AbortController;
+  state: string;
+  tool: string;
+  startedAt: number;
+  messages: any[];
+  pendingApprovals: any[];
+  approvalResolvers: Map<string, (approved: boolean) => void>;
+};
 
 const getAttachmentName = (path: string) => path.split(/[\\/]/).pop() || path;
 const getAttachmentMediaType = (name: string) => {
@@ -194,7 +204,6 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const browserRefContainerRef = useRef<HTMLDivElement>(null);
   const [maxVisibleBrowserRefs, setMaxVisibleBrowserRefs] = useState(3);
   const [inputFocused, setInputFocused] = useState(false);
-  const [avatarColor, setAvatarColor] = useState('#3b6bb5');
   const [attachedFiles, setAttachedFiles] = useState<ChatAttachment[]>([]);
   const chatPanelRef = useRef<HTMLDivElement>(null);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -206,7 +215,6 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const toolStateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const visualAnimationRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const generationIdRef = useRef(0);
   const [composerDocked, setComposerDocked] = useState(true);
   const composerDockedRef = useRef(false);
 
@@ -227,11 +235,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const customHeaderRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    void getSetting('codeclub_avatar_color', '#3b6bb5').then(setAvatarColor);
     void invoke<string>('codeclub_get_username').then((name) => setUsername(name || 'Usuario')).catch(() => setUsername('Usuario'));
-    const handleProfileChange = (event) => setAvatarColor(event.detail?.color || '#3b6bb5');
-    window.addEventListener('codeclub:profile-changed', handleProfileChange);
-    return () => window.removeEventListener('codeclub:profile-changed', handleProfileChange);
   }, []);
 
   const [menuOpen, setMenuOpen] = useState(false);
@@ -248,6 +252,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [terminalCount, setTerminalCount] = useState(0);
   const [activeChat, setActiveChat] = useState<{chatId: string, projectPath: string} | null>(null);
   const activeChatRef = useRef<{chatId: string, projectPath: string} | null>(null);
+  const chatRuntimesRef = useRef(new Map<string, ChatRuntime>());
   const lastSelectedProjectRef = useRef<{ projectPath: string; projectName: string } | null | undefined>(selectedProject || undefined);
   const projectChangeNoticeRef = useRef<string | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState('blank');
@@ -270,7 +275,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     const timer = window.setInterval(updateElapsed, 100);
     return () => window.clearInterval(timer);
   }, [isStreaming]);
-  useEffect(() => { window.dispatchEvent(new CustomEvent('codeclub:agent-activity', { detail: { state: agentState, tool: activeToolName, agent: chatMode === 'business' ? 'Negocios' : 'Desarrollo' } })); }, [agentState, activeToolName, chatMode]);
+  useEffect(() => { window.dispatchEvent(new CustomEvent('codeclub:agent-activity', { detail: { chatId: activeChat?.chatId, state: agentState, tool: activeToolName, agent: chatMode === 'business' ? 'Negocios' : 'Desarrollo' } })); }, [activeChat?.chatId, agentState, activeToolName, chatMode]);
   useEffect(() => {
     const handleArtifactReference = (event: Event) => {
       const detail = (event as CustomEvent<{ projectPath?: string; kind?: 'plan' | 'todo' | 'quote'; id?: string; title?: string }>).detail;
@@ -383,6 +388,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       setWorkspaceMode('chat');
       setActiveChat(chat);
       activeChatRef.current = chat;
+      const runtime = chatRuntimesRef.current.get(chat.chatId);
       const project = chat.projectPath ? {
         projectPath: chat.projectPath,
         projectName: chat.projectName || 'Proyecto',
@@ -392,13 +398,17 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
         detail: project ? { selected: true, projectPath: project.projectPath, projectName: project.projectName } : { selected: false, keepChat: true },
       }));
       window.dispatchEvent(new CustomEvent('codeclub:active-project', { detail: project }));
-      setMessages([]);
+      setMessages(runtime?.messages || []);
       setInput('');
       setAttachedFiles([]);
-      setAgentState('idle');
-      setPendingApprovals([]);
-      approvalResolversRef.current.clear();
+      setIsStreaming(Boolean(runtime && !runtime.controller.signal.aborted));
+      setAgentState(runtime?.state || 'idle');
+      setActiveToolName(runtime?.tool || '');
+      setPendingApprovals(runtime?.pendingApprovals || []);
+      approvalResolversRef.current = runtime?.approvalResolvers || new Map();
+      abortControllerRef.current = runtime?.controller || null;
       const wasDocked = composerDockedRef.current;
+      if (runtime?.messages?.length) return;
       try {
         if (!chat.projectPath) {
           const parsed = await readGlobalChatHistory(chat.chatId);
@@ -436,7 +446,6 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       setAttachedFiles([]);
       setPendingApprovals([]);
       setAgentState('idle');
-      approvalResolversRef.current.clear();
     };
     window.addEventListener('codeclub:open-empty-chat', handleOpenEmptyChat);
     return () => window.removeEventListener('codeclub:open-empty-chat', handleOpenEmptyChat);
@@ -575,7 +584,6 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       }
       setAgentState('idle');
       setPendingApprovals([]);
-      approvalResolversRef.current.clear();
     };
 
     const blankEvent = `${eventPrefix}:open-blank`;
@@ -1059,8 +1067,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
   };
 
 
-  const appendToJsonl = async (msg) => {
-    const chat = activeChatRef.current;
+  const appendToJsonl = async (msg, chatOverride = activeChatRef.current) => {
+    const chat = chatOverride;
     if (!chat) return;
     if (!chat.projectPath) {
       const messages = await readGlobalChatHistory(chat.chatId);
@@ -1095,8 +1103,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     }
   };
 
-  const writeChatJsonl = async (nextMessages) => {
-    const chat = activeChatRef.current;
+  const writeChatJsonl = async (nextMessages, chatOverride = activeChatRef.current) => {
+    const chat = chatOverride;
     if (!chat) return;
     if (!chat.projectPath) {
       await writeGlobalChatHistory(chat.chatId, nextMessages);
@@ -1140,17 +1148,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     }
     const abortController = new AbortController();
     const generationStartedAt = Date.now();
-    const generationId = generationIdRef.current + 1;
-    generationIdRef.current = generationId;
-    abortControllerRef.current = abortController;
-    const isCurrentGeneration = () => generationIdRef.current === generationId && abortControllerRef.current === abortController;
-    const guardedSetAgentState = (state: string) => {
-      if (isCurrentGeneration()) setAgentState(state);
-    };
-    const guardedRequestToolApproval = (options) => {
-      if (!isCurrentGeneration()) return Promise.resolve(false);
-      return requestToolApproval(options);
-    };
     let chat = activeChatRef.current;
     if (!chat) {
       chat = { chatId: `global-${Date.now()}`, projectPath: '' };
@@ -1161,6 +1158,33 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       await writeGlobalChats(globalChats);
       window.dispatchEvent(new CustomEvent('codeclub:global-chat-changed'));
     }
+    const chatId = chat.chatId;
+    const runtime: ChatRuntime = { controller: abortController, state: 'connecting', tool: '', startedAt: generationStartedAt, messages: [], pendingApprovals: [], approvalResolvers: new Map() };
+    chatRuntimesRef.current.set(chatId, runtime);
+    abortControllerRef.current = abortController;
+    approvalResolversRef.current = runtime.approvalResolvers;
+    const isCurrentGeneration = () => !abortController.signal.aborted && chatRuntimesRef.current.get(chatId)?.controller === abortController;
+    const isVisibleGeneration = () => isCurrentGeneration() && activeChatRef.current?.chatId === chatId;
+    const publishRuntime = () => window.dispatchEvent(new CustomEvent('codeclub:agent-activity', { detail: { chatId, state: runtime.state, tool: runtime.tool, agent: chatMode === 'business' ? 'Negocios' : 'Desarrollo' } }));
+    const guardedSetAgentState = (state: string) => {
+      if (!isCurrentGeneration()) return;
+      runtime.state = state;
+      publishRuntime();
+      if (isVisibleGeneration()) setAgentState(state);
+    };
+    const guardedRequestToolApproval = ({ toolName, input, summary }) => {
+      if (!isCurrentGeneration()) return Promise.resolve(false);
+      const approvalId = crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+      const approval = { id: approvalId, toolName, input, summary: summary || compactJson(input) };
+      runtime.state = 'approval';
+      runtime.pendingApprovals = [...runtime.pendingApprovals, approval];
+      publishRuntime();
+      if (isVisibleGeneration()) {
+        setAgentState('approval');
+        setPendingApprovals(runtime.pendingApprovals);
+      }
+      return new Promise((resolve) => runtime.approvalResolvers.set(approvalId, resolve));
+    };
 
     if (shouldRenameChat) {
       window.dispatchEvent(new CustomEvent('codeclub:chat-created', { detail: { chatId: chat.chatId } }));
@@ -1174,6 +1198,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     const attachmentParts = attachments.length > 0 ? await readAttachmentParts(attachments) : [];
     const userMessage = { role: 'user', content, attachments: attachments.map(({ path, name, mediaType, size, previewUrl }) => ({ path, name, mediaType, size, previewUrl })) };
     const newMessages = [...baseMessages, userMessage];
+    runtime.messages = newMessages;
     setComposerDocked(true);
     setMessages(newMessages);
     setInput('');
@@ -1181,11 +1206,12 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     setIsStreaming(true);
     agentStartedAtRef.current = Date.now();
     setAgentState('connecting');
+    publishRuntime();
     
     if (replaceHistory) {
-      await writeChatJsonl(newMessages);
+      await writeChatJsonl(newMessages, chat);
     } else {
-      await appendToJsonl(userMessage);
+      await appendToJsonl(userMessage, chat);
     }
 
     try {
@@ -1217,10 +1243,13 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       let executionStartedAt = Date.now();
       let latestUsage: GenerationUsageRecord | null = null;
       const updateAssistantMessage = () => {
-        setMessages([...newMessages, { role: 'assistant', content: assistantContent, reasoning: assistantReasoning, tools: assistantTools, agentName: runMode === 'business' ? 'Negocios' : 'Desarrollo' }]);
+        runtime.messages = [...newMessages, { role: 'assistant', content: assistantContent, reasoning: assistantReasoning, tools: assistantTools, agentName: runMode === 'business' ? 'Negocios' : 'Desarrollo' }];
+        if (isVisibleGeneration()) setMessages(runtime.messages);
       };
       const recordToolEvent = (name, input, output) => {
-        setActiveToolName(name);
+        runtime.tool = name;
+        publishRuntime();
+        if (isVisibleGeneration()) setActiveToolName(name);
         const runningIndex = [...assistantTools].map((event, index) => ({ event, index })).reverse().find(({ event }) => event.name === name && event.output?.status === 'running')?.index;
         const runningEvent = runningIndex === undefined ? null : assistantTools[runningIndex];
         const completedEvent = { ...runningEvent, id: runningIndex === undefined ? (crypto.randomUUID?.() || `${Date.now()}-${assistantTools.length}`) : assistantTools[runningIndex].id, name, input, output, at: new Date().toISOString(), durationMs: runningEvent?.durationMs ?? (runningEvent?.startedAt ? Date.now() - runningEvent.startedAt : null) };
@@ -1367,7 +1396,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         assistantTools = [];
         structuredArtifactOutput = null;
         executionStartedAt = Date.now();
-        setAgentState('streaming');
+        guardedSetAgentState('streaming');
         updateAssistantMessage();
         const executionMessages = retryInstruction ? [...newMessages, { role: 'user', content: `${retryInstruction}\n\nUse a different strategy or tool sequence; do not repeat the same failed call.` }] : newMessages;
         return runStream({
@@ -1398,14 +1427,17 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             },
             onAbort: ({ steps }) => {
               if (!isCurrentGeneration()) return;
-              setPendingApprovals([]);
-              setActiveToolName('');
-              setAgentState('idle');
+              runtime.pendingApprovals = [];
+              runtime.tool = '';
+              guardedSetAgentState('idle');
+              if (isVisibleGeneration()) setPendingApprovals([]);
               void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'generation.abort', input: { steps: steps.length }, output: { status: 'aborted' } });
             },
             onEnd: () => {
               if (!isCurrentGeneration()) return;
-              setActiveToolName('');
+              runtime.tool = '';
+              publishRuntime();
+              if (isVisibleGeneration()) setActiveToolName('');
             },
             onStepEnd: ({ stepNumber, finishReason, toolCalls, usage, performance }) => {
               if (!isCurrentGeneration()) return;
@@ -1424,7 +1456,9 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               const existingIndex = eventKey ? assistantTools.findIndex((event) => event.callId === eventKey) : -1;
               const nextEvent = { id: existingIndex >= 0 ? assistantTools[existingIndex].id : (eventKey || crypto.randomUUID?.() || `${Date.now()}-${assistantTools.length}`), callId: eventKey, name, input: toolCall?.input || {}, output: { status: 'running' }, startedAt: Date.now(), durationMs: null, at: new Date().toISOString() };
               assistantTools = existingIndex >= 0 ? assistantTools.map((event, index) => index === existingIndex ? { ...event, ...nextEvent } : event) : [...assistantTools, nextEvent];
-              setActiveToolName(name);
+              runtime.tool = name;
+              publishRuntime();
+              if (isVisibleGeneration()) setActiveToolName(name);
               updateAssistantMessage();
               void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'tool.execution.start', input: { callId, toolCallId: toolCall?.toolCallId, toolName: toolCall?.toolName, input: toolCall?.input }, output: { status: 'started' } });
             },
@@ -1438,7 +1472,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             onToolCall: () => {
               if (!isCurrentGeneration()) return;
               if (toolStateTimerRef.current) clearTimeout(toolStateTimerRef.current);
-              setAgentState('tool_call');
+              guardedSetAgentState('tool_call');
             },
             onToolResult: () => {
               if (!isCurrentGeneration()) return;
@@ -1446,7 +1480,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               toolStateTimerRef.current = setTimeout(() => {
                 toolStateTimerRef.current = null;
                 if (!isCurrentGeneration() || abortController.signal.aborted) return;
-                setAgentState('streaming');
+                guardedSetAgentState('streaming');
               }, 2000);
             },
             onUsage: async (usage) => {
@@ -1482,7 +1516,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         const toolFallback = formatToolExecutionFallback(runMode, routeSpecialist, assistantTools);
         if (toolFallback) assistantContent = toolFallback;
         else {
-          setAgentState('streaming');
+          guardedSetAgentState('streaming');
           assistantContent = await runAssistant();
           const retryStructuredSummary = formatArtifactOutput(structuredArtifactOutput);
           if (retryStructuredSummary) assistantContent = retryStructuredSummary;
@@ -1506,7 +1540,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           verificationResult = { completed: false, retry: true, reason: String(error) };
         }
         if (!hasSuccessfulAction() || verificationResult.retry || verificationResult.completed === false) {
-          setAgentState('streaming');
+          guardedSetAgentState('streaming');
           assistantContent = await runAssistant(`El verificador interno indicó que la tarea todavía no está comprobada. Motivo: ${verificationResult.reason || 'faltan evidencias'}. Ejecutá las tools necesarias ahora, verificá sus resultados y no respondas como completado hasta lograr el objetivo: ${routingGoal}`);
           const retryStructuredSummary = formatArtifactOutput(structuredArtifactOutput);
           if (retryStructuredSummary) assistantContent = retryStructuredSummary;
@@ -1519,12 +1553,14 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       if (routingRequiresAction && verificationResult?.completed === false && executedAction) assistantContent = `${assistantContent.trim()}\n\nVerificacion incompleta: la IA verificadora no pudo confirmar el resultado.`.trim();
       if (routingRequiresAction && !executedAction) assistantContent = `${assistantContent.trim()}\n\nAcción no verificada: no se ejecutó una tool de escritura o ejecución con resultado exitoso.`.trim();
       const assistantMessage = { role: 'assistant', content: assistantContent, tools: assistantTools, agentName: runMode === 'business' ? 'Negocios' : 'Desarrollo', meta: { provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt, status: 'completed', changes, usage: latestUsage ? { inputTokens: latestUsage.inputTokens, outputTokens: latestUsage.outputTokens, totalTokens: latestUsage.totalTokens, reasoningTokens: latestUsage.reasoningTokens } : null } };
-      setMessages([...newMessages, { ...assistantMessage, displayContent: '' }]);
+      runtime.messages = [...newMessages, { ...assistantMessage, displayContent: '' }];
+      if (isVisibleGeneration()) setMessages(runtime.messages);
       let visibleLength = 0;
-      visualAnimationRef.current = window.setInterval(() => {
+      if (isVisibleGeneration()) visualAnimationRef.current = window.setInterval(() => {
         const progress = assistantContent.length > 0 ? visibleLength / assistantContent.length : 1;
         const charsPerTick = Math.min(5, Math.max(1, Math.floor(progress * 5) + 1));
         visibleLength = Math.min(assistantContent.length, visibleLength + charsPerTick);
+        if (!isVisibleGeneration()) return;
         setMessages((current) => {
           const updated = [...current];
           const last = updated[updated.length - 1];
@@ -1541,12 +1577,17 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         clearTimeout(toolStateTimerRef.current);
         toolStateTimerRef.current = null;
       }
-      setIsStreaming(false);
-      setActiveToolName('');
-      setAgentState('idle');
+      runtime.state = 'idle';
+      runtime.tool = '';
+      publishRuntime();
+      if (isVisibleGeneration()) {
+        setIsStreaming(false);
+        setActiveToolName('');
+        setAgentState('idle');
+      }
       const persistencePromise = replaceHistory
-        ? writeChatJsonl([...newMessages, assistantMessage])
-        : appendToJsonl(assistantMessage);
+        ? writeChatJsonl([...newMessages, assistantMessage], chat)
+        : appendToJsonl(assistantMessage, chat);
       const persistenceTimeout = new Promise<void>((resolve) => window.setTimeout(resolve, 8_000));
       void Promise.race([persistencePromise, persistenceTimeout]).catch((error) => {
         console.error('No se pudo guardar el historial del chat:', error);
@@ -1555,9 +1596,11 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       if (!isCurrentGeneration()) return;
       if (!abortController.signal.aborted) {
         console.error(formatDebugError(error));
-        setAgentState('error');
+        runtime.state = 'error';
+        publishRuntime();
+        if (isVisibleGeneration()) setAgentState('error');
       }
-      setMessages((prev) => {
+      const updateErrorMessages = (prev) => {
         const updated = [...prev];
         const last = updated[updated.length - 1];
         if (last?.role === 'assistant' && last.content === '') {
@@ -1576,7 +1619,9 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           };
         }
         return updated;
-      });
+      };
+      runtime.messages = updateErrorMessages(runtime.messages);
+      if (isVisibleGeneration()) setMessages(runtime.messages);
     } finally {
       if (!isCurrentGeneration()) return;
       if (toolStateTimerRef.current) {
@@ -1584,24 +1629,37 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         toolStateTimerRef.current = null;
       }
       if (abortControllerRef.current === abortController) abortControllerRef.current = null;
-      setIsStreaming(false);
-      setActiveToolName('');
-      setAgentState((state) => state === 'error' && !abortController.signal.aborted ? 'error' : 'idle');
+      runtime.pendingApprovals = [];
+      runtime.approvalResolvers.clear();
+      if (isVisibleGeneration()) {
+        setIsStreaming(false);
+        setActiveToolName('');
+        setAgentState((state) => state === 'error' && !abortController.signal.aborted ? 'error' : 'idle');
+      }
+      if (chatRuntimesRef.current.get(chatId)?.controller === abortController) chatRuntimesRef.current.delete(chatId);
     }
   };
 
   const cancelGeneration = () => {
     const controller = abortControllerRef.current;
     if (!controller) return;
-    generationIdRef.current += 1;
+    const chatId = activeChatRef.current?.chatId;
+    const runtime = chatId ? chatRuntimesRef.current.get(chatId) : undefined;
     abortControllerRef.current = null;
     if (!controller.signal.aborted) controller.abort(new DOMException('Generación cancelada por el usuario.', 'AbortError'));
     if (toolStateTimerRef.current) {
       clearTimeout(toolStateTimerRef.current);
       toolStateTimerRef.current = null;
     }
-    approvalResolversRef.current.forEach((resolve) => resolve(false));
-    approvalResolversRef.current.clear();
+    (runtime?.approvalResolvers || approvalResolversRef.current).forEach((resolve) => resolve(false));
+    (runtime?.approvalResolvers || approvalResolversRef.current).clear();
+    if (runtime && chatId) {
+      runtime.state = 'idle';
+      runtime.tool = '';
+      runtime.pendingApprovals = [];
+      chatRuntimesRef.current.delete(chatId);
+      window.dispatchEvent(new CustomEvent('codeclub:agent-activity', { detail: { chatId, state: 'idle', tool: '', agent: chatMode === 'business' ? 'Negocios' : 'Desarrollo' } }));
+    }
     setPendingApprovals([]);
     setIsStreaming(false);
     setActiveToolName('');
@@ -1654,18 +1712,13 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       const action = (event as CustomEvent).detail?.action;
       if (isAgentBusy) return;
       const prompts: Record<string, string> = {
-        'development-mode': '[TESTING DESARROLLO] Usá el enrutamiento automático y elegí Desarrollo. Inspeccioná el proyecto activo con las tools reales, llamá listFiles con maxFiles=60, y devolvé un resumen breve indicando modo, especialista y tools usadas. No edites archivos, no leas secretos y no inventes resultados.',
-        'business-mode': '[TESTING ECONOMÍA] Usá el enrutamiento automático y elegí Economía. Consultá el workspace económico del proyecto activo y devolvé un resumen breve indicando modo, especialista y tools usadas. Si no hay proyecto activo, listá los proyectos indexados y explicá qué falta para elegir uno. No edites código ni inventes datos.',
-        'tool-animation': '[TESTING TOOLS] Usá Desarrollo y ejecutá varias tools reales en secuencia para probar la interfaz: listFiles con maxFiles=8, luego searchText con query "TODO" y maxMatches=5, y finalmente getExecutionLog con limit=3. No edites archivos. Esperá el resultado de cada tool antes de continuar y devolvé un resumen breve con los tiempos.',
-        terminal: '[TESTING] Usá obligatoriamente la tool terminal ahora. Creá un proceso persistente en background para poder observarlo visualmente: shell powershell, nombre "Testing background", comando "Write-Output \'Codeclub terminal testing\'; Start-Sleep -Seconds 45". No uses runCommand, no simules la ejecución en Markdown y confirmá el ID, shell, estado y que quedó en background.',
-    'computer-use': '[TESTING] Control de PC obligatorio: usá únicamente la tool runCommand y ejecutá PowerShell con un único comando idempotente. Creá $path=Join-Path $env:TEMP \'Codeclub-PC-Test.txt\' y guardá allí el texto exacto \'Codeclub controla mi PC :)\' con Set-Content; reutilizá un proceso de Notepad cuyo MainWindowTitle coincida con \'*Codeclub-PC-Test*\' o abrí ese archivo con Start-Process notepad.exe -ArgumentList $path. Para Edge, obtené candidatos desde https://www.youtube.com/results?search_query=lofi+music, extraé URLs watch?v= únicas y comprobá cada una con Invoke-WebRequest hasta encontrar una respuesta HTTP válida; no uses una URL fija sin comprobarla. Si ya existe un proceso msedge, activá su ventana con Microsoft.VisualBasic.Interaction.AppActivate, enviá Ctrl+L, la URL elegida y Enter con SendKeys; si no existe, abrilo con Start-Process msedge.exe -ArgumentList \'--new-window\',$edgeUrl. Esperá entre activación y navegación, no abras ventanas duplicadas, y devolvé al final un JSON compacto con notepadPid, edgePid, file, url, httpStatus y verified. Si aparece \'video no disponible\', buscá otro candidato y repetí solo la navegación. No uses terminal ni simules nada en Markdown; confirmá el resultado real de runCommand.',
-        'ask-user': '[TESTING] Usá la herramienta askUser ahora. Preguntame qué estilo de tarjetas preferís y ofrecé exactamente estas opciones: Minimalista, Compacto y Detallado.',
-        subagents: '[TESTING] Delegá esta tarea a un subagente especialista y mostrámelo trabajando: revisá la estructura del proyecto y devolvé un resumen breve.',
-        approval: '[TESTING] Intentá ejecutar una acción que requiera aprobación humana antes de continuar. Mostrá la tarjeta de aprobación.',
-        streaming: '[TESTING] Analizá paso a paso esta mejora y explicá tu razonamiento mientras trabajás, para poder probar el estado de streaming y pensamiento.',
-        todo: '[TESTING] No describas ni simules nada en Markdown. Ejecutá obligatoriamente las tools reales en este orden: 1) todo con action clear; 2) todo con action add para tres tareas; 3) usá los IDs exactos devueltos por esas llamadas para ejecutar todo con action update y status in_progress sobre la primera tarea; 4) ejecutá getTaskStatus. No respondas con una tabla escrita: el objetivo es generar eventos tool y mostrar la tarjeta TODO visual.',
-        'plan-mode': '[TESTING] Entrá en modo plan y proponé un plan de implementación con pasos, riesgos y verificaciones, sin modificar archivos todavía.',
-        quote: '[TESTING] Usá obligatoriamente la tool createQuote ahora. Generá una cotización de prueba persistida para este proyecto con título, descripción clara y exactamente tres resultados con tipo, resultado esperado, métrica e importe. No la simules en Markdown: la prueba termina cuando createQuote devuelve la cotización.',
+        'braille-tools': '[TESTING BRAILLE] Usá Desarrollo y ejecutá tools reales, una por vez: listFiles con maxFiles=8, searchText con query "TODO" y maxMatches=5, readFile usando un archivo real devuelto por listFiles y getExecutionLog con limit=3. No edites archivos y devolvé el resumen en español.',
+        'braille-specialists': '[TESTING BRAILLE] Usá Desarrollo y delegá dos especialistas reales, en secuencia: developer y qa. Cada uno debe inspeccionar el proyecto y devolver evidencias breves. No edites archivos; quiero ver cada llamada como una tool con su patrón Braille.',
+        'braille-business': '[TESTING BRAILLE] Usá Economía y delegá pricing y finance para analizar el workspace económico del proyecto activo. También consultá getBusinessWorkspace. No modifiques datos ni inventes resultados; quiero ver los patrones de especialistas.',
+        'braille-error': '[TESTING BRAILLE] Usá Desarrollo y llamá obligatoriamente readFile con la ruta inexistente "__codeclub_braille_missing__.txt" para producir un error real y mostrar el patrón Braille de error. Informá la evidencia sin inventar.',
+        'braille-browser': '[TESTING BRAILLE] Usá Desarrollo: abrí https://example.com con openBrowser, observá con getBrowserState y ejecutá un scroll pequeño con browserAction. Verificá cada resultado; no edites archivos ni inventes estados.',
+        'braille-complete': '[TESTING BRAILLE] Ejecutá una secuencia completa de tools reales en Desarrollo: listFiles, searchText, getExecutionLog, createPlan y updatePlan. El plan debe ser de prueba y persistirse en el workspace. Esperá cada resultado y devolvé los tiempos.',
+        'markdown-rendering': '[TESTING MARKDOWN] Respondé únicamente con una demostración completa en Markdown, sin tools: encabezados H1/H2/H3, texto en **negrita**, *cursiva*, ~~tachado~~, enlace, cita, listas numeradas y con viñetas, código inline, bloque de código con lenguaje, regla horizontal y una tabla con encabezados, tres filas y alineación. Incluí emojis y caracteres especiales. No describas la prueba: renderizá directamente todos los elementos.',
       };
       if (prompts[action]) void sendMessage(prompts[action]);
     };
@@ -1951,13 +2004,11 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             )}
             {m.role === 'assistant' && m.meta && <div style={{ alignSelf: 'stretch', color: 'rgba(216, 216, 216, 0.42)', fontSize: '10px', letterSpacing: '0.01em', margin: '0 0 4px' }}>{m.meta.provider} · {m.meta.model} · {formatDuration(m.meta.durationMs)}</div>}
             <div style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '5px', maxWidth: '80%' }}>
-              <span style={{ alignSelf: 'start', justifySelf: m.role === 'user' ? 'end' : 'start', color: m.role === 'user' ? avatarColor : '#ffffff', fontSize: '13px', fontWeight: 600, marginBottom: '2px', padding: m.role === 'user' ? '0 8px' : 0 }}>
-                {m.role === 'user' ? 'Tú' : (m.agentName || 'Desarrollo')}
-              </span>
+              {m.role === 'user' && <span style={{ alignSelf: 'start', justifySelf: 'end', color: 'rgba(216, 216, 216, 0.42)', fontSize: '10px', fontWeight: 500, letterSpacing: '0.01em', marginBottom: '2px', padding: '0 8px' }}>{username}</span>}
               {m.role === 'user' && m.attachments?.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: '5px', maxWidth: '100%' }}>{m.attachments.map((file) => file.mediaType?.startsWith('image/') ? <img key={file.path || file.name} src={file.previewUrl || convertFileSrc(file.path)} alt={file.name} title={file.name} style={{ width: '34px', height: '34px', display: 'block', objectFit: 'cover', border: '1px solid #2b2b2b', borderRadius: '8px', background: '#161616' }} /> : <span key={file.path || file.name} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', maxWidth: '190px', padding: '5px 8px', border: '1px solid #2b2b2b', borderRadius: '8px', background: '#161616', color: '#cfcfcf', fontSize: '10px' }}><Paperclip size={11} strokeWidth={1.8} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span></span>)}</div>}
               <div style={{ background: m.role === 'user' ? '#202020' : 'transparent', padding: m.role === 'user' ? '14px 20px' : '0', borderRadius: m.role === 'user' ? '24px 24px 4px 24px' : '0', color: '#eee', fontSize: '14px', width: 'fit-content', maxWidth: '100%', lineHeight: 1.5, overflowWrap: 'anywhere', wordBreak: 'break-word', boxShadow: m.role === 'user' ? '0 4px 14px rgba(0, 0, 0, 0.18)' : 'none' }}>
                 {m.role === 'assistant' && m.reasoning && <div style={{ margin: '0 0 12px', padding: '9px 11px', borderLeft: '2px solid #555555', color: 'rgba(216, 216, 216, 0.58)', fontSize: '12px', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}><div style={{ marginBottom: '4px', color: 'rgba(216, 216, 216, 0.42)', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Pensamiento</div>{m.reasoning}</div>}
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ p: ({ children }) => <p style={{ margin: m.role === 'user' ? 0 : '0 0 12px', lineHeight: m.role === 'user' ? 1.4 : 1.6 }}>{children}</p>, ul: ({ children }) => <ul style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ul>, ol: ({ children }) => <ol style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ol>, li: ({ children }) => <li style={{ margin: m.role === 'user' ? 0 : '4px 0' }}>{children}</li>, table: ({ children }) => <div style={{ overflowX: 'auto', margin: '12px 0' }}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>{children}</table></div>, th: ({ children }) => <th style={{ border: '1px solid #2b2b2b', padding: '7px 9px', background: '#1c1c1c', textAlign: 'left', fontWeight: 600 }}>{children}</th>, td: ({ children }) => <td style={{ border: '1px solid #2b2b2b', padding: '7px 9px', verticalAlign: 'top' }}>{children}</td>, h1: ({ children }) => <h1 style={{ margin: '18px 0 10px', fontSize: '20px' }}>{children}</h1>, h2: ({ children }) => <h2 style={{ margin: '16px 0 8px', fontSize: '17px' }}>{children}</h2>, h3: ({ children }) => <h3 style={{ margin: '14px 0 7px', fontSize: '15px' }}>{children}</h3> }}>{m.displayContent ?? m.content}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{ p: ({ children }) => <p style={{ margin: m.role === 'user' ? 0 : '0 0 12px', lineHeight: m.role === 'user' ? 1.4 : 1.6 }}>{children}</p>, ul: ({ children }) => <ul style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ul>, ol: ({ children }) => <ol style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ol>, li: ({ children }) => <li style={{ margin: m.role === 'user' ? 0 : '4px 0' }}>{children}</li>, table: ({ children }) => <div style={{ overflowX: 'auto', margin: '12px 0' }}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>{children}</table></div>, th: ({ children }) => <th style={{ border: '1px solid #2b2b2b', padding: '7px 9px', background: '#1c1c1c', textAlign: 'left', fontWeight: 600 }}>{children}</th>, td: ({ children }) => <td style={{ border: '1px solid #2b2b2b', padding: '7px 9px', verticalAlign: 'top' }}>{children}</td>, h1: ({ children }) => <h1 style={{ margin: '18px 0 10px', fontSize: '20px' }}>{children}</h1>, h2: ({ children }) => <h2 style={{ margin: '16px 0 8px', fontSize: '17px' }}>{children}</h2>, h3: ({ children }) => <h3 style={{ margin: '14px 0 7px', fontSize: '15px' }}>{children}</h3> }}>{m.displayContent ?? m.content}</ReactMarkdown>
                 {m.role === 'assistant' && isStreaming && i === messages.length - 1 && <span style={{ display: 'inline-block', marginTop: m.content ? '2px' : 0, color: 'rgba(216, 216, 216, 0.58)', fontSize: '13px' }}>{m.content ? '▌' : 'Generando respuesta…'}</span>}
               </div>
               {m.role === 'assistant' && <ToolExecutionCards tools={m.tools} />}
@@ -1965,16 +2016,16 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               {m.role === 'assistant' && <SubagentCards tools={m.tools} />}
               {m.role === 'assistant' && i === messages.length - 1 && <ApprovalCards approvals={pendingApprovals} onResolve={resolveToolApproval} />}
               {m.role === 'assistant' && <ChangeSummaryCard changes={m.meta?.changes} />}
-              <div style={{ alignSelf: m.role === 'user' ? 'end' : 'start', display: 'flex', alignItems: 'center', gap: '4px', opacity: 0.72 }}>
-                <button type="button" aria-label={copiedMessageIndex === i ? 'Mensaje copiado' : 'Copiar mensaje'} title={copiedMessageIndex === i ? 'Copiado' : 'Copiar'} onClick={() => void handleCopyMessage(m.content, i)} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: copiedMessageIndex === i ? '#7dd3a8' : 'rgba(216, 216, 216, 0.62)', cursor: 'pointer' }}>
+              {(m.role === 'user' || !isStreaming || i !== messages.length - 1 || m.meta?.status === 'error') && <div style={{ alignSelf: m.role === 'user' ? 'end' : 'start', display: 'flex', alignItems: 'center', gap: '4px', opacity: 0.72 }}>
+                <button type="button" aria-label={copiedMessageIndex === i ? 'Mensaje copiado' : 'Copiar mensaje'} title={copiedMessageIndex === i ? 'Copiado' : 'Copiar'} onClick={() => void handleCopyMessage(m.content, i)} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: copiedMessageIndex === i ? 'var(--codeclub-accent)' : 'rgba(216, 216, 216, 0.62)', cursor: 'pointer', transition: 'color 700ms ease' }}>
                   {copiedMessageIndex === i ? <Check size={13} strokeWidth={2.2} /> : <Copy size={13} strokeWidth={2} />}
                 </button>
                 {m.role === 'assistant' && <button type="button" aria-label="Abrir Artifacts" title="Abrir Artifacts" onClick={() => { const projectPath = activeProject?.projectPath || activeChat?.projectPath || ''; if (projectPath) window.dispatchEvent(new CustomEvent('codeclub:active-project', { detail: { projectPath, projectName: activeProject?.name || '' } })); window.dispatchEvent(new CustomEvent('codeclub:open-artifacts', { detail: { projectPath } })); }} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: 'pointer' }}><ListTodo size={13} strokeWidth={1.8} /></button>}
-                {m.role === 'assistant' && m.tools?.length > 0 && <button type="button" aria-label={copiedToolLogIndex === i ? 'Log copiado' : 'Copiar log de tools'} title={copiedToolLogIndex === i ? 'Log copiado' : 'Copiar log de tools'} onClick={() => void handleCopyToolLog(m.tools, i)} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: copiedToolLogIndex === i ? '#7dd3a8' : 'rgba(216, 216, 216, 0.62)', cursor: 'pointer' }}>{copiedToolLogIndex === i ? <Check size={13} strokeWidth={2.2} /> : <Terminal size={13} strokeWidth={1.8} />}</button>}
+                {m.role === 'assistant' && m.tools?.length > 0 && <button type="button" aria-label={copiedToolLogIndex === i ? 'Log copiado' : 'Copiar log de tools'} title={copiedToolLogIndex === i ? 'Log copiado' : 'Copiar log de tools'} onClick={() => void handleCopyToolLog(m.tools, i)} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: copiedToolLogIndex === i ? 'var(--codeclub-accent)' : 'rgba(216, 216, 216, 0.62)', cursor: 'pointer', transition: 'color 700ms ease' }}>{copiedToolLogIndex === i ? <Check size={13} strokeWidth={2.2} /> : <Bug size={13} strokeWidth={1.8} />}</button>}
                 {m.role === 'user' && <button type="button" aria-label="Reintentar desde este mensaje" onClick={() => handleRetryMessage(i)} disabled={isAgentBusy} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: isAgentBusy ? 'not-allowed' : 'pointer' }}>
                   <RotateCcw size={13} strokeWidth={2} />
                 </button>}
-              </div>
+              </div>}
             </div>
           </React.Fragment>
         ))}
@@ -2256,16 +2307,33 @@ function parseCsv(content: string): string[][] {
   return rows;
 }
 
-function ToolIcon({ name }: { name: string }) {
-  const icons: Record<string, React.ComponentType<{ size?: number; strokeWidth?: number }>> = {
-    listFiles: FolderTree, readFile: FileCode2, searchText: Search, listProjectFiles: FolderTree, readProjectFile: FileCode2, searchProjectText: Search,
-    writeFile: Pencil, runCommand: Code2, terminal: Terminal, openBrowser: Globe, getBrowserState: Eye, browserAction: MousePointer2,
-    createPlan: ListTodo, createExecutionPlan: ListTodo, todo: ListChecks, subagent: Bot, delegateBusinessSpecialist: Bot,
-    getBusinessWorkspace: BriefcaseBusiness, updateBusinessWorkspace: BriefcaseBusiness, createQuote: ReceiptText, createBudget: Calculator,
-    getAIUsageMetrics: ChartNoAxesCombined, getExecutionLog: ScrollText,
-  };
-  const Icon = icons[name] || Terminal;
-  return <Icon size={14} strokeWidth={1.8} />;
+const TOOL_BRAILLE_FRAMES: Record<string, string[]> = {
+  listFiles: ['⠿', '⠾', '⠶', '⠷', '⠿'], readFile: ['⠶', '⠦', '⠴', '⠶'], searchText: ['⠤', '⠦', '⠴', '⠦'],
+  listProjectFiles: ['⠿', '⠾', '⠶', '⠷', '⠿'], readProjectFile: ['⠶', '⠦', '⠴', '⠶'], searchProjectText: ['⠤', '⠦', '⠴', '⠦'],
+  writeFile: ['⠒', '⠓', '⠒', '⠑'], runCommand: ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧'], terminal: ['⠙', '⠋', '⠹', '⠸', '⠼', '⠴'],
+  openBrowser: ['⠳', '⠲', '⠦', '⠴', '⠳'], getBrowserState: ['⠼', '⠾', '⠿', '⠾', '⠼'], browserAction: ['⠦', '⠴', '⠲', '⠦'],
+  askUser: ['⠴', '⠦', '⠴', '⠦'], createPlan: ['⠇', '⠧', '⠷', '⠇'], createExecutionPlan: ['⠇', '⠧', '⠷', '⠇'], updatePlan: ['⠸', '⠼', '⠸'],
+  todo: ['⠺', '⠻', '⠺', '⠻'], getTaskStatus: ['⠾', '⠿', '⠾'], remember: ['⠘', '⠸', '⠘'], recall: ['⠨', '⠸', '⠨'], forget: ['⠊', '⠉', '⠊'], getExecutionLog: ['⠫', '⠪', '⠫'],
+  getBusinessWorkspace: ['⠍', '⠝', '⠍'], updateBusinessWorkspace: ['⠮', '⠯', '⠮'], getAIUsageMetrics: ['⠰', '⠸', '⠰'], createQuote: ['⠹', '⠺', '⠹'], createBudget: ['⠭', '⠮', '⠭'],
+  getWhatsAppBusinessContext: ['⠷', '⠿', '⠷'], listIndexedProjects: ['⠪', '⠫', '⠪'], delegateBusinessSpecialist: ['⠈', '⠉', '⠋', '⠙'], subagent: ['⠈', '⠉', '⠋', '⠙'],
+};
+
+const SPECIALIST_BRAILLE_FRAMES: Record<string, string[]> = {
+  developer: ['⠈', '⠉', '⠋', '⠙'], frontend: ['⠈', '⠊', '⠒', '⠓'], backend: ['⠈', '⠐', '⠘', '⠸'], qa: ['⠈', '⠤', '⠦', '⠴'], security: ['⠈', '⠎', '⠴', '⠿'], documentation: ['⠈', '⠇', '⠧', '⠷'], computer_use: ['⠳', '⠲', '⠦', '⠴'],
+  commercial: ['⠈', '⠍', '⠝', '⠍'], pricing: ['⠈', '⠹', '⠺', '⠹'], finance: ['⠈', '⠰', '⠸', '⠰'], operations: ['⠈', '⠮', '⠯', '⠮'], crm_whatsapp: ['⠈', '⠷', '⠿', '⠷'], strategy: ['⠈', '⠇', '⠸', '⠇'],
+};
+
+function BrailleToolMark({ name, specialist, state }: { name: string; specialist?: string; state: 'running' | 'completed' | 'error' }) {
+  const frames = (specialist && SPECIALIST_BRAILLE_FRAMES[specialist]) || TOOL_BRAILLE_FRAMES[name] || ['⠋', '⠙', '⠹', '⠸'];
+  const [frame, setFrame] = useState(0);
+  useEffect(() => {
+    setFrame(0);
+    if (state !== 'running' || frames.length < 2) return undefined;
+    const timer = window.setInterval(() => setFrame((current) => (current + 1) % frames.length), 150);
+    return () => window.clearInterval(timer);
+  }, [name, specialist, state, frames.length]);
+  const glyph = state === 'error' ? '⠿' : state === 'completed' ? frames[frames.length - 1] : frames[frame];
+  return <span className="codeclub-tool-braille" data-state={state} aria-hidden="true">{glyph}</span>;
 }
 
 function ToolExecutionCards({ tools = [] }: { tools?: any[] }) {
@@ -2275,10 +2343,27 @@ function ToolExecutionCards({ tools = [] }: { tools?: any[] }) {
     const latest = tools[tools.length - 1];
     if (!latest) { setVisibleTools([]); latestKeyRef.current = ''; return undefined; }
     const key = String(latest.id || latest.name);
-    if (latestKeyRef.current === key) { setVisibleTools([latest]); return undefined; }
+    const running = latest.output?.status === 'running';
+    if (latestKeyRef.current === key) {
+      setVisibleTools([latest]);
+      if (!running) {
+        const timer = window.setTimeout(() => {
+          setVisibleTools([]);
+          latestKeyRef.current = '';
+        }, 700);
+        return () => window.clearTimeout(timer);
+      }
+      return undefined;
+    }
     latestKeyRef.current = key;
     setVisibleTools((current) => [...current.slice(-1), latest]);
-    const timer = window.setTimeout(() => setVisibleTools((current) => current.slice(-1)), 180);
+    const timer = window.setTimeout(() => {
+      if (running) setVisibleTools((current) => current.slice(-1));
+      else {
+        setVisibleTools([]);
+        latestKeyRef.current = '';
+      }
+    }, running ? 180 : 700);
     return () => window.clearTimeout(timer);
   }, [tools]);
   if (!visibleTools.length) return null;
@@ -2289,8 +2374,9 @@ function ToolExecutionCards({ tools = [] }: { tools?: any[] }) {
       const running = event.output?.status === 'running';
       const failed = Boolean(event.output?.error) || event.output?.status === 'error';
       const status = failed ? 'Error' : running ? 'Ejecutando' : formatDuration(Number(event.durationMs || 0));
+      const specialist = event.input?.specialist;
       return <div key={`${key}-${index}`} style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, minHeight: '28px', padding: '5px 8px', border: '1px solid #252525', borderRadius: '7px', background: '#151515', color: '#999', fontSize: '10px', animation: key === latestKey ? 'codeclub-tool-fade-in 180ms ease-out' : 'codeclub-tool-fade-out 180ms ease-in forwards' }}>
-        <span aria-hidden="true" style={{ display: 'grid', placeItems: 'center', flex: '0 0 16px', color: '#ffffff' }}><ToolIcon name={event.name} /></span>
+        <span style={{ display: 'grid', placeItems: 'center', flex: '0 0 16px', color: '#ffffff' }}><BrailleToolMark name={event.name} specialist={specialist} state={failed ? 'error' : running ? 'running' : 'completed'} /></span>
         <span style={{ minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#cfcfcf', fontFamily: 'var(--font-mono, monospace)' }}>{event.name}</span>
         <span title={running ? 'Tool en ejecución' : `Tiempo de ejecución: ${status}`} style={{ flexShrink: 0, color: '#ffffff' }}>{status}</span>
       </div>;

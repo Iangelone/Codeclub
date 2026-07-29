@@ -56,7 +56,7 @@ All data stored locally in OS app config/cache directories (`appConfigDir`, `app
 
 ## Color Tokens
 
-- `#1687ff` -> primary accent for the browser/PC mouse cursor, inspection outlines, selection borders, and interaction glow.
+- Syntax highlighting uses the Material Theme / Material Palenight palette: `#C792EA`, `#82AAFF`, `#C3E88D`, `#F78C6C`, `#FFCB6B`, `#7F8C98`, and `#89DDFF`.
 - `#111111` -> base app background.
 - `#101010` -> deepest surface.
 - `#121212` -> low surface.

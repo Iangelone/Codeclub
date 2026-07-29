@@ -7,6 +7,14 @@ import BusinessPanel from './BusinessPanel.tsx';
 import { readProjectIndex, type ProjectEntry } from '../lib/projectManager';
 
 type SelectedProject = { projectPath: string; projectName?: string };
+const DOCK_AVATAR_COLORS = ['#A98BC6', '#6F91CC', '#A9C978', '#D17A60', '#D4A956', '#6F7C86', '#74BBD1'];
+const getDockAvatarColor = (chat: GlobalChat) => {
+  const chatId = chat.id || (chat as GlobalChat & { chatId?: string }).chatId || chat.name;
+  let hash = 0;
+  for (let index = 0; index < String(chatId).length; index += 1) hash = (hash * 31 + String(chatId).charCodeAt(index)) | 0;
+  const fallback = DOCK_AVATAR_COLORS[Math.abs(hash) % DOCK_AVATAR_COLORS.length];
+  try { const override = JSON.parse(window.localStorage.getItem('codeclub:chat-avatar-colors') || '{}')[chatId]; return DOCK_AVATAR_COLORS.includes(override) ? override : fallback; } catch { return fallback; }
+};
 
 export default function WorkspaceManager({ catalog, defaultProvider, defaultModel }) {
   const [selectedProject, setSelectedProject] = useState<SelectedProject | null>(null);
@@ -17,6 +25,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [availableProjects, setAvailableProjects] = useState<ProjectEntry[]>([]);
   const [recentChats, setRecentChats] = useState<GlobalChat[]>([]);
+  const [activeChatId, setActiveChatId] = useState<string | undefined>(activeChatStore.get().id);
 
   useEffect(() => {
     const updateRecentChats = (chats: GlobalChat[]) => {
@@ -25,7 +34,10 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
       window.dispatchEvent(new CustomEvent('codeclub:recent-chats-changed', { detail: { chats: recent } }));
     };
     updateRecentChats(chatsStore.get());
-    return chatsStore.subscribe(updateRecentChats);
+    const handleAvatarColorChange = () => setRecentChats((current) => [...current]);
+    window.addEventListener('codeclub:chat-avatar-color-changed', handleAvatarColorChange);
+    const unsubscribe = chatsStore.subscribe(updateRecentChats);
+    return () => { unsubscribe(); window.removeEventListener('codeclub:chat-avatar-color-changed', handleAvatarColorChange); };
   }, []);
 
   useEffect(() => {
@@ -128,6 +140,8 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
     return () => window.removeEventListener('codeclub:toggle-panel-dock', toggleDock);
   }, []);
 
+  useEffect(() => activeChatStore.subscribe((chat) => setActiveChatId(chat.id)), []);
+
   useEffect(() => {
     const handleCommandMenuState = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
@@ -164,8 +178,8 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
           <button type="button" aria-pressed={commandMenuKind === 'model'} aria-label={`Modelo: ${commandMenuKind === 'model' ? 'Activo' : 'Desactivado'}`} title={`Modelo: ${commandMenuKind === 'model' ? 'Activo' : 'Desactivado'}`} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-command-menu', { detail: { kind: 'model' } }))} className={`grid h-7 w-7 place-items-center rounded-[9px] border-0 transition-colors ${commandMenuKind === 'model' ? 'bg-[#1e1e1e] text-[#eeeeee]' : 'bg-transparent text-[#777777] hover:bg-[#1e1e1e] hover:text-[#eeeeee]'}`}><Cpu size={14} strokeWidth={1.8} /></button>
           <button type="button" aria-pressed={commandMenuKind === 'project'} aria-label={`Proyecto: ${commandMenuKind === 'project' ? 'Activo' : 'Desactivado'}`} title={`Proyecto: ${commandMenuKind === 'project' ? 'Activo' : 'Desactivado'}`} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-command-menu', { detail: { kind: 'project' } }))} className={`grid h-7 w-7 place-items-center rounded-[9px] border-0 transition-colors ${commandMenuKind === 'project' ? 'bg-[#1e1e1e] text-[#eeeeee]' : 'bg-transparent text-[#777777] hover:bg-[#1e1e1e] hover:text-[#eeeeee]'}`}><Folder size={14} strokeWidth={1.8} /></button>
           {recentChats.map((chat) => (
-            <button key={`${chat.projectPath}:${chat.id}`} type="button" aria-label={`Abrir ${chat.name}`} title={chat.name} onClick={() => openDockChat(chat)} className="grid h-7 w-7 place-items-center rounded-[9px] border-0 bg-[#1e1e1e] text-[10px] font-medium uppercase text-[#777777] transition-colors hover:bg-[#2c2c2c] hover:text-[#eeeeee]">
-              {chat.name.trim().charAt(0).toUpperCase() || '?'}
+            <button key={`${chat.projectPath}:${chat.id}`} type="button" aria-label={`Abrir ${chat.name}`} title={chat.name} onClick={() => openDockChat(chat)} className="grid h-7 w-7 place-items-center rounded-[9px] border-0 bg-transparent transition-colors hover:bg-[#1e1e1e]">
+              <span className="grid h-5 w-5 place-items-center rounded-[6px] text-[8px] font-medium uppercase" style={{ backgroundColor: activeChatId === chat.id ? getDockAvatarColor(chat) : '#2b2b2b', color: '#ffffff' }}>{chat.name.trim().charAt(0).toUpperCase() || '?'}</span>
             </button>
           ))}
           <button type="button" aria-label="Terminal" title="Terminal" onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-terminal-dock', { detail: { toggle: true } }))} className="grid h-7 w-7 place-items-center rounded-[9px] border-0 bg-transparent text-[#777777] transition-colors hover:bg-[#1e1e1e] hover:text-[#eeeeee]"><Terminal size={14} strokeWidth={1.8} /></button>

@@ -5,6 +5,7 @@ import { listen } from '@tauri-apps/api/event';
 import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi';
 import { Webview } from '@tauri-apps/api/webview';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import hljs from 'highlight.js/lib/common';
 import { whatsappContextStore } from '../lib/store';
 import { readAgentState, writeAgentState, type AgentState, type TaskStatus } from '../lib/engine/planning';
 import { readBusinessWorkspace, writeBusinessWorkspace, type BusinessWorkspace } from '../lib/projectManager';
@@ -23,6 +24,27 @@ type BrowserDomSelection = {
 type BrowserState = { url: string; title: string; viewport: { width: number; height: number }; text: string; elements: Array<{ id: string; selector: string; role: string; label: string; tag: string; type?: string; disabled: boolean; rect: { x: number; y: number; width: number; height: number } }> };
 
 const browserSelectionHash = '#__codeclub_selection=';
+
+const fileLanguageByExtension: Record<string, string> = {
+  js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript', ts: 'typescript', tsx: 'typescript',
+  json: 'json', css: 'css', scss: 'scss', html: 'xml', htm: 'xml', svg: 'xml', xml: 'xml', md: 'markdown', mdx: 'markdown',
+  py: 'python', rs: 'rust', sql: 'sql', sh: 'bash', bash: 'bash', ps1: 'powershell', yaml: 'yaml', yml: 'yaml', toml: 'ini',
+  java: 'java', kt: 'kotlin', go: 'go', c: 'c', cpp: 'cpp', h: 'c', hpp: 'cpp',
+};
+
+const escapeHighlightedText = (value: string) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+const highlightFileLines = (content: string, path: string) => {
+  const extension = path.split('.').pop()?.toLowerCase() || '';
+  const language = fileLanguageByExtension[extension];
+  return content.split(/\r?\n/).map((line) => {
+    if (!line) return ' ';
+    try {
+      return language && hljs.getLanguage(language) ? hljs.highlight(line, { language, ignoreIllegals: true }).value : escapeHighlightedText(line);
+    } catch {
+      return escapeHighlightedText(line);
+    }
+  });
+};
 
 const browserStateScript = `(() => {
   const invoke = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke;
@@ -64,11 +86,11 @@ const browserActionScript = (action: { type: string; selector?: string; text?: s
 const browserAgentOverlayScript = (selector?: string) => `(() => {
   const overlayId = '__codeclub-agent-overlay';
   const bannerId = '__codeclub-agent-banner';
-  const cursor = 'url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2234%22 height=%2234%22 viewBox=%220 0 34 34%22 fill=%22none%22%3E%3Cpath d=%22M 5 5 L 14 29 A 1.5 1.5 0 0 0 17 28.5 L 19.5 20 L 28.5 17 A 1.5 1.5 0 0 0 29 14 L 5 5 Z%22 fill=%22%231687ff%22 stroke=%22white%22 stroke-width=%223%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E") 5 5, crosshair';
+  const cursor = 'url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2234%22 height=%2234%22 viewBox=%220 0 34 34%22 fill=%22none%22%3E%3Cpath d=%22M 5 5 L 14 29 A 1.5 1.5 0 0 0 17 28.5 L 19.5 20 L 28.5 17 A 1.5 1.5 0 0 0 29 14 L 5 5 Z%22 fill=%22%23f78c6c%22 stroke=%22white%22 stroke-width=%223%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E") 5 5, crosshair';
   const overlay = document.getElementById(overlayId) || Object.assign(document.body.appendChild(document.createElement('div')), { id: overlayId });
   const banner = document.getElementById(bannerId) || Object.assign(document.body.appendChild(document.createElement('div')), { id: bannerId });
-  Object.assign(overlay.style, { position: 'fixed', zIndex: '2147483646', pointerEvents: 'none', border: '2px solid #1687ff', background: 'rgba(22,135,255,.12)', boxShadow: '0 0 0 1px rgba(255,255,255,.35), 0 0 18px rgba(22,135,255,.45)', display: 'none' });
-  Object.assign(banner.style, { position: 'fixed', zIndex: '2147483647', right: '16px', top: '16px', padding: '7px 10px', border: '1px solid #1687ff', borderRadius: '8px', background: '#101a2b', color: '#dbeafe', font: '12px system-ui', boxShadow: '0 6px 20px rgba(0,0,0,.3)', display: 'block' });
+  Object.assign(overlay.style, { position: 'fixed', zIndex: '2147483646', pointerEvents: 'none', border: '2px solid #f78c6c', background: 'rgba(247,140,108,.12)', boxShadow: '0 0 0 1px rgba(255,255,255,.35), 0 0 18px rgba(247,140,108,.45)', display: 'none' });
+  Object.assign(banner.style, { position: 'fixed', zIndex: '2147483647', right: '16px', top: '16px', padding: '7px 10px', border: '1px solid #f78c6c', borderRadius: '8px', background: '#2a1c16', color: '#ffe9df', font: '12px system-ui', boxShadow: '0 6px 20px rgba(0,0,0,.3)', display: 'block' });
   banner.textContent = 'Agente controla · Esc para salir';
   document.documentElement.style.cursor = cursor;
   window.__codeclubAgentStop = false;
@@ -80,7 +102,7 @@ const browserAgentOverlayScript = (selector?: string) => `(() => {
 })()`;
 
 const browserInspectorScript = (active: boolean) => {
-  const cursor = `url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2234%22 height=%2234%22 viewBox=%220 0 34 34%22 fill=%22none%22%3E%3Cpath d=%22M 5 5 L 14 29 A 1.5 1.5 0 0 0 17 28.5 L 19.5 20 L 28.5 17 A 1.5 1.5 0 0 0 29 14 L 5 5 Z%22 fill=%22%231687ff%22 stroke=%22white%22 stroke-width=%223%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E") 5 5, crosshair`;
+  const cursor = `url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2234%22 height=%2234%22 viewBox=%220 0 34 34%22 fill=%22none%22%3E%3Cpath d=%22M 5 5 L 14 29 A 1.5 1.5 0 0 0 17 28.5 L 19.5 20 L 28.5 17 A 1.5 1.5 0 0 0 29 14 L 5 5 Z%22 fill=%22%23f78c6c%22 stroke=%22white%22 stroke-width=%223%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E") 5 5, crosshair`;
   return `(() => {
     const active = ${active ? 'true' : 'false'};
     const root = document.documentElement;
@@ -97,8 +119,8 @@ const browserInspectorScript = (active: boolean) => {
         style.id = styleId;
         style.textContent =
           'html[' + activeAttribute + '="true"], html[' + activeAttribute + '="true"] * { cursor: ${cursor} !important; }' +
-          'html[' + activeAttribute + '="true"] body *:hover:not(:has(*:hover)):not(#' + overlayId + '):not(#' + overlayId + ' *) { outline: 2px solid #1687ff !important; outline-offset: -2px !important; box-shadow: inset 0 0 0 9999px rgba(22, 135, 255, .10) !important; }' +
-          '#' + overlayId + ' { position: fixed; display: none; pointer-events: none; box-sizing: border-box; border: 2px solid #1687ff; background: rgba(22, 135, 255, .10); z-index: 2147483647; }';
+          'html[' + activeAttribute + '="true"] body *:hover:not(:has(*:hover)):not(#' + overlayId + '):not(#' + overlayId + ' *) { outline: 2px solid #f78c6c !important; outline-offset: -2px !important; box-shadow: inset 0 0 0 9999px rgba(247, 140, 108, .10) !important; }' +
+          '#' + overlayId + ' { position: fixed; display: none; pointer-events: none; box-sizing: border-box; border: 2px solid #f78c6c; background: rgba(247, 140, 108, .10); z-index: 2147483647; }';
         (document.head || root).appendChild(style);
       }
     };
@@ -312,6 +334,20 @@ function FilesView({ projectPath }: { projectPath: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  useEffect(() => () => {
+    if (topbarCooldownRef.current !== null) window.clearTimeout(topbarCooldownRef.current);
+  }, []);
+
+  const toggleTree = () => {
+    if (topbarCoolingDown) return;
+    setShowTree((visible) => !visible);
+    setTopbarCoolingDown(true);
+    topbarCooldownRef.current = window.setTimeout(() => {
+      setTopbarCoolingDown(false);
+      topbarCooldownRef.current = null;
+    }, 1000);
+  };
+
   const loadFiles = async () => {
     if (!projectPath) return;
     setLoading(true);
@@ -350,6 +386,7 @@ function FilesView({ projectPath }: { projectPath: string }) {
   };
 
   const tree = useMemo(() => buildTree(entries), [entries]);
+  const highlightedFileLines = useMemo(() => highlightFileLines(selectedContent, selectedPath), [selectedContent, selectedPath]);
   const matches = (node: FileNode) => !query.trim() || node.path.toLowerCase().includes(query.trim().toLowerCase());
   const renderTree = (nodes: FileNode[], depth = 0): React.ReactNode => nodes.filter((node) => matches(node) || node.children.some((child) => matches(child))).map((node) => {
     const isOpen = expanded.has(node.path) || Boolean(query.trim());
@@ -367,11 +404,11 @@ function FilesView({ projectPath }: { projectPath: string }) {
   return <div className="flex h-full max-h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#111111]">
     <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-[#2b2b2b] bg-[#111111] px-2">
       <span className="min-w-0 truncate text-[12px] leading-none text-[#eeeeee]">{selectedPath ? `/${selectedPath.replace(/\\/g, '/')}` : '/'}</span>
-      <button type="button" onClick={toggleTree} disabled={topbarCoolingDown} className={`grid h-7 w-7 place-items-center rounded-[7px] border-0 transition-[background-color,color,transform] duration-200 ease-out active:scale-95 disabled:cursor-wait disabled:opacity-60 ${showTree ? 'bg-[#1687ff]/20 text-[#1687ff]' : 'bg-[#202020] text-[#777777]'} hover:bg-[#1687ff]/20 hover:text-[#1687ff]`} title="Mostrar u ocultar árbol del workspace" aria-label="Mostrar u ocultar árbol del workspace" aria-pressed={showTree}><FolderOpen size={15} /></button>
+      <button type="button" onClick={toggleTree} disabled={topbarCoolingDown} className={`grid h-7 w-7 place-items-center rounded-[7px] border-0 transition-[background-color,color,transform] duration-700 ease-out active:scale-95 disabled:cursor-wait disabled:opacity-60 ${showTree ? 'codeclub-accent-surface' : 'bg-[#202020] text-[#777777]'} codeclub-accent-hover`} title="Mostrar u ocultar árbol del workspace" aria-label="Mostrar u ocultar árbol del workspace" aria-pressed={showTree}><FolderOpen size={15} /></button>
     </div>
     <div className="flex h-0 min-h-0 max-h-full flex-1 overflow-hidden">
       <main className="flex h-full min-w-0 min-h-0 flex-1 flex-col bg-[#111111]">
-        {selectedPath ? <div className="flex min-h-0 flex-1 flex-col">{fileLoading ? <div className="flex flex-1 items-center justify-center text-xs text-[#777777]">Cargando archivo...</div> : <pre className="file-preview-scrollbar m-0 min-h-0 flex-1 overflow-auto whitespace-pre p-4 font-mono text-[12px] leading-5 text-[#d8d8d8]">{selectedContent.split(/\r?\n/).map((line, index) => <span key={index} className="flex min-w-max"><span className="mr-4 w-10 shrink-0 select-none text-right text-[#555555]">{index + 1}</span><span className="whitespace-pre">{line || ' '}</span></span>)}</pre>}</div> : <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center"><Folders size={42} strokeWidth={1.5} className="text-[#a7a7a7]" /><div className="max-w-[300px]"><p className="m-0 text-[18px] font-semibold text-[#eeeeee]">Abrir archivo</p><p className="m-0 mt-2 text-[14px] leading-5 text-[#a7a7a7]">Selecciona un archivo del árbol del espacio de trabajo</p></div></div>}
+        {selectedPath ? <div className="flex min-h-0 flex-1 flex-col">{fileLoading ? <div className="flex flex-1 items-center justify-center text-xs text-[#777777]">Cargando archivo...</div> : <pre className="file-preview-scrollbar m-0 min-h-0 flex-1 overflow-auto whitespace-pre p-4 font-mono text-[12px] leading-5 text-[#d8d8d8]"><code className="codeclub-file-code">{highlightedFileLines.map((line, index) => <span key={index} className="codeclub-file-line flex min-w-max"><span className="mr-4 w-10 shrink-0 select-none text-right text-[#555555]">{index + 1}</span><span className="whitespace-pre" dangerouslySetInnerHTML={{ __html: line }} /></span>)}</code></pre>}</div> : <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center"><Folders size={42} strokeWidth={1.5} className="text-[#a7a7a7]" /><div className="max-w-[300px]"><p className="m-0 text-[18px] font-semibold text-[#eeeeee]">Abrir archivo</p><p className="m-0 mt-2 text-[14px] leading-5 text-[#a7a7a7]">Selecciona un archivo del árbol del espacio de trabajo</p></div></div>}
       </main>
       <aside className={`h-full max-h-full min-h-0 self-stretch flex shrink-0 flex-col border-l border-[#2b2b2b] bg-[#121212] transition-[width,transform,opacity] duration-200 ease-out ${showTree ? 'w-[35%]' : 'w-0 translate-x-full opacity-0 pointer-events-none'}`}>
         <div className="mt-0 flex h-0 min-h-0 flex-1 flex-col px-3 py-3">
@@ -382,6 +419,7 @@ function FilesView({ projectPath }: { projectPath: string }) {
         </div>
       </aside>
     </div>
+    <style>{`.codeclub-file-code .hljs-comment, .codeclub-file-code .hljs-quote { color: #7f8c98; font-style: italic; } .codeclub-file-code .hljs-keyword, .codeclub-file-code .hljs-selector-tag, .codeclub-file-code .hljs-literal, .codeclub-file-code .hljs-section { color: #c792ea; } .codeclub-file-code .hljs-string, .codeclub-file-code .hljs-attr, .codeclub-file-code .hljs-template-variable { color: #c3e88d; } .codeclub-file-code .hljs-number, .codeclub-file-code .hljs-variable, .codeclub-file-code .hljs-regexp { color: #f78c6c; } .codeclub-file-code .hljs-title, .codeclub-file-code .hljs-title.function_, .codeclub-file-code .hljs-function .hljs-title { color: #82aaff; } .codeclub-file-code .hljs-built_in, .codeclub-file-code .hljs-type, .codeclub-file-code .hljs-class .hljs-title { color: #ffcb6b; } .codeclub-file-code .hljs-meta, .codeclub-file-code .hljs-symbol { color: #89ddff; }`}</style>
   </div>;
 }
 
@@ -459,20 +497,6 @@ function ReviewView({ projectPath }: { projectPath: string }) {
     }
   };
 
-  useEffect(() => () => {
-    if (topbarCooldownRef.current !== null) window.clearTimeout(topbarCooldownRef.current);
-  }, []);
-
-  const toggleTree = () => {
-    if (topbarCoolingDown) return;
-    setShowTree((visible) => !visible);
-    setTopbarCoolingDown(true);
-    topbarCooldownRef.current = window.setTimeout(() => {
-      setTopbarCoolingDown(false);
-      topbarCooldownRef.current = null;
-    }, 1000);
-  };
-
   const loadReview = async () => {
     if (!projectPath) { setFiles([]); setSelectedPath(''); return; }
     setLoading(true);
@@ -533,8 +557,8 @@ function ReviewView({ projectPath }: { projectPath: string }) {
       <div className="flex min-w-0 items-center gap-2"><GitCompare size={14} className="shrink-0 text-[#a7a7a7]" /><div className="min-w-0"><div className="truncate text-[12px] text-[#eeeeee]">Cambios</div><div className="text-[10px] text-[#666]">{files.length} {files.length === 1 ? 'archivo' : 'archivos'} · <span className="text-[#76c893]">+{additions}</span> <span className="text-[#d77878]">-{deletions}</span></div></div></div>
       <span className="min-w-0 truncate text-[12px] leading-none text-[#eeeeee]">{files.length} {files.length === 1 ? 'archivo' : 'archivos'} · <span className="text-[#76c893]">+{additions}</span> <span className="text-[#d77878]">-{deletions}</span></span>
       <div className="flex shrink-0 items-center gap-1">
-        <button type="button" onClick={() => runTopbarAction(() => setShowFiles((visible) => !visible))} disabled={topbarCoolingDown} className={`grid h-7 w-7 place-items-center rounded-[7px] border-0 transition-[background-color,color,transform] duration-200 ease-out active:scale-95 disabled:cursor-wait disabled:opacity-60 ${showFiles ? 'bg-[#1687ff]/20 text-[#1687ff]' : 'bg-[#202020] text-[#777777]'} hover:bg-[#1687ff]/20 hover:text-[#1687ff]`} title="Mostrar u ocultar archivos" aria-label="Mostrar u ocultar archivos" aria-pressed={showFiles}><FileText size={13} /></button>
-        <button type="button" onClick={() => runTopbarAction(() => loadReview())} disabled={loading || topbarCoolingDown} className={`grid h-7 w-7 shrink-0 place-items-center rounded-[7px] border-0 transition-[background-color,color,transform] duration-200 ease-out active:scale-95 disabled:cursor-wait disabled:opacity-60 ${loading || topbarCoolingDown ? 'bg-[#1687ff]/20 text-[#1687ff]' : 'bg-[#202020] text-[#777777]'} hover:bg-[#1687ff]/20 hover:text-[#1687ff]`} title="Actualizar cambios" aria-label="Actualizar cambios"><RefreshCw size={13} className={loading ? 'animate-spin' : ''} /></button>
+        <button type="button" onClick={() => runTopbarAction(() => setShowFiles((visible) => !visible))} disabled={topbarCoolingDown} className={`grid h-7 w-7 place-items-center rounded-[7px] border-0 transition-[background-color,color,transform] duration-700 ease-out active:scale-95 disabled:cursor-wait disabled:opacity-60 ${showFiles ? 'codeclub-accent-surface' : 'bg-[#202020] text-[#777777]'} codeclub-accent-hover`} title="Mostrar u ocultar archivos" aria-label="Mostrar u ocultar archivos" aria-pressed={showFiles}><FileText size={13} /></button>
+        <button type="button" onClick={() => runTopbarAction(() => loadReview())} disabled={loading || topbarCoolingDown} className={`grid h-7 w-7 shrink-0 place-items-center rounded-[7px] border-0 transition-[background-color,color,transform] duration-700 ease-out active:scale-95 disabled:cursor-wait disabled:opacity-60 ${loading || topbarCoolingDown ? 'codeclub-accent-surface' : 'bg-[#202020] text-[#777777]'} codeclub-accent-hover`} title="Actualizar cambios" aria-label="Actualizar cambios"><RefreshCw size={13} className={loading ? 'animate-spin' : ''} /></button>
       </div>
     </div>
     {loading ? <div className="flex flex-1 items-center justify-center text-[11px] text-[#777]">Revisando cambios...</div> : error ? <div className="p-3 text-[11px] leading-5 text-[#c28d8d]">{error}</div> : !files.length ? <div className="flex flex-1 flex-col items-center justify-center gap-2 p-5 text-center text-[11px] text-[#777]"><GitCompare size={28} strokeWidth={1.5} /><span>Sin cambios pendientes.</span></div> : <div className="flex min-h-0 flex-1 flex-row-reverse overflow-hidden">
@@ -1202,7 +1226,7 @@ export default function RightSidebar() {
 
 function ArtifactsView({ state, business, projectPath, projectName, hasProject }: { state: AgentState; business: BusinessWorkspace | null; projectPath: string; projectName: string; hasProject: boolean }) {
   const [selectedArtifact, setSelectedArtifact] = useState<{ kind: 'plan' | 'todo' | 'quote'; id: string } | null>(null);
-  const selectionColor = '#1687ff';
+  const selectionColor = '#3a3a3a';
   useEffect(() => setSelectedArtifact(null), [projectPath]);
   useEffect(() => {
     const clearSelectionOutsideArtifacts = (event: MouseEvent) => {
@@ -1285,6 +1309,106 @@ function ArtifactsView({ state, business, projectPath, projectName, hasProject }
     link.click();
     URL.revokeObjectURL(url);
   };
+  const exportQuoteImage = async (quote: any) => {
+    const width = 1600;
+    const padding = 56;
+    const cardWidth = width - padding * 2;
+    const rowHeight = 58;
+    const title = String(quote.title || 'Cotización');
+    const description = String(quote.description || '');
+    const items = Array.isArray(quote.items) ? quote.items : [];
+    const currency = quote.currency || 'USD';
+    const formatMoney = (value: unknown) => {
+      try { return new Intl.NumberFormat('es-AR', { style: 'currency', currency, maximumFractionDigits: 2 }).format(Number(value || 0)); }
+      catch { return `${currency} ${Number(value || 0).toFixed(2)}`; }
+    };
+    const escapeXml = (value: unknown) => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const wrapText = (value: string, maxChars: number) => {
+      const words = value.split(/\s+/).filter(Boolean);
+      const lines: string[] = [];
+      let line = '';
+      words.forEach((word) => {
+        const next = line ? `${line} ${word}` : word;
+        if (next.length > maxChars && line) { lines.push(line); line = word; } else line = next;
+      });
+      if (line || !lines.length) lines.push(line);
+      return lines.slice(0, 2);
+    };
+    const rowData = items.map((item: any) => ({
+      outcome: wrapText(String(item.outcome || item.description || ''), 50),
+      metric: wrapText(String(item.metric || '—'), 30),
+      amount: formatMoney(item.total ?? item.amount),
+    }));
+    const rowDataHeight = Math.max(rowHeight, ...rowData.map((row) => Math.max(row.outcome.length, row.metric.length) * 24 + 22));
+    const height = 360 + rowData.length * rowDataHeight;
+    const canvas = document.createElement('canvas');
+    canvas.width = width * 2;
+    canvas.height = height * 2;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    context.scale(2, 2);
+    const roundRect = (x: number, y: number, w: number, h: number, radius: number) => { context.beginPath(); context.roundRect(x, y, w, h, radius); };
+    context.fillStyle = '#101010';
+    context.fillRect(0, 0, width, height);
+    roundRect(padding, padding, cardWidth, height - padding * 2, 18);
+    context.fillStyle = '#151515';
+    context.fill();
+    context.strokeStyle = '#2b2b2b';
+    context.lineWidth = 1;
+    context.stroke();
+    context.fillStyle = '#eeeeee';
+    context.font = '600 28px Inter, Segoe UI, sans-serif';
+    context.fillText(title, padding + 32, padding + 48);
+    context.fillStyle = '#c2c2c2';
+    context.font = '16px Inter, Segoe UI, sans-serif';
+    context.fillText(description.slice(0, 150), padding + 32, padding + 80);
+    context.fillStyle = '#777777';
+    context.font = '14px Inter, Segoe UI, sans-serif';
+    context.fillText(`Estado: ${quote.status || 'draft'}   ·   Moneda: ${currency}`, padding + 32, padding + 112);
+    const tableX = padding + 32;
+    const tableY = padding + 150;
+    const columns = [tableX, tableX + 690, tableX + 1110, tableX + cardWidth - 64];
+    context.fillStyle = '#101010';
+    context.fillRect(tableX, tableY, cardWidth - 64, 42);
+    context.fillStyle = '#999999';
+    context.font = '600 14px Inter, Segoe UI, sans-serif';
+    context.fillText('RESULTADO', columns[0] + 16, tableY + 27);
+    context.fillText('MÉTRICA', columns[1] + 16, tableY + 27);
+    context.textAlign = 'right';
+    context.fillText('IMPORTE', columns[3] - 16, tableY + 27);
+    context.textAlign = 'left';
+    rowData.forEach((row, index) => {
+      const y = tableY + 42 + index * rowDataHeight;
+      context.strokeStyle = '#2b2b2b';
+      context.beginPath(); context.moveTo(tableX, y); context.lineTo(tableX + cardWidth - 64, y); context.stroke();
+      context.fillStyle = '#c2c2c2';
+      context.font = '16px Inter, Segoe UI, sans-serif';
+      row.outcome.forEach((line, lineIndex) => context.fillText(line, columns[0] + 16, y + 26 + lineIndex * 22));
+      context.fillStyle = '#999999';
+      row.metric.forEach((line, lineIndex) => context.fillText(line, columns[1] + 16, y + 26 + lineIndex * 22));
+      context.fillStyle = '#eeeeee';
+      context.textAlign = 'right';
+      context.fillText(row.amount, columns[3] - 16, y + 32);
+      context.textAlign = 'left';
+    });
+    const totalY = tableY + 42 + rowData.length * rowDataHeight + 34;
+    context.fillStyle = '#bbbbbb';
+    context.font = '600 16px Inter, Segoe UI, sans-serif';
+    context.textAlign = 'right';
+    context.fillText('TOTAL', columns[2] + 190, totalY);
+    context.fillStyle = '#eeeeee';
+    context.font = '600 22px Inter, Segoe UI, sans-serif';
+    context.fillText(formatMoney(quote.total), columns[3] - 16, totalY);
+    context.textAlign = 'left';
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${String(title).replace(/[^a-z0-9-_]+/gi, '-').replace(/^-|-$/g, '') || 'cotizacion'}.png`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
   const copyArtifact = async (kind: 'plan' | 'todo' | 'quote', artifact: any) => {
     const content = kind === 'plan'
       ? [`Plan: ${artifact.title}`, `Estado: ${artifact.status}`, ...(artifact.steps || []).map((step: any) => `- [${step.status}] ${step.title}`)].join('\n')
@@ -1293,7 +1417,7 @@ function ArtifactsView({ state, business, projectPath, projectName, hasProject }
         : [`Cotización: ${artifact.title || 'Cotización'}`, artifact.description || '', ...(artifact.items || []).map((item: any) => `${item.outcome || item.description || ''} | ${item.metric || ''} | ${item.total ?? item.amount ?? 0}`), `Total: ${artifact.total ?? 0}`].filter(Boolean).join('\n');
     try {
       await navigator.clipboard.writeText(content);
-      if (kind === 'quote') exportQuoteCsv(artifact);
+      if (kind === 'quote') { exportQuoteCsv(artifact); await exportQuoteImage(artifact); }
     } catch (error) {
       console.error('No se pudo copiar el artifact:', error);
     }
@@ -1304,25 +1428,25 @@ function ArtifactsView({ state, business, projectPath, projectName, hasProject }
       <div><div className="text-[12px] font-medium text-[#eee]">Artifacts</div><div className="mt-0.5 text-[10px] text-[#666]">Elementos generados y utilizados por la IA.</div></div>
       <span className="max-w-[120px] truncate text-right text-[10px] text-[#555]" title={projectName}>{projectName}</span>
     </div>
-    {plans.length > 0 && <section className="mb-4"><div className="mb-2 text-[10px] font-medium uppercase tracking-[0.08em] text-[#666]">PLAN</div><div className="grid gap-3">{plans.map((plan) => <div key={plan.id} onClick={() => setSelectedArtifact({ kind: 'plan', id: plan.id })} onDoubleClick={() => pushReference('plan', plan.id, plan.title)} onContextMenu={(event) => { event.preventDefault(); void copyArtifact('plan', plan); }} className="cursor-pointer rounded-lg border bg-[#151515] p-2.5" style={{ borderColor: isSelected('plan', plan.id) ? selectionColor : '#202020', boxShadow: isSelected('plan', plan.id) ? `0 0 0 1px ${selectionColor}` : 'none' }}>
+    {plans.length > 0 && <section className="mb-4"><div className="mb-2 text-[10px] font-medium uppercase tracking-[0.08em] text-[#666]">PLAN</div><div className="grid gap-3">{plans.map((plan) => <div key={plan.id} onClick={() => setSelectedArtifact({ kind: 'plan', id: plan.id })} onDoubleClick={() => pushReference('plan', plan.id, plan.title)} onContextMenu={(event) => { event.preventDefault(); void copyArtifact('plan', plan); }} className="cursor-pointer rounded-lg border bg-[#151515] p-2.5" style={{ borderColor: isSelected('plan', plan.id) ? selectionColor : '#202020' }}>
       <div className="mb-2 flex items-center justify-between gap-2"><span className="min-w-0 truncate text-[11px] font-medium text-[#ddd]">{plan.title}</span><ArtifactStatus status={plan.status} /></div>
       <div className="grid gap-1.5">{plan.steps.map((step) => <div key={step.id} className="flex min-w-0 items-center gap-2 text-[10px]"><ArtifactStatus status={step.status} /><span title={step.title} className="min-w-0 truncate text-[#999]">{step.title}</span></div>)}</div>
     </div>)}</div><div className="mt-4 h-px bg-[#202020]" /></section>}
-    {state.todos.length > 0 ? <section className="grid gap-1.5"><div className="mb-1 text-[10px] font-medium uppercase tracking-[0.08em] text-[#666]">TODO</div>{state.todos.map((todo) => <div key={todo.id} onClick={() => setSelectedArtifact({ kind: 'todo', id: todo.id })} onDoubleClick={() => pushReference('todo', todo.id, todo.title)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); void copyArtifact('todo', todo); }} className="flex min-w-0 cursor-pointer items-center gap-2 rounded-md border bg-[#151515] px-2 py-1.5" style={{ borderColor: isSelected('todo', todo.id) ? selectionColor : '#151515', boxShadow: isSelected('todo', todo.id) ? `0 0 0 1px ${selectionColor}` : 'none' }}><ArtifactStatus status={todo.status} /><span title={todo.title} className="min-w-0 flex-1 truncate text-[11px] text-[#bbb]">{todo.title}</span></div>)}</section> : !state.plan && <div className="rounded-lg border border-dashed border-[#252525] px-3 py-5 text-center text-[11px] text-[#666]">Todavía no hay TODOs ni planes.</div>}
+    {state.todos.length > 0 ? <section className="grid gap-1.5"><div className="mb-1 text-[10px] font-medium uppercase tracking-[0.08em] text-[#666]">TODO</div>{state.todos.map((todo) => <div key={todo.id} onClick={() => setSelectedArtifact({ kind: 'todo', id: todo.id })} onDoubleClick={() => pushReference('todo', todo.id, todo.title)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); void copyArtifact('todo', todo); }} className="flex min-w-0 cursor-pointer items-center gap-2 rounded-md border bg-[#151515] px-2 py-1.5" style={{ borderColor: isSelected('todo', todo.id) ? selectionColor : '#202020' }}><ArtifactStatus status={todo.status} /><span title={todo.title} className="min-w-0 flex-1 truncate text-[11px] text-[#bbb]">{todo.title}</span></div>)}</section> : !state.plan && <div className="rounded-lg border border-dashed border-[#252525] px-3 py-5 text-center text-[11px] text-[#666]">Todavía no hay TODOs ni planes.</div>}
     {business?.quotes?.length ? <section className={`grid gap-2 ${state.plan || state.todos.length ? 'border-t border-[#202020] pt-4' : ''}`}><div className="text-[10px] font-medium uppercase tracking-[0.08em] text-[#666]">COTIZACIONES</div>{business.quotes.map((quote: any) => <QuoteArtifact key={quote.id} quote={quote} selected={isSelected('quote', quote.id)} selectionColor={selectionColor} onSelect={() => setSelectedArtifact({ kind: 'quote', id: quote.id })} onCopy={() => void copyArtifact('quote', quote)} onReference={() => pushReference('quote', quote.id, quote.title || 'Cotización')} />)}</section> : null}
   </div>;
 }
 
 function QuoteArtifact({ quote, selected, selectionColor, onSelect, onCopy, onReference }: { quote: any; selected: boolean; selectionColor: string; onSelect: () => void; onCopy: () => void; onReference: () => void }) {
   const formatMoney = (value: number) => { try { return new Intl.NumberFormat('es-AR', { style: 'currency', currency: quote.currency || 'USD', maximumFractionDigits: 2 }).format(Number(value || 0)); } catch { return `${quote.currency || 'USD'} ${Number(value || 0).toFixed(2)}`; } };
-  return <section onClick={onSelect} onDoubleClick={onReference} onContextMenu={(event) => { event.preventDefault(); void onCopy(); }} className="cursor-pointer overflow-hidden rounded-lg border bg-[#151515] [&_thead]:bg-[#101010] [&_thead_tr]:text-[#777]" style={{ borderColor: selected ? selectionColor : '#202020', boxShadow: selected ? `0 0 0 1px ${selectionColor}` : 'none' }}>
+  return <section onClick={onSelect} onDoubleClick={onReference} onContextMenu={(event) => { event.preventDefault(); void onCopy(); }} className="cursor-pointer overflow-hidden rounded-lg border bg-[#151515] [&_thead]:bg-[#101010] [&_thead_tr]:text-[#777]" style={{ borderColor: selected ? selectionColor : '#202020' }}>
     <div className="border-b border-[#202020] px-2.5 py-2"><div className="truncate text-[11px] font-medium text-[#ddd]">{quote.title || 'Cotización'}</div><div title={quote.description} className="mt-1 overflow-hidden text-ellipsis whitespace-nowrap text-[10px] text-[#777]">{quote.description}</div></div>
     <div className="overflow-x-auto"><table className="w-full border-collapse text-left text-[10px]"><thead><tr className="border-b border-[#202020] text-[#666]"><th className="px-2.5 py-1.5 font-medium">Resultado</th><th className="px-2.5 py-1.5 font-medium">Métrica</th><th className="px-2.5 py-1.5 text-right font-medium">Importe</th></tr></thead><tbody>{(quote.items || []).map((item: any, index: number) => <tr key={`${quote.id}-${index}`} className="border-b border-[#1d1d1d] text-[#aaa]"><td title={item.outcome || item.description} className="max-w-[150px] truncate px-2.5 py-1.5">{item.outcome || item.description}</td><td title={item.metric} className="max-w-[110px] truncate px-2.5 py-1.5">{item.metric || '—'}</td><td className="px-2.5 py-1.5 text-right">{formatMoney(item.total ?? item.amount)}</td></tr>)}</tbody><tfoot><tr><td colSpan={2} className="px-2.5 py-2 text-right font-medium text-[#bbb]">Total</td><td className="px-2.5 py-2 text-right font-medium text-[#eee]">{formatMoney(quote.total)}</td></tr></tfoot></table></div>
   </section>;
 }
 
 function ArtifactStatus({ status }: { status: TaskStatus }) {
-  const values: Record<TaskStatus, [React.ElementType, string]> = { pending: [Circle, '#777'], in_progress: [CircleDot, '#d8d8d8'], completed: [CheckCircle2, '#1687ff'], blocked: [CircleX, '#d98b8b'] };
+  const values: Record<TaskStatus, [React.ElementType, string]> = { pending: [Circle, '#777'], in_progress: [CircleDot, '#d8d8d8'], completed: [CheckCircle2, '#c2c2c2'], blocked: [CircleX, '#d98b8b'] };
   const [Icon, color] = values[status] || values.pending;
   return <span title={status} style={{ color }} className="grid h-4 w-4 shrink-0 place-items-center"><Icon size={13} strokeWidth={1.8} /></span>;
 }

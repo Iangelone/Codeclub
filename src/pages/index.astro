@@ -66,18 +66,35 @@ import ChatPanel from "../components/ChatPanel.astro";
         });
         const recentChatsContainer = document.querySelector('[data-recent-chats]');
         const recentChatList = document.querySelector('[data-recent-chat-list]');
+        const recentAvatarColors = ['#A98BC6', '#6F91CC', '#A9C978', '#D17A60', '#D4A956', '#6F7C86', '#74BBD1'];
+        let recentChats = [];
+        const recentChatColor = (chatId) => {
+          let hash = 0;
+          for (let index = 0; index < String(chatId).length; index += 1) hash = (hash * 31 + String(chatId).charCodeAt(index)) | 0;
+          const fallback = recentAvatarColors[Math.abs(hash) % recentAvatarColors.length];
+          try { const override = JSON.parse(localStorage.getItem('codeclub:chat-avatar-colors') || '{}')[chatId]; return recentAvatarColors.includes(override) ? override : fallback; } catch { return fallback; }
+        };
         const renderRecentChats = (chats = []) => {
           if (!recentChatsContainer || !recentChatList) return;
+          recentChats = chats;
           recentChatList.replaceChildren();
           recentChatsContainer.classList.toggle('hidden', chats.length === 0);
           chats.forEach((chat) => {
             const button = document.createElement('button');
             button.type = 'button';
-            button.className = 'flex min-h-[30px] w-full min-w-0 items-center overflow-hidden rounded-md px-[10px] text-left text-xs text-[#bdbdbd] hover:bg-[var(--color-surface-7)] hover:text-white';
+            button.className = 'flex min-h-[30px] w-full min-w-0 items-center gap-[9px] overflow-hidden rounded-md px-[10px] text-left text-xs text-[#bdbdbd] hover:bg-[var(--color-surface-7)] hover:text-white';
             button.style.textOverflow = 'ellipsis';
             button.style.whiteSpace = 'nowrap';
             const words = String(chat.name || 'Chat').trim().split(/\s+/).filter(Boolean);
-            button.textContent = `${words.slice(0, 3).join(' ')}${words.length > 3 ? '...' : ''}`;
+            const avatar = document.createElement('span');
+            avatar.className = 'grid h-5 w-5 shrink-0 place-items-center rounded-[6px] text-[8px] font-medium uppercase';
+            avatar.style.backgroundColor = recentChatColor(chat.id || chat.chatId || chat.name);
+            avatar.style.color = '#ffffff';
+            avatar.textContent = (String(chat.name || 'Chat').trim().charAt(0) || 'C').toUpperCase();
+            const label = document.createElement('span');
+            label.className = 'min-w-0 truncate';
+            label.textContent = `${words.slice(0, 3).join(' ')}${words.length > 3 ? '...' : ''}`;
+            button.append(avatar, label);
             button.title = chat.projectName || 'Sin proyecto';
             button.addEventListener('click', (event) => {
               event.preventDefault();
@@ -87,6 +104,7 @@ import ChatPanel from "../components/ChatPanel.astro";
           });
         };
         window.addEventListener('codeclub:recent-chats-changed', (event) => renderRecentChats(event.detail?.chats || []));
+        window.addEventListener('codeclub:chat-avatar-color-changed', () => renderRecentChats(recentChats));
         
         let hasProjectSelection = false;
         const projectRequiredControls = document.querySelectorAll('[data-project-required]');

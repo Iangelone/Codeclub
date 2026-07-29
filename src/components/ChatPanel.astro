@@ -331,19 +331,12 @@ const catalog = [
 
   .braille-spinner {
     position: relative;
-    color: #c7cbff;
+    color: var(--codeclub-accent);
     font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
     line-height: 1;
     opacity: 0.78;
     transition: color 620ms ease, text-shadow 620ms ease, opacity 620ms ease;
-    text-shadow: none !important;
-    text-shadow:
-      0 0 10px rgba(123, 130, 255, 0.42),
-      0 0 18px rgba(255, 117, 181, 0.18);
-  }
-
-  .braille-spinner[data-state="idle"] {
-    animation: spinner-idle-color 5.6s ease-in-out infinite;
+    text-shadow: 0 0 10px color-mix(in srgb, var(--codeclub-accent) 42%, transparent);
   }
 
   .braille-spinner[data-state="streaming"]::before {
@@ -363,35 +356,19 @@ const catalog = [
   }
 
   .braille-spinner[data-state="streaming"] {
-    animation: spinner-idle-color 5.6s ease-in-out infinite;
-    color: #7dd3fc;
-    text-shadow:
-      0 0 10px rgba(125, 211, 252, 0.42),
-      0 0 18px rgba(103, 232, 249, 0.18);
+    color: var(--codeclub-accent);
   }
 
   .braille-spinner[data-state="tool_call"] {
-    animation: spinner-idle-color 5.6s ease-in-out infinite;
-    color: #86efac;
-    text-shadow:
-      0 0 10px rgba(134, 239, 172, 0.36),
-      0 0 18px rgba(45, 212, 191, 0.16);
+    color: var(--codeclub-accent);
   }
 
   .braille-spinner[data-state="approval"] {
-    animation: spinner-idle-color 5.6s ease-in-out infinite;
-    color: #fde68a;
-    text-shadow:
-      0 0 10px rgba(253, 230, 138, 0.34),
-      0 0 18px rgba(251, 191, 36, 0.14);
+    color: var(--codeclub-accent);
   }
 
   .braille-spinner[data-state="running"] {
-    animation: spinner-idle-color 5.6s ease-in-out infinite;
-    color: #d8b4fe;
-    text-shadow:
-      0 0 10px rgba(216, 180, 254, 0.38),
-      0 0 18px rgba(168, 85, 247, 0.16);
+    color: var(--codeclub-accent);
   }
 
   .braille-spinner[data-state="error"] {
@@ -413,6 +390,30 @@ const catalog = [
     font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
     font-size: 18px;
     line-height: 1;
+  }
+
+  .codeclub-tool-braille {
+    display: inline-block;
+    min-width: 16px;
+    color: #ffffff;
+    font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+    font-size: 16px;
+    line-height: 1;
+    letter-spacing: -0.08em;
+    text-align: center;
+    transition: opacity 160ms ease, transform 160ms ease, color 160ms ease;
+  }
+
+  .codeclub-tool-braille[data-state="running"] {
+    transform: translateY(-0.5px);
+  }
+
+  .codeclub-tool-braille[data-state="completed"] {
+    opacity: 0.9;
+  }
+
+  .codeclub-tool-braille[data-state="error"] {
+    color: #fca5a5;
   }
 
   @keyframes braille-frame {
@@ -482,47 +483,136 @@ const catalog = [
     scrollbar-color: #2f2f2f transparent;
   }
 
-  @keyframes spinner-generating-color {
-    0%, 100% { color: #7dd3fc; text-shadow: 0 0 10px rgba(125, 211, 252, 0.42); }
-    50% { color: #c7cbff; text-shadow: 0 0 12px rgba(199, 203, 255, 0.46); }
+  .messages-area a {
+    color: #c2c2c2;
+    text-decoration: underline;
+    text-decoration-color: rgba(194, 194, 194, 0.55);
+    text-underline-offset: 3px;
   }
 
-  @keyframes spinner-idle-color {
-    0%, 100% {
-      color: #c7cbff;
-      text-shadow:
-        0 0 10px rgba(123, 130, 255, 0.42),
-        0 0 18px rgba(255, 117, 181, 0.18);
-    }
-    16% {
-      color: #7dd3fc;
-      text-shadow:
-        0 0 10px rgba(125, 211, 252, 0.38),
-        0 0 18px rgba(103, 232, 249, 0.16);
-    }
-    32% {
-      color: #86efac;
-      text-shadow:
-        0 0 10px rgba(134, 239, 172, 0.32),
-        0 0 18px rgba(45, 212, 191, 0.14);
-    }
-    48% {
-      color: #fde68a;
-      text-shadow:
-        0 0 10px rgba(253, 230, 138, 0.28),
-        0 0 18px rgba(251, 191, 36, 0.12);
-    }
-    64% {
-      color: #f9a8d4;
-      text-shadow:
-        0 0 10px rgba(249, 168, 212, 0.32),
-        0 0 18px rgba(244, 114, 182, 0.14);
-    }
-    80% {
-      color: #d8b4fe;
-      text-shadow:
-        0 0 10px rgba(216, 180, 254, 0.34),
-        0 0 18px rgba(251, 113, 133, 0.14);
-    }
+  .messages-area a:hover {
+    color: #d0d0d0;
   }
+
+  .messages-area ul,
+  .messages-area ol {
+    list-style-position: outside;
+    color: #c2c2c2;
+  }
+
+  .messages-area ul {
+    list-style-type: disc;
+  }
+
+  .messages-area ol {
+    list-style-type: decimal;
+  }
+
+  .messages-area li::marker { color: #4a4a4a; }
+
+  .messages-area blockquote {
+    margin: 12px 0;
+    padding: 8px 14px;
+    border-left: 3px solid #2b2b2b;
+    border-radius: 0 7px 7px 0;
+    background: #151515;
+    color: #c2c2c2;
+  }
+
+  .messages-area blockquote p:last-child {
+    margin-bottom: 0 !important;
+  }
+
+  .messages-area code {
+    padding: 2px 5px;
+    border: 1px solid #2b2b2b;
+    border-radius: 5px;
+    background: #181818;
+    color: #c2c2c2;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 0.9em;
+  }
+
+  .messages-area pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 14px;
+    overflow-x: auto;
+    border: 1px solid #2b2b2b;
+    border-radius: 8px;
+    background: #151515;
+    color: #d8d8d8;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 12px;
+    line-height: 1.55;
+  }
+
+  .messages-area pre code {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-size: inherit;
+  }
+
+  .messages-area .hljs-comment,
+  .messages-area .hljs-quote {
+    color: #7f8c98;
+    font-style: italic;
+  }
+
+  .messages-area .hljs-keyword,
+  .messages-area .hljs-selector-tag,
+  .messages-area .hljs-literal,
+  .messages-area .hljs-section {
+    color: #c792ea;
+  }
+
+  .messages-area .hljs-string,
+  .messages-area .hljs-attr,
+  .messages-area .hljs-template-variable {
+    color: #c3e88d;
+  }
+
+  .messages-area .hljs-number,
+  .messages-area .hljs-variable,
+  .messages-area .hljs-regexp {
+    color: #f78c6c;
+  }
+
+  .messages-area .hljs-title,
+  .messages-area .hljs-title.function_,
+  .messages-area .hljs-function .hljs-title {
+    color: #82aaff;
+  }
+
+  .messages-area .hljs-built_in,
+  .messages-area .hljs-type,
+  .messages-area .hljs-class .hljs-title {
+    color: #ffcb6b;
+  }
+
+  .messages-area .hljs-meta,
+  .messages-area .hljs-symbol {
+    color: #89ddff;
+  }
+
+  .messages-area hr {
+    margin: 16px 0;
+    border: 0;
+    border-top: 1px solid #3a3a3a;
+  }
+
+  .messages-area h4,
+  .messages-area h5,
+  .messages-area h6 {
+    margin: 12px 0 7px;
+    color: #eeeeee;
+    font-weight: 650;
+  }
+
+  .messages-area input[type="checkbox"] {
+    accent-color: #c792ea;
+  }
+
 </style>
