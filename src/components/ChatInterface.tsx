@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUpRight, ChevronDown, ChevronRight, Copy, FileCode2, Folders as FolderOpen, KeyRound, ListTodo, MessageSquare, Paperclip, RotateCcw, Search, Square, Terminal, Folder, FolderTree, RefreshCw, X } from 'lucide-react';
+import { ArrowUpRight, Check, ChevronDown, ChevronRight, Copy, FileCode2, Folders as FolderOpen, KeyRound, ListTodo, MessageSquare, Paperclip, RotateCcw, Search, Square, Terminal, Folder, FolderTree, RefreshCw, X } from 'lucide-react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -175,6 +175,8 @@ const formatArtifactOutput = (output: any) => {
 
 export default function ChatInterface({ catalog, defaultProvider, defaultModel, panelId = 'left', eventPrefix = 'codeclub', selectedProject, blockedPanelState = 'blank' }) {
   const [messages, setMessages] = useState([]);
+  const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
+  const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [input, setInput] = useState('');
   const [artifactReference, setArtifactReference] = useState<{ kind: 'plan' | 'todo' | 'quote'; id: string; title: string } | null>(null);
   const [browserReferences, setBrowserReferences] = useState<{ id: string; title: string; text: string }[]>([]);
@@ -352,6 +354,15 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       setWorkspaceMode('chat');
       setActiveChat(chat);
       activeChatRef.current = chat;
+      const project = chat.projectPath ? {
+        projectPath: chat.projectPath,
+        projectName: chat.projectName || 'Proyecto',
+      } : null;
+      setActiveProject(project ? { projectPath: project.projectPath, name: project.projectName } : null);
+      window.dispatchEvent(new CustomEvent('codeclub:project-selection-changed', {
+        detail: project ? { selected: true, projectPath: project.projectPath, projectName: project.projectName } : { selected: false, keepChat: true },
+      }));
+      window.dispatchEvent(new CustomEvent('codeclub:active-project', { detail: project }));
       setMessages([]);
       setInput('');
       setAttachedFiles([]);
@@ -1613,8 +1624,19 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     return () => window.removeEventListener('codeclub:testing-action', handleTestingAction);
   }, [panelId, isAgentBusy, sendMessage]);
 
-  const handleCopyMessage = async (content) => {
-    await navigator.clipboard?.writeText(content);
+  const handleCopyMessage = async (content, messageIndex) => {
+    if (!navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedMessageIndex(messageIndex);
+      if (copyResetTimerRef.current) clearTimeout(copyResetTimerRef.current);
+      copyResetTimerRef.current = setTimeout(() => {
+        setCopiedMessageIndex(null);
+        copyResetTimerRef.current = null;
+      }, 3000);
+    } catch (error) {
+      console.error('No se pudo copiar el mensaje:', error);
+    }
   };
 
   const handleRetryMessage = async (messageIndex) => {
@@ -1882,8 +1904,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               {m.role === 'assistant' && i === messages.length - 1 && <ApprovalCards approvals={pendingApprovals} onResolve={resolveToolApproval} />}
               {m.role === 'assistant' && <ChangeSummaryCard changes={m.meta?.changes} />}
               <div style={{ alignSelf: m.role === 'user' ? 'end' : 'start', display: 'flex', alignItems: 'center', gap: '4px', opacity: 0.72 }}>
-                <button type="button" aria-label="Copiar mensaje" onClick={() => handleCopyMessage(m.content)} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: 'pointer' }}>
-                  <Copy size={13} strokeWidth={2} />
+                <button type="button" aria-label={copiedMessageIndex === i ? 'Mensaje copiado' : 'Copiar mensaje'} title={copiedMessageIndex === i ? 'Copiado' : 'Copiar'} onClick={() => void handleCopyMessage(m.content, i)} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: copiedMessageIndex === i ? '#7dd3a8' : 'rgba(216, 216, 216, 0.62)', cursor: 'pointer' }}>
+                  {copiedMessageIndex === i ? <Check size={13} strokeWidth={2.2} /> : <Copy size={13} strokeWidth={2} />}
                 </button>
                 {m.role === 'assistant' && <button type="button" aria-label="Abrir Artifacts" title="Abrir Artifacts" onClick={() => { const projectPath = activeProject?.projectPath || activeChat?.projectPath || ''; if (projectPath) window.dispatchEvent(new CustomEvent('codeclub:active-project', { detail: { projectPath, projectName: activeProject?.name || '' } })); window.dispatchEvent(new CustomEvent('codeclub:open-artifacts', { detail: { projectPath } })); }} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: 'pointer' }}><ListTodo size={13} strokeWidth={1.8} /></button>}
                 {m.role === 'user' && <button type="button" aria-label="Reintentar desde este mensaje" onClick={() => handleRetryMessage(i)} disabled={isAgentBusy} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: isAgentBusy ? 'not-allowed' : 'pointer' }}>

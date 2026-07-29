@@ -11,8 +11,6 @@ type RunStreamArgs = {
   signal?: AbortSignal;
 };
 
-const GENERATION_TIMEOUT_MS = 60_000;
-
 async function runStreamInternal({ model, system, messages, tools, structuredOutput, callbacks, signal }: RunStreamArgs): Promise<string> {
   let content = '';
   let reasoning = '';
@@ -43,7 +41,6 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
     },
     stopWhen: stepCountIs(structuredOutput ? 7 : 6),
     timeout: {
-      totalMs: 90_000,
       stepMs: 25_000,
       chunkMs: 15_000,
       toolMs: 30_000,
@@ -101,33 +98,13 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
 
 export async function runStream(args: RunStreamArgs): Promise<string> {
   const controller = new AbortController();
-  let timedOut = false;
-  let timeoutId: number | undefined;
   const forwardAbort = () => controller.abort();
   args.signal?.addEventListener('abort', forwardAbort, { once: true });
 
   const streamPromise = runStreamInternal({ ...args, signal: controller.signal });
-  const timeoutPromise = new Promise<string>((_, reject) => {
-    timeoutId = window.setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-      const error = new Error('La generación superó el límite de 60 segundos.');
-      error.name = 'TimeoutError';
-      reject(error);
-    }, GENERATION_TIMEOUT_MS);
-  });
-
   try {
-    return await Promise.race([streamPromise, timeoutPromise]);
-  } catch (error) {
-    if (timedOut) {
-      const timeoutError = new Error('La generación superó el límite de 60 segundos.');
-      timeoutError.name = 'TimeoutError';
-      throw timeoutError;
-    }
-    throw error;
+    return await streamPromise;
   } finally {
-    if (timeoutId !== undefined) window.clearTimeout(timeoutId);
     args.signal?.removeEventListener('abort', forwardAbort);
     controller.abort();
     void streamPromise.catch(() => undefined);

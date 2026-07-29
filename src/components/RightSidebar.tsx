@@ -8,6 +8,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { whatsappContextStore } from '../lib/store';
 import { readAgentState, writeAgentState, type AgentState, type TaskStatus } from '../lib/engine/planning';
 import { readBusinessWorkspace, writeBusinessWorkspace, type BusinessWorkspace } from '../lib/projectManager';
+import { getSetting } from '../lib/persistence';
 
 type FileEntry = { path: string; kind: 'file' | 'directory' };
 type FileNode = FileEntry & { name: string; children: FileNode[] };
@@ -301,7 +302,7 @@ function FilesView({ projectPath }: { projectPath: string }) {
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState('');
-  const [showTree, setShowTree] = useState(true);
+  const [showTree, setShowTree] = useState(false);
   const [selectedPath, setSelectedPath] = useState('');
   const [selectedContent, setSelectedContent] = useState('');
   const [fileLoading, setFileLoading] = useState(false);
@@ -365,11 +366,11 @@ function FilesView({ projectPath }: { projectPath: string }) {
   return <div className="flex h-full max-h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#111111]">
     <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-[#2b2b2b] bg-[#111111] px-2">
       <span className="min-w-0 truncate text-[12px] leading-none text-[#eeeeee]">{selectedPath ? `/${selectedPath.replace(/\\/g, '/')}` : '/'}</span>
-      <button type="button" onClick={() => setShowTree((visible) => !visible)} className="grid h-7 w-7 place-items-center rounded-[7px] bg-[#202020] text-[#eeeeee] hover:bg-[#2b2b2b]" title="Mostrar u ocultar árbol del workspace" aria-label="Mostrar u ocultar árbol del workspace"><FolderOpen size={15} /></button>
+      <button type="button" onClick={() => setShowTree((visible) => !visible)} className={`grid h-7 w-7 place-items-center rounded-[7px] transition-colors ${showTree ? 'bg-[#2b2b2b] text-[#eeeeee]' : 'bg-[#202020] text-[#777777]'} hover:bg-[#2b2b2b] hover:text-[#eeeeee]`} title="Mostrar u ocultar árbol del workspace" aria-label="Mostrar u ocultar árbol del workspace" aria-pressed={showTree}><FolderOpen size={15} /></button>
     </div>
     <div className="flex h-0 min-h-0 max-h-full flex-1 overflow-hidden">
       <main className="flex h-full min-w-0 min-h-0 flex-1 flex-col bg-[#111111]">
-        {selectedPath ? <div className="flex min-h-0 flex-1 flex-col">{fileLoading ? <div className="flex flex-1 items-center justify-center text-xs text-[#777777]">Cargando archivo...</div> : <pre className="file-preview-scrollbar m-0 min-h-0 flex-1 overflow-auto whitespace-pre-wrap p-4 font-mono text-[12px] leading-5 text-[#d8d8d8]">{selectedContent}</pre>}</div> : <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center"><Folders size={42} strokeWidth={1.5} className="text-[#a7a7a7]" /><div className="max-w-[300px]"><p className="m-0 text-[18px] font-semibold text-[#eeeeee]">Abrir archivo</p><p className="m-0 mt-2 text-[14px] leading-5 text-[#a7a7a7]">Selecciona un archivo del árbol del espacio de trabajo</p></div></div>}
+        {selectedPath ? <div className="flex min-h-0 flex-1 flex-col">{fileLoading ? <div className="flex flex-1 items-center justify-center text-xs text-[#777777]">Cargando archivo...</div> : <pre className="file-preview-scrollbar m-0 min-h-0 flex-1 overflow-auto whitespace-pre p-4 font-mono text-[12px] leading-5 text-[#d8d8d8]">{selectedContent.split(/\r?\n/).map((line, index) => <span key={index} className="flex min-w-max"><span className="mr-4 w-10 shrink-0 select-none text-right text-[#555555]">{index + 1}</span><span className="whitespace-pre">{line || ' '}</span></span>)}</pre>}</div> : <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center"><Folders size={42} strokeWidth={1.5} className="text-[#a7a7a7]" /><div className="max-w-[300px]"><p className="m-0 text-[18px] font-semibold text-[#eeeeee]">Abrir archivo</p><p className="m-0 mt-2 text-[14px] leading-5 text-[#a7a7a7]">Selecciona un archivo del árbol del espacio de trabajo</p></div></div>}
       </main>
       <aside className={`h-full max-h-full min-h-0 self-stretch flex shrink-0 flex-col border-l border-[#2b2b2b] bg-[#121212] transition-[width,transform,opacity] duration-200 ease-out ${showTree ? 'w-[35%]' : 'w-0 translate-x-full opacity-0 pointer-events-none'}`}>
         <div className="mt-0 flex h-0 min-h-0 flex-1 flex-col px-3 py-3">
@@ -429,6 +430,7 @@ const parseReviewDiff = (output: string) => {
 function ReviewView({ projectPath }: { projectPath: string }) {
   const [files, setFiles] = useState<ReviewFile[]>([]);
   const [selectedPath, setSelectedPath] = useState('');
+  const [showFiles, setShowFiles] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -488,12 +490,16 @@ function ReviewView({ projectPath }: { projectPath: string }) {
 
   if (!projectPath) return <div className="flex flex-1 items-center justify-center p-5 text-center text-[11px] text-[#777]">Seleccioná un proyecto para revisar sus cambios.</div>;
   return <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#111111]">
-    <div className="flex h-[42px] shrink-0 items-center justify-between border-b border-[#2b2b2b] px-3">
+    <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-[#2b2b2b] px-2 [&>div:first-child]:hidden">
       <div className="flex min-w-0 items-center gap-2"><GitCompare size={14} className="shrink-0 text-[#a7a7a7]" /><div className="min-w-0"><div className="truncate text-[12px] text-[#eeeeee]">Cambios</div><div className="text-[10px] text-[#666]">{files.length} {files.length === 1 ? 'archivo' : 'archivos'} · <span className="text-[#76c893]">+{additions}</span> <span className="text-[#d77878]">-{deletions}</span></div></div></div>
-      <button type="button" onClick={() => void loadReview()} disabled={loading} className="grid h-7 w-7 shrink-0 place-items-center rounded-[7px] border-0 bg-[#202020] text-[#cfcfcf] hover:bg-[#2b2b2b] disabled:opacity-50" title="Actualizar cambios" aria-label="Actualizar cambios"><RefreshCw size={13} className={loading ? 'animate-spin' : ''} /></button>
+      <span className="min-w-0 truncate text-[12px] leading-none text-[#eeeeee]">{files.length} {files.length === 1 ? 'archivo' : 'archivos'} · <span className="text-[#76c893]">+{additions}</span> <span className="text-[#d77878]">-{deletions}</span></span>
+      <div className="flex shrink-0 items-center gap-1">
+        <button type="button" onClick={() => setShowFiles((visible) => !visible)} className={`grid h-7 w-7 place-items-center rounded-[7px] transition-colors ${showFiles ? 'bg-[#2b2b2b] text-[#eeeeee]' : 'bg-[#202020] text-[#777777]'} hover:bg-[#2b2b2b] hover:text-[#eeeeee]`} title="Mostrar u ocultar archivos" aria-label="Mostrar u ocultar archivos" aria-pressed={showFiles}><FileText size={13} /></button>
+        <button type="button" onClick={() => void loadReview()} disabled={loading} className="grid h-7 w-7 shrink-0 place-items-center rounded-[7px] border-0 bg-[#202020] text-[#cfcfcf] hover:bg-[#2b2b2b] disabled:opacity-50" title="Actualizar cambios" aria-label="Actualizar cambios"><RefreshCw size={13} className={loading ? 'animate-spin' : ''} /></button>
+      </div>
     </div>
-    {loading ? <div className="flex flex-1 items-center justify-center text-[11px] text-[#777]">Revisando cambios...</div> : error ? <div className="p-3 text-[11px] leading-5 text-[#c28d8d]">{error}</div> : !files.length ? <div className="flex flex-1 flex-col items-center justify-center gap-2 p-5 text-center text-[11px] text-[#777]"><GitCompare size={28} strokeWidth={1.5} /><span>Sin cambios pendientes.</span></div> : <div className="flex min-h-0 flex-1 overflow-hidden">
-      <div className="file-preview-scrollbar h-full w-[38%] min-w-[112px] shrink-0 overflow-y-auto border-r border-[#2b2b2b] p-1.5">
+    {loading ? <div className="flex flex-1 items-center justify-center text-[11px] text-[#777]">Revisando cambios...</div> : error ? <div className="p-3 text-[11px] leading-5 text-[#c28d8d]">{error}</div> : !files.length ? <div className="flex flex-1 flex-col items-center justify-center gap-2 p-5 text-center text-[11px] text-[#777]"><GitCompare size={28} strokeWidth={1.5} /><span>Sin cambios pendientes.</span></div> : <div className="flex min-h-0 flex-1 flex-row-reverse overflow-hidden">
+      <div className={`file-preview-scrollbar h-full w-[38%] min-w-[112px] shrink-0 overflow-y-auto border-l border-[#2b2b2b] p-1.5 ${showFiles ? '' : 'hidden'}`}>
         {files.map((file) => { const status = reviewStatusLabel(file.status); return <button key={file.path} type="button" onClick={() => setSelectedPath(file.path)} className={`flex w-full min-w-0 flex-col gap-1 rounded-md px-2 py-2 text-left hover:bg-[#1c1c1c] ${selected?.path === file.path ? 'bg-[#1e1e1e]' : ''}`} title={file.path}><div className="flex min-w-0 items-center gap-1.5"><span className="shrink-0 text-[10px] font-semibold" style={{ color: status.color }}>{status.label}</span><span className="truncate text-[10px] text-[#d8d8d8]">{file.path.split(/[\\/]/).pop()}</span></div><div className="truncate pl-[17px] text-[9px] text-[#666]">{/[/\\]/.test(file.path) ? file.path : status.title} <span className="text-[#76c893]">+{file.additions}</span> <span className="text-[#d77878]">-{file.deletions}</span></div></button>; })}
       </div>
       <div className="file-preview-scrollbar min-w-0 flex-1 overflow-auto bg-[#101010] p-2">
@@ -1156,10 +1162,32 @@ export default function RightSidebar() {
 }
 
 function ArtifactsView({ state, business, projectPath, projectName, hasProject }: { state: AgentState; business: BusinessWorkspace | null; projectPath: string; projectName: string; hasProject: boolean }) {
+  const [selectedArtifact, setSelectedArtifact] = useState<{ kind: 'plan' | 'todo' | 'quote'; id: string } | null>(null);
+  const [selectionColor, setSelectionColor] = useState('#3b6bb5');
+  useEffect(() => {
+    void getSetting('codeclub_avatar_color', '#3b6bb5').then(setSelectionColor);
+    const handleProfileChange = (event: Event) => setSelectionColor((event as CustomEvent).detail?.color || '#3b6bb5');
+    window.addEventListener('codeclub:profile-changed', handleProfileChange);
+    return () => window.removeEventListener('codeclub:profile-changed', handleProfileChange);
+  }, []);
+  useEffect(() => setSelectedArtifact(null), [projectPath]);
   const pushReference = (kind: 'plan' | 'todo' | 'quote', id: string, title: string) => {
     window.dispatchEvent(new CustomEvent('codeclub:artifact-reference', { detail: { projectPath, kind, id, title } }));
   };
   const plans = state.plans?.length ? state.plans : state.plan ? [state.plan] : [];
+  const getTodoFromEvent = (event: React.SyntheticEvent) => {
+    const row = (event.target as HTMLElement).closest('div.rounded-md');
+    const titles = Array.from(row?.querySelectorAll('[title]') || []).map((element) => element.getAttribute('title'));
+    const todo = state.todos.find((item) => titles.includes(item.title));
+    if (!todo) return undefined;
+    if (event.type === 'contextmenu') {
+      event.preventDefault();
+      void copyArtifact('todo', todo);
+      return undefined;
+    }
+    if (event.type === 'dblclick') return undefined;
+    return todo;
+  };
   const removePlan = async (id: string) => {
     const current = await readAgentState(projectPath);
     const nextPlans = (current.plans || (current.plan ? [current.plan] : [])).filter((plan) => plan.id !== id);
@@ -1177,29 +1205,77 @@ function ArtifactsView({ state, business, projectPath, projectName, hasProject }
     await writeBusinessWorkspace(projectPath, { ...current, quotes: current.quotes.filter((quote: any) => quote.id !== id) });
     window.dispatchEvent(new CustomEvent('codeclub:artifacts-changed', { detail: { projectPath } }));
   };
-  if (!hasProject) return <div className="flex flex-1 items-center justify-center p-5 text-center text-[11px] text-[#777]">Seleccioná un proyecto para ver sus artifacts.</div>;
-  const getTodoFromEvent = (event: React.SyntheticEvent) => {
-    const row = (event.target as HTMLElement).closest('div.rounded-md');
-    const titles = Array.from(row?.querySelectorAll('[title]') || []).map((element) => element.getAttribute('title'));
-    return state.todos.find((todo) => titles.includes(todo.title));
+  const removeSelectedArtifact = async () => {
+    if (!selectedArtifact) return;
+    if (selectedArtifact.kind === 'plan') await removePlan(selectedArtifact.id);
+    if (selectedArtifact.kind === 'todo') await removeTodo(selectedArtifact.id);
+    if (selectedArtifact.kind === 'quote') await removeQuote(selectedArtifact.id);
+    setSelectedArtifact(null);
   };
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Delete' || !selectedArtifact) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.matches('input, textarea, [contenteditable="true"]')) return;
+      event.preventDefault();
+      void removeSelectedArtifact();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedArtifact, projectPath]);
+  const isSelected = (kind: 'plan' | 'todo' | 'quote', id: string) => selectedArtifact?.kind === kind && selectedArtifact.id === id;
+  const csvCell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+  const exportQuoteCsv = (quote: any) => {
+    const rows = [
+      ['Cotización', quote.title || 'Cotización'],
+      ['Descripción', quote.description || ''],
+      ['Estado', quote.status || ''],
+      ['Moneda', quote.currency || 'USD'],
+      [],
+      ['Resultado', 'Métrica', 'Importe'],
+      ...(quote.items || []).map((item: any) => [item.outcome || item.description || '', item.metric || '', item.total ?? item.amount ?? 0]),
+      [],
+      ['Total', '', quote.total ?? 0],
+    ];
+    const csv = `\uFEFF${rows.map((row) => row.map(csvCell).join(',')).join('\r\n')}`;
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${String(quote.title || 'cotizacion').replace(/[^a-z0-9-_]+/gi, '-').replace(/^-|-$/g, '') || 'cotizacion'}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+  const copyArtifact = async (kind: 'plan' | 'todo' | 'quote', artifact: any) => {
+    const content = kind === 'plan'
+      ? [`Plan: ${artifact.title}`, `Estado: ${artifact.status}`, ...(artifact.steps || []).map((step: any) => `- [${step.status}] ${step.title}`)].join('\n')
+      : kind === 'todo'
+        ? `TODO: ${artifact.title}\nEstado: ${artifact.status}`
+        : [`Cotización: ${artifact.title || 'Cotización'}`, artifact.description || '', ...(artifact.items || []).map((item: any) => `${item.outcome || item.description || ''} | ${item.metric || ''} | ${item.total ?? item.amount ?? 0}`), `Total: ${artifact.total ?? 0}`].filter(Boolean).join('\n');
+    try {
+      await navigator.clipboard.writeText(content);
+      if (kind === 'quote') exportQuoteCsv(artifact);
+    } catch (error) {
+      console.error('No se pudo copiar el artifact:', error);
+    }
+  };
+  if (!hasProject) return <div className="flex flex-1 items-center justify-center p-5 text-center text-[11px] text-[#777]">Seleccioná un proyecto para ver sus artifacts.</div>;
   return <div onDoubleClick={(event) => { const todo = getTodoFromEvent(event); if (todo) void removeTodo(todo.id); }} onContextMenu={(event) => { const todo = getTodoFromEvent(event); if (todo) { event.preventDefault(); pushReference('todo', todo.id, todo.title); } }} onMouseMove={(event) => { const row = (event.target as HTMLElement).closest('div.rounded-md') as HTMLElement | null; if (row) row.style.cursor = 'pointer'; }} className="h-full max-h-full min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 [scrollbar-width:thin] [scrollbar-color:#2b2b2b_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#2b2b2b] [&_section+section]:mt-4">
     <div className="mb-4 flex items-center justify-between">
       <div><div className="text-[12px] font-medium text-[#eee]">Artifacts</div><div className="mt-0.5 text-[10px] text-[#666]">Elementos generados y utilizados por la IA.</div></div>
       <span className="max-w-[120px] truncate text-right text-[10px] text-[#555]" title={projectName}>{projectName}</span>
     </div>
-    {plans.length > 0 && <section className="mb-4"><div className="mb-2 text-[10px] font-medium uppercase tracking-[0.08em] text-[#666]">PLAN</div><div className="grid gap-3">{plans.map((plan) => <div key={plan.id} onDoubleClick={() => void removePlan(plan.id)} onContextMenu={(event) => { event.preventDefault(); pushReference('plan', plan.id, plan.title); }} className="cursor-pointer rounded-lg border border-[#202020] bg-[#151515] p-2.5">
+    {plans.length > 0 && <section className="mb-4"><div className="mb-2 text-[10px] font-medium uppercase tracking-[0.08em] text-[#666]">PLAN</div><div className="grid gap-3">{plans.map((plan) => <div key={plan.id} onClick={() => setSelectedArtifact({ kind: 'plan', id: plan.id })} onDoubleClick={() => pushReference('plan', plan.id, plan.title)} onContextMenu={(event) => { event.preventDefault(); void copyArtifact('plan', plan); }} className="cursor-pointer rounded-lg border bg-[#151515] p-2.5" style={{ borderColor: isSelected('plan', plan.id) ? selectionColor : '#202020', boxShadow: isSelected('plan', plan.id) ? `0 0 0 1px ${selectionColor}` : 'none' }}>
       <div className="mb-2 flex items-center justify-between gap-2"><span className="min-w-0 truncate text-[11px] font-medium text-[#ddd]">{plan.title}</span><ArtifactStatus status={plan.status} /></div>
       <div className="grid gap-1.5">{plan.steps.map((step) => <div key={step.id} className="flex min-w-0 items-center gap-2 text-[10px]"><ArtifactStatus status={step.status} /><span title={step.title} className="min-w-0 truncate text-[#999]">{step.title}</span></div>)}</div>
     </div>)}</div><div className="mt-4 h-px bg-[#202020]" /></section>}
-    {state.todos.length > 0 ? <section className="grid gap-1.5"><div className="mb-1 text-[10px] font-medium uppercase tracking-[0.08em] text-[#666]">TODO</div>{state.todos.map((todo) => <div key={todo.id} className="flex min-w-0 items-center gap-2 rounded-md bg-[#151515] px-2 py-1.5"><ArtifactStatus status={todo.status} /><span title={todo.title} className="min-w-0 flex-1 truncate text-[11px] text-[#bbb]">{todo.title}</span></div>)}</section> : !state.plan && <div className="rounded-lg border border-dashed border-[#252525] px-3 py-5 text-center text-[11px] text-[#666]">Todavía no hay TODOs ni planes.</div>}
-    {business?.quotes?.length ? <section className={`grid gap-2 ${state.plan || state.todos.length ? 'border-t border-[#202020] pt-4' : ''}`}><div className="text-[10px] font-medium uppercase tracking-[0.08em] text-[#666]">COTIZACIONES</div>{business.quotes.map((quote: any) => <QuoteArtifact key={quote.id} quote={quote} onRemove={() => void removeQuote(quote.id)} onReference={() => pushReference('quote', quote.id, quote.title || 'Cotización')} />)}</section> : null}
+    {state.todos.length > 0 ? <section className="grid gap-1.5"><div className="mb-1 text-[10px] font-medium uppercase tracking-[0.08em] text-[#666]">TODO</div>{state.todos.map((todo) => <div key={todo.id} onClick={() => setSelectedArtifact({ kind: 'todo', id: todo.id })} onDoubleClick={() => pushReference('todo', todo.id, todo.title)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); void copyArtifact('todo', todo); }} className="flex min-w-0 cursor-pointer items-center gap-2 rounded-md border bg-[#151515] px-2 py-1.5" style={{ borderColor: isSelected('todo', todo.id) ? selectionColor : '#151515', boxShadow: isSelected('todo', todo.id) ? `0 0 0 1px ${selectionColor}` : 'none' }}><ArtifactStatus status={todo.status} /><span title={todo.title} className="min-w-0 flex-1 truncate text-[11px] text-[#bbb]">{todo.title}</span></div>)}</section> : !state.plan && <div className="rounded-lg border border-dashed border-[#252525] px-3 py-5 text-center text-[11px] text-[#666]">Todavía no hay TODOs ni planes.</div>}
+    {business?.quotes?.length ? <section className={`grid gap-2 ${state.plan || state.todos.length ? 'border-t border-[#202020] pt-4' : ''}`}><div className="text-[10px] font-medium uppercase tracking-[0.08em] text-[#666]">COTIZACIONES</div>{business.quotes.map((quote: any) => <QuoteArtifact key={quote.id} quote={quote} selected={isSelected('quote', quote.id)} selectionColor={selectionColor} onSelect={() => setSelectedArtifact({ kind: 'quote', id: quote.id })} onCopy={() => void copyArtifact('quote', quote)} onReference={() => pushReference('quote', quote.id, quote.title || 'Cotización')} />)}</section> : null}
   </div>;
 }
 
-function QuoteArtifact({ quote, onRemove, onReference }: { quote: any; onRemove: () => void; onReference: () => void }) {
+function QuoteArtifact({ quote, selected, selectionColor, onSelect, onCopy, onReference }: { quote: any; selected: boolean; selectionColor: string; onSelect: () => void; onCopy: () => void; onReference: () => void }) {
   const formatMoney = (value: number) => { try { return new Intl.NumberFormat('es-AR', { style: 'currency', currency: quote.currency || 'USD', maximumFractionDigits: 2 }).format(Number(value || 0)); } catch { return `${quote.currency || 'USD'} ${Number(value || 0).toFixed(2)}`; } };
-  return <section onDoubleClick={onRemove} onContextMenu={(event) => { event.preventDefault(); onReference(); }} className="cursor-pointer overflow-hidden rounded-lg border border-[#202020] bg-[#151515] [&_thead]:bg-[#101010] [&_thead_tr]:text-[#777]">
+  return <section onClick={onSelect} onDoubleClick={onReference} onContextMenu={(event) => { event.preventDefault(); void onCopy(); }} className="cursor-pointer overflow-hidden rounded-lg border bg-[#151515] [&_thead]:bg-[#101010] [&_thead_tr]:text-[#777]" style={{ borderColor: selected ? selectionColor : '#202020', boxShadow: selected ? `0 0 0 1px ${selectionColor}` : 'none' }}>
     <div className="border-b border-[#202020] px-2.5 py-2"><div className="truncate text-[11px] font-medium text-[#ddd]">{quote.title || 'Cotización'}</div><div title={quote.description} className="mt-1 overflow-hidden text-ellipsis whitespace-nowrap text-[10px] text-[#777]">{quote.description}</div></div>
     <div className="overflow-x-auto"><table className="w-full border-collapse text-left text-[10px]"><thead><tr className="border-b border-[#202020] text-[#666]"><th className="px-2.5 py-1.5 font-medium">Resultado</th><th className="px-2.5 py-1.5 font-medium">Métrica</th><th className="px-2.5 py-1.5 text-right font-medium">Importe</th></tr></thead><tbody>{(quote.items || []).map((item: any, index: number) => <tr key={`${quote.id}-${index}`} className="border-b border-[#1d1d1d] text-[#aaa]"><td title={item.outcome || item.description} className="max-w-[150px] truncate px-2.5 py-1.5">{item.outcome || item.description}</td><td title={item.metric} className="max-w-[110px] truncate px-2.5 py-1.5">{item.metric || '—'}</td><td className="px-2.5 py-1.5 text-right">{formatMoney(item.total ?? item.amount)}</td></tr>)}</tbody><tfoot><tr><td colSpan={2} className="px-2.5 py-2 text-right font-medium text-[#bbb]">Total</td><td className="px-2.5 py-2 text-right font-medium text-[#eee]">{formatMoney(quote.total)}</td></tr></tfoot></table></div>
   </section>;
