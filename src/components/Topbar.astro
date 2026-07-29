@@ -83,6 +83,7 @@ import {
         <button class="h-[28px] px-[9px] text-xs border-0 rounded-md bg-transparent text-[#d8d8d8] hover:bg-[var(--color-surface-7)]" type="button">Testing</button>
         <div class="absolute top-[34px] left-0 min-w-[235px] flex flex-col gap-[3px] p-2 border border-[var(--color-surface-10)] rounded-lg bg-[rgba(18,18,18,0.96)] shadow-[0_18px_54px_rgba(0,0,0,0.38)] opacity-0 pointer-events-none -translate-y-1 transition-all duration-120 ease-out group-hover/menu:opacity-100 group-hover/menu:pointer-events-auto group-hover/menu:translate-y-0 z-20">
           <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="terminal"><Terminal class="shrink-0" size={14} /> Terminal</button>
+          <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="computer-use"><Terminal class="shrink-0" size={14} /> PC: abrir Bloc de notas</button>
           <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="ask-user"><Bug class="shrink-0" size={14} /> Probar Ask user</button>
           <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="subagents">Subagentes</button>
           <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="approval">Aprobación de acciones</button>
@@ -146,7 +147,7 @@ import {
 </script>
 
 <style>
-  .group\/menu [data-testing-action]:not([data-testing-action="terminal"]) {
+  .group\/menu [data-testing-action]:not([data-testing-action="terminal"]):not([data-testing-action="computer-use"]) {
     display: none;
   }
 

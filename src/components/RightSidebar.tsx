@@ -20,8 +20,64 @@ type BrowserDomSelection = {
   tag: string;
   isMultiSelect?: boolean;
 };
+type BrowserState = { url: string; title: string; viewport: { width: number; height: number }; text: string; elements: Array<{ id: string; selector: string; role: string; label: string; tag: string; type?: string; disabled: boolean; rect: { x: number; y: number; width: number; height: number } }> };
 
 const browserSelectionHash = '#__codeclub_selection=';
+
+const browserStateScript = `(() => {
+  const invoke = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke;
+  if (typeof invoke !== 'function') return;
+  const selectorFor = (element) => {
+    if (element.id) return '#' + CSS.escape(element.id);
+    const parts = [];
+    let node = element;
+    while (node && node.nodeType === 1 && parts.length < 5) {
+      let part = node.tagName.toLowerCase();
+      if (node.getAttribute('data-testid')) part += '[data-testid="' + CSS.escape(node.getAttribute('data-testid')) + '"]';
+      const parent = node.parentElement;
+      if (parent) { const siblings = Array.from(parent.children).filter((child) => child.tagName === node.tagName); if (siblings.length > 1) part += ':nth-of-type(' + (siblings.indexOf(node) + 1) + ')'; }
+      parts.unshift(part); node = parent;
+    }
+    return parts.join(' > ');
+  };
+  const labelFor = (element) => (element.getAttribute('aria-label') || element.getAttribute('title') || element.innerText || element.textContent || element.getAttribute('placeholder') || element.id || element.tagName).trim().replace(/\\s+/g, ' ').slice(0, 120);
+  const elements = Array.from(document.querySelectorAll('button,a,input,textarea,select,[role="button"],[role="link"],[role="textbox"],[role="checkbox"],[role="combobox"]')).slice(0, 250).map((element, index) => { const rect = element.getBoundingClientRect(); return { id: 'element-' + index, selector: selectorFor(element), role: element.getAttribute('role') || element.tagName.toLowerCase(), label: labelFor(element), tag: element.tagName.toLowerCase(), type: element.getAttribute('type') || undefined, disabled: Boolean(element.disabled || element.getAttribute('aria-disabled') === 'true'), rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) } }; }).filter((element) => element.rect.width > 0 && element.rect.height > 0);
+  const state = { url: location.href, title: document.title, viewport: { width: innerWidth, height: innerHeight }, text: (document.body?.innerText || '').replace(/\\s+/g, ' ').slice(0, 12000), elements };
+  invoke('codeclub_browser_selection', { selection: { title: document.title, text: JSON.stringify(state), html: '', url: location.href, selector: '__codeclub_state__', tag: 'document' } });
+})()`;
+
+const browserActionScript = (action: { type: string; selector?: string; text?: string; key?: string; amount?: number }) => `(() => {
+  const selector = ${JSON.stringify(action.selector || '')};
+  const element = selector ? document.querySelector(selector) : document.activeElement;
+  const finish = () => { document.getElementById('__codeclub-agent-overlay')?.style.setProperty('display', 'none'); document.getElementById('__codeclub-agent-banner')?.style.setProperty('display', 'none'); if (window.__codeclubAgentEscHandler) window.removeEventListener('keydown', window.__codeclubAgentEscHandler, true); };
+  const fail = (message) => { finish(); const invoke = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke; if (typeof invoke === 'function') invoke('codeclub_browser_selection', { selection: { title: message, text: message, html: '', url: location.href, selector: '__codeclub_action_result__', tag: 'action' } }); };
+  if (window.__codeclubAgentStop) { fail('Control cancelado con Escape.'); return; }
+  if (${JSON.stringify(action.type)} === 'scroll') { window.scrollBy(0, ${Number(action.amount || 600)}); const invoke = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke; if (typeof invoke === 'function') invoke('codeclub_browser_selection', { selection: { title: 'ok', text: 'Scroll ejecutado.', html: '', url: location.href, selector: '__codeclub_action_result__', tag: 'action' } }); return; }
+  if (!element) { fail('No se encontró el elemento indicado.'); return; }
+  if (element.disabled || element.getAttribute('aria-disabled') === 'true') { fail('El elemento está deshabilitado.'); return; }
+  if (${JSON.stringify(action.type)} === 'click') element.click();
+  else if (${JSON.stringify(action.type)} === 'type') { element.focus(); const value = ${JSON.stringify(action.text || '')}; if ('value' in element) { const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(element), 'value')?.set; setter?.call(element, value); } else element.textContent = value; element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value })); element.dispatchEvent(new Event('change', { bubbles: true })); }
+  else if (${JSON.stringify(action.type)} === 'key') { element.focus(); element.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(action.key || 'Enter')}, bubbles: true })); element.dispatchEvent(new KeyboardEvent('keyup', { key: ${JSON.stringify(action.key || 'Enter')}, bubbles: true })); }
+  finish(); const invoke = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke; if (typeof invoke === 'function') invoke('codeclub_browser_selection', { selection: { title: 'ok', text: 'Acción ejecutada.', html: '', url: location.href, selector: '__codeclub_action_result__', tag: 'action' } });
+})()`;
+
+const browserAgentOverlayScript = (selector?: string) => `(() => {
+  const overlayId = '__codeclub-agent-overlay';
+  const bannerId = '__codeclub-agent-banner';
+  const cursor = 'url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2234%22 height=%2234%22 viewBox=%220 0 34 34%22 fill=%22none%22%3E%3Cpath d=%22M 5 5 L 14 29 A 1.5 1.5 0 0 0 17 28.5 L 19.5 20 L 28.5 17 A 1.5 1.5 0 0 0 29 14 L 5 5 Z%22 fill=%22%231687ff%22 stroke=%22white%22 stroke-width=%223%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E") 5 5, crosshair';
+  const overlay = document.getElementById(overlayId) || Object.assign(document.body.appendChild(document.createElement('div')), { id: overlayId });
+  const banner = document.getElementById(bannerId) || Object.assign(document.body.appendChild(document.createElement('div')), { id: bannerId });
+  Object.assign(overlay.style, { position: 'fixed', zIndex: '2147483646', pointerEvents: 'none', border: '2px solid #1687ff', background: 'rgba(22,135,255,.12)', boxShadow: '0 0 0 1px rgba(255,255,255,.35), 0 0 18px rgba(22,135,255,.45)', display: 'none' });
+  Object.assign(banner.style, { position: 'fixed', zIndex: '2147483647', right: '16px', top: '16px', padding: '7px 10px', border: '1px solid #1687ff', borderRadius: '8px', background: '#101a2b', color: '#dbeafe', font: '12px system-ui', boxShadow: '0 6px 20px rgba(0,0,0,.3)', display: 'block' });
+  banner.textContent = 'Agente controla · Esc para salir';
+  document.documentElement.style.cursor = cursor;
+  window.__codeclubAgentStop = false;
+  const send = (title, text) => { const invoke = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke; if (typeof invoke === 'function') invoke('codeclub_browser_selection', { selection: { title, text, html: '', url: location.href, selector: '__codeclub_action_result__', tag: 'action' } }); };
+  window.__codeclubAgentEscHandler = (event) => { if (event.key !== 'Escape') return; event.preventDefault(); window.__codeclubAgentStop = true; overlay.style.display = 'none'; banner.textContent = 'Agente detenido'; send('cancelled', 'Control cancelado con Escape.'); };
+  window.addEventListener('keydown', window.__codeclubAgentEscHandler, true);
+  const element = ${JSON.stringify(selector || '')} ? document.querySelector(${JSON.stringify(selector || '')}) : null;
+  if (element) { const rect = element.getBoundingClientRect(); Object.assign(overlay.style, { display: 'block', left: Math.max(0, rect.left) + 'px', top: Math.max(0, rect.top) + 'px', width: Math.max(0, rect.width) + 'px', height: Math.max(0, rect.height) + 'px' }); }
+})()`;
 
 const browserInspectorScript = (active: boolean) => {
   const cursor = `url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2234%22 height=%2234%22 viewBox=%220 0 34 34%22 fill=%22none%22%3E%3Cpath d=%22M 5 5 L 14 29 A 1.5 1.5 0 0 0 17 28.5 L 19.5 20 L 28.5 17 A 1.5 1.5 0 0 0 29 14 L 5 5 Z%22 fill=%22%231687ff%22 stroke=%22white%22 stroke-width=%223%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E") 5 5, crosshair`;
@@ -475,6 +531,14 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
   };
 
   const applySelection = (next: BrowserDomSelection) => {
+    if (next.selector === '__codeclub_state__') {
+      try { window.dispatchEvent(new CustomEvent('codeclub:browser-state', { detail: JSON.parse(next.text) as BrowserState })); } catch { /* Estado inválido: el agente recibirá timeout. */ }
+      return;
+    }
+    if (next.selector === '__codeclub_action_result__') {
+      window.dispatchEvent(new CustomEvent('codeclub:browser-action-result', { detail: { ok: next.title === 'ok', message: next.text } }));
+      return;
+    }
     const key = `${next.url}|${next.selector}|${next.html.slice(0, 80)}`;
     if (selectionKeyRef.current === key) return;
     selectionKeyRef.current = key;
@@ -580,6 +644,10 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
       applySelection(event.payload);
     }).then((unlisten) => { stopListening = unlisten; });
     void listen<string>('codeclub-browser-page-loaded', () => { if (inspectModeRef.current) void installInspector(true); }).then((unlisten) => { stopPageListening = unlisten; });
+    const handleStateRequest = () => { void invoke('codeclub_browser_eval', { script: browserStateScript }).catch(() => undefined); };
+    const handleAction = async (event: Event) => { const action = (event as CustomEvent).detail || {}; await invoke('codeclub_browser_eval', { script: browserAgentOverlayScript(action.selector) }).catch(() => undefined); await invoke('codeclub_browser_eval', { script: browserActionScript(action) }).catch(() => undefined); };
+    window.addEventListener('codeclub:browser-state-request', handleStateRequest);
+    window.addEventListener('codeclub:browser-action', handleAction);
     void openPage(initialUrl, false);
     const handleSync = () => { void syncWebview(); };
     const resizeObserver = new ResizeObserver(handleSync);
@@ -625,6 +693,8 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
       bodyObserver.disconnect();
       window.removeEventListener('resize', handleSync);
       window.removeEventListener('codeclub:right-panel-toggled', handleSync);
+      window.removeEventListener('codeclub:browser-state-request', handleStateRequest);
+      window.removeEventListener('codeclub:browser-action', handleAction);
       window.clearInterval(navigationPoll);
       stopListening?.();
       stopPageListening?.();
@@ -1131,7 +1201,7 @@ function QuoteArtifact({ quote, onRemove, onReference }: { quote: any; onRemove:
   const formatMoney = (value: number) => { try { return new Intl.NumberFormat('es-AR', { style: 'currency', currency: quote.currency || 'USD', maximumFractionDigits: 2 }).format(Number(value || 0)); } catch { return `${quote.currency || 'USD'} ${Number(value || 0).toFixed(2)}`; } };
   return <section onDoubleClick={onRemove} onContextMenu={(event) => { event.preventDefault(); onReference(); }} className="cursor-pointer overflow-hidden rounded-lg border border-[#202020] bg-[#151515] [&_thead]:bg-[#101010] [&_thead_tr]:text-[#777]">
     <div className="border-b border-[#202020] px-2.5 py-2"><div className="truncate text-[11px] font-medium text-[#ddd]">{quote.title || 'Cotización'}</div><div title={quote.description} className="mt-1 overflow-hidden text-ellipsis whitespace-nowrap text-[10px] text-[#777]">{quote.description}</div></div>
-    <div className="overflow-x-auto"><table className="w-full border-collapse text-left text-[10px]"><thead><tr className="border-b border-[#202020] text-[#666]"><th className="px-2.5 py-1.5 font-medium">Ítem</th><th className="px-1 py-1.5 text-right font-medium">Cant.</th><th className="px-2.5 py-1.5 text-right font-medium">Total</th></tr></thead><tbody>{(quote.items || []).map((item: any, index: number) => <tr key={`${quote.id}-${index}`} className="border-b border-[#1d1d1d] text-[#aaa]"><td title={item.description} className="max-w-[130px] truncate px-2.5 py-1.5">{item.description}</td><td className="px-1 py-1.5 text-right">{item.quantity}</td><td className="px-2.5 py-1.5 text-right">{formatMoney(item.total ?? Number(item.quantity || 0) * Number(item.unitPrice || 0))}</td></tr>)}</tbody><tfoot><tr><td colSpan={2} className="px-2.5 py-2 text-right font-medium text-[#bbb]">Total</td><td className="px-2.5 py-2 text-right font-medium text-[#eee]">{formatMoney(quote.total)}</td></tr></tfoot></table></div>
+    <div className="overflow-x-auto"><table className="w-full border-collapse text-left text-[10px]"><thead><tr className="border-b border-[#202020] text-[#666]"><th className="px-2.5 py-1.5 font-medium">Resultado</th><th className="px-2.5 py-1.5 font-medium">Métrica</th><th className="px-2.5 py-1.5 text-right font-medium">Importe</th></tr></thead><tbody>{(quote.items || []).map((item: any, index: number) => <tr key={`${quote.id}-${index}`} className="border-b border-[#1d1d1d] text-[#aaa]"><td title={item.outcome || item.description} className="max-w-[150px] truncate px-2.5 py-1.5">{item.outcome || item.description}</td><td title={item.metric} className="max-w-[110px] truncate px-2.5 py-1.5">{item.metric || '—'}</td><td className="px-2.5 py-1.5 text-right">{formatMoney(item.total ?? item.amount)}</td></tr>)}</tbody><tfoot><tr><td colSpan={2} className="px-2.5 py-2 text-right font-medium text-[#bbb]">Total</td><td className="px-2.5 py-2 text-right font-medium text-[#eee]">{formatMoney(quote.total)}</td></tr></tfoot></table></div>
   </section>;
 }
 

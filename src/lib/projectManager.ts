@@ -31,17 +31,18 @@ export interface ProjectMeta {
 }
 
 export interface BusinessWorkspace {
-  version: 1;
+  version: 2;
   currency: string;
-  project: { status: string; monthly_fee: number | null; next_billing_date: string | null };
+  project: { status: string; estimated_value: number | null; contracted_value: number | null; monthly_fee: number | null; next_billing_date: string | null };
   profile: { description: string; services: string[]; target_clients: string[] };
-  pricing: { hourly_rate: number | null; fixed_scope: boolean; milestones: boolean; retainer_monthly: number | null; value_based: boolean };
+  pricing: { model: "value_based"; objective: string; expected_impact: string; value_hypothesis: string; success_metrics: Array<{ name: string; baseline: string | number | null; target: string | number | null; unit: string }> ; retainer_monthly: number | null };
+  dashboard: { visible_panels: Record<string, boolean>; panel_types: Record<string, "metric" | "progress" | "trend" | "status"> };
   opportunities: any[];
   estimates: any[];
   quotes: any[];
+  outcomes: any[];
   milestones: any[];
   payments: any[];
-  time_entries: any[];
   expenses: any[];
   invoices: any[];
   notes: any[];
@@ -130,17 +131,54 @@ export const readBusinessWorkspace = async (projectPath: string): Promise<Busine
   const path = await getBusinessWorkspacePath(projectPath);
   if (!(await exists(path))) return null;
   try {
-    const data = JSON.parse(await readTextFile(path));
+    let data = JSON.parse(await readTextFile(path));
+    const needsMigration = Number(data.version || 1) < 2 || "hourly_rate" in (data.pricing || {}) || "time_entries" in data;
+    if (needsMigration) {
+      const backupPath = await getProjectFilePath(projectPath, "business.backup-v1.json");
+      if (!(await exists(backupPath))) await writeTextFile(backupPath, JSON.stringify(data, null, 2));
+      const migratedQuotes = (Array.isArray(data.quotes) ? data.quotes : []).map((quote: any) => ({
+        ...quote,
+        items: (Array.isArray(quote.items) ? quote.items : []).map((item: any) => {
+          const amount = Number(item.amount ?? item.total ?? (Number(item.unitPrice || 0) * Number(item.quantity || 1)));
+          return { description: item.description || "Resultado entregable", type: item.type || "deliverable", outcome: item.outcome || item.description || "", metric: item.metric || "", amount, total: amount };
+        }),
+      }));
+      const migrated = {
+        ...data,
+        version: 2,
+        pricing: {
+          model: "value_based",
+          objective: data.pricing?.objective || "",
+          expected_impact: data.pricing?.expected_impact || "",
+          value_hypothesis: data.pricing?.value_hypothesis || "",
+          success_metrics: Array.isArray(data.pricing?.success_metrics) ? data.pricing.success_metrics : [],
+          retainer_monthly: data.pricing?.retainer_monthly ?? data.project?.monthly_fee ?? null,
+        },
+        quotes: migratedQuotes,
+        outcomes: Array.isArray(data.outcomes) ? data.outcomes : [],
+        dashboard: data.dashboard || { visible_panels: {}, panel_types: {} },
+      };
+      const quoteTotal = migratedQuotes.reduce((sum: number, quote: any) => sum + Number(quote.total || 0), 0);
+      const acceptedTotal = migratedQuotes.filter((quote: any) => quote.status === "accepted").reduce((sum: number, quote: any) => sum + Number(quote.total || 0), 0);
+      migrated.project = { status: "prospecto", estimated_value: quoteTotal || null, contracted_value: acceptedTotal || null, monthly_fee: null, next_billing_date: null, ...(data.project || {}) };
+      delete migrated.time_entries;
+      await writeTextFile(path, JSON.stringify(migrated, null, 2));
+      data = migrated;
+    }
     return {
-      version: 1,
+      version: 2,
       currency: "USD",
-      project: { status: "prospecto", monthly_fee: null, next_billing_date: null },
+      project: { status: "prospecto", estimated_value: null, contracted_value: null, monthly_fee: null, next_billing_date: null },
       profile: { description: "", services: [], target_clients: [] },
-      pricing: { hourly_rate: null, fixed_scope: true, milestones: true, retainer_monthly: null, value_based: false },
-      opportunities: [], estimates: [], quotes: [], milestones: [], payments: [], time_entries: [], expenses: [], invoices: [], notes: [],
+      pricing: { model: "value_based", objective: "", expected_impact: "", value_hypothesis: "", success_metrics: [], retainer_monthly: null },
+      dashboard: { visible_panels: {}, panel_types: {} },
+      opportunities: [], estimates: [], quotes: [], outcomes: [], milestones: [], payments: [], expenses: [], invoices: [], notes: [],
       updated_at: new Date().toISOString(),
       ...data,
-      project: { status: "prospecto", monthly_fee: null, next_billing_date: null, ...(data.project || {}) },
+      project: { status: "prospecto", estimated_value: null, contracted_value: null, monthly_fee: null, next_billing_date: null, ...(data.project || {}) },
+      pricing: { model: "value_based", objective: "", expected_impact: "", value_hypothesis: "", success_metrics: [], retainer_monthly: null, ...(data.pricing || {}) },
+      dashboard: { visible_panels: {}, panel_types: {}, ...(data.dashboard || {}) },
+      outcomes: Array.isArray(data.outcomes) ? data.outcomes : [],
     };
   } catch { return null; }
 };
@@ -149,12 +187,13 @@ export const ensureBusinessWorkspace = async (projectPath: string) => {
   const current = await readBusinessWorkspace(projectPath);
   if (current) return current;
   const workspace: BusinessWorkspace = {
-    version: 1,
+    version: 2,
     currency: "USD",
-    project: { status: "prospecto", monthly_fee: null, next_billing_date: null },
+    project: { status: "prospecto", estimated_value: null, contracted_value: null, monthly_fee: null, next_billing_date: null },
     profile: { description: "", services: [], target_clients: [] },
-    pricing: { hourly_rate: null, fixed_scope: true, milestones: true, retainer_monthly: null, value_based: false },
-    opportunities: [], estimates: [], quotes: [], milestones: [], payments: [], time_entries: [], expenses: [], invoices: [], notes: [],
+    pricing: { model: "value_based", objective: "", expected_impact: "", value_hypothesis: "", success_metrics: [], retainer_monthly: null },
+    dashboard: { visible_panels: {}, panel_types: {} },
+    opportunities: [], estimates: [], quotes: [], outcomes: [], milestones: [], payments: [], expenses: [], invoices: [], notes: [],
     updated_at: new Date().toISOString(),
   };
   await ensureCodeclubFolder(projectPath);
@@ -164,7 +203,7 @@ export const ensureBusinessWorkspace = async (projectPath: string) => {
 
 export const writeBusinessWorkspace = async (projectPath: string, workspace: BusinessWorkspace) => {
   await ensureCodeclubFolder(projectPath);
-  const next = { ...workspace, version: 1 as const, updated_at: new Date().toISOString() };
+  const next = { ...workspace, version: 2 as const, updated_at: new Date().toISOString() };
   await writeTextFile(await getBusinessWorkspacePath(projectPath), JSON.stringify(next, null, 2));
   if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("codeclub:business-updated", { detail: { projectPath } }));
   return next;

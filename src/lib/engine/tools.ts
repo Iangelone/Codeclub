@@ -165,7 +165,16 @@ export function createBusinessTools(ctx: { recordToolEvent: (name: string, input
       inputSchema: jsonSchema({ type: 'object', properties: {}, additionalProperties: false }),
       execute: async () => {
         setAgentState('tool_call');
-        const output = await readBusinessWorkspace(projectPath);
+        const workspace = await readBusinessWorkspace(projectPath);
+        const quotes = workspace?.quotes || [];
+        const summary = workspace ? {
+          estimatedValue: Number(workspace.project.estimated_value || 0),
+          contractedValue: Number(workspace.project.contracted_value || 0),
+          quotedValue: quotes.reduce((sum: number, quote: any) => sum + Number(quote.total || 0), 0),
+          acceptedValue: quotes.filter((quote: any) => quote.status === 'accepted').reduce((sum: number, quote: any) => sum + Number(quote.total || 0), 0),
+          pipelineValue: quotes.filter((quote: any) => ['draft', 'sent'].includes(String(quote.status || 'draft'))).reduce((sum: number, quote: any) => sum + Number(quote.total || 0), 0),
+        } : null;
+        const output = workspace ? { ...workspace, summary } : workspace;
         recordToolEvent('getBusinessWorkspace', {}, output || { status: 'empty' });
         return output || { status: 'empty', message: 'El proyecto todavía no tiene datos comerciales.' };
       },
@@ -191,11 +200,11 @@ export function createBusinessTools(ctx: { recordToolEvent: (name: string, input
       },
     }),
     updateBusinessWorkspace: tool({
-      description: 'Update one business workspace section. Use for project status, monthly fees, quotes, milestones, payments, clients, pricing, opportunities, estimates, time entries, expenses, invoices or notes.',
+      description: 'Update one business workspace section. Use for project status, estimated or contracted value, value pricing, dashboard visibility, outcomes, quotes, milestones, payments, clients, opportunities, estimates, expenses, invoices or notes.',
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
-          section: { type: 'string', enum: ['project', 'profile', 'pricing', 'opportunities', 'estimates', 'quotes', 'milestones', 'payments', 'time_entries', 'expenses', 'invoices', 'notes'] },
+          section: { type: 'string', enum: ['project', 'profile', 'pricing', 'dashboard', 'opportunities', 'estimates', 'quotes', 'outcomes', 'milestones', 'payments', 'expenses', 'invoices', 'notes'] },
           data: { description: 'Complete replacement value for the selected section.' },
         },
         required: ['section', 'data'],
@@ -210,14 +219,14 @@ export function createBusinessTools(ctx: { recordToolEvent: (name: string, input
       },
     }),
     createQuote: tool({
-      description: 'Create and persist a project quotation with a description and line items. Use this tool in Economy mode when the user asks for a quote, estimate or proposal; do not only describe it in text.',
+      description: 'Create and persist a value-based project quotation. Each line item must represent a result or deliverable, never hours; do not only describe it in text.',
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
           title: { type: 'string' },
           description: { type: 'string' },
           currency: { type: 'string' },
-          items: { type: 'array', items: { type: 'object', properties: { description: { type: 'string' }, quantity: { type: 'number' }, unitPrice: { type: 'number' } }, required: ['description', 'quantity', 'unitPrice'], additionalProperties: false } },
+          items: { type: 'array', items: { type: 'object', properties: { type: { type: 'string', enum: ['outcome', 'deliverable', 'milestone'] }, description: { type: 'string' }, outcome: { type: 'string' }, metric: { type: 'string' }, amount: { type: 'number' } }, required: ['type', 'description', 'outcome', 'metric', 'amount'], additionalProperties: false } },
           status: { type: 'string', enum: ['draft', 'sent', 'accepted', 'rejected'] },
         },
         required: ['title', 'description', 'items'],
@@ -226,7 +235,7 @@ export function createBusinessTools(ctx: { recordToolEvent: (name: string, input
       execute: async ({ title, description, currency, items, status }) => {
         setAgentState('tool_call');
         const current = await ensureBusinessWorkspace(projectPath);
-        const normalizedItems = (items || []).map((item) => ({ description: item.description, quantity: Number(item.quantity || 0), unitPrice: Number(item.unitPrice || 0), total: Number(item.quantity || 0) * Number(item.unitPrice || 0) }));
+        const normalizedItems = (items || []).map((item) => ({ type: item.type || 'deliverable', description: item.description, outcome: item.outcome, metric: item.metric, amount: Number(item.amount || 0), total: Number(item.amount || 0) }));
         const quote = { id: createId('quote'), title, description, currency: currency || current.currency || 'USD', items: normalizedItems, total: normalizedItems.reduce((sum, item) => sum + item.total, 0), status: status || 'draft', createdAt: new Date().toISOString() };
         const next = await writeBusinessWorkspace(projectPath, { ...current, quotes: [...(current.quotes || []), quote] });
         recordToolEvent('createQuote', { title, description, currency, items, status }, quote);
@@ -329,6 +338,7 @@ export function selectToolsForPrompt(toolset: Record<string, any>, mode: 'busine
   if (mode === 'business') {
     if (has('cotiz', 'presupuesto', 'propuesta', 'precio', 'tarifa', 'estim')) add('createQuote', 'createBudget', 'updateBusinessWorkspace');
     if (has('plan', 'hito', 'roadmap', 'estrateg')) add('createExecutionPlan', 'updateBusinessWorkspace');
+    if (has('panel', 'dashboard', 'mostrar', 'ocultar', 'esconder', 'visibilidad')) add('getBusinessWorkspace', 'updateBusinessWorkspace');
     if (has('whatsapp', 'cliente', 'conversación', 'conversacion', 'crm')) add('getWhatsAppBusinessContext');
     if (has('proyecto', 'portfolio', 'cartera')) add('listIndexedProjects');
     if (has('log', 'auditar', 'ejecución', 'ejecucion', 'herramientas')) add('getExecutionLog');
@@ -336,21 +346,24 @@ export function selectToolsForPrompt(toolset: Record<string, any>, mode: 'busine
   } else {
     // Failsafe de escritura: el router IA sigue siendo la decisión principal.
     if (has('editar', 'modific', 'crear', 'crea', 'creá', 'armar', 'armá', 'hacer', 'hacé', 'agregar', 'agrega', 'agregá', 'meter', 'mete', 'meté', 'carpeta', 'archivo', 'txt', 'escrib', 'implement', 'fix', 'correg', 'refactor', 'cambio')) add('writeFile');
-    if (has('terminal', 'comando', 'ejecut', 'build', 'compil', 'test', 'prueba', 'git', 'servidor', 'background', 'proceso')) add('runCommand', 'terminal');
+    if (has('terminal', 'comando', 'ejecut', 'build', 'compil', 'test', 'prueba', 'git', 'servidor', 'background', 'proceso', 'bloc', 'notepad', 'pc', 'computadora')) add('runCommand', 'terminal');
     if (has('sub-ia', 'subia', 'subagente', 'especialista', 'deleg')) add('subagent');
+    if (has('navegador', 'browser', 'web', 'url', 'dom', 'elemento', 'botón', 'boton', 'click', 'clic', 'escrib')) add('openBrowser', 'getBrowserState', 'browserAction');
     if (has('memoria', 'recordá', 'recorda', 'acordate', 'olvid', 'recuper')) add('remember', 'recall', 'forget');
     if (has('log', 'auditar', 'ejecución', 'ejecucion', 'herramientas', 'debug')) add('getExecutionLog');
   }
+
+  if (mode === 'development' && has('control de pc', 'computadora', 'mouse', 'teclado', 'navegador', 'edge', 'notepad', 'bloc de notas')) add('subagent', 'runCommand', 'openBrowser', 'getBrowserState', 'browserAction');
 
   return Object.fromEntries([...keys].filter((name) => toolset[name]).map((name) => [name, toolset[name]]));
 }
 
 const TOOL_ROUTER_CATALOG: Record<'business' | 'development', Record<string, string>> = {
   development: {
-    listFiles: 'listar archivos del workspace', readFile: 'leer archivos', searchText: 'buscar texto en archivos', writeFile: 'crear o editar archivos; también crea carpetas padre', runCommand: 'ejecutar comandos, tests, Git o procesos', terminal: 'crear procesos persistentes en background', openBrowser: 'abrir una URL en la pestaña Navegador', askUser: 'pedir una decisión al usuario', createPlan: 'crear planes de implementación', updatePlan: 'actualizar planes', todo: 'crear o actualizar tareas TODO', getTaskStatus: 'consultar estado de tareas', subagent: 'delegar investigación a un subagente', remember: 'guardar memoria', recall: 'consultar memoria', forget: 'borrar memoria', getExecutionLog: 'auditar ejecuciones y tools',
+    listFiles: 'listar archivos del workspace', readFile: 'leer archivos', searchText: 'buscar texto en archivos', writeFile: 'crear o editar archivos; también crea carpetas padre', runCommand: 'ejecutar comandos, tests, Git o procesos', terminal: 'crear procesos persistentes en background', openBrowser: 'abrir una URL en la pestaña Navegador', getBrowserState: 'obtener estado DOM y accesibilidad del navegador como JSON', browserAction: 'hacer click, escribir, pulsar teclas o scroll usando selectores', askUser: 'pedir una decisión al usuario', createPlan: 'crear planes de implementación', updatePlan: 'actualizar planes', todo: 'crear o actualizar tareas TODO', getTaskStatus: 'consultar estado de tareas', subagent: 'delegar investigación a un subagente', remember: 'guardar memoria', recall: 'consultar memoria', forget: 'borrar memoria', getExecutionLog: 'auditar ejecuciones y tools',
   },
   business: {
-    listProjectFiles: 'listar archivos del proyecto', readProjectFile: 'leer archivos del proyecto', searchProjectText: 'buscar texto en el proyecto', getBusinessWorkspace: 'leer datos económicos', getAIUsageMetrics: 'medir tokens, duración y costos', updateBusinessWorkspace: 'actualizar datos económicos', createQuote: 'crear cotizaciones', createBudget: 'crear presupuestos', createExecutionPlan: 'crear planes de ejecución', getWhatsAppBusinessContext: 'consultar contexto comercial de WhatsApp', listIndexedProjects: 'listar proyectos', getExecutionLog: 'auditar ejecuciones y tools', delegateBusinessSpecialist: 'delegar investigación comercial',
+    listProjectFiles: 'listar archivos del proyecto', readProjectFile: 'leer archivos del proyecto', searchProjectText: 'buscar texto en el proyecto', getBusinessWorkspace: 'leer datos económicos y configuración del panel', getAIUsageMetrics: 'medir tokens, duración y costos', updateBusinessWorkspace: 'actualizar datos económicos o visibilidad de paneles', createQuote: 'crear cotizaciones', createBudget: 'crear presupuestos', createExecutionPlan: 'crear planes de ejecución', getWhatsAppBusinessContext: 'consultar contexto comercial de WhatsApp', listIndexedProjects: 'listar proyectos', getExecutionLog: 'auditar ejecuciones y tools', delegateBusinessSpecialist: 'delegar investigación comercial',
   },
 };
 
@@ -412,7 +425,7 @@ export async function verifyToolExecutionWithAI({ model, prompt, goal, verificat
   let result: { completed?: boolean; retry?: boolean; reason?: string } | null = null;
   await runStream({
     model,
-    system: 'Sos la IA verificadora de Codeclub. Compará el objetivo y el criterio de verificación con las tools realmente ejecutadas, sus resultados y el diff local. No supongas que el texto del agente es evidencia. Si falta una tool exitosa o el diff no respalda el trabajo, indicá retry=true. Devolvé JSON estructurado.',
+    system: 'Sos la IA verificadora de Codeclub. Compará el objetivo y el criterio de verificación con las tools realmente ejecutadas, sus resultados y el diff local. No supongas que el texto del agente es evidencia. Para control de PC exigí evidencia observable: proceso, ventana, URL, salida estructurada o estado posterior; un código 0 por sí solo no prueba que una interfaz haya cambiado ni que un video esté disponible. Si falta evidencia, el resultado contradice el objetivo o aparece contenido no disponible, indicá retry=true y pedí observar nuevamente antes de repetir acciones. Devolvé JSON estructurado.',
     messages: [{ role: 'user', content: JSON.stringify({ prompt, goal, verification, toolEvents: toolEvents.slice(-20), changes }) }],
     tools: {},
     structuredOutput: toolVerificationOutput,
@@ -733,12 +746,57 @@ export function createTools(ctx: ToolContext) {
         return output;
       },
     }),
-    subagent: tool({
-      description: 'Delegate a focused development task to a specialist IA that inspects the codebase with read tools.',
+    getBrowserState: tool({
+      description: 'Inspect the active Codeclub browser without vision. Returns accessible DOM text, visible controls, roles, labels, selectors and screen rectangles as JSON.',
+      inputSchema: jsonSchema({ type: 'object', properties: {}, additionalProperties: false }),
+      execute: async () => {
+        if (typeof window === 'undefined') return { ok: false, error: 'El navegador solo está disponible en la aplicación.' };
+        const output = await new Promise<any>((resolve) => {
+          let timer: number | undefined;
+          const cleanup = () => { if (timer) window.clearTimeout(timer); window.removeEventListener('codeclub:browser-state', handleState); };
+          const handleState = (event: Event) => { cleanup(); resolve({ ok: true, state: (event as CustomEvent).detail }); };
+          window.addEventListener('codeclub:browser-state', handleState, { once: true });
+          timer = window.setTimeout(() => { cleanup(); resolve({ ok: false, error: 'No se recibió el estado del navegador.' }); }, 5000);
+          window.dispatchEvent(new CustomEvent('codeclub:browser-state-request'));
+        });
+        recordToolEvent('getBrowserState', {}, output);
+        return output;
+      },
+    }),
+    browserAction: tool({
+      description: 'Interact with the active browser using a selector from getBrowserState. Supports click, type, key and scroll; does not require model vision.',
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
-          specialist: { type: 'string', enum: ['developer', 'explorer', 'frontend', 'backend', 'qa', 'security', 'documentation'] },
+          type: { type: 'string', enum: ['click', 'type', 'key', 'scroll'] },
+          selector: { type: 'string', description: 'CSS selector returned by getBrowserState. Omit only for scroll.' },
+          text: { type: 'string' },
+          key: { type: 'string' },
+          amount: { type: 'number' },
+        },
+        required: ['type'],
+        additionalProperties: false,
+      }),
+      execute: async (action) => {
+        if (typeof window === 'undefined') return { ok: false, error: 'El navegador solo está disponible en la aplicación.' };
+        const output = await new Promise<any>((resolve) => {
+          let timer: number | undefined;
+          const cleanup = () => { if (timer) window.clearTimeout(timer); window.removeEventListener('codeclub:browser-action-result', handleResult); };
+          const handleResult = (event: Event) => { cleanup(); resolve((event as CustomEvent).detail || { ok: false, error: 'Resultado vacío.' }); };
+          window.addEventListener('codeclub:browser-action-result', handleResult, { once: true });
+          timer = window.setTimeout(() => { cleanup(); resolve({ ok: false, error: 'No se recibió confirmación de la acción.' }); }, 5000);
+          window.dispatchEvent(new CustomEvent('codeclub:browser-action', { detail: action }));
+        });
+        recordToolEvent('browserAction', action, output);
+        return output;
+      },
+    }),
+    subagent: tool({
+      description: 'Delegate a focused development or computer-control task to a specialist IA.',
+      inputSchema: jsonSchema({
+        type: 'object',
+        properties: {
+          specialist: { type: 'string', enum: ['developer', 'explorer', 'frontend', 'backend', 'qa', 'security', 'documentation', 'computer_use'] },
           task: { type: 'string', description: 'The task for the specialist.' },
         },
         required: ['specialist', 'task'],
@@ -754,11 +812,17 @@ export function createTools(ctx: ToolContext) {
         const developmentTools = createTools({ projectPath, recordToolEvent, setAgentState, requestToolApproval, provider, modelId });
         const subTools = specialist === 'developer'
           ? Object.fromEntries(['listFiles', 'readFile', 'searchText', 'writeFile', 'runCommand', 'terminal'].map((name) => [name, developmentTools[name]]).filter(([, toolDefinition]) => toolDefinition))
-          : createSubagentTools({ projectPath, recordToolEvent, setAgentState });
+          : specialist === 'computer_use'
+            ? Object.fromEntries(['openBrowser', 'getBrowserState', 'browserAction', 'runCommand'].map((name) => [name, developmentTools[name]]).filter(([, toolDefinition]) => toolDefinition))
+            : createSubagentTools({ projectPath, recordToolEvent, setAgentState });
+
+        const specialistSystem = specialist === 'computer_use'
+          ? 'Sos la subIA Computer Use de Codeclub. Controlas navegador y PC, no editas codigo. Ejecuta primero una tool real, sin narrar planes. Usa el ciclo observar-actuar-verificar: para navegador, getBrowserState antes de browserAction y volve a observar despues; para PC, runCommand debe devolver evidencia estructurada de procesos, ventanas, URL y estado. No repitas ciegamente, no escribas scripts en el chat y no declares exito sin evidencia. Si algo falla, razona una alternativa y ejecuta el siguiente paso.'
+          : 'Sos un agente de investigacion de Codeclub. Explora el codigo y responde en espanol. Cuando termines, escribe un resumen claro de tus hallazgos.';
 
         const result = await runStream({
           model: provider(modelId),
-          system: 'Sos un agente de investigación de Codeclub. Explorá el código y respondé en español. IMPORTANTE: cuando termines, escribí un resumen claro de tus hallazgos. Ese resumen será devuelto al agente principal.',
+          system: specialistSystem,
           messages: [{ role: 'user', content: task }],
           tools: subTools,
           callbacks: {
