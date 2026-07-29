@@ -9,6 +9,8 @@ import { appendGenerationUsage, readGenerationUsage, summarizeGenerationUsage } 
 import { readExecutionLog } from '../execution-log';
 import { whatsappContextStore } from '../store';
 
+const specialistHandoff = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, 500);
+
 const persistSubagentUsage = async (projectPath: string, modelId: string, mode: string, usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number; reasoningTokens?: number; model?: string; durationMs: number }) => appendGenerationUsage({
   id: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
   at: new Date().toISOString(),
@@ -119,34 +121,45 @@ const businessSpecialistTools = (projectPath: string, recordToolEvent: (name: st
 
 export function createBusinessTools(ctx: { recordToolEvent: (name: string, input: any, output: any) => void; setAgentState: (state: string) => void; indexedProjects: Array<{ name: string; path: string }>; projectPath: string; provider?: any; modelId?: string }) {
   const { recordToolEvent, setAgentState, indexedProjects, projectPath, provider, modelId } = ctx;
+  const resolveProjectPath = (requestedPath?: string) => {
+    const requested = String(requestedPath || '').trim();
+    if (!requested && indexedProjects.some((project) => project.path === projectPath)) return projectPath;
+    const match = indexedProjects.find((project) => project.path === requested || project.name.toLowerCase() === requested.toLowerCase());
+    if (match) return match.path;
+    throw new Error('Indicá un proyecto indexado válido por nombre o ruta antes de consultar o guardar datos económicos.');
+  };
+  const projectPathProperty = { projectPath: { type: 'string', description: 'Nombre o ruta de un proyecto indexado. Omitir solo si ya hay un proyecto activo.' } };
   return {
     listProjectFiles: tool({
       description: 'List project files for business context. Read-only; skips heavy folders.',
-      inputSchema: jsonSchema({ type: 'object', properties: { maxFiles: { type: 'number' } }, additionalProperties: false }),
-      execute: async ({ maxFiles }) => {
+      inputSchema: jsonSchema({ type: 'object', properties: { maxFiles: { type: 'number' }, ...projectPathProperty }, additionalProperties: false }),
+      execute: async ({ maxFiles, projectPath: requestedProject }) => {
         setAgentState('tool_call');
-        const output = await invoke('codeclub_list_files', { projectPath, maxFiles: Math.min(Number(maxFiles) || 400, 1200) });
-        recordToolEvent('listProjectFiles', { maxFiles }, output);
+        const targetProjectPath = resolveProjectPath(requestedProject);
+        const output = await invoke('codeclub_list_files', { projectPath: targetProjectPath, maxFiles: Math.min(Number(maxFiles) || 400, 1200) });
+        recordToolEvent('listProjectFiles', { maxFiles, projectPath: targetProjectPath }, output);
         return output;
       },
     }),
     readProjectFile: tool({
       description: 'Read a UTF-8 project file for business analysis. Read-only; never modifies it.',
-      inputSchema: jsonSchema({ type: 'object', properties: { path: { type: 'string' } }, required: ['path'], additionalProperties: false }),
-      execute: async ({ path }) => {
+      inputSchema: jsonSchema({ type: 'object', properties: { path: { type: 'string' }, ...projectPathProperty }, required: ['path'], additionalProperties: false }),
+      execute: async ({ path, projectPath: requestedProject }) => {
         setAgentState('tool_call');
-        const output = await invoke('codeclub_read_file', { projectPath, path });
-        recordToolEvent('readProjectFile', { path }, String(output).slice(0, 1200));
+        const targetProjectPath = resolveProjectPath(requestedProject);
+        const output = await invoke('codeclub_read_file', { projectPath: targetProjectPath, path });
+        recordToolEvent('readProjectFile', { path, projectPath: targetProjectPath }, String(output).slice(0, 1200));
         return output;
       },
     }),
     searchProjectText: tool({
       description: 'Search project code and documentation for business context. Read-only.',
-      inputSchema: jsonSchema({ type: 'object', properties: { query: { type: 'string' }, maxMatches: { type: 'number' } }, required: ['query'], additionalProperties: false }),
-      execute: async ({ query, maxMatches }) => {
+      inputSchema: jsonSchema({ type: 'object', properties: { query: { type: 'string' }, maxMatches: { type: 'number' }, ...projectPathProperty }, required: ['query'], additionalProperties: false }),
+      execute: async ({ query, maxMatches, projectPath: requestedProject }) => {
         setAgentState('tool_call');
-        const output = await invoke('codeclub_search_text', { projectPath, query, maxMatches: Math.min(Number(maxMatches) || 80, 200) });
-        recordToolEvent('searchProjectText', { query, maxMatches }, output);
+        const targetProjectPath = resolveProjectPath(requestedProject);
+        const output = await invoke('codeclub_search_text', { projectPath: targetProjectPath, query, maxMatches: Math.min(Number(maxMatches) || 80, 200) });
+        recordToolEvent('searchProjectText', { query, maxMatches, projectPath: targetProjectPath }, output);
         return output;
       },
     }),
@@ -161,11 +174,12 @@ export function createBusinessTools(ctx: { recordToolEvent: (name: string, input
       },
     }),
     getBusinessWorkspace: tool({
-      description: 'Read the business and economy workspace of the active project.',
-      inputSchema: jsonSchema({ type: 'object', properties: {}, additionalProperties: false }),
-      execute: async () => {
+      description: 'Read the business and economy workspace of the active project or a named indexed project.',
+      inputSchema: jsonSchema({ type: 'object', properties: projectPathProperty, additionalProperties: false }),
+      execute: async ({ projectPath: requestedProject }) => {
         setAgentState('tool_call');
-        const workspace = await readBusinessWorkspace(projectPath);
+        const targetProjectPath = resolveProjectPath(requestedProject);
+        const workspace = await readBusinessWorkspace(targetProjectPath);
         const quotes = workspace?.quotes || [];
         const summary = workspace ? {
           estimatedValue: Number(workspace.project.estimated_value || 0),
@@ -175,27 +189,29 @@ export function createBusinessTools(ctx: { recordToolEvent: (name: string, input
           pipelineValue: quotes.filter((quote: any) => ['draft', 'sent'].includes(String(quote.status || 'draft'))).reduce((sum: number, quote: any) => sum + Number(quote.total || 0), 0),
         } : null;
         const output = workspace ? { ...workspace, summary } : workspace;
-        recordToolEvent('getBusinessWorkspace', {}, output || { status: 'empty' });
+        recordToolEvent('getBusinessWorkspace', { projectPath: targetProjectPath }, output || { status: 'empty' });
         return output || { status: 'empty', message: 'El proyecto todavía no tiene datos comerciales.' };
       },
     }),
     getAIUsageMetrics: tool({
       description: 'Read local AI generation usage for this project and summarize tokens, duration and estimated provider cost for an optional date range.',
-      inputSchema: jsonSchema({ type: 'object', properties: { from: { type: 'string', description: 'Start date YYYY-MM-DD.' }, to: { type: 'string', description: 'End date YYYY-MM-DD.' } }, additionalProperties: false }),
-      execute: async ({ from, to }) => {
+      inputSchema: jsonSchema({ type: 'object', properties: { from: { type: 'string', description: 'Start date YYYY-MM-DD.' }, to: { type: 'string', description: 'End date YYYY-MM-DD.' }, ...projectPathProperty }, additionalProperties: false }),
+      execute: async ({ from, to, projectPath: requestedProject }) => {
         setAgentState('tool_call');
-        const output = summarizeGenerationUsage(await readGenerationUsage(projectPath), from, to);
-        recordToolEvent('getAIUsageMetrics', { from, to }, output);
+        const targetProjectPath = resolveProjectPath(requestedProject);
+        const output = summarizeGenerationUsage(await readGenerationUsage(targetProjectPath), from, to);
+        recordToolEvent('getAIUsageMetrics', { from, to, projectPath: targetProjectPath }, output);
         return output;
       },
     }),
     getExecutionLog: tool({
       description: 'Read the structured execution log for the active project: tools used, inputs, outputs and timestamps. Use it to inspect delegated work without relying on private chain-of-thought.',
-      inputSchema: jsonSchema({ type: 'object', properties: { limit: { type: 'number' } }, additionalProperties: false }),
-      execute: async ({ limit }) => {
+      inputSchema: jsonSchema({ type: 'object', properties: { limit: { type: 'number' }, ...projectPathProperty }, additionalProperties: false }),
+      execute: async ({ limit, projectPath: requestedProject }) => {
         setAgentState('tool_call');
-        const output = await readExecutionLog(projectPath, limit);
-        recordToolEvent('getExecutionLog', { limit }, output);
+        const targetProjectPath = resolveProjectPath(requestedProject);
+        const output = await readExecutionLog(targetProjectPath, limit);
+        recordToolEvent('getExecutionLog', { limit, projectPath: targetProjectPath }, output);
         return output;
       },
     }),
@@ -206,15 +222,17 @@ export function createBusinessTools(ctx: { recordToolEvent: (name: string, input
         properties: {
           section: { type: 'string', enum: ['project', 'profile', 'pricing', 'dashboard', 'opportunities', 'estimates', 'quotes', 'outcomes', 'milestones', 'payments', 'expenses', 'invoices', 'notes'] },
           data: { description: 'Complete replacement value for the selected section.' },
+          ...projectPathProperty,
         },
         required: ['section', 'data'],
         additionalProperties: false,
       }),
-      execute: async ({ section, data }) => {
+      execute: async ({ section, data, projectPath: requestedProject }) => {
         setAgentState('tool_call');
-        const current = await ensureBusinessWorkspace(projectPath);
-        const next = await writeBusinessWorkspace(projectPath, { ...current, [section]: data });
-        recordToolEvent('updateBusinessWorkspace', { section, data }, next);
+        const targetProjectPath = resolveProjectPath(requestedProject);
+        const current = await ensureBusinessWorkspace(targetProjectPath);
+        const next = await writeBusinessWorkspace(targetProjectPath, { ...current, [section]: data });
+        recordToolEvent('updateBusinessWorkspace', { section, data, projectPath: targetProjectPath }, next);
         return next;
       },
     }),
@@ -226,19 +244,21 @@ export function createBusinessTools(ctx: { recordToolEvent: (name: string, input
           title: { type: 'string' },
           description: { type: 'string' },
           currency: { type: 'string' },
+          ...projectPathProperty,
           items: { type: 'array', items: { type: 'object', properties: { type: { type: 'string', enum: ['outcome', 'deliverable', 'milestone'] }, description: { type: 'string' }, outcome: { type: 'string' }, metric: { type: 'string' }, amount: { type: 'number' } }, required: ['type', 'description', 'outcome', 'metric', 'amount'], additionalProperties: false } },
           status: { type: 'string', enum: ['draft', 'sent', 'accepted', 'rejected'] },
         },
         required: ['title', 'description', 'items'],
         additionalProperties: false,
       }),
-      execute: async ({ title, description, currency, items, status }) => {
+      execute: async ({ title, description, currency, items, status, projectPath: requestedProject }) => {
         setAgentState('tool_call');
-        const current = await ensureBusinessWorkspace(projectPath);
+        const targetProjectPath = resolveProjectPath(requestedProject);
+        const current = await ensureBusinessWorkspace(targetProjectPath);
         const normalizedItems = (items || []).map((item) => ({ type: item.type || 'deliverable', description: item.description, outcome: item.outcome, metric: item.metric, amount: Number(item.amount || 0), total: Number(item.amount || 0) }));
         const quote = { id: createId('quote'), title, description, currency: currency || current.currency || 'USD', items: normalizedItems, total: normalizedItems.reduce((sum, item) => sum + item.total, 0), status: status || 'draft', createdAt: new Date().toISOString() };
-        const next = await writeBusinessWorkspace(projectPath, { ...current, quotes: [...(current.quotes || []), quote] });
-        recordToolEvent('createQuote', { title, description, currency, items, status }, quote);
+        const next = await writeBusinessWorkspace(targetProjectPath, { ...current, quotes: [...(current.quotes || []), quote] });
+        recordToolEvent('createQuote', { title, description, currency, items, status, projectPath: targetProjectPath }, quote);
         return { ok: true, quote, workspace: next };
       },
     }),
@@ -257,21 +277,26 @@ export function createBusinessTools(ctx: { recordToolEvent: (name: string, input
       },
     }),
     createExecutionPlan: tool({
-      description: 'Create a structured execution plan for a business initiative.',
+      description: 'Create and persist a structured execution plan for a business initiative.',
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
           title: { type: 'string' },
           objective: { type: 'string' },
           steps: { type: 'array', items: { type: 'string' } },
+          ...projectPathProperty,
         },
         required: ['title', 'objective', 'steps'],
         additionalProperties: false,
       }),
-      execute: async ({ title, objective, steps }) => {
+      execute: async ({ title, objective, steps, projectPath: requestedProject }) => {
         setAgentState('tool_call');
-        const output = { type: 'execution_plan', title, objective, steps, status: 'draft', createdAt: new Date().toISOString() };
-        recordToolEvent('createExecutionPlan', { title, objective, steps }, output);
+        const targetProjectPath = resolveProjectPath(requestedProject);
+        const plan = { id: createId('business-plan'), type: 'execution_plan', title, objective, steps, status: 'draft', createdAt: new Date().toISOString() };
+        const current = await ensureBusinessWorkspace(targetProjectPath);
+        const workspace = await writeBusinessWorkspace(targetProjectPath, { ...current, milestones: [...(current.milestones || []), plan] });
+        const output = { ok: true, plan, workspace };
+        recordToolEvent('createExecutionPlan', { title, objective, steps, projectPath: targetProjectPath }, output);
         return output;
       },
     }),
@@ -300,15 +325,18 @@ export function createBusinessTools(ctx: { recordToolEvent: (name: string, input
         type: 'object',
         properties: {
           specialist: { type: 'string', enum: ['commercial', 'pricing', 'finance', 'operations', 'crm_whatsapp', 'strategy'] },
-          task: { type: 'string' },
+          task: { type: 'string', maxLength: 500, description: 'English handoff, maximum 500 characters.' },
+          ...projectPathProperty,
         },
         required: ['specialist', 'task'],
         additionalProperties: false,
       }),
-      execute: async ({ specialist, task }) => {
+      execute: async ({ specialist, task: rawTask, projectPath: requestedProject }) => {
         if (!provider || !modelId) return { error: 'No hay modelo configurado para la sub-IA.' };
         setAgentState('tool_call');
-        const specialistTools = businessSpecialistTools(projectPath, recordToolEvent, setAgentState);
+        const targetProjectPath = resolveProjectPath(requestedProject);
+        const specialistTools = businessSpecialistTools(targetProjectPath, recordToolEvent, setAgentState);
+        const task = specialistHandoff(rawTask);
         const result = await runStream({
           model: provider(modelId),
           system: `Sos la sub-IA de ${specialist} del asesor de negocios de Codeclub. Investigá solo la tarea recibida. Podés leer código, datos comerciales y WhatsApp; nunca edites archivos ni envíes mensajes. Devolvé hallazgos, supuestos y recomendación en español.`,
@@ -316,11 +344,12 @@ export function createBusinessTools(ctx: { recordToolEvent: (name: string, input
           tools: specialistTools,
           callbacks: {
             onTextDelta: () => {},
-            onUsage: (usage) => persistSubagentUsage(projectPath, modelId, `business-${specialist}`, usage),
+            onUsage: (usage) => persistSubagentUsage(targetProjectPath, modelId, `business-${specialist}`, usage),
           },
         });
-        recordToolEvent('delegateBusinessSpecialist', { specialist, task }, result);
-        return result;
+        const resultHandoff = specialistHandoff(result);
+        recordToolEvent('delegateBusinessSpecialist', { specialist, task, projectPath: targetProjectPath }, resultHandoff);
+        return resultHandoff;
       },
     }),
   };
@@ -396,13 +425,75 @@ const toolVerificationOutput = Output.object({
   }),
 });
 
+export type AgentMode = 'development' | 'business';
+export type AgentSpecialist = 'primary' | 'developer' | 'explorer' | 'frontend' | 'backend' | 'qa' | 'security' | 'documentation' | 'computer_use' | 'commercial' | 'pricing' | 'finance' | 'operations' | 'crm_whatsapp' | 'strategy';
+
+const agentRouteOutput = Output.object({
+  schema: jsonSchema({
+    type: 'object',
+    properties: {
+      mode: { type: 'string', enum: ['development', 'business'] },
+      specialist: { type: 'string', enum: ['primary', 'developer', 'explorer', 'frontend', 'backend', 'qa', 'security', 'documentation', 'computer_use', 'commercial', 'pricing', 'finance', 'operations', 'crm_whatsapp', 'strategy'] },
+      confidence: { type: 'number' },
+      reason: { type: 'string' },
+    },
+    required: ['mode', 'specialist', 'confidence', 'reason'],
+    additionalProperties: false,
+  }),
+});
+
+export async function resolveAgentRouteWithAI({ model, prompt, modeOverride, signal, onUsage }: { model: any; prompt: string; modeOverride?: 'auto' | AgentMode; signal?: AbortSignal; onUsage?: (usage: any) => void | Promise<void> }) {
+  let route: { mode?: AgentMode; specialist?: AgentSpecialist; confidence?: number; reason?: string } | null = null;
+  await runStream({
+    model,
+    system: 'You are Codeclub\'s agent orchestrator. Select the best mode and specialist for the request. Return only structured JSON. Use primary when the main agent can solve it. Use business for economics, pricing, sales, clients, quotes, ROI or the business panel; use development for code, files, tests, browser or PC control.',
+    messages: [{ role: 'user', content: JSON.stringify({ prompt, modeOverride: modeOverride && modeOverride !== 'auto' ? modeOverride : null }) }],
+    tools: {},
+    structuredOutput: agentRouteOutput,
+    signal,
+    callbacks: {
+      onTextDelta: () => {},
+      onStructuredOutput: (output) => { route = output; },
+      onUsage,
+    },
+  });
+  if (!route?.mode || !route.specialist) throw new Error('La orquestadora no devolvio un modo y especialista validos.');
+  const mode = modeOverride && modeOverride !== 'auto' ? modeOverride : route.mode;
+  const businessSpecialists = new Set<AgentSpecialist>(['commercial', 'pricing', 'finance', 'operations', 'crm_whatsapp', 'strategy']);
+  const developmentSpecialists = new Set<AgentSpecialist>(['developer', 'explorer', 'frontend', 'backend', 'qa', 'security', 'documentation', 'computer_use']);
+  const specialist = mode === 'business' && developmentSpecialists.has(route.specialist) || mode === 'development' && businessSpecialists.has(route.specialist) ? 'primary' : route.specialist;
+  return { mode, specialist, confidence: route.confidence ?? 0, reason: route.reason || 'Ruta seleccionada por la orquestadora.' };
+}
+
+export function inferAgentMode(prompt: string): AgentMode {
+  const text = prompt.toLowerCase();
+  return /econom|precio|cotiz|presupuesto|propuesta|valor|fee|margen|roi|cliente|venta|negocio|comercial|factur|ingreso|gasto|rentab|panel/.test(text) ? 'business' : 'development';
+}
+
+export function inferAgentSpecialist(prompt: string, mode: AgentMode): AgentSpecialist {
+  const text = prompt.toLowerCase();
+  if (mode === 'business') {
+    if (/cotiz|precio|pricing|valor|fee|margen|roi/.test(text)) return 'pricing';
+    if (/cliente|venta|comercial|whatsapp|crm/.test(text)) return 'commercial';
+    if (/finanz|gasto|ingreso|costo|rentab|presupuesto/.test(text)) return 'finance';
+    if (/operaci|proceso|hito|entrega/.test(text)) return 'operations';
+    return 'strategy';
+  }
+  if (/navegador|browser|pc|mouse|teclado|edge|youtube/.test(text)) return 'computer_use';
+  if (/test|qa|probar|error|bug|falla/.test(text)) return 'qa';
+  if (/ui|ux|diseño|css|componente|interfaz/.test(text)) return 'frontend';
+  if (/api|backend|servidor|rust|tauri|base de datos/.test(text)) return 'backend';
+  if (/document|readme|explicar/.test(text)) return 'documentation';
+  return 'developer';
+}
+
 export async function resolveToolsWithAI({ model, mode, prompt, toolset, signal, onUsage }: { model: any; mode: 'business' | 'development'; prompt: string; toolset: Record<string, any>; signal?: AbortSignal; onUsage?: (usage: any) => void | Promise<void> }) {
   const catalog = TOOL_ROUTER_CATALOG[mode];
   let decision: { tools?: string[]; confidence?: number; reason?: string; requiresAction?: boolean; goal?: string; verification?: string } | null = null;
   await runStream({
     model,
     system: `Sos el router de herramientas de Codeclub para el modo ${mode === 'business' ? 'Economía' : 'Desarrollo'}. Analizá la intención del usuario y elegí únicamente las tools necesarias del catálogo. No ejecutes tools ni respondas al usuario. Si una acción puede requerir escritura o terminal, habilitala. Siempre incluí las tools base de inspección y organización cuando sean relevantes. Devolvé JSON estructurado. Catálogo: ${Object.entries(catalog).map(([name, description]) => `${name}: ${description}`).join('; ')}`,
-    messages: [{ role: 'user', content: prompt }],
+    messages: [{ role: 'user', content: `ROUTER CONTRACT: no respondas al usuario; devolve solo JSON. Elegi la menor cantidad de tools suficiente. En Economia prioriza datos comerciales y workspace antes que codigo. No delegues si el agente principal puede resolverlo. Si hay escritura, guardado, cotizacion, plan o ejecucion, marca requiresAction=true y define evidencia observable.\n\nINTENCION: ${prompt}` }],
     tools: {},
     structuredOutput: toolRouterOutput,
     signal,
@@ -426,7 +517,7 @@ export async function verifyToolExecutionWithAI({ model, prompt, goal, verificat
   await runStream({
     model,
     system: 'Sos la IA verificadora de Codeclub. Compará el objetivo y el criterio de verificación con las tools realmente ejecutadas, sus resultados y el diff local. No supongas que el texto del agente es evidencia. Para control de PC exigí evidencia observable: proceso, ventana, URL, salida estructurada o estado posterior; un código 0 por sí solo no prueba que una interfaz haya cambiado ni que un video esté disponible. Si falta evidencia, el resultado contradice el objetivo o aparece contenido no disponible, indicá retry=true y pedí observar nuevamente antes de repetir acciones. Devolvé JSON estructurado.',
-    messages: [{ role: 'user', content: JSON.stringify({ prompt, goal, verification, toolEvents: toolEvents.slice(-20), changes }) }],
+    messages: [{ role: 'user', content: JSON.stringify({ contract: 'VERIFICATION CONTRACT: valida solamente outputs reales. Si falta evidencia, contradice el objetivo o una UI no fue observada despues de actuar, completed=false y retry=true. Nunca conviertas texto del agente, codigo 0 aislado o una intencion en evidencia.', prompt, goal, verification, toolEvents: toolEvents.slice(-20), changes }) }],
     tools: {},
     structuredOutput: toolVerificationOutput,
     signal,
@@ -797,16 +888,17 @@ export function createTools(ctx: ToolContext) {
         type: 'object',
         properties: {
           specialist: { type: 'string', enum: ['developer', 'explorer', 'frontend', 'backend', 'qa', 'security', 'documentation', 'computer_use'] },
-          task: { type: 'string', description: 'The task for the specialist.' },
+          task: { type: 'string', maxLength: 500, description: 'English handoff, maximum 500 characters.' },
         },
         required: ['specialist', 'task'],
         additionalProperties: false,
       }),
-      execute: async ({ specialist, task }) => {
+      execute: async ({ specialist, task: rawTask }) => {
         if (!provider || !modelId) {
           return { error: 'No provider/model configured for subagent.' };
         }
         setAgentState('tool_call');
+        const task = specialistHandoff(rawTask);
         recordToolEvent('subagent', { specialist, task }, { status: 'running' });
 
         const developmentTools = createTools({ projectPath, recordToolEvent, setAgentState, requestToolApproval, provider, modelId });
@@ -831,8 +923,9 @@ export function createTools(ctx: ToolContext) {
           },
         });
 
-        recordToolEvent('subagent', { specialist, task }, { result });
-        return result;
+        const resultHandoff = specialistHandoff(result);
+        recordToolEvent('subagent', { specialist, task }, { result: resultHandoff });
+        return resultHandoff;
       },
     }),
     remember: tool({

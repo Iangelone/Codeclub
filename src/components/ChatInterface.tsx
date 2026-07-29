@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUpRight, Check, ChevronDown, ChevronRight, Copy, FileCode2, Folders as FolderOpen, KeyRound, ListTodo, MessageSquare, Paperclip, RotateCcw, Search, Square, Terminal, Folder, FolderTree, RefreshCw, X } from 'lucide-react';
+import { ArrowUpRight, Bot, BriefcaseBusiness, Calculator, ChartNoAxesCombined, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, Folders as FolderOpen, Globe, KeyRound, ListChecks, ListTodo, MessageSquare, MousePointer2, Paperclip, Pencil, ReceiptText, RotateCcw, Search, ScrollText, Square, Terminal, Folder, FolderTree, RefreshCw, X } from 'lucide-react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -23,7 +23,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { createPortal } from 'react-dom';
 import mammoth from 'mammoth';
-import { createBusinessTools, createTools, verifyToolExecutionWithAI } from '../lib/engine/tools';
+import { createBusinessTools, createTools, inferAgentMode, inferAgentSpecialist, resolveAgentRouteWithAI, selectToolsForPrompt, verifyToolExecutionWithAI, resolveToolsWithAI, type AgentMode, type AgentSpecialist } from '../lib/engine/tools';
 import { runStream } from '../lib/engine/run';
 import { getProjectFilePath, getSetting, logPersistence, setSetting } from '../lib/persistence';
 import { appendGenerationUsage, type GenerationUsageRecord } from '../lib/usage';
@@ -173,9 +173,20 @@ const formatArtifactOutput = (output: any) => {
   return null;
 };
 
-export default function ChatInterface({ catalog, defaultProvider, defaultModel, panelId = 'left', eventPrefix = 'codeclub', selectedProject, blockedPanelState = 'blank' }) {
+const formatToolExecutionFallback = (mode: AgentMode, specialist: AgentSpecialist, tools: any[]) => {
+  const completed = tools.filter((event) => event.output?.status !== 'running' && !event.output?.error);
+  if (!completed.length) return '';
+  const details = completed.map((event) => {
+    const raw = typeof event.output === 'string' ? event.output : JSON.stringify(event.output ?? {});
+    return `- ${event.name}: ${raw.slice(0, 900)}`;
+  }).join('\n');
+  return `Ejecución completada con evidencia real.\n\nModo: ${mode}\nEspecialista: ${specialist}\nTools usadas: ${completed.map((event) => event.name).join(', ')}\n\nResultados:\n${details}`;
+};
+
+export default function ChatInterface({ catalog, defaultProvider, defaultModel, panelId = 'left', eventPrefix = 'codeclub', selectedProject, blockedPanelState = 'blank', chatMode: workspaceChatMode = 'development', modeOverride = 'auto' }) {
   const [messages, setMessages] = useState([]);
   const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
+  const [copiedToolLogIndex, setCopiedToolLogIndex] = useState<number | null>(null);
   const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [input, setInput] = useState('');
   const [artifactReference, setArtifactReference] = useState<{ kind: 'plan' | 'todo' | 'quote'; id: string; title: string } | null>(null);
@@ -188,6 +199,8 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const chatPanelRef = useRef<HTMLDivElement>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [agentState, setAgentState] = useState('idle');
+  const [agentElapsedMs, setAgentElapsedMs] = useState(0);
+  const agentStartedAtRef = useRef(0);
   const [activeToolName, setActiveToolName] = useState('');
   const [pendingApprovals, setPendingApprovals] = useState([]);
   const toolStateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -235,11 +248,14 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [terminalCount, setTerminalCount] = useState(0);
   const [activeChat, setActiveChat] = useState<{chatId: string, projectPath: string} | null>(null);
   const activeChatRef = useRef<{chatId: string, projectPath: string} | null>(null);
+  const lastSelectedProjectRef = useRef<{ projectPath: string; projectName: string } | null | undefined>(selectedProject || undefined);
+  const projectChangeNoticeRef = useRef<string | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState('blank');
-  const [chatMode, setChatMode] = useState<'development' | 'business'>('development');
+  const [chatMode, setChatMode] = useState<'development' | 'business'>(workspaceChatMode);
   const [selectedStructurePath, setSelectedStructurePath] = useState('');
   const agentStatusText = {
     idle: "Listo cuando tú lo estés.",
+    connecting: "Conectando con el proveedor...",
     streaming: "Generando respuesta...",
     tool_call: "Usando herramienta...",
     approval: "Esperando aprobación...",
@@ -247,6 +263,13 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     error: "Algo salió mal.",
   }[agentState] || "Listo cuando tú lo estés.";
   const isAgentBusy = isStreaming;
+  useEffect(() => {
+    if (!isStreaming) { setAgentElapsedMs(0); return undefined; }
+    const updateElapsed = () => setAgentElapsedMs(Math.max(0, Date.now() - agentStartedAtRef.current));
+    updateElapsed();
+    const timer = window.setInterval(updateElapsed, 100);
+    return () => window.clearInterval(timer);
+  }, [isStreaming]);
   useEffect(() => { window.dispatchEvent(new CustomEvent('codeclub:agent-activity', { detail: { state: agentState, tool: activeToolName, agent: chatMode === 'business' ? 'Negocios' : 'Desarrollo' } })); }, [agentState, activeToolName, chatMode]);
   useEffect(() => {
     const handleArtifactReference = (event: Event) => {
@@ -327,11 +350,17 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   }, [composerDocked]);
 
   useEffect(() => {
+    const previous = lastSelectedProjectRef.current;
+    const nextPath = selectedProject?.projectPath || null;
+    if (previous !== undefined && previous?.projectPath !== nextPath) {
+      projectChangeNoticeRef.current = nextPath
+        ? `El usuario cambiÃ³ el proyecto seleccionado a "${selectedProject?.projectName || 'Proyecto'}". UsÃ¡ este proyecto como contexto de trabajo para este mensaje.`
+        : 'El usuario quitÃ³ el proyecto seleccionado. TrabajÃ¡ solo con contexto global hasta que elija otro.';
+    }
+    lastSelectedProjectRef.current = selectedProject || null;
     setActiveProject((current) => {
       if (!selectedProject) return null;
       if (current?.projectPath === selectedProject.projectPath) return current;
-      activeChatRef.current = null;
-      setActiveChat(null);
       return { projectPath: selectedProject.projectPath, name: selectedProject.projectName || 'Proyecto' };
     });
   }, [selectedProject]);
@@ -469,6 +498,10 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   }, []);
 
   useEffect(() => {
+    setChatMode(workspaceChatMode);
+  }, [workspaceChatMode]);
+
+  useEffect(() => {
     const handleChatMode = (event: Event) => setChatMode((event as CustomEvent).detail?.mode === 'business' ? 'business' : 'development');
     window.addEventListener('codeclub:chat-mode-changed', handleChatMode);
     return () => window.removeEventListener('codeclub:chat-mode-changed', handleChatMode);
@@ -502,10 +535,6 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
 
   useEffect(() => {
     const handleActiveProject = (e: any) => {
-      if (e.detail?.projectPath && activeChatRef.current?.projectPath !== e.detail.projectPath) {
-        activeChatRef.current = null;
-        setActiveChat(null);
-      }
       setActiveProject(e.detail?.projectPath ? (current) => current?.projectPath === e.detail.projectPath ? current : e.detail : null);
       setExpandedMenu(null);
     };
@@ -678,14 +707,10 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     if (item.type === 'project') {
       if (item.isNone) {
         setActiveProject(null);
-        activeChatRef.current = null;
-        setActiveChat(null);
         window.dispatchEvent(new CustomEvent('codeclub:project-selection-changed', { detail: { selected: false, keepChat: true } }));
         window.dispatchEvent(new CustomEvent('codeclub:active-project', { detail: { projectPath: null, projectName: '' } }));
       } else {
         setActiveProject({ projectPath: item.projectPath, name: item.label });
-        activeChatRef.current = null;
-        setActiveChat(null);
         window.dispatchEvent(new CustomEvent('codeclub:project-selection-changed', { detail: { selected: true, projectPath: item.projectPath, projectName: item.label } }));
         window.dispatchEvent(new CustomEvent('codeclub:active-project', { detail: { projectPath: item.projectPath, projectName: item.label } }));
       }
@@ -1127,20 +1152,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       return requestToolApproval(options);
     };
     let chat = activeChatRef.current;
-    if (!chat && activeProject?.projectPath) {
-      const title = content.trim().split(/\r?\n/)[0].slice(0, 60) || 'Nuevo chat';
-      const id = Date.now().toString();
-      const metaData: any = await readProjectMeta(activeProject.projectPath) || { name: activeProject.name, path: activeProject.projectPath, created_at: new Date().toISOString(), chats: [] };
-      if (!Array.isArray(metaData.chats)) metaData.chats = [];
-      metaData.chats.push({ id, name: title });
-      await writeProjectMeta(activeProject.projectPath, metaData);
-      chat = { chatId: id, projectPath: activeProject.projectPath };
-      activeChatRef.current = chat;
-      setActiveChat(chat);
-      setProjectMeta(metaData);
-      window.dispatchEvent(new CustomEvent('codeclub:project-meta-changed', { detail: { projectPath: activeProject.projectPath } }));
-    }
-
     if (!chat) {
       chat = { chatId: `global-${Date.now()}`, projectPath: '' };
       activeChatRef.current = chat;
@@ -1168,7 +1179,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     setInput('');
     if (chatInputRef.current) chatInputRef.current.style.height = '22px';
     setIsStreaming(true);
-    setAgentState('streaming');
+    agentStartedAtRef.current = Date.now();
+    setAgentState('connecting');
     
     if (replaceHistory) {
       await writeChatJsonl(newMessages);
@@ -1194,37 +1206,33 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         fetch: tauriModelFetch,
       });
 
+      const contextProjectPath = activeProject?.projectPath || '';
+      const projectChangeNotice = projectChangeNoticeRef.current;
+      projectChangeNoticeRef.current = null;
+      let runMode: AgentMode = modeOverride === 'business' || modeOverride === 'development' ? modeOverride : inferAgentMode(content);
+      let routeSpecialist: AgentSpecialist = 'primary';
       let assistantContent = '';
       let assistantReasoning = '';
       let assistantTools = [];
       let executionStartedAt = Date.now();
       let latestUsage: GenerationUsageRecord | null = null;
       const updateAssistantMessage = () => {
-        setMessages([...newMessages, { role: 'assistant', content: assistantContent, reasoning: assistantReasoning, tools: assistantTools, agentName: chatMode === 'business' ? 'Negocios' : 'Desarrollo' }]);
+        setMessages([...newMessages, { role: 'assistant', content: assistantContent, reasoning: assistantReasoning, tools: assistantTools, agentName: runMode === 'business' ? 'Negocios' : 'Desarrollo' }]);
       };
       const recordToolEvent = (name, input, output) => {
         setActiveToolName(name);
-        assistantTools = [
-          ...assistantTools,
-          {
-            id: crypto.randomUUID?.() || `${Date.now()}-${assistantTools.length}`,
-            name,
-            input,
-            output,
-            at: new Date().toISOString(),
-          },
-        ];
+        const runningIndex = [...assistantTools].map((event, index) => ({ event, index })).reverse().find(({ event }) => event.name === name && event.output?.status === 'running')?.index;
+        const runningEvent = runningIndex === undefined ? null : assistantTools[runningIndex];
+        const completedEvent = { ...runningEvent, id: runningIndex === undefined ? (crypto.randomUUID?.() || `${Date.now()}-${assistantTools.length}`) : assistantTools[runningIndex].id, name, input, output, at: new Date().toISOString(), durationMs: runningEvent?.durationMs ?? (runningEvent?.startedAt ? Date.now() - runningEvent.startedAt : null) };
+        assistantTools = runningIndex === undefined ? [...assistantTools, completedEvent] : assistantTools.map((event, index) => index === runningIndex ? completedEvent : event);
         updateAssistantMessage();
-        void appendExecutionLog({ projectPath: chat?.projectPath || '', chatId: chat?.chatId, tool: name, input, output });
-        if (['writeFile', 'runCommand', 'terminal'].includes(name)) window.dispatchEvent(new CustomEvent('codeclub:workspace-changed', { detail: { projectPath: chat?.projectPath || '', tool: name } }));
+        void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: name, input, output });
+        if (['writeFile', 'runCommand', 'terminal'].includes(name)) window.dispatchEvent(new CustomEvent('codeclub:workspace-changed', { detail: { projectPath: contextProjectPath, tool: name } }));
         if (['todo', 'createPlan', 'updatePlan', 'createQuote', 'updateBusinessWorkspace'].includes(name)) {
-          window.dispatchEvent(new CustomEvent('codeclub:artifacts-changed', { detail: { projectPath: chat?.projectPath || '' } }));
+          window.dispatchEvent(new CustomEvent('codeclub:artifacts-changed', { detail: { projectPath: contextProjectPath } }));
         }
       };
-      updateAssistantMessage();
-
-      const toolProjectPath = chat.projectPath || await invoke<string>('codeclub_get_system_root');
-      const beforeWorkspaceSnapshot = await readWorkspaceSnapshot(toolProjectPath);
+      const toolProjectPath = contextProjectPath || await invoke<string>('codeclub_get_system_root');
       const indexedProjects = await readProjectIndex();
       const developmentTools = createTools({
         projectPath: toolProjectPath,
@@ -1234,31 +1242,45 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         provider,
         modelId: currentModel.id,
       });
-      const allTools = chatMode === 'business'
-        ? createBusinessTools({ recordToolEvent, setAgentState: guardedSetAgentState, indexedProjects, projectPath: toolProjectPath, provider, modelId: currentModel.id })
-        : developmentTools;
-      const toolMode = chatMode === 'business' ? 'business' : 'development';
-      let tools: Record<string, any> = allTools;
+      const businessTools = createBusinessTools({ recordToolEvent, setAgentState: guardedSetAgentState, indexedProjects, projectPath: toolProjectPath, provider, modelId: currentModel.id });
+      let tools: Record<string, any> = runMode === 'business' ? businessTools : developmentTools;
       let toolRoutingContext = 'La IA de intención no devolvió contexto adicional.';
       let routingRequiresAction = false;
-      let routingUsedFallback = true;
+      let routingUsedFallback = false;
       let routingGoal = content;
       let routingVerification = 'La tool correspondiente debe devolver un resultado exitoso.';
-      /*
+      let beforeWorkspaceSnapshot: WorkspaceSnapshot = new Map();
+      try {
+        const route = await resolveAgentRouteWithAI({ model: provider(currentModel.id), prompt: content, modeOverride, signal: abortController.signal });
+        runMode = route.mode;
+        routeSpecialist = route.specialist;
+        setChatMode(runMode);
+        window.dispatchEvent(new CustomEvent('codeclub:agent-route', { detail: route }));
+      } catch (error) {
+        runMode = modeOverride === 'business' || modeOverride === 'development' ? modeOverride : inferAgentMode(content);
+        routeSpecialist = inferAgentSpecialist(content, runMode);
+        setChatMode(runMode);
+        void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'agent-router', input: { prompt: content, modeOverride }, output: { status: 'fallback-deterministic', mode: runMode, specialist: routeSpecialist, error: String(error) } });
+      }
+      const selectedToolset = runMode === 'business' ? businessTools : developmentTools;
+      const specialistToolName = runMode === 'business' ? 'delegateBusinessSpecialist' : 'subagent';
+      const routedToolset = routeSpecialist !== 'primary' && selectedToolset[specialistToolName]
+        ? { ...selectedToolset, [specialistToolName]: selectedToolset[specialistToolName] }
+        : selectedToolset;
       try {
         const routing = await resolveToolsWithAI({
           model: provider(currentModel.id),
-          mode: toolMode,
+          mode: runMode,
           prompt: content,
-          toolset: allTools,
+          toolset: routedToolset,
           signal: abortController.signal,
           onUsage: async (usage) => {
             await appendGenerationUsage({
               id: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
               at: new Date().toISOString(),
-              projectPath: chat?.projectPath || '',
+              projectPath: contextProjectPath,
               chatId: chat?.chatId || '',
-              mode: `${toolMode}-tool-router`,
+              mode: `${runMode}-tool-router`,
               provider: currentProvider.id,
               model: usage.model || currentModel.id,
               inputTokens: usage.inputTokens ?? null,
@@ -1275,33 +1297,40 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         routingGoal = routing.goal;
         routingVerification = routing.verification;
         toolRoutingContext = `La IA de intención resolvió: ${routing.reason || 'intención detectada'} (confianza ${routing.confidence}). Tools habilitadas: ${Object.keys(tools).join(', ')}.`;
-        void appendExecutionLog({ projectPath: chat?.projectPath || '', chatId: chat?.chatId, tool: 'tool-router', input: { mode: toolMode, prompt: content }, output: { confidence: routing.confidence, reason: routing.reason, requiresAction: routing.requiresAction, tools: Object.keys(tools) } });
+        void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'tool-router', input: { mode: runMode, specialist: routeSpecialist, prompt: content }, output: { confidence: routing.confidence, reason: routing.reason, requiresAction: routing.requiresAction, tools: Object.keys(tools) } });
       } catch (error) {
-        tools = allTools;
+        tools = selectToolsForPrompt(routedToolset, runMode, content);
         routingUsedFallback = true;
-        routingRequiresAction = false;
-        toolRoutingContext = `La IA de intención falló; se habilitó temporalmente el catálogo completo para no bloquear la tarea. Error: ${String(error)}`;
-        void appendExecutionLog({ projectPath: chat?.projectPath || '', chatId: chat?.chatId, tool: 'tool-router', input: { mode: toolMode, prompt: content }, output: { status: 'fallback-all-tools', error: String(error), tools: Object.keys(tools) } });
+        routingRequiresAction = ['writeFile', 'runCommand', 'terminal', 'subagent', 'updateBusinessWorkspace', 'createQuote', 'createExecutionPlan'].some((name) => Object.prototype.hasOwnProperty.call(tools, name));
+        toolRoutingContext = `La IA de intención falló; se habilitó una selección determinista y acotada. Error: ${String(error)}`;
+        void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'tool-router', input: { mode: runMode, specialist: routeSpecialist, prompt: content }, output: { status: 'fallback-deterministic', error: String(error), tools: Object.keys(tools) } });
       }
-      if (!routingUsedFallback && Object.keys(tools).some((name) => ['writeFile', 'runCommand', 'terminal'].includes(name))) routingRequiresAction = true;
-      */
+      if (!routingUsedFallback && Object.keys(tools).some((name) => ['writeFile', 'runCommand', 'terminal', 'subagent', 'updateBusinessWorkspace', 'createQuote', 'createExecutionPlan'].includes(name))) routingRequiresAction = true;
 
-      const system = chatMode === 'business' ? [
+      beforeWorkspaceSnapshot = runMode === 'business' && !contextProjectPath ? new Map<string, string | null>() : await readWorkspaceSnapshot(toolProjectPath);
+      updateAssistantMessage();
+      const legacySystem = runMode === 'business' ? [
+        ...(projectChangeNotice ? [projectChangeNotice] : []),
         'Sos el asistente de negocios de Codeclub.',
-        'Usa getExecutionLog cuando necesites auditar quÃ© tools ejecutÃ³ la orquestaciÃ³n o una sub-IA; el log contiene trazas observables, no pensamiento privado.',
+        'Usa getExecutionLog cuando necesites auditar que tools ejecuto la orquestacion o una sub-IA; el log contiene trazas observables, no pensamiento privado.',
         'Responde en español, claro y orientado a decisiones.',
-        `El proyecto activo es ${chat.projectPath || 'Sin proyecto'}.`,
+        `El proyecto activo es ${contextProjectPath || 'Sin proyecto'}. El historial del chat es independiente del proyecto y no debe usarse para inferir el contexto de trabajo.`,
+        `Ruta elegida por la orquestadora: modo ${runMode}, especialista ${routeSpecialist}.`,
         `Proyectos indexados disponibles: ${indexedProjects.map((project) => `${project.name} (${project.path})`).join(', ') || 'ninguno'}.`,
+        'Las tools economicas aceptan projectPath por nombre o ruta para trabajar cualquier proyecto indexado desde un chat global; usa ese parametro y no la raiz del sistema.',
         'Usa listIndexedProjects para consultar el portfolio, getBusinessWorkspace para leer la economía, getAIUsageMetrics para medir tokens, duración y costo estimado por período, updateBusinessWorkspace para mantenerla, createExecutionPlan para planes y createBudget para presupuestos.',
         'Usa getWhatsAppBusinessContext para consultar conversaciones en tiempo real. Es estrictamente solo lectura: nunca envía mensajes.',
         'Usa listProjectFiles, readProjectFile y searchProjectText para entender la implementación, capacidades y límites técnicos. Son herramientas de solo lectura: no edites código desde Negocios.',
         'Delegá investigaciones amplias a sub-IA especialistas: en Código usa explorer, frontend, backend, qa, security o documentation; en Negocios usa delegateBusinessSpecialist con commercial, pricing, finance, operations, crm_whatsapp o strategy.',
         'Actuá como economista de resultados: analizá valor entregado, valor estimado y contratado, total cotizado, pipeline, impacto esperado, ROI, alcance, riesgo, software producido, hitos, abonos y criterios de aceptación. Nunca recomiendes tarifas basadas en tiempo ni uses tiempo como unidad comercial. Cuando estimes el valor de un proyecto, guardalo con updateBusinessWorkspace en project. Si el usuario pide mostrar, ocultar o recuperar paneles, leé dashboard.visible_panels y actualizalo permanentemente con updateBusinessWorkspace; nunca borres paneles, solo cambia su visibilidad. Si pide cambiar el formato visual, configurá dashboard.panel_types usando solo metric, progress, trend o status, según los datos disponibles; no inventes valores. Cuando pidan una cotización, usá createQuote con resultados, métricas e importes; no la simules solo en texto. Tus resultados son borradores estructurados y deben explicar supuestos cuando falten datos.',
+        'Contrato operativo de Economia: distingue una pregunta comercial de una auditoria tecnica. Si el usuario habla de cuanto cobro, valor, fee, margen, ROI, cotizacion, rentabilidad o que salio mal comercialmente, analiza primero datos economicos y entregables; no recorras codigo ni delegues salvo que falte una capacidad tecnica concreta. Si necesitas contexto, llama las tools de lectura y cita sus resultados. Si no hay proyecto activo, lista los proyectos y resuelve explicitamente el proyecto objetivo antes de escribir. Nunca leas, muestres ni repitas secretos de .env, tokens, claves o credenciales. Toda afirmacion de cambio, guardado o calculo debe estar respaldada por el resultado real de una tool; si falla, informa el bloqueo.',
       ].join(' ') : [
+        ...(projectChangeNotice ? [projectChangeNotice] : []),
         'Sos el agente IDE de Codeclub.',
         'Si necesitas delegar implementacion, usa subagent con specialist developer. Para controlar navegador o PC, delega en specialist computer_use; esa subIA debe observar, actuar y verificar. Elegi la especialista segun el contexto; no delegues por defecto.',
         'La orquestadora recibe todas las tools disponibles y decide de forma autonoma si debe actuar, delegar o responder.',
         `Contexto de la IA de intencion: ${toolRoutingContext}`,
+        `Ruta elegida por la orquestadora: modo ${runMode}, especialista ${routeSpecialist}. Si delegas, usa ese especialista y devuelve sus evidencias.`,
         'Tenes autonomia operativa: si la intencion esta clara, ejecuta todas las tools necesarias en este mismo turno y no esperes un "Adelante". No anuncies una accion para luego detenerte; llama la tool inmediatamente y continua hasta completar el pedido. En pruebas de control de PC, la primera salida debe ser una llamada real a runCommand: no escribas planes, no redactes scripts en el chat y no repitas intentos de escaping. Nunca afirmes que modificaste archivos, ejecutaste comandos o completaste una accion si no existe un resultado exitoso de la tool correspondiente.',
         'Usa getExecutionLog para consultar las tools ejecutadas por la orquestadora o sub-IA; el log contiene trazas observables, no pensamiento privado.',
         'Responde en español, breve y util.',
@@ -1315,8 +1344,21 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         'Cuando el usuario pida crear o actualizar TODOs, ejecuta la tool todo y usa los IDs exactos que devuelva; no reemplaces la acción por una tabla o explicación en Markdown.',
         'Usa askUser solo cuando falte una decision importante; devuelve una solicitud estructurada sin asumir la respuesta.',
         'Las acciones riesgosas piden aprobacion humana antes de ejecutarse.',
+        'Contrato operativo de Desarrollo: inspecciona primero, actua despues y verifica al final. No leas, muestres ni repitas secretos de .env, tokens, claves privadas o credenciales salvo una auditoria de seguridad explicita; si aparecen, redactalos. Nunca afirmes que un archivo, proceso, navegador o cambio existe sin una salida exitosa y una comprobacion observable. Si una tool falla, recupera con otra estrategia o explica el bloqueo. Delega solo cuando el subagente aporte una capacidad distinta y devuelve sus evidencias, no una promesa.',
       ].join(' ');
-      const structuredOutput = getArtifactOutputConfig(chatMode === 'business' ? 'business' : 'development', content);
+      const system = [
+        projectChangeNotice,
+        `You are Codeclub's autonomous primary agent in ${runMode === 'business' ? 'Business' : 'Development'} mode. Think deeply and act independently until the user's goal is handled.`,
+        `Context: active project ${contextProjectPath || 'none'}; specialist ${routeSpecialist}; indexed projects: ${indexedProjects.map((project) => `${project.name} (${project.path})`).join(', ') || 'none'}.`,
+        runMode === 'business'
+          ? 'Use business tools for projects, value, pricing, quotes, budgets, outcomes, milestones, payments, expenses, invoices, dashboards, metrics and business specialists. Persist estimates, plans and milestones.'
+          : 'Use development tools for files, code, commands, terminal, browser, PC control, plans, TODOs, memory and development specialists. For multi-step work, persist a plan, update TODO status and resume from agent state.',
+        "Use the available tools directly, chain as many steps as needed, delegate when useful, and continue until the task is complete. Respond in the user's language.",
+      ].filter(Boolean).join(' ');
+      // Algunos proveedores compatibles rechazan response_format junto con tools.
+      // Los artifacts ya quedan validados y persistidos por sus tools; dejamos el
+      // JSON forzado solo para respuestas sin ejecución de tools.
+      const structuredOutput = Object.keys(tools).length === 0 ? getArtifactOutputConfig(runMode, content) : null;
       let structuredArtifactOutput: any = null;
 
       const runAssistant = async (retryInstruction = '') => {
@@ -1325,8 +1367,9 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         assistantTools = [];
         structuredArtifactOutput = null;
         executionStartedAt = Date.now();
+        setAgentState('streaming');
         updateAssistantMessage();
-        const executionMessages = retryInstruction ? [...newMessages, { role: 'user', content: retryInstruction }] : newMessages;
+        const executionMessages = retryInstruction ? [...newMessages, { role: 'user', content: `${retryInstruction}\n\nUse a different strategy or tool sequence; do not repeat the same failed call.` }] : newMessages;
         return runStream({
           model: provider(currentModel.id),
           system,
@@ -1358,7 +1401,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               setPendingApprovals([]);
               setActiveToolName('');
               setAgentState('idle');
-              void appendExecutionLog({ projectPath: chat?.projectPath || '', chatId: chat?.chatId, tool: 'generation.abort', input: { steps: steps.length }, output: { status: 'aborted' } });
+              void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'generation.abort', input: { steps: steps.length }, output: { status: 'aborted' } });
             },
             onEnd: () => {
               if (!isCurrentGeneration()) return;
@@ -1367,7 +1410,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             onStepEnd: ({ stepNumber, finishReason, toolCalls, usage, performance }) => {
               if (!isCurrentGeneration()) return;
               void appendExecutionLog({
-                projectPath: chat?.projectPath || '',
+                projectPath: contextProjectPath,
                 chatId: chat?.chatId,
                 tool: 'generation.step',
                 input: { stepNumber, tools: (toolCalls || []).map((toolCall) => toolCall.toolName) },
@@ -1376,11 +1419,21 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             },
             onToolExecutionStart: ({ callId, toolCall }) => {
               if (!isCurrentGeneration()) return;
-              void appendExecutionLog({ projectPath: chat?.projectPath || '', chatId: chat?.chatId, tool: 'tool.execution.start', input: { callId, toolCallId: toolCall?.toolCallId, toolName: toolCall?.toolName, input: toolCall?.input }, output: { status: 'started' } });
+              const name = toolCall?.toolName || 'tool';
+              const eventKey = callId || toolCall?.toolCallId || '';
+              const existingIndex = eventKey ? assistantTools.findIndex((event) => event.callId === eventKey) : -1;
+              const nextEvent = { id: existingIndex >= 0 ? assistantTools[existingIndex].id : (eventKey || crypto.randomUUID?.() || `${Date.now()}-${assistantTools.length}`), callId: eventKey, name, input: toolCall?.input || {}, output: { status: 'running' }, startedAt: Date.now(), durationMs: null, at: new Date().toISOString() };
+              assistantTools = existingIndex >= 0 ? assistantTools.map((event, index) => index === existingIndex ? { ...event, ...nextEvent } : event) : [...assistantTools, nextEvent];
+              setActiveToolName(name);
+              updateAssistantMessage();
+              void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'tool.execution.start', input: { callId, toolCallId: toolCall?.toolCallId, toolName: toolCall?.toolName, input: toolCall?.input }, output: { status: 'started' } });
             },
             onToolExecutionEnd: ({ callId, toolCall, toolExecutionMs, toolOutput }) => {
               if (!isCurrentGeneration()) return;
-              void appendExecutionLog({ projectPath: chat?.projectPath || '', chatId: chat?.chatId, tool: 'tool.execution.end', input: { callId, toolCallId: toolCall?.toolCallId, toolName: toolCall?.toolName }, output: { durationMs: toolExecutionMs, status: toolOutput?.type === 'tool-result' ? 'completed' : 'error' } });
+              const eventKey = callId || toolCall?.toolCallId || '';
+              if (eventKey) assistantTools = assistantTools.map((event) => event.callId === eventKey ? { ...event, durationMs: toolExecutionMs } : event);
+              updateAssistantMessage();
+              void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'tool.execution.end', input: { callId, toolCallId: toolCall?.toolCallId, toolName: toolCall?.toolName }, output: { durationMs: toolExecutionMs, status: toolOutput?.type === 'tool-result' ? 'completed' : 'error' } });
             },
             onToolCall: () => {
               if (!isCurrentGeneration()) return;
@@ -1400,9 +1453,9 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               const record: GenerationUsageRecord = {
                 id: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
                 at: new Date().toISOString(),
-                projectPath: chat?.projectPath || '',
+                projectPath: contextProjectPath,
                 chatId: chat?.chatId || '',
-                mode: chatMode,
+                mode: runMode,
                 provider: currentProvider.label || currentProvider.id,
                 model: usage.model || currentModel.label || currentModel.id,
                 inputTokens: usage.inputTokens ?? null,
@@ -1426,18 +1479,27 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       const structuredSummary = formatArtifactOutput(structuredArtifactOutput);
       if (structuredSummary) assistantContent = structuredSummary;
       if (!abortController.signal.aborted && !assistantContent?.trim()) {
-        setAgentState('streaming');
-        assistantContent = await runAssistant();
-        const retryStructuredSummary = formatArtifactOutput(structuredArtifactOutput);
-        if (retryStructuredSummary) assistantContent = retryStructuredSummary;
+        const toolFallback = formatToolExecutionFallback(runMode, routeSpecialist, assistantTools);
+        if (toolFallback) assistantContent = toolFallback;
+        else {
+          setAgentState('streaming');
+          assistantContent = await runAssistant();
+          const retryStructuredSummary = formatArtifactOutput(structuredArtifactOutput);
+          if (retryStructuredSummary) assistantContent = retryStructuredSummary;
+        }
       }
       if (!assistantContent?.trim()) throw new Error('El modelo no devolvió una respuesta después de reintentar.');
 
       if (!isCurrentGeneration() || abortController.signal.aborted) return;
-      const hasSuccessfulAction = () => assistantTools.some((event) => (event.name === 'writeFile' || event.name === 'terminal') && event.output?.ok === true || event.name === 'runCommand' && event.output?.code === 0);
+      const hasSuccessfulAction = () => assistantTools.some((event) => {
+        if (!event.output || event.output.error) return false;
+        if ((event.name === 'writeFile' || event.name === 'terminal') && event.output.ok === true) return true;
+        if (event.name === 'runCommand') return event.output.code === 0;
+        return ['updateBusinessWorkspace', 'createQuote', 'createExecutionPlan', 'todo', 'updatePlan', 'subagent'].includes(event.name);
+      });
       let verificationResult: { completed?: boolean; retry?: boolean; reason?: string } | null = null;
       if (routingRequiresAction) {
-        const verificationChanges = chat?.projectPath ? summarizeWorkspaceDelta(beforeWorkspaceSnapshot, await readWorkspaceSnapshot(toolProjectPath)) : null;
+        const verificationChanges = contextProjectPath ? summarizeWorkspaceDelta(beforeWorkspaceSnapshot, await readWorkspaceSnapshot(toolProjectPath)) : null;
         try {
           verificationResult = await verifyToolExecutionWithAI({ model: provider(currentModel.id), prompt: content, goal: routingGoal, verification: routingVerification, toolEvents: assistantTools, changes: verificationChanges, signal: abortController.signal });
         } catch (error) {
@@ -1450,13 +1512,13 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           if (retryStructuredSummary) assistantContent = retryStructuredSummary;
         }
       }
-      const changes = chat?.projectPath ? summarizeWorkspaceDelta(beforeWorkspaceSnapshot, await readWorkspaceSnapshot(toolProjectPath)) : null;
-      const executedAction = assistantTools.some((event) => (event.name === 'writeFile' || event.name === 'terminal') && event.output?.ok === true || event.name === 'runCommand' && event.output?.code === 0);
+      const changes = contextProjectPath ? summarizeWorkspaceDelta(beforeWorkspaceSnapshot, await readWorkspaceSnapshot(toolProjectPath)) : null;
+      const executedAction = hasSuccessfulAction();
       const actionToolsEnabled = !routingUsedFallback && Object.keys(tools).some((name) => ['writeFile', 'runCommand', 'terminal'].includes(name));
       routingRequiresAction = routingRequiresAction || actionToolsEnabled;
-      if (routingRequiresAction && verificationResult?.completed === false && executedAction) assistantContent = `${assistantContent.trim()}\n\nVerificaciÃ³n incompleta: la IA verificadora no pudo confirmar el resultado.`.trim();
+      if (routingRequiresAction && verificationResult?.completed === false && executedAction) assistantContent = `${assistantContent.trim()}\n\nVerificacion incompleta: la IA verificadora no pudo confirmar el resultado.`.trim();
       if (routingRequiresAction && !executedAction) assistantContent = `${assistantContent.trim()}\n\nAcción no verificada: no se ejecutó una tool de escritura o ejecución con resultado exitoso.`.trim();
-      const assistantMessage = { role: 'assistant', content: assistantContent, tools: assistantTools, agentName: chatMode === 'business' ? 'Negocios' : 'Desarrollo', meta: { provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt, status: 'completed', changes, usage: latestUsage ? { inputTokens: latestUsage.inputTokens, outputTokens: latestUsage.outputTokens, totalTokens: latestUsage.totalTokens, reasoningTokens: latestUsage.reasoningTokens } : null } };
+      const assistantMessage = { role: 'assistant', content: assistantContent, tools: assistantTools, agentName: runMode === 'business' ? 'Negocios' : 'Desarrollo', meta: { provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt, status: 'completed', changes, usage: latestUsage ? { inputTokens: latestUsage.inputTokens, outputTokens: latestUsage.outputTokens, totalTokens: latestUsage.totalTokens, reasoningTokens: latestUsage.reasoningTokens } : null } };
       setMessages([...newMessages, { ...assistantMessage, displayContent: '' }]);
       let visibleLength = 0;
       visualAnimationRef.current = window.setInterval(() => {
@@ -1533,7 +1595,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     if (!controller) return;
     generationIdRef.current += 1;
     abortControllerRef.current = null;
-    controller.abort();
+    if (!controller.signal.aborted) controller.abort(new DOMException('Generación cancelada por el usuario.', 'AbortError'));
     if (toolStateTimerRef.current) {
       clearTimeout(toolStateTimerRef.current);
       toolStateTimerRef.current = null;
@@ -1545,22 +1607,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     setActiveToolName('');
     setAgentState('idle');
   };
-
-  useEffect(() => {
-    if (!isStreaming) return undefined;
-    const watchdog = window.setTimeout(() => {
-      const controller = abortControllerRef.current;
-      controller?.abort();
-      approvalResolversRef.current.forEach((resolve) => resolve(false));
-      approvalResolversRef.current.clear();
-      setPendingApprovals([]);
-      setIsStreaming(false);
-      setActiveToolName('');
-      setAgentState('idle');
-      console.warn('La generación fue liberada por el watchdog del chat.');
-    }, 70_000);
-    return () => window.clearTimeout(watchdog);
-  }, [isStreaming]);
 
   useEffect(() => () => {
     if (visualAnimationRef.current) clearInterval(visualAnimationRef.current);
@@ -1608,6 +1654,9 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       const action = (event as CustomEvent).detail?.action;
       if (isAgentBusy) return;
       const prompts: Record<string, string> = {
+        'development-mode': '[TESTING DESARROLLO] Usá el enrutamiento automático y elegí Desarrollo. Inspeccioná el proyecto activo con las tools reales, llamá listFiles con maxFiles=60, y devolvé un resumen breve indicando modo, especialista y tools usadas. No edites archivos, no leas secretos y no inventes resultados.',
+        'business-mode': '[TESTING ECONOMÍA] Usá el enrutamiento automático y elegí Economía. Consultá el workspace económico del proyecto activo y devolvé un resumen breve indicando modo, especialista y tools usadas. Si no hay proyecto activo, listá los proyectos indexados y explicá qué falta para elegir uno. No edites código ni inventes datos.',
+        'tool-animation': '[TESTING TOOLS] Usá Desarrollo y ejecutá varias tools reales en secuencia para probar la interfaz: listFiles con maxFiles=8, luego searchText con query "TODO" y maxMatches=5, y finalmente getExecutionLog con limit=3. No edites archivos. Esperá el resultado de cada tool antes de continuar y devolvé un resumen breve con los tiempos.',
         terminal: '[TESTING] Usá obligatoriamente la tool terminal ahora. Creá un proceso persistente en background para poder observarlo visualmente: shell powershell, nombre "Testing background", comando "Write-Output \'Codeclub terminal testing\'; Start-Sleep -Seconds 45". No uses runCommand, no simules la ejecución en Markdown y confirmá el ID, shell, estado y que quedó en background.',
     'computer-use': '[TESTING] Control de PC obligatorio: usá únicamente la tool runCommand y ejecutá PowerShell con un único comando idempotente. Creá $path=Join-Path $env:TEMP \'Codeclub-PC-Test.txt\' y guardá allí el texto exacto \'Codeclub controla mi PC :)\' con Set-Content; reutilizá un proceso de Notepad cuyo MainWindowTitle coincida con \'*Codeclub-PC-Test*\' o abrí ese archivo con Start-Process notepad.exe -ArgumentList $path. Para Edge, obtené candidatos desde https://www.youtube.com/results?search_query=lofi+music, extraé URLs watch?v= únicas y comprobá cada una con Invoke-WebRequest hasta encontrar una respuesta HTTP válida; no uses una URL fija sin comprobarla. Si ya existe un proceso msedge, activá su ventana con Microsoft.VisualBasic.Interaction.AppActivate, enviá Ctrl+L, la URL elegida y Enter con SendKeys; si no existe, abrilo con Start-Process msedge.exe -ArgumentList \'--new-window\',$edgeUrl. Esperá entre activación y navegación, no abras ventanas duplicadas, y devolvé al final un JSON compacto con notepadPid, edgePid, file, url, httpStatus y verified. Si aparece \'video no disponible\', buscá otro candidato y repetí solo la navegación. No uses terminal ni simules nada en Markdown; confirmá el resultado real de runCommand.',
         'ask-user': '[TESTING] Usá la herramienta askUser ahora. Preguntame qué estilo de tarjetas preferís y ofrecé exactamente estas opciones: Minimalista, Compacto y Detallado.',
@@ -1636,6 +1685,18 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       }, 3000);
     } catch (error) {
       console.error('No se pudo copiar el mensaje:', error);
+    }
+  };
+
+  const handleCopyToolLog = async (tools: any[] = [], messageIndex: number) => {
+    if (!navigator.clipboard || !tools.length) return;
+    const log = tools.map((event) => `${event.at || ''} | ${event.name} | ${event.output?.status === 'running' ? 'running' : event.output?.error ? 'error' : 'completed'}\nInput: ${JSON.stringify(event.input ?? {}, null, 2)}\nOutput: ${JSON.stringify(event.output ?? {}, null, 2)}`).join('\n\n');
+    try {
+      await navigator.clipboard.writeText(log);
+      setCopiedToolLogIndex(messageIndex);
+      window.setTimeout(() => setCopiedToolLogIndex((current) => current === messageIndex ? null : current), 3000);
+    } catch (error) {
+      console.error('No se pudo copiar el log de tools:', error);
     }
   };
 
@@ -1899,6 +1960,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ p: ({ children }) => <p style={{ margin: m.role === 'user' ? 0 : '0 0 12px', lineHeight: m.role === 'user' ? 1.4 : 1.6 }}>{children}</p>, ul: ({ children }) => <ul style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ul>, ol: ({ children }) => <ol style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ol>, li: ({ children }) => <li style={{ margin: m.role === 'user' ? 0 : '4px 0' }}>{children}</li>, table: ({ children }) => <div style={{ overflowX: 'auto', margin: '12px 0' }}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>{children}</table></div>, th: ({ children }) => <th style={{ border: '1px solid #2b2b2b', padding: '7px 9px', background: '#1c1c1c', textAlign: 'left', fontWeight: 600 }}>{children}</th>, td: ({ children }) => <td style={{ border: '1px solid #2b2b2b', padding: '7px 9px', verticalAlign: 'top' }}>{children}</td>, h1: ({ children }) => <h1 style={{ margin: '18px 0 10px', fontSize: '20px' }}>{children}</h1>, h2: ({ children }) => <h2 style={{ margin: '16px 0 8px', fontSize: '17px' }}>{children}</h2>, h3: ({ children }) => <h3 style={{ margin: '14px 0 7px', fontSize: '15px' }}>{children}</h3> }}>{m.displayContent ?? m.content}</ReactMarkdown>
                 {m.role === 'assistant' && isStreaming && i === messages.length - 1 && <span style={{ display: 'inline-block', marginTop: m.content ? '2px' : 0, color: 'rgba(216, 216, 216, 0.58)', fontSize: '13px' }}>{m.content ? '▌' : 'Generando respuesta…'}</span>}
               </div>
+              {m.role === 'assistant' && <ToolExecutionCards tools={m.tools} />}
               {m.role === 'assistant' && <AskUserCards tools={m.tools} onSelect={(answer) => void sendMessage(answer)} disabled={isAgentBusy} />}
               {m.role === 'assistant' && <SubagentCards tools={m.tools} />}
               {m.role === 'assistant' && i === messages.length - 1 && <ApprovalCards approvals={pendingApprovals} onResolve={resolveToolApproval} />}
@@ -1908,6 +1970,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                   {copiedMessageIndex === i ? <Check size={13} strokeWidth={2.2} /> : <Copy size={13} strokeWidth={2} />}
                 </button>
                 {m.role === 'assistant' && <button type="button" aria-label="Abrir Artifacts" title="Abrir Artifacts" onClick={() => { const projectPath = activeProject?.projectPath || activeChat?.projectPath || ''; if (projectPath) window.dispatchEvent(new CustomEvent('codeclub:active-project', { detail: { projectPath, projectName: activeProject?.name || '' } })); window.dispatchEvent(new CustomEvent('codeclub:open-artifacts', { detail: { projectPath } })); }} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: 'pointer' }}><ListTodo size={13} strokeWidth={1.8} /></button>}
+                {m.role === 'assistant' && m.tools?.length > 0 && <button type="button" aria-label={copiedToolLogIndex === i ? 'Log copiado' : 'Copiar log de tools'} title={copiedToolLogIndex === i ? 'Log copiado' : 'Copiar log de tools'} onClick={() => void handleCopyToolLog(m.tools, i)} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: copiedToolLogIndex === i ? '#7dd3a8' : 'rgba(216, 216, 216, 0.62)', cursor: 'pointer' }}>{copiedToolLogIndex === i ? <Check size={13} strokeWidth={2.2} /> : <Terminal size={13} strokeWidth={1.8} />}</button>}
                 {m.role === 'user' && <button type="button" aria-label="Reintentar desde este mensaje" onClick={() => handleRetryMessage(i)} disabled={isAgentBusy} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: isAgentBusy ? 'not-allowed' : 'pointer' }}>
                   <RotateCcw size={13} strokeWidth={2} />
                 </button>}
@@ -1976,13 +2039,13 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           {isAgentBusy && (
             <div className="pointer-events-none absolute inset-y-0 left-[16px] right-[46px] flex items-center gap-2 text-[12px] text-[#d8d8d8]/70">
               <span className="braille-spinner shrink-0" data-state={agentState} aria-hidden="true" />
-              <span className="truncate">{agentStatusText}</span>
+              <span className="truncate">{agentStatusText} <span className="tabular-nums text-[#d8d8d8]/45">{isAgentBusy ? formatDuration(agentElapsedMs) : ''}</span></span>
             </div>
           )}
           {!input.trim() && !inputFocused && !isAgentBusy && (
             <div className="pointer-events-none absolute inset-y-0 left-[16px] right-[46px] flex items-center gap-2 text-[12px] text-[#d8d8d8]/70">
               <span className="braille-spinner shrink-0" data-state="idle" aria-hidden="true" />
-              <span className="truncate">{agentStatusText}</span>
+              <span className="truncate">{agentStatusText} <span className="tabular-nums text-[#d8d8d8]/45">{isAgentBusy ? formatDuration(agentElapsedMs) : ''}</span></span>
             </div>
           )}
           <textarea
@@ -2191,6 +2254,49 @@ function parseCsv(content: string): string[][] {
   }
   if (cell || row.length) { row.push(cell); rows.push(row); }
   return rows;
+}
+
+function ToolIcon({ name }: { name: string }) {
+  const icons: Record<string, React.ComponentType<{ size?: number; strokeWidth?: number }>> = {
+    listFiles: FolderTree, readFile: FileCode2, searchText: Search, listProjectFiles: FolderTree, readProjectFile: FileCode2, searchProjectText: Search,
+    writeFile: Pencil, runCommand: Code2, terminal: Terminal, openBrowser: Globe, getBrowserState: Eye, browserAction: MousePointer2,
+    createPlan: ListTodo, createExecutionPlan: ListTodo, todo: ListChecks, subagent: Bot, delegateBusinessSpecialist: Bot,
+    getBusinessWorkspace: BriefcaseBusiness, updateBusinessWorkspace: BriefcaseBusiness, createQuote: ReceiptText, createBudget: Calculator,
+    getAIUsageMetrics: ChartNoAxesCombined, getExecutionLog: ScrollText,
+  };
+  const Icon = icons[name] || Terminal;
+  return <Icon size={14} strokeWidth={1.8} />;
+}
+
+function ToolExecutionCards({ tools = [] }: { tools?: any[] }) {
+  const [visibleTools, setVisibleTools] = useState<any[]>([]);
+  const latestKeyRef = useRef('');
+  useEffect(() => {
+    const latest = tools[tools.length - 1];
+    if (!latest) { setVisibleTools([]); latestKeyRef.current = ''; return undefined; }
+    const key = String(latest.id || latest.name);
+    if (latestKeyRef.current === key) { setVisibleTools([latest]); return undefined; }
+    latestKeyRef.current = key;
+    setVisibleTools((current) => [...current.slice(-1), latest]);
+    const timer = window.setTimeout(() => setVisibleTools((current) => current.slice(-1)), 180);
+    return () => window.clearTimeout(timer);
+  }, [tools]);
+  if (!visibleTools.length) return null;
+  const latestKey = String(tools[tools.length - 1]?.id || tools[tools.length - 1]?.name);
+  return <div style={{ position: 'relative', width: 'min(520px, 100%)', minHeight: '28px', margin: '4px 0 2px' }}>
+    {visibleTools.map((event, index) => {
+      const key = String(event.id || event.name);
+      const running = event.output?.status === 'running';
+      const failed = Boolean(event.output?.error) || event.output?.status === 'error';
+      const status = failed ? 'Error' : running ? 'Ejecutando' : formatDuration(Number(event.durationMs || 0));
+      return <div key={`${key}-${index}`} style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, minHeight: '28px', padding: '5px 8px', border: '1px solid #252525', borderRadius: '7px', background: '#151515', color: '#999', fontSize: '10px', animation: key === latestKey ? 'codeclub-tool-fade-in 180ms ease-out' : 'codeclub-tool-fade-out 180ms ease-in forwards' }}>
+        <span aria-hidden="true" style={{ display: 'grid', placeItems: 'center', flex: '0 0 16px', color: '#ffffff' }}><ToolIcon name={event.name} /></span>
+        <span style={{ minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#cfcfcf', fontFamily: 'var(--font-mono, monospace)' }}>{event.name}</span>
+        <span title={running ? 'Tool en ejecución' : `Tiempo de ejecución: ${status}`} style={{ flexShrink: 0, color: '#ffffff' }}>{status}</span>
+      </div>;
+    })}
+    <style>{'@keyframes codeclub-tool-fade-in { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: translateY(0); } } @keyframes codeclub-tool-fade-out { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(2px); } }'}</style>
+  </div>;
 }
 
 function AskUserCards({ tools = [], onSelect, disabled }: { tools?: any[]; onSelect: (answer: string) => void; disabled: boolean }) {

@@ -41,11 +41,52 @@ import ChatPanel from "../components/ChatPanel.astro";
         document.querySelector('#maximize')?.addEventListener('click', () => { appWindow.toggleMaximize(); });
         document.querySelector('#close')?.addEventListener('click', () => { appWindow.close(); });
         document.querySelector('.drag-area')?.addEventListener('dblclick', () => { appWindow.toggleMaximize(); });
-        document.addEventListener('keydown', async (event) => {
-          if (event.key !== 'F11') return;
-          event.preventDefault();
+        const toggleFullscreen = async (event) => {
+          if (event?.type === 'keydown' && event.key !== 'F11') return;
+          event?.preventDefault();
           await appWindow.setSimpleFullscreen(!(await appWindow.isFullscreen()));
+        };
+        document.addEventListener('keydown', toggleFullscreen);
+        document.querySelectorAll('[data-action="toggle-fullscreen"]').forEach((element) => element.addEventListener('click', toggleFullscreen));
+        document.querySelectorAll('[data-action="open-settings"]').forEach((element) => element.addEventListener('click', (event) => {
+          event.preventDefault();
+          window.dispatchEvent(new CustomEvent('codeclub:open-settings'));
+        }));
+        const menuActions = {
+          'new-chat': 'codeclub:request-new-chat',
+          'open-projects': 'codeclub:open-projects',
+          'open-businesses': 'codeclub:open-businesses',
+          'open-extensions': 'codeclub:open-extensions',
+        };
+        Object.entries(menuActions).forEach(([action, eventName]) => {
+          document.querySelectorAll(`[data-action="${action}"]`).forEach((element) => element.addEventListener('click', (event) => {
+            event.preventDefault();
+            window.dispatchEvent(new CustomEvent(eventName));
+          }));
         });
+        const recentChatsContainer = document.querySelector('[data-recent-chats]');
+        const recentChatList = document.querySelector('[data-recent-chat-list]');
+        const renderRecentChats = (chats = []) => {
+          if (!recentChatsContainer || !recentChatList) return;
+          recentChatList.replaceChildren();
+          recentChatsContainer.classList.toggle('hidden', chats.length === 0);
+          chats.forEach((chat) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'flex min-h-[30px] w-full min-w-0 items-center overflow-hidden rounded-md px-[10px] text-left text-xs text-[#bdbdbd] hover:bg-[var(--color-surface-7)] hover:text-white';
+            button.style.textOverflow = 'ellipsis';
+            button.style.whiteSpace = 'nowrap';
+            const words = String(chat.name || 'Chat').trim().split(/\s+/).filter(Boolean);
+            button.textContent = `${words.slice(0, 3).join(' ')}${words.length > 3 ? '...' : ''}`;
+            button.title = chat.projectName || 'Sin proyecto';
+            button.addEventListener('click', (event) => {
+              event.preventDefault();
+              window.dispatchEvent(new CustomEvent('codeclub:open-recent-chat', { detail: chat }));
+            });
+            recentChatList.appendChild(button);
+          });
+        };
+        window.addEventListener('codeclub:recent-chats-changed', (event) => renderRecentChats(event.detail?.chats || []));
         
         let hasProjectSelection = false;
         const projectRequiredControls = document.querySelectorAll('[data-project-required]');
@@ -73,11 +114,11 @@ import ChatPanel from "../components/ChatPanel.astro";
           });
         });
         
-        const sidebarButton = document.querySelector('[data-action="toggle-sidebar"]');
-        sidebarButton?.addEventListener('click', () => {
+        document.querySelectorAll('[data-action="toggle-sidebar"]').forEach((sidebarButton) => sidebarButton.addEventListener('click', (event) => {
+          event.preventDefault();
           document.body.classList.toggle('has-sidebar');
           document.body.style.setProperty('--left-panel-width', document.body.classList.contains('has-sidebar') ? '264px' : '0px');
-        });
+        }));
 
         const singlePanelButton = document.querySelector('#panel-single');
         const splitPanelButton = document.querySelector('#panel-split');

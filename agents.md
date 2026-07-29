@@ -56,6 +56,7 @@ All data stored locally in OS app config/cache directories (`appConfigDir`, `app
 
 ## Color Tokens
 
+- `#1687ff` -> primary accent for the browser/PC mouse cursor, inspection outlines, selection borders, and interaction glow.
 - `#111111` -> base app background.
 - `#101010` -> deepest surface.
 - `#121212` -> low surface.

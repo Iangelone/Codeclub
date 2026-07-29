@@ -73,6 +73,7 @@ All hex values used across the app UI.
 
 | Hex | Usage |
 |---|---|
+| `#1687ff` | Primary accent. Browser/PC mouse cursor, inspection outline, selection border, active interaction glow. |
 | `#c7cbff` | Braille spinner text (idle). |
 | `rgba(123, 130, 255, 0.42)` | Braille spinner glow shadow 1. |
 | `rgba(255, 117, 181, 0.18)` | Braille spinner glow shadow 2. |

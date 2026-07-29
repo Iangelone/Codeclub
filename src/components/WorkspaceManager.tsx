@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Cpu, Folder, House, MessageSquarePlus, Play, Server, Target, Terminal, X } from 'lucide-react';
+import { Cpu, Folder, House, Play, Server, Terminal, X } from 'lucide-react';
 import { activeChatStore, chatsStore, type GlobalChat } from '../lib/store';
 import ChatInterface from './ChatInterface.tsx';
 import ProjectsPanel from './ProjectsPanel.tsx';
@@ -12,8 +12,6 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
   const [selectedProject, setSelectedProject] = useState<SelectedProject | null>(null);
   const [showProjects, setShowProjects] = useState(true);
   const [showBusinesses, setShowBusinesses] = useState(false);
-  const [chatMode, setChatMode] = useState<'development' | 'business'>('development');
-  const [modeHovered, setModeHovered] = useState(false);
   const [dockVisible, setDockVisible] = useState(false);
   const [commandMenuKind, setCommandMenuKind] = useState('');
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
@@ -21,14 +19,14 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
   const [recentChats, setRecentChats] = useState<GlobalChat[]>([]);
 
   useEffect(() => {
-    const updateRecentChats = (chats: GlobalChat[]) => setRecentChats(chats.slice(-3).reverse());
+    const updateRecentChats = (chats: GlobalChat[]) => {
+      const recent = chats.slice(-3).reverse();
+      setRecentChats(recent);
+      window.dispatchEvent(new CustomEvent('codeclub:recent-chats-changed', { detail: { chats: recent } }));
+    };
     updateRecentChats(chatsStore.get());
     return chatsStore.subscribe(updateRecentChats);
   }, []);
-
-  useEffect(() => {
-    window.dispatchEvent(new CustomEvent('codeclub:chat-mode-changed', { detail: { mode: chatMode } }));
-  }, [chatMode]);
 
   useEffect(() => {
     const handleProjectSelection = (event: Event) => {
@@ -67,8 +65,6 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
 
   const selectActiveProject = (project: ProjectEntry) => {
     setProjectPickerOpen(false);
-    const activeChat = activeChatStore.get();
-    if (activeChat.id) window.dispatchEvent(new CustomEvent('codeclub:chat-project-changed', { detail: { chatId: activeChat.id, projectPath: project.path, projectName: project.name } }));
     window.dispatchEvent(new CustomEvent('codeclub:project-selection-changed', {
       detail: { selected: Boolean(project.path), keepChat: !project.path, projectPath: project.path, projectName: project.name },
     }));
@@ -119,7 +115,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
   }, []);
 
   useEffect(() => {
-    if (!showProjects && !showBusinesses) window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
+    if (!showProjects && !showBusinesses && !activeChatStore.get().id) window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
   }, [showProjects, showBusinesses]);
 
   useEffect(() => {
@@ -167,9 +163,6 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
           <button type="button" aria-pressed={commandMenuKind === 'provider'} aria-label={`Proveedor: ${commandMenuKind === 'provider' ? 'Activo' : 'Desactivado'}`} title={`Proveedor: ${commandMenuKind === 'provider' ? 'Activo' : 'Desactivado'}`} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-command-menu', { detail: { kind: 'provider' } }))} className={`grid h-7 w-7 place-items-center rounded-[9px] border-0 transition-colors ${commandMenuKind === 'provider' ? 'bg-[#1e1e1e] text-[#eeeeee]' : 'bg-transparent text-[#777777] hover:bg-[#1e1e1e] hover:text-[#eeeeee]'}`}><Server size={14} strokeWidth={1.8} /></button>
           <button type="button" aria-pressed={commandMenuKind === 'model'} aria-label={`Modelo: ${commandMenuKind === 'model' ? 'Activo' : 'Desactivado'}`} title={`Modelo: ${commandMenuKind === 'model' ? 'Activo' : 'Desactivado'}`} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-command-menu', { detail: { kind: 'model' } }))} className={`grid h-7 w-7 place-items-center rounded-[9px] border-0 transition-colors ${commandMenuKind === 'model' ? 'bg-[#1e1e1e] text-[#eeeeee]' : 'bg-transparent text-[#777777] hover:bg-[#1e1e1e] hover:text-[#eeeeee]'}`}><Cpu size={14} strokeWidth={1.8} /></button>
           <button type="button" aria-pressed={commandMenuKind === 'project'} aria-label={`Proyecto: ${commandMenuKind === 'project' ? 'Activo' : 'Desactivado'}`} title={`Proyecto: ${commandMenuKind === 'project' ? 'Activo' : 'Desactivado'}`} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-command-menu', { detail: { kind: 'project' } }))} className={`grid h-7 w-7 place-items-center rounded-[9px] border-0 transition-colors ${commandMenuKind === 'project' ? 'bg-[#1e1e1e] text-[#eeeeee]' : 'bg-transparent text-[#777777] hover:bg-[#1e1e1e] hover:text-[#eeeeee]'}`}><Folder size={14} strokeWidth={1.8} /></button>
-          <button type="button" aria-label={`Modo ${chatMode === 'development' ? 'desarrollo' : 'negocios'}`} title={`Modo ${chatMode === 'development' ? 'desarrollo' : 'negocios'}`} onMouseEnter={() => setModeHovered(true)} onMouseLeave={() => setModeHovered(false)} onClick={() => setChatMode((mode) => mode === 'development' ? 'business' : 'development')} className="grid h-7 w-7 place-items-center rounded-[9px] border-0 bg-transparent text-[#777777] transition-colors hover:bg-[#1e1e1e]">
-            {chatMode === 'development' ? <MessageSquarePlus size={13} strokeWidth={1.8} style={{ color: modeHovered ? '#eeeeee' : '#777777' }} /> : <Target size={13} strokeWidth={1.8} style={{ color: modeHovered ? '#eeeeee' : '#777777' }} />}
-          </button>
           {recentChats.map((chat) => (
             <button key={`${chat.projectPath}:${chat.id}`} type="button" aria-label={`Abrir ${chat.name}`} title={chat.name} onClick={() => openDockChat(chat)} className="grid h-7 w-7 place-items-center rounded-[9px] border-0 bg-[#1e1e1e] text-[10px] font-medium uppercase text-[#777777] transition-colors hover:bg-[#2c2c2c] hover:text-[#eeeeee]">
               {chat.name.trim().charAt(0).toUpperCase() || '?'}

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, ArrowUpRight, ChevronRight, ExternalLink, File, FileCode2, FileImage, FileText, Folder, FolderOpen, Folders, GitBranch, GitCompare, Globe, LockKeyhole, LogOut, MessageCircle, Plus, RefreshCw, Search, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ArrowUpRight, CheckCircle2, ChevronRight, Circle, CircleDot, CircleX, ExternalLink, File, FileCode2, FileImage, FileText, Folder, FolderOpen, Folders, GitBranch, GitCompare, Globe, LockKeyhole, LogOut, MessageCircle, Plus, RefreshCw, Search, X } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi';
@@ -8,7 +8,6 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { whatsappContextStore } from '../lib/store';
 import { readAgentState, writeAgentState, type AgentState, type TaskStatus } from '../lib/engine/planning';
 import { readBusinessWorkspace, writeBusinessWorkspace, type BusinessWorkspace } from '../lib/projectManager';
-import { getSetting } from '../lib/persistence';
 
 type FileEntry = { path: string; kind: 'file' | 'directory' };
 type FileNode = FileEntry & { name: string; children: FileNode[] };
@@ -303,6 +302,8 @@ function FilesView({ projectPath }: { projectPath: string }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState('');
   const [showTree, setShowTree] = useState(false);
+  const [topbarCoolingDown, setTopbarCoolingDown] = useState(false);
+  const topbarCooldownRef = useRef<number | null>(null);
   const [selectedPath, setSelectedPath] = useState('');
   const [selectedContent, setSelectedContent] = useState('');
   const [fileLoading, setFileLoading] = useState(false);
@@ -366,7 +367,7 @@ function FilesView({ projectPath }: { projectPath: string }) {
   return <div className="flex h-full max-h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#111111]">
     <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-[#2b2b2b] bg-[#111111] px-2">
       <span className="min-w-0 truncate text-[12px] leading-none text-[#eeeeee]">{selectedPath ? `/${selectedPath.replace(/\\/g, '/')}` : '/'}</span>
-      <button type="button" onClick={() => setShowTree((visible) => !visible)} className={`grid h-7 w-7 place-items-center rounded-[7px] transition-colors ${showTree ? 'bg-[#2b2b2b] text-[#eeeeee]' : 'bg-[#202020] text-[#777777]'} hover:bg-[#2b2b2b] hover:text-[#eeeeee]`} title="Mostrar u ocultar árbol del workspace" aria-label="Mostrar u ocultar árbol del workspace" aria-pressed={showTree}><FolderOpen size={15} /></button>
+      <button type="button" onClick={toggleTree} disabled={topbarCoolingDown} className={`grid h-7 w-7 place-items-center rounded-[7px] border-0 transition-[background-color,color,transform] duration-200 ease-out active:scale-95 disabled:cursor-wait disabled:opacity-60 ${showTree ? 'bg-[#1687ff]/20 text-[#1687ff]' : 'bg-[#202020] text-[#777777]'} hover:bg-[#1687ff]/20 hover:text-[#1687ff]`} title="Mostrar u ocultar árbol del workspace" aria-label="Mostrar u ocultar árbol del workspace" aria-pressed={showTree}><FolderOpen size={15} /></button>
     </div>
     <div className="flex h-0 min-h-0 max-h-full flex-1 overflow-hidden">
       <main className="flex h-full min-w-0 min-h-0 flex-1 flex-col bg-[#111111]">
@@ -431,8 +432,46 @@ function ReviewView({ projectPath }: { projectPath: string }) {
   const [files, setFiles] = useState<ReviewFile[]>([]);
   const [selectedPath, setSelectedPath] = useState('');
   const [showFiles, setShowFiles] = useState(false);
+  const [topbarCoolingDown, setTopbarCoolingDown] = useState(false);
+  const topbarCooldownRef = useRef<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => () => {
+    if (topbarCooldownRef.current !== null) window.clearTimeout(topbarCooldownRef.current);
+  }, []);
+
+  const runTopbarAction = (action: () => void | Promise<void>) => {
+    if (topbarCoolingDown) return;
+    setTopbarCoolingDown(true);
+    try {
+      Promise.resolve(action()).finally(() => {
+        topbarCooldownRef.current = window.setTimeout(() => {
+          setTopbarCoolingDown(false);
+          topbarCooldownRef.current = null;
+        }, 1000);
+      });
+    } catch {
+      topbarCooldownRef.current = window.setTimeout(() => {
+        setTopbarCoolingDown(false);
+        topbarCooldownRef.current = null;
+      }, 1000);
+    }
+  };
+
+  useEffect(() => () => {
+    if (topbarCooldownRef.current !== null) window.clearTimeout(topbarCooldownRef.current);
+  }, []);
+
+  const toggleTree = () => {
+    if (topbarCoolingDown) return;
+    setShowTree((visible) => !visible);
+    setTopbarCoolingDown(true);
+    topbarCooldownRef.current = window.setTimeout(() => {
+      setTopbarCoolingDown(false);
+      topbarCooldownRef.current = null;
+    }, 1000);
+  };
 
   const loadReview = async () => {
     if (!projectPath) { setFiles([]); setSelectedPath(''); return; }
@@ -494,8 +533,8 @@ function ReviewView({ projectPath }: { projectPath: string }) {
       <div className="flex min-w-0 items-center gap-2"><GitCompare size={14} className="shrink-0 text-[#a7a7a7]" /><div className="min-w-0"><div className="truncate text-[12px] text-[#eeeeee]">Cambios</div><div className="text-[10px] text-[#666]">{files.length} {files.length === 1 ? 'archivo' : 'archivos'} · <span className="text-[#76c893]">+{additions}</span> <span className="text-[#d77878]">-{deletions}</span></div></div></div>
       <span className="min-w-0 truncate text-[12px] leading-none text-[#eeeeee]">{files.length} {files.length === 1 ? 'archivo' : 'archivos'} · <span className="text-[#76c893]">+{additions}</span> <span className="text-[#d77878]">-{deletions}</span></span>
       <div className="flex shrink-0 items-center gap-1">
-        <button type="button" onClick={() => setShowFiles((visible) => !visible)} className={`grid h-7 w-7 place-items-center rounded-[7px] transition-colors ${showFiles ? 'bg-[#2b2b2b] text-[#eeeeee]' : 'bg-[#202020] text-[#777777]'} hover:bg-[#2b2b2b] hover:text-[#eeeeee]`} title="Mostrar u ocultar archivos" aria-label="Mostrar u ocultar archivos" aria-pressed={showFiles}><FileText size={13} /></button>
-        <button type="button" onClick={() => void loadReview()} disabled={loading} className="grid h-7 w-7 shrink-0 place-items-center rounded-[7px] border-0 bg-[#202020] text-[#cfcfcf] hover:bg-[#2b2b2b] disabled:opacity-50" title="Actualizar cambios" aria-label="Actualizar cambios"><RefreshCw size={13} className={loading ? 'animate-spin' : ''} /></button>
+        <button type="button" onClick={() => runTopbarAction(() => setShowFiles((visible) => !visible))} disabled={topbarCoolingDown} className={`grid h-7 w-7 place-items-center rounded-[7px] border-0 transition-[background-color,color,transform] duration-200 ease-out active:scale-95 disabled:cursor-wait disabled:opacity-60 ${showFiles ? 'bg-[#1687ff]/20 text-[#1687ff]' : 'bg-[#202020] text-[#777777]'} hover:bg-[#1687ff]/20 hover:text-[#1687ff]`} title="Mostrar u ocultar archivos" aria-label="Mostrar u ocultar archivos" aria-pressed={showFiles}><FileText size={13} /></button>
+        <button type="button" onClick={() => runTopbarAction(() => loadReview())} disabled={loading || topbarCoolingDown} className={`grid h-7 w-7 shrink-0 place-items-center rounded-[7px] border-0 transition-[background-color,color,transform] duration-200 ease-out active:scale-95 disabled:cursor-wait disabled:opacity-60 ${loading || topbarCoolingDown ? 'bg-[#1687ff]/20 text-[#1687ff]' : 'bg-[#202020] text-[#777777]'} hover:bg-[#1687ff]/20 hover:text-[#1687ff]`} title="Actualizar cambios" aria-label="Actualizar cambios"><RefreshCw size={13} className={loading ? 'animate-spin' : ''} /></button>
       </div>
     </div>
     {loading ? <div className="flex flex-1 items-center justify-center text-[11px] text-[#777]">Revisando cambios...</div> : error ? <div className="p-3 text-[11px] leading-5 text-[#c28d8d]">{error}</div> : !files.length ? <div className="flex flex-1 flex-col items-center justify-center gap-2 p-5 text-center text-[11px] text-[#777]"><GitCompare size={28} strokeWidth={1.5} /><span>Sin cambios pendientes.</span></div> : <div className="flex min-h-0 flex-1 flex-row-reverse overflow-hidden">
@@ -1163,14 +1202,15 @@ export default function RightSidebar() {
 
 function ArtifactsView({ state, business, projectPath, projectName, hasProject }: { state: AgentState; business: BusinessWorkspace | null; projectPath: string; projectName: string; hasProject: boolean }) {
   const [selectedArtifact, setSelectedArtifact] = useState<{ kind: 'plan' | 'todo' | 'quote'; id: string } | null>(null);
-  const [selectionColor, setSelectionColor] = useState('#3b6bb5');
-  useEffect(() => {
-    void getSetting('codeclub_avatar_color', '#3b6bb5').then(setSelectionColor);
-    const handleProfileChange = (event: Event) => setSelectionColor((event as CustomEvent).detail?.color || '#3b6bb5');
-    window.addEventListener('codeclub:profile-changed', handleProfileChange);
-    return () => window.removeEventListener('codeclub:profile-changed', handleProfileChange);
-  }, []);
+  const selectionColor = '#1687ff';
   useEffect(() => setSelectedArtifact(null), [projectPath]);
+  useEffect(() => {
+    const clearSelectionOutsideArtifacts = (event: MouseEvent) => {
+      if (!(event.target as HTMLElement).closest('section')) setSelectedArtifact(null);
+    };
+    document.addEventListener('click', clearSelectionOutsideArtifacts);
+    return () => document.removeEventListener('click', clearSelectionOutsideArtifacts);
+  }, []);
   const pushReference = (kind: 'plan' | 'todo' | 'quote', id: string, title: string) => {
     window.dispatchEvent(new CustomEvent('codeclub:artifact-reference', { detail: { projectPath, kind, id, title } }));
   };
@@ -1282,7 +1322,7 @@ function QuoteArtifact({ quote, selected, selectionColor, onSelect, onCopy, onRe
 }
 
 function ArtifactStatus({ status }: { status: TaskStatus }) {
-  const values: Record<TaskStatus, [string, string]> = { pending: ['•', '#777'], in_progress: ['◐', '#d8d8d8'], completed: ['✓', '#8fbe9b'], blocked: ['×', '#d98b8b'] };
-  const [icon, color] = values[status] || values.pending;
-  return <span title={status} style={{ color }} className="grid h-4 w-4 shrink-0 place-items-center text-[12px] leading-none">{icon}</span>;
+  const values: Record<TaskStatus, [React.ElementType, string]> = { pending: [Circle, '#777'], in_progress: [CircleDot, '#d8d8d8'], completed: [CheckCircle2, '#1687ff'], blocked: [CircleX, '#d98b8b'] };
+  const [Icon, color] = values[status] || values.pending;
+  return <span title={status} style={{ color }} className="grid h-4 w-4 shrink-0 place-items-center"><Icon size={13} strokeWidth={1.8} /></span>;
 }

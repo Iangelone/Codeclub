@@ -3,23 +3,20 @@ import {
   ArrowLeft,
   ArrowRight,
   Bug,
-  Command,
   Eye,
-  FilePlus,
-  FolderOpen,
   HelpCircle,
   Keyboard,
+  Blocks,
+  Folder,
   Minus,
+  MessageSquarePlus,
   PiggyBank,
   PanelLeft,
   PanelTop,
   PanelRight,
-  Save,
-  Scissors,
-  Settings,
   Square,
   Terminal,
-  Undo2,
+  Target,
   X,
 } from "lucide-astro";
 ---
@@ -40,30 +37,23 @@ import {
       <div class="relative h-full flex items-center group/menu">
         <button class="h-[28px] px-[9px] text-xs border-0 rounded-md bg-transparent text-[#d8d8d8] hover:bg-[var(--color-surface-7)]" type="button">Archivo</button>
         <div class="absolute top-[34px] left-0 min-w-[210px] flex flex-col gap-[3px] p-2 border border-[var(--color-surface-10)] rounded-lg bg-[rgba(18,18,18,0.96)] shadow-[0_18px_54px_rgba(0,0,0,0.38)] opacity-0 pointer-events-none -translate-y-1 transition-all duration-120 ease-out group-hover/menu:opacity-100 group-hover/menu:pointer-events-auto group-hover/menu:translate-y-0 z-20">
-          <a class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs no-underline hover:bg-[var(--color-surface-7)] hover:text-white" href="#"><FilePlus class="shrink-0" size={14} /> Nuevo archivo</a>
-          <a class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs no-underline hover:bg-[var(--color-surface-7)] hover:text-white" href="#"><FolderOpen class="shrink-0" size={14} /> Abrir carpeta</a>
-          <a class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs no-underline hover:bg-[var(--color-surface-7)] hover:text-white" href="#"><Save class="shrink-0" size={14} /> Guardar</a>
-          <a class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs no-underline hover:bg-[var(--color-surface-7)] hover:text-white" href="#"><Command class="shrink-0" size={14} /> Exportar</a>
-        </div>
-      </div>
-      
-      <div class="relative h-full flex items-center group/menu">
-        <button class="h-[28px] px-[9px] text-xs border-0 rounded-md bg-transparent text-[#d8d8d8] hover:bg-[var(--color-surface-7)]" type="button">Editar</button>
-        <div class="absolute top-[34px] left-0 min-w-[210px] flex flex-col gap-[3px] p-2 border border-[var(--color-surface-10)] rounded-lg bg-[rgba(18,18,18,0.96)] shadow-[0_18px_54px_rgba(0,0,0,0.38)] opacity-0 pointer-events-none -translate-y-1 transition-all duration-120 ease-out group-hover/menu:opacity-100 group-hover/menu:pointer-events-auto group-hover/menu:translate-y-0 z-20">
-          <a class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs no-underline hover:bg-[var(--color-surface-7)] hover:text-white" href="#"><Undo2 class="shrink-0" size={14} /> Deshacer</a>
-          <a class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs no-underline hover:bg-[var(--color-surface-7)] hover:text-white" href="#"><ArrowRight class="shrink-0" size={14} /> Rehacer</a>
-          <a class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs no-underline hover:bg-[var(--color-surface-7)] hover:text-white" href="#"><Scissors class="shrink-0" size={14} /> Cortar</a>
-          <a class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs no-underline hover:bg-[var(--color-surface-7)] hover:text-white" href="#"><Settings class="shrink-0" size={14} /> Preferencias</a>
+          <a class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs no-underline hover:bg-[var(--color-surface-7)] hover:text-white" href="#" data-action="new-chat"><MessageSquarePlus class="shrink-0" size={14} /> Nuevo chat</a>
+          <a class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs no-underline hover:bg-[var(--color-surface-7)] hover:text-white" href="#" data-action="open-projects"><Folder class="shrink-0" size={14} /> Proyectos</a>
+          <a class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs no-underline hover:bg-[var(--color-surface-7)] hover:text-white" href="#" data-action="open-businesses"><Target class="shrink-0" size={14} /> Negocios</a>
+          <a class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs no-underline hover:bg-[var(--color-surface-7)] hover:text-white" href="#" data-action="open-extensions"><Blocks class="shrink-0" size={14} /> Complementos</a>
+          <div data-recent-chats class="hidden border-t border-[var(--color-surface-10)] pt-2 mt-1">
+            <div class="px-[10px] pb-1 text-[10px] uppercase tracking-[0.08em] text-[#666]">Últimos chats</div>
+            <div data-recent-chat-list class="flex flex-col gap-[3px]"></div>
+          </div>
         </div>
       </div>
       
       <div class="relative h-full flex items-center group/menu">
         <button class="h-[28px] px-[9px] text-xs border-0 rounded-md bg-transparent text-[#d8d8d8] hover:bg-[var(--color-surface-7)]" type="button">Ver</button>
         <div class="absolute top-[34px] left-0 min-w-[210px] flex flex-col gap-[3px] p-2 border border-[var(--color-surface-10)] rounded-lg bg-[rgba(18,18,18,0.96)] shadow-[0_18px_54px_rgba(0,0,0,0.38)] opacity-0 pointer-events-none -translate-y-1 transition-all duration-120 ease-out group-hover/menu:opacity-100 group-hover/menu:pointer-events-auto group-hover/menu:translate-y-0 z-20">
-          <a class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs no-underline hover:bg-[var(--color-surface-7)] hover:text-white" href="#"><PanelLeft class="shrink-0" size={14} /> Panel lateral</a>
-          <a class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs no-underline hover:bg-[var(--color-surface-7)] hover:text-white" href="#" data-action="toggle-terminal" data-project-required><Terminal class="shrink-0" size={14} /> Terminal</a>
-          <a class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs no-underline hover:bg-[var(--color-surface-7)] hover:text-white" href="#"><Square class="shrink-0" size={14} /> Pantalla completa</a>
-          <a class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs no-underline hover:bg-[var(--color-surface-7)] hover:text-white" href="#"><Eye class="shrink-0" size={14} /> Apariencia</a>
+          <a class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs no-underline hover:bg-[var(--color-surface-7)] hover:text-white" href="#" data-action="toggle-sidebar"><PanelLeft class="shrink-0" size={14} /> Panel lateral</a>
+          <a class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs no-underline hover:bg-[var(--color-surface-7)] hover:text-white" href="#" data-action="toggle-fullscreen"><Square class="shrink-0" size={14} /> Pantalla completa</a>
+          <a class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs no-underline hover:bg-[var(--color-surface-7)] hover:text-white" href="#" data-action="open-settings"><Eye class="shrink-0" size={14} /> Apariencia</a>
         </div>
       </div>
       
@@ -84,6 +74,9 @@ import {
         <div class="absolute top-[34px] left-0 min-w-[235px] flex flex-col gap-[3px] p-2 border border-[var(--color-surface-10)] rounded-lg bg-[rgba(18,18,18,0.96)] shadow-[0_18px_54px_rgba(0,0,0,0.38)] opacity-0 pointer-events-none -translate-y-1 transition-all duration-120 ease-out group-hover/menu:opacity-100 group-hover/menu:pointer-events-auto group-hover/menu:translate-y-0 z-20">
           <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="terminal"><Terminal class="shrink-0" size={14} /> Terminal</button>
           <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="computer-use"><Terminal class="shrink-0" size={14} /> PC: abrir Bloc de notas</button>
+          <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="development-mode"><Bug class="shrink-0" size={14} /> Probar IA · Desarrollo</button>
+          <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="business-mode"><PiggyBank class="shrink-0" size={14} /> Probar IA · Economía</button>
+          <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="tool-animation"><Bug class="shrink-0" size={14} /> Probar tools · transición</button>
           <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="ask-user"><Bug class="shrink-0" size={14} /> Probar Ask user</button>
           <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="subagents">Subagentes</button>
           <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="approval">Aprobación de acciones</button>
@@ -147,7 +140,7 @@ import {
 </script>
 
 <style>
-  .group\/menu [data-testing-action]:not([data-testing-action="terminal"]):not([data-testing-action="computer-use"]) {
+  .group\/menu [data-testing-action]:not([data-testing-action="terminal"]):not([data-testing-action="computer-use"]):not([data-testing-action="development-mode"]):not([data-testing-action="business-mode"]):not([data-testing-action="tool-animation"]) {
     display: none;
   }
 

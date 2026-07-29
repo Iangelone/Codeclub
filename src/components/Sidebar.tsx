@@ -143,8 +143,13 @@ export default function Sidebar() {
         activeChatStore.set({});
       }
     };
+    const handleOpenRecentChat = (event: Event) => {
+      const chat = (event as CustomEvent<GlobalChat>).detail;
+      if (chat?.id) openGlobalChat(chat);
+    };
     const handleOpenProjects = () => setActiveSection("projects");
     const handleOpenBusinesses = () => setActiveSection("businesses");
+    const handleOpenSettings = () => setSettingsOpen(true);
     const handleProjectContextMenu = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
       if (!detail.path || !detail.name) return;
@@ -190,11 +195,13 @@ export default function Sidebar() {
     window.addEventListener("codeclub:require-project", handleRequire);
     window.addEventListener("codeclub:open-empty-chat", handleOpenChat);
     window.addEventListener("codeclub:open-chat", handleOpenChat);
+    window.addEventListener("codeclub:open-recent-chat", handleOpenRecentChat);
     window.addEventListener("codeclub:request-new-chat", handleNewChatRequest);
     window.addEventListener("codeclub:chat-created", handleChatCreated);
     window.addEventListener("codeclub:rename-chat", handleChatRename);
     window.addEventListener("codeclub:open-projects", handleOpenProjects);
     window.addEventListener("codeclub:open-businesses", handleOpenBusinesses);
+    window.addEventListener("codeclub:open-settings", handleOpenSettings);
     window.addEventListener("codeclub:project-context-menu", handleProjectContextMenu);
     window.addEventListener("codeclub:project-selection-changed", handleProjectSelection);
     return () => {
@@ -204,11 +211,13 @@ export default function Sidebar() {
       window.removeEventListener("codeclub:require-project", handleRequire);
       window.removeEventListener("codeclub:open-empty-chat", handleOpenChat);
       window.removeEventListener("codeclub:open-chat", handleOpenChat);
+      window.removeEventListener("codeclub:open-recent-chat", handleOpenRecentChat);
       window.removeEventListener("codeclub:request-new-chat", handleNewChatRequest);
       window.removeEventListener("codeclub:chat-created", handleChatCreated);
       window.removeEventListener("codeclub:rename-chat", handleChatRename);
       window.removeEventListener("codeclub:open-projects", handleOpenProjects);
       window.removeEventListener("codeclub:open-businesses", handleOpenBusinesses);
+      window.removeEventListener("codeclub:open-settings", handleOpenSettings);
       window.removeEventListener("codeclub:project-context-menu", handleProjectContextMenu);
       window.removeEventListener("codeclub:project-selection-changed", handleProjectSelection);
     };
@@ -698,9 +707,11 @@ export default function Sidebar() {
     setActiveArtifactId(id);
     activeChatStore.set({ id, kind });
     selectProject(projectPath, projectName);
-    window.dispatchEvent(new CustomEvent(`codeclub:open-${kind}`, {
+    // Cambiar desde un panel (por ejemplo, Negocios) desmonta el panel actual.
+    // Esperamos al siguiente tick para que el destino ya tenga su listener montado.
+    window.setTimeout(() => window.dispatchEvent(new CustomEvent(`codeclub:open-${kind}`, {
       detail: { [`${kind}Id`]: id, name, projectPath, projectName }
-    }));
+    })), 0);
   };
 
   const onDragStart = (e: React.DragEvent, kind: string, item: Artifact, projectPath: string, projectName: string) => {
@@ -722,7 +733,8 @@ export default function Sidebar() {
       setActiveArtifactId(chat.id);
       activeChatStore.set({ id: chat.id, kind: "chat" });
       window.dispatchEvent(new CustomEvent("codeclub:project-selection-changed", { detail: { selected: false, keepChat: true } }));
-      window.dispatchEvent(new CustomEvent("codeclub:open-chat", { detail: { chatId: chat.id, name: chat.name, projectPath: "", projectName: "Sin proyecto" } }));
+      // Negocios se desmonta antes de mostrar el chat; diferir el evento evita perderlo.
+      window.setTimeout(() => window.dispatchEvent(new CustomEvent("codeclub:open-chat", { detail: { chatId: chat.id, name: chat.name, projectPath: "", projectName: "Sin proyecto" } })), 0);
       return;
     }
     openArtifact("chat", chat.id, chat.name, chat.projectPath, chat.projectName);

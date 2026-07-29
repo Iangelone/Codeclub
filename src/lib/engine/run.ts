@@ -1,4 +1,4 @@
-import { streamText, stepCountIs } from 'ai';
+import { streamText } from 'ai';
 import type { EngineCallbacks } from './types';
 
 type RunStreamArgs = {
@@ -15,13 +15,16 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
   let content = '';
   let reasoning = '';
   const startedAt = Date.now();
-  const styleInstruction = '\n\nRegla de estilo: respondé en español, con tono sobrio y profesional. No uses emojis salvo que el usuario los pida explícitamente.';
+  const styleInstruction = '\n\nUse clear, concise language and respond in the user\'s language. Avoid emojis unless the user explicitly asks for them.';
 
   const result = streamText({
     model,
     system: `${system}${styleInstruction}`,
     messages,
     tools,
+    // Sin límite fijo: después de una tool el modelo puede continuar hasta
+    // responder. La cancelación sigue bajo control del usuario/watchdog.
+    stopWhen: () => false,
     ...(structuredOutput ? { output: structuredOutput } : {}),
     abortSignal: signal,
     onAbort: async ({ steps }: any) => {
@@ -39,11 +42,10 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
     onToolExecutionEnd: async (info: any) => {
       await callbacks.onToolExecutionEnd?.(info);
     },
-    stopWhen: stepCountIs(structuredOutput ? 7 : 6),
     timeout: {
-      stepMs: 25_000,
-      chunkMs: 15_000,
-      toolMs: 30_000,
+      stepMs: 120_000,
+      chunkMs: 30_000,
+      toolMs: 60_000,
     },
     onChunk: ({ chunk }: any) => {
       if (chunk.type === 'reasoning-delta') {
@@ -98,7 +100,9 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
 
 export async function runStream(args: RunStreamArgs): Promise<string> {
   const controller = new AbortController();
-  const forwardAbort = () => controller.abort();
+  const forwardAbort = () => {
+    if (!controller.signal.aborted) controller.abort(args.signal?.reason);
+  };
   args.signal?.addEventListener('abort', forwardAbort, { once: true });
 
   const streamPromise = runStreamInternal({ ...args, signal: controller.signal });
@@ -106,7 +110,7 @@ export async function runStream(args: RunStreamArgs): Promise<string> {
     return await streamPromise;
   } finally {
     args.signal?.removeEventListener('abort', forwardAbort);
-    controller.abort();
+    if (!controller.signal.aborted) controller.abort();
     void streamPromise.catch(() => undefined);
   }
 }
