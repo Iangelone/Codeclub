@@ -64,7 +64,7 @@ export default function ProjectsPanel() {
   };
 
   return (
-    <div className="h-full w-full overflow-y-auto p-8 md:p-12">
+    <div className="projects-panel-scroll h-full w-full overflow-y-auto p-8 md:p-12">
       <div className="mx-auto grid w-full max-w-6xl grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
         {loading && Array.from({ length: 5 }, (_, index) => <div key={index} className="h-[178px] animate-pulse rounded-2xl border border-[#202020] bg-[#161616]" />)}
         {!loading && projects.map((project) => (

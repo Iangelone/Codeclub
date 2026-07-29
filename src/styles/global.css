@@ -43,6 +43,70 @@
   color: var(--codeclub-accent);
 }
 
+.codeclub-motion-panel {
+  transition: opacity 180ms ease-out, transform 360ms cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: top center;
+  backface-visibility: hidden;
+  contain: paint;
+  will-change: opacity, transform;
+}
+
+.codeclub-motion-control {
+  transition: background-color 180ms ease-out, color 180ms ease-out, transform 180ms ease-out;
+}
+
+.sidebar-shell,
+.right-sidebar-shell {
+  backface-visibility: hidden;
+  will-change: transform;
+  transition: transform 360ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.has-sidebar .sidebar-shell {
+  transform: translateX(0);
+}
+
+body:not(.has-sidebar) .sidebar-shell {
+  pointer-events: none;
+  transform: translateX(-100%);
+}
+
+body:not(.has-right-panel) .right-sidebar-shell {
+  pointer-events: none;
+  transform: translateX(100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .codeclub-motion-panel,
+  .codeclub-motion-control,
+  .sidebar-shell,
+  .right-sidebar-shell {
+    transition-duration: 1ms;
+  }
+}
+
+@keyframes workspace-panel-enter {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.workspace-panel-content {
+  animation: workspace-panel-enter 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: opacity, transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-panel-content {
+    animation-duration: 1ms;
+  }
+}
+
 @theme {
   --color-bg: #111111;
   --color-surface-0: #101010;
@@ -258,6 +322,16 @@ body {
 
 .workspace-pane {
   position: relative;
+}
+
+.projects-panel-scroll {
+  min-height: 0;
+  scrollbar-width: none;
+  overscroll-behavior: contain;
+}
+
+.projects-panel-scroll::-webkit-scrollbar {
+  display: none;
 }
 
 .drag-preview {

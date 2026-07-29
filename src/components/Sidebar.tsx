@@ -771,22 +771,22 @@ export default function Sidebar() {
   };
 
   return (
-      <div onClick={handleSidebarClick} className="row-start-2 col-start-1 min-w-[264px] w-[264px] h-[calc(100vh-36px)] min-h-0 overflow-hidden flex flex-col border-r border-[var(--color-surface-10)] bg-[var(--color-bg)] shadow-[4px_0_14px_rgba(0,0,0,0.16)] -translate-x-full transition-transform duration-140 ease-out z-10 group-[.has-sidebar]:translate-x-0">
+      <div onClick={handleSidebarClick} className="sidebar-shell row-start-2 col-start-1 min-w-[264px] w-[264px] h-[calc(100vh-36px)] min-h-0 overflow-hidden flex flex-col border-r border-[var(--color-surface-10)] bg-[var(--color-bg)] shadow-[4px_0_14px_rgba(0,0,0,0.16)] -translate-x-full transition-transform duration-140 ease-out z-10 group-[.has-sidebar]:translate-x-0">
       <section className="min-h-0 flex-1 flex flex-col p-[10px_10px_0] overflow-hidden">
         <div className="h-[24px] shrink-0 mb-1 flex items-center gap-[6px] px-[10px] text-[#9f9f9f] text-xs">
           Codeclub
         </div>
         <div className="shrink-0 flex flex-col gap-1 pb-1">
-          <div data-sidebar-item onClick={() => void openNewChat()} className={`w-full min-h-[34px] flex cursor-pointer items-center gap-[9px] rounded-md px-[10px] text-xs text-left transition-colors ${activeSection === "chat" && !activeArtifactId ? "bg-[#1E1E1E] text-[#eeeeee]" : "text-[#777777] hover:bg-[var(--color-surface-3)] hover:text-[#eeeeee]"}`}>
+          <div data-sidebar-item onClick={() => void openNewChat()} className={`codeclub-motion-control w-full min-h-[34px] flex cursor-pointer items-center gap-[9px] rounded-md px-[10px] text-xs text-left transition-colors hover:translate-x-px ${activeSection === "chat" && !activeArtifactId ? "bg-[#1E1E1E] text-[#eeeeee]" : "text-[#777777] hover:bg-[var(--color-surface-3)] hover:text-[#eeeeee]"}`}>
             <MessageSquarePlus size={15} /> Nuevo chat
           </div>
-          <div data-sidebar-item role="button" tabIndex={0} onClick={openProjectsPanel} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openProjectsPanel(); } }} className={`w-full min-h-[34px] flex cursor-pointer items-center gap-[9px] rounded-md px-[10px] text-xs text-left transition-colors focus-visible:outline-none ${activeSection === "projects" ? "bg-[#1E1E1E] text-[#eeeeee]" : "text-[#777777] hover:bg-[var(--color-surface-3)] hover:text-[#eeeeee]"}`}>
+          <div data-sidebar-item role="button" tabIndex={0} onClick={openProjectsPanel} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openProjectsPanel(); } }} className={`codeclub-motion-control w-full min-h-[34px] flex cursor-pointer items-center gap-[9px] rounded-md px-[10px] text-xs text-left transition-colors hover:translate-x-px focus-visible:outline-none ${activeSection === "projects" ? "bg-[#1E1E1E] text-[#eeeeee]" : "text-[#777777] hover:bg-[var(--color-surface-3)] hover:text-[#eeeeee]"}`}>
             <Folder size={15} /> Proyectos
           </div>
-          <button type="button" className={`w-full min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left transition-colors ${activeSection === "businesses" ? "bg-[#1E1E1E] text-[#eeeeee]" : "text-[#777777] hover:bg-[var(--color-surface-3)] hover:text-[#eeeeee]"} border-0 appearance-none`} onClick={() => { setActiveSection("businesses"); window.dispatchEvent(new CustomEvent("codeclub:open-businesses")); window.setTimeout(() => setActiveSection("businesses"), 80); }}>
+          <button type="button" className={`codeclub-motion-control w-full min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left transition-colors hover:translate-x-px ${activeSection === "businesses" ? "bg-[#1E1E1E] text-[#eeeeee]" : "text-[#777777] hover:bg-[var(--color-surface-3)] hover:text-[#eeeeee]"} border-0 appearance-none`} onClick={() => { setActiveSection("businesses"); window.dispatchEvent(new CustomEvent("codeclub:open-businesses")); window.setTimeout(() => setActiveSection("businesses"), 80); }}>
             <Target size={15} /> Negocios
           </button>
-          <button type="button" className="w-full min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left text-[#777777] hover:bg-[var(--color-surface-3)] hover:text-[#eeeeee] bg-transparent border-0 appearance-none" onClick={() => window.dispatchEvent(new CustomEvent("codeclub:open-extensions"))}>
+          <button type="button" className="codeclub-motion-control w-full min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left text-[#777777] hover:bg-[var(--color-surface-3)] hover:text-[#eeeeee] hover:translate-x-px bg-transparent border-0 appearance-none" onClick={() => window.dispatchEvent(new CustomEvent("codeclub:open-extensions"))}>
             <Blocks size={15} /> Complementos
           </button>
         </div>
@@ -924,8 +924,8 @@ export default function Sidebar() {
             <div className="h-[24px] shrink-0 mb-1 flex items-center gap-[6px] px-[10px] text-[#9f9f9f] text-xs">Chats</div>
             <div className="flex flex-col gap-1">
               {[...globalChats].reverse().map((chat) => (
-                <button key={`${chat.projectPath}:${chat.id}`} type="button" className={`w-full min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left text-[#777777] hover:bg-white/2 bg-transparent border-0 appearance-none ${activeArtifactId === chat.id ? "bg-white/5 text-[#eeeeee]" : ""}`} onClick={() => openGlobalChat(chat)} onContextMenu={(event) => { event.preventDefault(); openArtifactMenu(event, "chat", { id: chat.id, name: chat.name }, { name: chat.projectName, path: chat.projectPath, chats: [] }); }} title={chat.projectName}>
-                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-[6px] border-0 text-[8px] font-medium uppercase" style={{ backgroundColor: activeArtifactId === chat.id ? getAgentAvatarColor(chat.id) : '#2b2b2b', color: '#ffffff' }} aria-hidden="true">{chat.name.trim().charAt(0).toUpperCase() || 'C'}</span>
+                <button key={`${chat.projectPath}:${chat.id}`} type="button" className={`codeclub-motion-control w-full min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left text-[#777777] hover:bg-[var(--color-surface-3)] hover:translate-x-px bg-transparent border-0 appearance-none ${activeArtifactId === chat.id ? "bg-white/5 text-[#eeeeee]" : ""}`} onClick={() => openGlobalChat(chat)} onContextMenu={(event) => { event.preventDefault(); openArtifactMenu(event, "chat", { id: chat.id, name: chat.name }, { name: chat.projectName, path: chat.projectPath, chats: [] }); }} title={chat.projectName}>
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-[6px] border-0 text-[8px] font-medium uppercase transition-colors duration-200" style={{ backgroundColor: activeArtifactId === chat.id ? getAgentAvatarColor(chat.id) : '#2b2b2b', color: '#ffffff' }} aria-hidden="true">{chat.name.trim().charAt(0).toUpperCase() || 'C'}</span>
                   <span className="min-w-0 flex-1 truncate">{activeArtifactId === chat.id ? chat.name : agentActivities[chat.id]?.ready ? 'Listo para revisión' : agentActivities[chat.id]?.state && agentActivities[chat.id].state !== 'idle' ? getAgentActivityLabel(agentActivities[chat.id]) : chat.name}</span>
                 </button>
               ))}

@@ -125,6 +125,12 @@ import ChatPanel from "../components/ChatPanel.astro";
         });
         updateProjectContext(false);
 
+        const setProjectsView = (enabled) => document.body.classList.toggle('projects-view', enabled);
+        window.addEventListener('codeclub:open-projects', () => setProjectsView(true));
+        window.addEventListener('codeclub:open-chat', () => setProjectsView(false));
+        window.addEventListener('codeclub:open-businesses', () => setProjectsView(false));
+        window.addEventListener('codeclub:request-new-chat', () => setProjectsView(false));
+
         document.querySelectorAll('[data-action="toggle-terminal"]').forEach((el) => {
           el.addEventListener('click', (event) => {
             event.preventDefault();
@@ -134,6 +140,7 @@ import ChatPanel from "../components/ChatPanel.astro";
         
         document.querySelectorAll('[data-action="toggle-sidebar"]').forEach((sidebarButton) => sidebarButton.addEventListener('click', (event) => {
           event.preventDefault();
+          setProjectsView(false);
           document.body.classList.toggle('has-sidebar');
           document.body.style.setProperty('--left-panel-width', document.body.classList.contains('has-sidebar') ? '264px' : '0px');
         }));
