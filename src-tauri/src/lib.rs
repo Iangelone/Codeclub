@@ -1089,6 +1089,10 @@ fn codeclub_whatsapp_start(app: AppHandle, state: State<'_, WhatsAppRegistry>) -
 #[tauri::command]
 fn codeclub_whatsapp_send(state: State<'_, WhatsAppRegistry>, chat_id: String, body: String) -> Result<(), String> {
     let mut registry = state.child.lock().map_err(|error| error.to_string())?;
+    if registry.as_mut().and_then(|child| child.try_wait().ok()).flatten().is_some() {
+        *registry = None;
+        return Err("WhatsApp bridge finished. Start WhatsApp again.".to_string());
+    }
     let child = registry.as_mut().ok_or_else(|| "WhatsApp no está iniciado".to_string())?;
     let stdin = child.stdin.as_mut().ok_or_else(|| "No hay canal de WhatsApp".to_string())?;
     writeln!(stdin, "{}", serde_json::json!({ "type": "send", "chatId": chat_id, "body": body })).map_err(|error| error.to_string())?;
@@ -1098,6 +1102,10 @@ fn codeclub_whatsapp_send(state: State<'_, WhatsAppRegistry>, chat_id: String, b
 #[tauri::command]
 fn codeclub_whatsapp_get_messages(state: State<'_, WhatsAppRegistry>, chat_id: String) -> Result<(), String> {
     let mut registry = state.child.lock().map_err(|error| error.to_string())?;
+    if registry.as_mut().and_then(|child| child.try_wait().ok()).flatten().is_some() {
+        *registry = None;
+        return Err("WhatsApp bridge finished. Start WhatsApp again.".to_string());
+    }
     let child = registry.as_mut().ok_or_else(|| "WhatsApp no está iniciado".to_string())?;
     let stdin = child.stdin.as_mut().ok_or_else(|| "No hay canal de WhatsApp".to_string())?;
     writeln!(stdin, "{}", serde_json::json!({ "type": "get_messages", "chatId": chat_id })).map_err(|error| error.to_string())?;
@@ -1107,6 +1115,10 @@ fn codeclub_whatsapp_get_messages(state: State<'_, WhatsAppRegistry>, chat_id: S
 #[tauri::command]
 fn codeclub_whatsapp_refresh(state: State<'_, WhatsAppRegistry>) -> Result<(), String> {
     let mut registry = state.child.lock().map_err(|error| error.to_string())?;
+    if registry.as_mut().and_then(|child| child.try_wait().ok()).flatten().is_some() {
+        *registry = None;
+        return Err("WhatsApp bridge finished. Start WhatsApp again.".to_string());
+    }
     let child = registry.as_mut().ok_or_else(|| "WhatsApp no está iniciado".to_string())?;
     let stdin = child.stdin.as_mut().ok_or_else(|| "No hay canal de WhatsApp".to_string())?;
     writeln!(stdin, "{}", serde_json::json!({ "type": "refresh" })).map_err(|error| error.to_string())?;
@@ -1116,6 +1128,10 @@ fn codeclub_whatsapp_refresh(state: State<'_, WhatsAppRegistry>) -> Result<(), S
 #[tauri::command]
 fn codeclub_whatsapp_logout(state: State<'_, WhatsAppRegistry>) -> Result<(), String> {
     let mut registry = state.child.lock().map_err(|error| error.to_string())?;
+    if registry.as_mut().and_then(|child| child.try_wait().ok()).flatten().is_some() {
+        *registry = None;
+        return Err("WhatsApp bridge finished. Start WhatsApp again.".to_string());
+    }
     let child = registry.as_mut().ok_or_else(|| "WhatsApp no está iniciado".to_string())?;
     let stdin = child.stdin.as_mut().ok_or_else(|| "No hay canal de WhatsApp".to_string())?;
     writeln!(stdin, "{}", serde_json::json!({ "type": "logout" })).map_err(|error| error.to_string())?;

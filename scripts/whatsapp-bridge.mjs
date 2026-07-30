@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import makeWASocket, {
   Browsers,
   DisconnectReason,
+  fetchLatestWaWebVersion,
   useMultiFileAuthState,
 } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
@@ -22,6 +23,7 @@ let refreshRequested = false;
 let logoutRequested = false;
 let persistTimer;
 const chatCachePath = join(authDir, 'chats.json');
+let webVersion;
 
 const chatPayload = (chat) => ({
   id: chat.id,
@@ -94,9 +96,15 @@ const rememberContact = (contact) => {
 
 const connect = async () => {
   await loadCachedChats();
+  if (!webVersion) {
+    const latest = await fetchLatestWaWebVersion();
+    webVersion = latest.version;
+    if (!latest.isLatest) emit({ type: 'warning', message: 'No se pudo consultar la versión actual de WhatsApp; usando la versión incluida en Baileys.' });
+  }
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
   socket = makeWASocket({
     auth: state,
+    version: webVersion,
     browser: Browsers.appropriate('Chrome'),
     logger: pino({ level: 'silent' }),
     qrTimeout: 60000,
@@ -188,6 +196,15 @@ const connect = async () => {
       }
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       const detail = lastDisconnect?.error?.message || 'sin detalle';
+      if (statusCode === 405) {
+        await rm(authDir, { recursive: true, force: true });
+        chats.clear();
+        messageStore.clear();
+        emit({ type: 'session_reset', reason: 'WhatsApp rechazó la sesión (405). Se limpió la sesión y se generará un nuevo QR.' });
+        await delay(1500);
+        if (!stopping) await connect();
+        return;
+      }
       if (statusCode === DisconnectReason.loggedOut || statusCode === DisconnectReason.connectionClosed) {
         await rm(authDir, { recursive: true, force: true });
         chats.clear();

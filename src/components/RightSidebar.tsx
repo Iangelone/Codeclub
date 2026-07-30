@@ -7,6 +7,7 @@ import { Webview } from '@tauri-apps/api/webview';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import hljs from 'highlight.js/lib/common';
 import { whatsappContextStore } from '../lib/store';
+import TerminalDock from './TerminalDock';
 import { readAgentState, writeAgentState, type AgentState, type TaskStatus } from '../lib/engine/planning';
 import { readBusinessWorkspace, writeBusinessWorkspace, type BusinessWorkspace } from '../lib/projectManager';
 
@@ -86,11 +87,11 @@ const browserActionScript = (action: { type: string; selector?: string; text?: s
 const browserAgentOverlayScript = (selector?: string) => `(() => {
   const overlayId = '__codeclub-agent-overlay';
   const bannerId = '__codeclub-agent-banner';
-  const cursor = 'url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2234%22 height=%2234%22 viewBox=%220 0 34 34%22 fill=%22none%22%3E%3Cpath d=%22M 5 5 L 14 29 A 1.5 1.5 0 0 0 17 28.5 L 19.5 20 L 28.5 17 A 1.5 1.5 0 0 0 29 14 L 5 5 Z%22 fill=%22%23f78c6c%22 stroke=%22white%22 stroke-width=%223%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E") 5 5, crosshair';
+  const cursor = 'url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2234%22 height=%2234%22 viewBox=%220 0 34 34%22 fill=%22none%22%3E%3Cdefs%3E%3ClinearGradient id=%22avatarGradient%22 x1=%220%22 y1=%220%22 x2=%221%22 y2=%221%22%3E%3Cstop offset=%220%25%22 stop-color=%22%231687FF%22/%3E%3Cstop offset=%2238%25%22 stop-color=%22%2367BAFF%22/%3E%3Cstop offset=%2268%25%22 stop-color=%22%23F8EAD8%22/%3E%3Cstop offset=%22100%25%22 stop-color=%22%23FFF3DF%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M 5 5 L 14 29 A 1.5 1.5 0 0 0 17 28.5 L 19.5 20 L 28.5 17 A 1.5 1.5 0 0 0 29 14 L 5 5 Z%22 fill=%22url(%23avatarGradient)%22 stroke=%22white%22 stroke-width=%223%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E") 5 5, crosshair';
   const overlay = document.getElementById(overlayId) || Object.assign(document.body.appendChild(document.createElement('div')), { id: overlayId });
   const banner = document.getElementById(bannerId) || Object.assign(document.body.appendChild(document.createElement('div')), { id: bannerId });
-  Object.assign(overlay.style, { position: 'fixed', zIndex: '2147483646', pointerEvents: 'none', border: '2px solid #f78c6c', background: 'rgba(247,140,108,.12)', boxShadow: '0 0 0 1px rgba(255,255,255,.35), 0 0 18px rgba(247,140,108,.45)', display: 'none' });
-  Object.assign(banner.style, { position: 'fixed', zIndex: '2147483647', right: '16px', top: '16px', padding: '7px 10px', border: '1px solid #f78c6c', borderRadius: '8px', background: '#2a1c16', color: '#ffe9df', font: '12px system-ui', boxShadow: '0 6px 20px rgba(0,0,0,.3)', display: 'block' });
+  Object.assign(overlay.style, { position: 'fixed', zIndex: '2147483646', pointerEvents: 'none', border: '2px solid #1687FF', background: 'rgba(22,135,255,.12)', boxShadow: '0 0 0 1px rgba(255,255,255,.35), 0 0 18px rgba(22,135,255,.45)', display: 'none' });
+  Object.assign(banner.style, { position: 'fixed', zIndex: '2147483647', right: '16px', top: '16px', padding: '7px 10px', border: '1px solid #1687FF', borderRadius: '8px', background: '#101d2a', color: '#dceeff', font: '12px system-ui', boxShadow: '0 6px 20px rgba(0,0,0,.3)', display: 'block' });
   banner.textContent = 'Agente controla · Esc para salir';
   document.documentElement.style.cursor = cursor;
   window.__codeclubAgentStop = false;
@@ -102,7 +103,7 @@ const browserAgentOverlayScript = (selector?: string) => `(() => {
 })()`;
 
 const browserInspectorScript = (active: boolean) => {
-  const cursor = `url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2234%22 height=%2234%22 viewBox=%220 0 34 34%22 fill=%22none%22%3E%3Cpath d=%22M 5 5 L 14 29 A 1.5 1.5 0 0 0 17 28.5 L 19.5 20 L 28.5 17 A 1.5 1.5 0 0 0 29 14 L 5 5 Z%22 fill=%22%23f78c6c%22 stroke=%22white%22 stroke-width=%223%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E") 5 5, crosshair`;
+  const cursor = `url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2234%22 height=%2234%22 viewBox=%220 0 34 34%22 fill=%22none%22%3E%3Cdefs%3E%3ClinearGradient id=%22avatarGradient%22 x1=%220%22 y1=%220%22 x2=%221%22 y2=%221%22%3E%3Cstop offset=%220%25%22 stop-color=%22%231687FF%22/%3E%3Cstop offset=%2238%25%22 stop-color=%22%2367BAFF%22/%3E%3Cstop offset=%2268%25%22 stop-color=%22%23F8EAD8%22/%3E%3Cstop offset=%22100%25%22 stop-color=%22%23FFF3DF%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M 5 5 L 14 29 A 1.5 1.5 0 0 0 17 28.5 L 19.5 20 L 28.5 17 A 1.5 1.5 0 0 0 29 14 L 5 5 Z%22 fill=%22url(%23avatarGradient)%22 stroke=%22white%22 stroke-width=%223%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E") 5 5, crosshair`;
   return `(() => {
     const active = ${active ? 'true' : 'false'};
     const root = document.documentElement;
@@ -119,8 +120,8 @@ const browserInspectorScript = (active: boolean) => {
         style.id = styleId;
         style.textContent =
           'html[' + activeAttribute + '="true"], html[' + activeAttribute + '="true"] * { cursor: ${cursor} !important; }' +
-          'html[' + activeAttribute + '="true"] body *:hover:not(:has(*:hover)):not(#' + overlayId + '):not(#' + overlayId + ' *) { outline: 2px solid #f78c6c !important; outline-offset: -2px !important; box-shadow: inset 0 0 0 9999px rgba(247, 140, 108, .10) !important; }' +
-          '#' + overlayId + ' { position: fixed; display: none; pointer-events: none; box-sizing: border-box; border: 2px solid #f78c6c; background: rgba(247, 140, 108, .10); z-index: 2147483647; }';
+          'html[' + activeAttribute + '="true"] body *:hover:not(:has(*:hover)):not(#' + overlayId + '):not(#' + overlayId + ' *) { outline: 2px solid #1687FF !important; outline-offset: -2px !important; box-shadow: inset 0 0 0 9999px rgba(22, 135, 255, .10) !important; }' +
+          '#' + overlayId + ' { position: fixed; display: none; pointer-events: none; box-sizing: border-box; border: 2px solid #1687FF; background: rgba(22, 135, 255, .10); z-index: 2147483647; }';
         (document.head || root).appendChild(style);
       }
     };
@@ -919,6 +920,7 @@ function WhatsAppTerminalView() {
         else if (payload.type === 'message') { const current = whatsappContextStore.get(); const chatId = payload.chat?.id; whatsappContextStore.set({ ...current, chats: chatId ? [payload.chat, ...current.chats.filter((chat) => chat.id !== chatId)] : current.chats, messages: chatId ? { ...current.messages, [chatId]: [...(current.messages[chatId] || []), payload.message].slice(-300) } : current.messages }); appendLog(`Mensaje recibido en ${payload.chat?.name || payload.chat?.id || 'chat'}`); }
         else if (payload.type === 'chat_messages') { const current = whatsappContextStore.get(); whatsappContextStore.set({ ...current, messages: { ...current.messages, [payload.chatId]: payload.messages || [] } }); }
         else if (payload.type === 'error') appendLog(`ERROR ${payload.message || 'sin detalle'}`);
+        else if (payload.type === 'warning') appendLog(`AVISO ${payload.message || 'sin detalle'}`);
         else if (payload.type === 'disconnected') appendLog(payload.reason || 'WhatsApp desconectado');
         else if (payload.type === 'session_reset') appendLog(payload.reason || 'Sesión reiniciada');
         else if (payload.type === 'logged_out') appendLog('Sesión cerrada');
@@ -1059,9 +1061,9 @@ function LegacyWhatsAppView() {
 }
 
 export default function RightSidebar() {
-  type RightTab = 'files' | 'review' | 'browser' | 'artifacts' | 'whatsapp';
-  const labels: Record<RightTab, string> = { files: 'Archivos', review: 'Revisar', browser: 'Navegador', artifacts: 'Artifacts', whatsapp: 'WhatsApp' };
-  const availableTabs: RightTab[] = ['files', 'review', 'browser', 'artifacts', 'whatsapp'];
+  type RightTab = 'files' | 'review' | 'browser' | 'artifacts' | 'terminals';
+  const labels: Record<RightTab, string> = { files: 'Archivos', review: 'Revisar', browser: 'Navegador', artifacts: 'Artifacts', terminals: 'Terminales' };
+  const availableTabs: RightTab[] = ['files', 'review', 'browser', 'artifacts', 'terminals'];
   const [tabs, setTabs] = React.useState<RightTab[]>([]);
   const [activeTab, setActiveTab] = React.useState<RightTab | null>(null);
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -1122,6 +1124,17 @@ export default function RightSidebar() {
     };
     window.addEventListener('codeclub:browser-navigate', handleBrowserNavigate);
     return () => window.removeEventListener('codeclub:browser-navigate', handleBrowserNavigate);
+  }, []);
+
+  useEffect(() => {
+    const openTerminals = () => {
+      window.dispatchEvent(new CustomEvent('codeclub:open-right-panel'));
+      setTabs((current) => current.includes('terminals') ? current : [...current, 'terminals']);
+      setActiveTab('terminals');
+      setMenuOpen(false);
+    };
+    window.addEventListener('codeclub:open-terminal-panel', openTerminals);
+    return () => window.removeEventListener('codeclub:open-terminal-panel', openTerminals);
   }, []);
 
   useEffect(() => {
@@ -1211,13 +1224,12 @@ export default function RightSidebar() {
            {activeTab === 'review' && <ReviewView projectPath={activeProjectPath} />}
            {activeTab === 'browser' && <NativeBrowserView initialUrl={browserUrl} />}
            {activeTab === 'artifacts' && <ArtifactsView state={artifactState} business={businessState} projectPath={activeProjectPath} projectName={activeProjectName} hasProject={Boolean(activeProjectPath)} />}
-          {tabs.includes('whatsapp') && <div className={activeTab === 'whatsapp' ? 'flex h-full min-h-0 flex-1' : 'hidden'}><WhatsAppTerminalView /></div>}
+           <div className={`h-full min-h-0 w-full min-w-0 ${activeTab === 'terminals' ? 'flex' : 'hidden'}`}><TerminalDock embedded /></div>
           {tabs.length === 0 && <div className="flex flex-1 items-center justify-center">
             <button type="button" onClick={() => setMenuOpen(true)} className="min-h-[30px] rounded-lg border border-[#202020] bg-transparent px-3 text-[11px] text-[#777777] transition-colors hover:bg-[#1c1c1c] hover:text-[#eeeeee]">
               Crear panel
             </button>
           </div>}
-           {activeTab && !['files', 'review', 'browser', 'artifacts', 'whatsapp'].includes(activeTab) && <div className="flex flex-1 items-center justify-center p-3 text-xs text-[#777777]">Panel {labels[activeTab]}</div>}
         </div>
       </div>
     </aside>

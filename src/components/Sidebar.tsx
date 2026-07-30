@@ -35,26 +35,7 @@ import {
 } from "lucide-react";
 import { activeChatStore, chatsStore, type GlobalChat } from "../lib/store";
 
-const AGENT_AVATAR_COLORS = ['#A98BC6', '#6F91CC', '#A9C978', '#D17A60', '#D4A956', '#6F7C86', '#74BBD1'];
-const getAgentAvatarColor = (chatId: string) => {
-  let hash = 0;
-  for (let index = 0; index < chatId.length; index += 1) hash = (hash * 31 + chatId.charCodeAt(index)) | 0;
-  const fallback = AGENT_AVATAR_COLORS[Math.abs(hash) % AGENT_AVATAR_COLORS.length];
-  try {
-    const overrides = JSON.parse(window.localStorage.getItem('codeclub:chat-avatar-colors') || '{}');
-    return AGENT_AVATAR_COLORS.includes(overrides[chatId]) ? overrides[chatId] : fallback;
-  } catch { return fallback; }
-};
-const cycleAgentAvatarColor = (chatId: string) => {
-  const current = getAgentAvatarColor(chatId);
-  const next = AGENT_AVATAR_COLORS[(AGENT_AVATAR_COLORS.indexOf(current) + 1) % AGENT_AVATAR_COLORS.length];
-  try {
-    const overrides = JSON.parse(window.localStorage.getItem('codeclub:chat-avatar-colors') || '{}');
-    overrides[chatId] = next;
-    window.localStorage.setItem('codeclub:chat-avatar-colors', JSON.stringify(overrides));
-  } catch { /* localStorage unavailable */ }
-  window.dispatchEvent(new CustomEvent('codeclub:chat-avatar-color-changed', { detail: { chatId, color: next } }));
-};
+const CHAT_AVATAR_GRADIENT = 'linear-gradient(112deg, #1687FF 0%, #67BAFF 38%, #F8EAD8 68%, #FFF3DF 100%)';
 const getAgentActivityLabel = (activity: { state: string; tool?: string; agent?: string }) => activity.tool || ({ connecting: 'Conectando con el proveedor…', streaming: 'Generando respuesta…', tool_call: 'Usando herramienta…', approval: 'Esperando aprobación…', running: 'Ejecutando…', error: 'Revisando error…' }[activity.state] || activity.agent || 'Trabajando…');
 
 // --- Types ---
@@ -81,7 +62,6 @@ export default function Sidebar() {
   const structureMenuRef = useRef<HTMLDivElement | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [activeArtifactId, setActiveArtifactId] = useState<string | null>(null);
-  const [, setAvatarColorVersion] = useState(0);
   const [agentActivities, setAgentActivities] = useState<Record<string, { state: string; tool?: string; agent?: string; ready?: boolean }>>({});
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeSection, setActiveSection] = useState<"chat" | "projects" | "businesses">("projects");
@@ -90,12 +70,18 @@ export default function Sidebar() {
     const handleAgentActivity = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
       if (!detail.chatId) return;
-      setAgentActivities((current) => ({ ...current, [detail.chatId]: { ...detail, ready: detail.state === 'idle' } }));
+      setAgentActivities((current) => {
+        if (detail.state === 'idle' && activeChatStore.get().id === detail.chatId) {
+          if (!current[detail.chatId]) return current;
+          const next = { ...current };
+          delete next[detail.chatId];
+          return next;
+        }
+        return { ...current, [detail.chatId]: { ...detail, ready: detail.state === 'idle' } };
+      });
     };
     window.addEventListener("codeclub:agent-activity", handleAgentActivity);
-    const handleAvatarColorChange = () => setAvatarColorVersion((version) => version + 1);
-    window.addEventListener('codeclub:chat-avatar-color-changed', handleAvatarColorChange);
-    return () => { window.removeEventListener("codeclub:agent-activity", handleAgentActivity); window.removeEventListener('codeclub:chat-avatar-color-changed', handleAvatarColorChange); };
+    return () => { window.removeEventListener("codeclub:agent-activity", handleAgentActivity); };
   }, []);
 
   const [creatingProject, setCreatingProject] = useState(false);
@@ -567,6 +553,20 @@ export default function Sidebar() {
         return;
       }
 
+      if (!projectPath) {
+        const chats = await readGlobalChats();
+        await writeGlobalChats(chats.filter((entry) => entry.id !== itemId));
+        if (activeArtifactId === itemId) {
+          setActiveArtifactId(null);
+          activeChatStore.set({});
+          window.dispatchEvent(new CustomEvent("codeclub:open-empty-chat"));
+        }
+        setArtifactMenu(null);
+        await logPersistence(`delete_${kind}`, "ok", { itemId, projectPath: "global" });
+        await loadProjects();
+        return;
+      }
+
       const metaData = await readProjectMeta(projectPath);
       if (!metaData) return;
       metaData.chats = (metaData.chats || []).filter((entry: any) => entry.id !== itemId);
@@ -702,17 +702,6 @@ export default function Sidebar() {
     setArtifactMenu({ kind, id: item.id, name: item.name, projectPath: project.path, projectName: project.name, top: e.clientY, left: e.clientX });
   };
 
-  const handleSidebarClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    const target = e.target as HTMLElement;
-    if (target.closest("[data-sidebar-item], button, input")) return;
-    setSelectedProjectId(null);
-    setActiveSection("projects");
-    setActiveArtifactId(null);
-    activeChatStore.set({});
-    window.dispatchEvent(new CustomEvent("codeclub:project-selection-changed", { detail: { selected: false } }));
-    window.dispatchEvent(new CustomEvent("codeclub:open-blank", { detail: {} }));
-  };
-
   const openProjectsPanel = () => {
     setActiveSection("projects");
     setSelectedProjectId(null);
@@ -733,6 +722,15 @@ export default function Sidebar() {
   };
 
   const openArtifact = (kind: string, id: string, name: string, projectPath: string, projectName: string) => {
+    if (kind === "chat") {
+      setActiveSection("chat");
+      setAgentActivities((current) => {
+        if (!current[id]) return current;
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+    }
     setActiveArtifactId(id);
     activeChatStore.set({ id, kind });
     selectProject(projectPath, projectName);
@@ -771,7 +769,7 @@ export default function Sidebar() {
   };
 
   return (
-      <div onClick={handleSidebarClick} className="sidebar-shell row-start-2 col-start-1 min-w-[264px] w-[264px] h-[calc(100vh-36px)] min-h-0 overflow-hidden flex flex-col border-r border-[var(--color-surface-10)] bg-[var(--color-bg)] shadow-[4px_0_14px_rgba(0,0,0,0.16)] -translate-x-full transition-transform duration-140 ease-out z-10 group-[.has-sidebar]:translate-x-0">
+      <div className="sidebar-shell row-start-2 col-start-1 min-w-[264px] w-[264px] h-[calc(100vh-36px)] min-h-0 overflow-hidden flex flex-col border-r border-[var(--color-surface-10)] bg-[var(--color-bg)] shadow-[4px_0_14px_rgba(0,0,0,0.16)] -translate-x-full transition-transform duration-140 ease-out z-10 group-[.has-sidebar]:translate-x-0">
       <section className="min-h-0 flex-1 flex flex-col p-[10px_10px_0] overflow-hidden">
         <div className="h-[24px] shrink-0 mb-1 flex items-center gap-[6px] px-[10px] text-[#9f9f9f] text-xs">
           Codeclub
@@ -924,9 +922,9 @@ export default function Sidebar() {
             <div className="h-[24px] shrink-0 mb-1 flex items-center gap-[6px] px-[10px] text-[#9f9f9f] text-xs">Chats</div>
             <div className="flex flex-col gap-1">
               {[...globalChats].reverse().map((chat) => (
-                <button key={`${chat.projectPath}:${chat.id}`} type="button" className={`codeclub-motion-control w-full min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left text-[#777777] hover:bg-[var(--color-surface-3)] hover:translate-x-px bg-transparent border-0 appearance-none ${activeArtifactId === chat.id ? "bg-white/5 text-[#eeeeee]" : ""}`} onClick={() => openGlobalChat(chat)} onContextMenu={(event) => { event.preventDefault(); openArtifactMenu(event, "chat", { id: chat.id, name: chat.name }, { name: chat.projectName, path: chat.projectPath, chats: [] }); }} title={chat.projectName}>
-                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-[6px] border-0 text-[8px] font-medium uppercase transition-colors duration-200" style={{ backgroundColor: activeArtifactId === chat.id ? getAgentAvatarColor(chat.id) : '#2b2b2b', color: '#ffffff' }} aria-hidden="true">{chat.name.trim().charAt(0).toUpperCase() || 'C'}</span>
-                  <span className="min-w-0 flex-1 truncate">{activeArtifactId === chat.id ? chat.name : agentActivities[chat.id]?.ready ? 'Listo para revisión' : agentActivities[chat.id]?.state && agentActivities[chat.id].state !== 'idle' ? getAgentActivityLabel(agentActivities[chat.id]) : chat.name}</span>
+                <button key={`${chat.projectPath}:${chat.id}`} type="button" className={`codeclub-motion-control w-full min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left text-[#777777] hover:bg-[var(--color-surface-3)] hover:translate-x-px bg-transparent border-0 appearance-none ${activeSection === "chat" && activeArtifactId === chat.id ? "bg-white/5 text-[#eeeeee]" : ""}`} onClick={() => openGlobalChat(chat)} onContextMenu={(event) => { event.preventDefault(); openArtifactMenu(event, "chat", { id: chat.id, name: chat.name }, { name: chat.projectName, path: chat.projectPath, chats: [] }); }} title={chat.projectName}>
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-[6px] border-0 text-[8px] font-medium uppercase transition-colors duration-200" style={{ background: activeSection === "chat" && activeArtifactId === chat.id ? CHAT_AVATAR_GRADIENT : '#2b2b2b', color: '#111111' }} aria-hidden="true">{chat.name.trim().charAt(0).toUpperCase() || 'C'}</span>
+                  {renamingItemId === `chat-${chat.id}` ? <input autoFocus value={renameInput} onChange={(event) => setRenameInput(event.target.value)} onBlur={() => void handleRenameCommit("chat", chat.id, chat.projectPath, chat.name)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void handleRenameCommit("chat", chat.id, chat.projectPath, chat.name); } if (event.key === "Escape") { setRenamingItemId(null); setRenameInput(""); } }} onClick={(event) => event.stopPropagation()} className="min-w-0 flex-1 h-[22px] rounded-md border-0 bg-[#1c1c1c] px-1 text-xs text-[#eeeeee] outline-none" /> : <span className="min-w-0 flex-1 truncate">{activeSection === "chat" && activeArtifactId === chat.id ? chat.name : agentActivities[chat.id]?.ready ? 'Listo para revisión' : agentActivities[chat.id]?.state && agentActivities[chat.id].state !== 'idle' ? getAgentActivityLabel(agentActivities[chat.id]) : chat.name}</span>}
                 </button>
               ))}
             </div>
@@ -990,12 +988,9 @@ export default function Sidebar() {
           <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => openArtifact(artifactMenu.kind, artifactMenu.id, artifactMenu.name, artifactMenu.projectPath, artifactMenu.projectName)}>
             <MessageSquare size={13} /><span>Abrir</span>
           </button>
-          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => { setRenamingItemId(`${artifactMenu.kind}-${artifactMenu.id}`); setRenameInput(artifactMenu.name); setRenamingArtifact(artifactMenu); }}>
+          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => { setRenamingItemId(`${artifactMenu.kind}-${artifactMenu.id}`); setRenameInput(artifactMenu.name); setArtifactMenu(null); }}>
             <FileText size={13} /><span>Renombrar</span>
           </button>
-          {artifactMenu.kind === 'chat' && <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => cycleAgentAvatarColor(artifactMenu.id)}>
-            <span className="h-[13px] w-[13px] shrink-0 rounded-[4px]" style={{ backgroundColor: getAgentAvatarColor(artifactMenu.id) }} aria-hidden="true" /><span>Cambiar</span>
-          </button>}
           <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => handleDelete(artifactMenu.kind, artifactMenu.id, artifactMenu.projectPath)}>
             <Trash2 size={13} /><span>Eliminar</span>
           </button>
@@ -1007,23 +1002,6 @@ export default function Sidebar() {
         document.body
       )}
 
-      {renamingArtifact && typeof document !== "undefined" && createPortal(
-        <div className="fixed z-[110] w-[240px] rounded-lg border border-[var(--color-surface-10)] bg-[#121212] p-2 shadow-[0_18px_54px_rgba(0,0,0,0.38)]" style={{ top: renamingArtifact.top, left: renamingArtifact.left }}>
-          <input
-            autoFocus
-            value={renameInput}
-            onChange={(event) => setRenameInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") { event.preventDefault(); void commitArtifactRename(); }
-              if (event.key === "Escape") { setRenamingArtifact(null); setRenamingItemId(null); setRenameInput(""); }
-            }}
-            placeholder="Nombre del chat"
-            className="h-8 w-full rounded-md border border-[#2b2b2b] bg-[#1c1c1c] px-2 text-xs text-[#eeeeee] outline-none placeholder:text-[#777777]"
-          />
-        </div>,
-        document.body
-      )}
-      
       <section className="shrink-0 flex flex-col gap-1 p-[10px] border-t border-[var(--color-surface-9)] bg-[var(--color-bg)] relative z-[2]">
         <button className="min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer bg-transparent border-0 text-[#d8d8d8] hover:bg-white/2 appearance-none" type="button" onClick={() => setSettingsOpen(true)}>
           <Settings size={15} /> Ajustes

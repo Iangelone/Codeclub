@@ -71,11 +71,24 @@ All hex values used across the app UI.
 
 ## Spinner and Interaction Colors
 
-| Hex | Usage |
-|---|---|
-| `#c7cbff` | Braille spinner text (idle). |
-| `rgba(123, 130, 255, 0.42)` | Braille spinner glow shadow 1. |
-| `rgba(255, 117, 181, 0.18)` | Braille spinner glow shadow 2. |
+| State | Primary | Glow |
+|---|---|---|
+| Idle / working | `#F8EAD8` | `#FFF3DF` |
+| Successful tool | `#1687FF` | `#67BAFF` |
+| Error | `#FF7A45` | `#FFB77A` |
+
+## Business Dashboard Tokens
+
+The Business dashboard uses one semantic source of truth: `src/lib/business-tokens.ts`. Charts, KPI cards, status indicators, progress bars, tables and activity history reference these names instead of repeating hex values.
+
+| Token | Hex | Meaning |
+|---|---|---|
+| `electricBlue` | `#1687FF` | Primary positive result, revenue and completed work. |
+| `softBlue` | `#67BAFF` | Supporting metrics, impact and activity. |
+| `warmIvory` | `#F8EAD8` | Neutral highlights and internal activity. |
+| `lightCream` | `#FFF3DF` | Accepted/contracted or secondary positive state. |
+| `electricOrange` | `#FF7A45` | Attention, risk or negative result. |
+| `softPeach` | `#FFB77A` | Softer warning and internal cost state. |
 
 ## Syntax Highlighting Palette
 

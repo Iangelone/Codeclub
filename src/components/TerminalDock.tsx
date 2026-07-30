@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { PanelBottomClose, Plus } from 'lucide-react';
+import { PanelBottomClose, Plus, X } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import '@xterm/xterm/css/xterm.css';
@@ -48,6 +47,8 @@ const shellLabels: Record<string, string> = {
   wsl: 'WSL2',
 };
 
+const AVATAR_GRADIENT = 'linear-gradient(112deg, #1687FF 0%, #67BAFF 38%, #F8EAD8 68%, #FFF3DF 100%)';
+
 const computeTerminalName = (shell: string, existing: TerminalInfo[]) => {
   const base = shellLabels[shell] || shell;
   const sameType = existing.filter((t) => t.shell === shell && !t.is_agent);
@@ -91,14 +92,14 @@ const getDefaultHeight = () => {
   return Math.min(360, Math.max(220, window.innerHeight * 0.36));
 };
 
-export default function TerminalDock() {
+export default function TerminalDock({ embedded = false }: { embedded?: boolean }) {
   const [mounted, setMounted] = useState(false);
   const [terminals, setTerminals] = useState<TerminalInfo[]>([]);
   const [activeProjectPath, setActiveProjectPath] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(embedded);
   const [shellMenuOpen, setShellMenuOpen] = useState(false);
-  const [shellMenuPosition, setShellMenuPosition] = useState({ left: 0 });
+  const [shellMenuPosition, setShellMenuPosition] = useState({ left: 0, top: 0 });
   const [position, setPosition] = useState<{ x: number; y: number }>(getDefaultPosition);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const barRef = useRef<HTMLDivElement | null>(null);
@@ -324,9 +325,9 @@ export default function TerminalDock() {
 
   useEffect(() => {
     activeIdRef.current = activeId;
-    if (activeId && isOpen) openTerminalView(activeId);
+    if (activeId && (embedded || isOpen)) openTerminalView(activeId);
     return () => disposeActiveTerminal();
-  }, [activeId, isOpen]);
+  }, [activeId, isOpen, embedded]);
 
   useEffect(() => {
     visibleTerminalCountRef.current = visibleTerminals.length;
@@ -391,18 +392,6 @@ export default function TerminalDock() {
       setActiveId(null);
     };
 
-    const openTerminalDock = (event: Event) => {
-      const detail = (event as CustomEvent).detail || {};
-      if (detail.terminalId) setActiveId(detail.terminalId);
-      setIsOpen((value) => {
-        const next = detail.toggle ? !value : true;
-        if (next && !detail.terminalId && visibleTerminalCountRef.current === 0) {
-          queueMicrotask(() => createTerminal('auto').catch(console.error));
-        }
-        return next;
-      });
-    };
-
     const init = async () => {
       const existing = await invoke<TerminalInfo[]>('codeclub_terminal_list');
       if (existing.length > 0) {
@@ -439,7 +428,6 @@ export default function TerminalDock() {
     window.addEventListener('codeclub:active-project', setProjectPath);
     window.addEventListener('codeclub:project-selection-changed', handleProjectSelection);
     window.addEventListener('codeclub:open-chat', setProjectPath);
-    window.addEventListener('codeclub:open-terminal-dock', openTerminalDock);
     init().catch(console.error);
 
     return () => {
@@ -447,17 +435,21 @@ export default function TerminalDock() {
       window.removeEventListener('codeclub:active-project', setProjectPath);
       window.removeEventListener('codeclub:project-selection-changed', handleProjectSelection);
       window.removeEventListener('codeclub:open-chat', setProjectPath);
-      window.removeEventListener('codeclub:open-terminal-dock', openTerminalDock);
     };
   }, []);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!embedded && !isOpen) return;
     const onResize = () => fitRef.current?.fit?.();
     window.addEventListener('resize', onResize);
     setTimeout(onResize, 30);
-    return () => window.removeEventListener('resize', onResize);
-  }, [isOpen, activeId]);
+    const observer = hostRef.current?.parentElement ? new ResizeObserver(() => fitRef.current?.fit?.()) : null;
+    if (observer && hostRef.current?.parentElement) observer.observe(hostRef.current.parentElement);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      observer?.disconnect();
+    };
+  }, [isOpen, activeId, embedded]);
 
   // On close, save position
   useEffect(() => {
@@ -471,6 +463,7 @@ export default function TerminalDock() {
       const menuWidth = 158;
       setShellMenuPosition({
         left: Math.max(6, Math.min(rect.left - barRect.left, barRect.width - menuWidth - 6)),
+        top: rect.bottom + 4,
       });
     }
     setShellMenuOpen((value) => !value);
@@ -527,40 +520,30 @@ export default function TerminalDock() {
   };
 
   if (!mounted || typeof document === 'undefined') return null;
-  return createPortal(
-    <>
-      {isOpen && <div className="terminal-floating-backdrop" onClick={() => setIsOpen(false)} />}
+  const terminalView = (
       <div
-        className={`terminal-floating ${isOpen ? 'is-open' : ''}`}
+        className={embedded ? 'terminal-embedded flex h-full w-full min-h-0 min-w-0 flex-col overflow-hidden bg-[#111111]' : `terminal-floating ${isOpen ? 'is-open' : ''}`}
         style={{
-          left: `${position.x}px`,
-          top: `${position.y}px`,
-          height: `${dockHeight}px`,
+          ...(embedded ? {} : { left: `${position.x}px`, top: `${position.y}px`, height: `${dockHeight}px` }),
         }}
       >
-        <div
+        {!embedded && <div
           className="terminal-resize-handle"
           onMouseDown={(e) => {
             e.preventDefault();
             e.stopPropagation();
             resizeRef.current = { isResizing: true, startY: e.clientY, startHeight: dockHeight };
           }}
-        />
-        <div ref={barRef} className="terminal-floating-bar" onMouseDown={handleBarMouseDown}>
+        />}
+        <div ref={barRef} className="terminal-floating-bar" onMouseDown={embedded ? undefined : handleBarMouseDown}>
           <div className="terminal-tabs" role="tablist" aria-label="Terminales">
             {visibleTerminals.map((terminal) => (
-              <button
-                key={terminal.id}
-                type="button"
-                className={`terminal-tab ${terminal.id === activeId ? 'is-active' : ''}`}
-                onDoubleClick={() => deleteTerminal(terminal.id)}
-                onClick={() => {
-                  setActiveId(terminal.id);
-                  setIsOpen(true);
-                }}
-              >
-                <span>{terminal.name}</span>
-              </button>
+              <div key={terminal.id} className={`terminal-tab ${terminal.id === activeId ? 'is-active' : ''}`} style={terminal.id === activeId ? { background: AVATAR_GRADIENT, color: '#111111', border: '1px solid rgba(255,255,255,0.92)' } : undefined}>
+                <button type="button" className="terminal-tab-main" style={terminal.id === activeId ? { color: '#111111' } : undefined} onClick={() => { setActiveId(terminal.id); setIsOpen(true); }} aria-label={`Activar ${terminal.name}`}>
+                  <span>{terminal.name}</span>
+                </button>
+                <button type="button" className="terminal-tab-close" style={terminal.id === activeId ? { color: '#111111' } : undefined} onClick={() => void deleteTerminal(terminal.id)} aria-label={`Cerrar ${terminal.name}`} title="Cerrar terminal"><X size={11} strokeWidth={2} /></button>
+              </div>
             ))}
             <div className="terminal-new">
               <button ref={plusButtonRef} type="button" className="terminal-new-tab" aria-label="Nueva terminal" onClick={toggleShellMenu}>
@@ -568,13 +551,9 @@ export default function TerminalDock() {
               </button>
             </div>
           </div>
-          <div className="terminal-actions">
-            <button type="button" aria-label="Ocultar terminal" onClick={() => setIsOpen(false)}>
-              <PanelBottomClose size={14} />
-            </button>
-          </div>
+          {!embedded && <div className="terminal-actions"><button type="button" aria-label="Ocultar terminal" onClick={() => setIsOpen(false)}><PanelBottomClose size={14} /></button></div>}
           {shellMenuOpen && (
-            <div ref={shellMenuRef} className="terminal-shell-menu" style={{ left: shellMenuPosition.left }}>
+            <div ref={shellMenuRef} className="terminal-shell-menu" style={embedded ? { position: 'fixed', left: shellMenuPosition.left, top: shellMenuPosition.top, width: 158, minWidth: 158 } : { left: shellMenuPosition.left }}>
               {shellOptions.map((shell) => (
                 <button
                   key={shell.id}
@@ -600,7 +579,6 @@ export default function TerminalDock() {
           )}
         </div>
       </div>
-    </>,
-    document.body,
   );
+  return embedded ? terminalView : <>{isOpen && <div className="terminal-floating-backdrop" onClick={() => setIsOpen(false)} />}{terminalView}</>;
 }

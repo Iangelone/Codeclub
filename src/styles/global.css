@@ -217,16 +217,7 @@ button[title="Proveedor, modelo y proyecto"] {
 }
 
 .business-history-track {
-  animation: business-history-marquee 28s linear infinite;
-}
-
-.business-history-ribbon:hover .business-history-track {
-  animation-play-state: paused;
-}
-
-@keyframes business-history-marquee {
-  from { transform: translateX(0); }
-  to { transform: translateX(-50%); }
+  min-width: max-content;
 }
 
 html,

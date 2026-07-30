@@ -1,6 +1,5 @@
 ---
 import WorkspaceManager from "./WorkspaceManager.tsx";
-import TerminalDock from "./TerminalDock.tsx";
 import { models, providers } from "../lib/ai-catalog";
 
 const defaultProvider = providers.length > 0 ? providers[0] : null;
@@ -13,7 +12,6 @@ const catalog = [
 
 <section class="relative h-full min-w-0 min-h-0 grid place-items-stretch overflow-hidden" aria-label="Chat">
   <WorkspaceManager client:load catalog={catalog} defaultProvider={defaultProvider} defaultModel={defaultModel} />
-  <TerminalDock client:load />
 </section>
 
 <style is:global>
@@ -173,6 +171,34 @@ const catalog = [
     position: relative;
   }
 
+  .terminal-tab-main {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 0;
+    color: inherit;
+    text-align: left;
+  }
+
+  .terminal-tab-close {
+    width: 18px;
+    height: 18px;
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    border-radius: 4px;
+    color: inherit;
+    opacity: 0.58;
+  }
+
+  .terminal-tab-close:hover {
+    background: rgba(0, 0, 0, 0.16);
+    opacity: 1;
+  }
+
   .terminal-tab.is-active {
     background: rgba(255, 255, 255, 0.04);
     color: #eeeeee !important;
@@ -303,6 +329,17 @@ const catalog = [
     height: 100%;
   }
 
+  .terminal-embedded .terminal-stage {
+    flex: 1;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .terminal-embedded .xterm {
+    height: 100%;
+  }
+
   .terminal-floating .xterm-viewport {
     background: #101010 !important;
     scrollbar-width: thin;
@@ -331,12 +368,14 @@ const catalog = [
 
   .braille-spinner {
     position: relative;
-    color: var(--codeclub-accent);
+    color: #f8ead8;
     font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
     line-height: 1;
     opacity: 0.78;
     transition: color 620ms ease, text-shadow 620ms ease, opacity 620ms ease;
-    text-shadow: 0 0 10px color-mix(in srgb, var(--codeclub-accent) 42%, transparent);
+    text-shadow:
+      0 0 10px rgba(248, 234, 216, 0.42),
+      0 0 18px rgba(255, 243, 223, 0.2);
   }
 
   .braille-spinner[data-state="streaming"]::before {
@@ -356,26 +395,26 @@ const catalog = [
   }
 
   .braille-spinner[data-state="streaming"] {
-    color: var(--codeclub-accent);
+    color: #fff3df;
   }
 
   .braille-spinner[data-state="tool_call"] {
-    color: var(--codeclub-accent);
+    color: #fff3df;
   }
 
   .braille-spinner[data-state="approval"] {
-    color: var(--codeclub-accent);
+    color: #fff3df;
   }
 
   .braille-spinner[data-state="running"] {
-    color: var(--codeclub-accent);
+    color: #fff3df;
   }
 
   .braille-spinner[data-state="error"] {
-    color: #fca5a5;
+    color: #ff7a45;
     text-shadow:
-      0 0 10px rgba(252, 165, 165, 0.34),
-      0 0 18px rgba(248, 113, 113, 0.14);
+      0 0 10px rgba(255, 122, 69, 0.36),
+      0 0 18px rgba(255, 183, 122, 0.2);
   }
 
   .braille-spinner::before {
@@ -405,15 +444,26 @@ const catalog = [
   }
 
   .codeclub-tool-braille[data-state="running"] {
+    color: #fff3df;
+    text-shadow:
+      0 0 8px rgba(248, 234, 216, 0.34),
+      0 0 14px rgba(255, 243, 223, 0.18);
     transform: translateY(-0.5px);
   }
 
   .codeclub-tool-braille[data-state="completed"] {
+    color: #1687ff;
+    text-shadow:
+      0 0 8px rgba(22, 135, 255, 0.36),
+      0 0 14px rgba(103, 186, 255, 0.2);
     opacity: 0.9;
   }
 
   .codeclub-tool-braille[data-state="error"] {
-    color: #fca5a5;
+    color: #ff7a45;
+    text-shadow:
+      0 0 8px rgba(255, 122, 69, 0.36),
+      0 0 14px rgba(255, 183, 122, 0.2);
   }
 
   @keyframes braille-frame {

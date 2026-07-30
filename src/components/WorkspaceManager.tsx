@@ -7,14 +7,7 @@ import BusinessPanel from './BusinessPanel.tsx';
 import { readProjectIndex, type ProjectEntry } from '../lib/projectManager';
 
 type SelectedProject = { projectPath: string; projectName?: string };
-const DOCK_AVATAR_COLORS = ['#A98BC6', '#6F91CC', '#A9C978', '#D17A60', '#D4A956', '#6F7C86', '#74BBD1'];
-const getDockAvatarColor = (chat: GlobalChat) => {
-  const chatId = chat.id || (chat as GlobalChat & { chatId?: string }).chatId || chat.name;
-  let hash = 0;
-  for (let index = 0; index < String(chatId).length; index += 1) hash = (hash * 31 + String(chatId).charCodeAt(index)) | 0;
-  const fallback = DOCK_AVATAR_COLORS[Math.abs(hash) % DOCK_AVATAR_COLORS.length];
-  try { const override = JSON.parse(window.localStorage.getItem('codeclub:chat-avatar-colors') || '{}')[chatId]; return DOCK_AVATAR_COLORS.includes(override) ? override : fallback; } catch { return fallback; }
-};
+const CHAT_AVATAR_GRADIENT = 'linear-gradient(112deg, #1687FF 0%, #67BAFF 38%, #F8EAD8 68%, #FFF3DF 100%)';
 
 export default function WorkspaceManager({ catalog, defaultProvider, defaultModel }) {
   const [selectedProject, setSelectedProject] = useState<SelectedProject | null>(null);
@@ -34,10 +27,8 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
       window.dispatchEvent(new CustomEvent('codeclub:recent-chats-changed', { detail: { chats: recent } }));
     };
     updateRecentChats(chatsStore.get());
-    const handleAvatarColorChange = () => setRecentChats((current) => [...current]);
-    window.addEventListener('codeclub:chat-avatar-color-changed', handleAvatarColorChange);
     const unsubscribe = chatsStore.subscribe(updateRecentChats);
-    return () => { unsubscribe(); window.removeEventListener('codeclub:chat-avatar-color-changed', handleAvatarColorChange); };
+    return () => { unsubscribe(); };
   }, []);
 
   useEffect(() => {
@@ -179,10 +170,9 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
           <button type="button" aria-pressed={commandMenuKind === 'project'} aria-label={`Proyecto: ${commandMenuKind === 'project' ? 'Activo' : 'Desactivado'}`} title={`Proyecto: ${commandMenuKind === 'project' ? 'Activo' : 'Desactivado'}`} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-command-menu', { detail: { kind: 'project' } }))} className={`grid h-7 w-7 place-items-center rounded-[9px] border-0 transition-colors ${commandMenuKind === 'project' ? 'bg-[#1e1e1e] text-[#eeeeee]' : 'bg-transparent text-[#777777] hover:bg-[#1e1e1e] hover:text-[#eeeeee]'}`}><Folder size={14} strokeWidth={1.8} /></button>
           {recentChats.map((chat) => (
             <button key={`${chat.projectPath}:${chat.id}`} type="button" aria-label={`Abrir ${chat.name}`} title={chat.name} onClick={() => openDockChat(chat)} className="codeclub-motion-control grid h-7 w-7 place-items-center rounded-[9px] border-0 bg-transparent hover:bg-[#1e1e1e] hover:scale-[1.04]">
-              <span className="grid h-5 w-5 place-items-center rounded-[6px] text-[8px] font-medium uppercase" style={{ backgroundColor: activeChatId === chat.id ? getDockAvatarColor(chat) : '#2b2b2b', color: '#ffffff' }}>{chat.name.trim().charAt(0).toUpperCase() || '?'}</span>
+              <span className="grid h-5 w-5 place-items-center rounded-[6px] text-[8px] font-medium uppercase" style={{ background: activeChatId === chat.id ? CHAT_AVATAR_GRADIENT : '#2b2b2b', color: '#111111' }}>{chat.name.trim().charAt(0).toUpperCase() || '?'}</span>
             </button>
           ))}
-          <button type="button" aria-label="Terminal" title="Terminal" onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-terminal-dock', { detail: { toggle: true } }))} className="grid h-7 w-7 place-items-center rounded-[9px] border-0 bg-transparent text-[#777777] transition-colors hover:bg-[#1e1e1e] hover:text-[#eeeeee]"><Terminal size={14} strokeWidth={1.8} /></button>
         </div>
         </div>
         {projectPickerOpen && <div className="absolute left-1/2 top-12 z-50 grid w-[230px] -translate-x-1/2 gap-1 rounded-xl border border-[#2b2b2b] bg-[#121212] p-1.5" onClick={(event) => event.stopPropagation()}>

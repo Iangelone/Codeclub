@@ -16,8 +16,8 @@ import {
   PanelTop,
   PanelRight,
   Square,
-  Terminal,
   Target,
+  Terminal,
   X,
 } from "lucide-astro";
 ---
@@ -72,7 +72,12 @@ import {
 
       <div class="relative h-full flex items-center group/menu">
         <button class="h-[28px] px-[9px] text-xs border-0 rounded-md bg-transparent text-[#d8d8d8] hover:bg-[var(--color-surface-7)]" type="button">Testing</button>
-        <div class="absolute top-[34px] left-0 min-w-[265px] max-h-[70vh] overflow-y-auto flex flex-col gap-[3px] p-2 border border-[var(--color-surface-10)] rounded-lg bg-[rgba(18,18,18,0.96)] shadow-[0_18px_54px_rgba(0,0,0,0.38)] opacity-0 pointer-events-none -translate-y-1 transition-all duration-120 ease-out group-hover/menu:opacity-100 group-hover/menu:pointer-events-auto group-hover/menu:translate-y-0 z-20">
+        <div class="testing-menu absolute top-[34px] left-0 min-w-[265px] flex flex-col gap-[3px] p-2 border border-[var(--color-surface-10)] rounded-lg bg-[rgba(18,18,18,0.96)] shadow-[0_18px_54px_rgba(0,0,0,0.38)] opacity-0 pointer-events-none -translate-y-1 transition-all duration-120 ease-out group-hover/menu:opacity-100 group-hover/menu:pointer-events-auto group-hover/menu:translate-y-0 z-20">
+          <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="test-swarm"><Bot class="shrink-0" size={14} /> Test swarm e hijos</button>
+          <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="test-artifacts"><Target class="shrink-0" size={14} /> Test proyectos y artifacts</button>
+          <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="test-programmatic"><Terminal class="shrink-0" size={14} /> Test acciones programáticas</button>
+          <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="test-custom-control"><Eye class="shrink-0" size={14} /> Test PC y navegador custom</button>
+          <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="test-all"><Bug class="shrink-0" size={14} /> Test · verificar todo</button>
           <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="braille-tools"><Bug class="shrink-0" size={14} /> Braille · atlas de tools</button>
           <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="braille-specialists"><Bot class="shrink-0" size={14} /> Braille · especialistas</button>
           <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="braille-business"><PiggyBank class="shrink-0" size={14} /> Braille · Economía</button>
@@ -96,9 +101,6 @@ import {
     </button>
     <button id="panel-dock" class="w-[30px] h-[28px] grid place-items-center border-0 rounded-md bg-transparent text-[#d8d8d8]/52 transition-colors duration-120 hover:bg-[var(--color-surface-7)] hover:text-[#d8d8d8] [&.is-active]:bg-[var(--color-surface-6)] [&.is-active]:text-[#eeeeee] cursor-pointer" type="button" aria-label="Mostrar dock" title="Mostrar dock">
       <PanelTop size={14} strokeWidth={1.8} />
-    </button>
-    <button id="topbar-terminal" class="w-[30px] h-[28px] grid place-items-center border-0 rounded-md bg-transparent text-[#d8d8d8]/52 transition-colors duration-120 hover:bg-[var(--color-surface-7)] hover:text-[#d8d8d8] [&.is-active]:bg-[var(--color-surface-6)] [&.is-active]:text-[#eeeeee] cursor-pointer" type="button" aria-label="Terminal" data-action="toggle-terminal">
-      <Terminal size={14} strokeWidth={1.8} />
     </button>
   </nav>
   
@@ -136,6 +138,12 @@ import {
 </script>
 
 <style>
+  .testing-menu button[data-testing-action^="braille-"],
+  .testing-menu button[data-testing-action="markdown-rendering"],
+  .testing-menu button[data-testing-action="test-all"] {
+    display: none;
+  }
+
   .group\/menu > div {
     top: 28px !important;
   }

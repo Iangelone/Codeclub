@@ -24,12 +24,13 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import { createPortal } from 'react-dom';
 import mammoth from 'mammoth';
-import { createBusinessTools, createTools, inferAgentMode, inferAgentSpecialist, resolveAgentRouteWithAI, selectToolsForPrompt, verifyToolExecutionWithAI, resolveToolsWithAI, type AgentMode, type AgentSpecialist } from '../lib/engine/tools';
+import { createBusinessTools, createParentTools, createTools, inferAgentMode, inferAgentSpecialist, selectToolsForPrompt, resolveToolsWithAI, type AgentMode, type AgentSpecialist } from '../lib/engine/tools';
 import { runStream } from '../lib/engine/run';
 import { getProjectFilePath, getSetting, logPersistence, setSetting } from '../lib/persistence';
 import { appendGenerationUsage, type GenerationUsageRecord } from '../lib/usage';
 import { appendExecutionLog } from '../lib/execution-log';
 import { getProjectChatPath, readGlobalChatHistory, readGlobalChats, readProjectIndex, readProjectMeta, writeGlobalChatHistory, writeGlobalChats, writeProjectMeta } from '../lib/projectManager';
+import { BUSINESS_TOKENS } from '../lib/business-tokens';
 
 const SPINNER_FRAMES = {
   chat: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"],
@@ -1272,30 +1273,21 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         modelId: currentModel.id,
       });
       const businessTools = createBusinessTools({ recordToolEvent, setAgentState: guardedSetAgentState, indexedProjects, projectPath: toolProjectPath, provider, modelId: currentModel.id });
-      let tools: Record<string, any> = runMode === 'business' ? businessTools : developmentTools;
-      let toolRoutingContext = 'La IA de intención no devolvió contexto adicional.';
-      let routingRequiresAction = false;
-      let routingUsedFallback = false;
-      let routingGoal = content;
-      let routingVerification = 'La tool correspondiente debe devolver un resultado exitoso.';
+      let tools: Record<string, any> = {};
+      let toolRoutingContext = 'El agente principal recibe todas las tools y decide cuándo delegar al swarm.';
       let beforeWorkspaceSnapshot: WorkspaceSnapshot = new Map();
-      try {
-        const route = await resolveAgentRouteWithAI({ model: provider(currentModel.id), prompt: content, modeOverride, signal: abortController.signal });
-        runMode = route.mode;
-        routeSpecialist = route.specialist;
-        setChatMode(runMode);
-        window.dispatchEvent(new CustomEvent('codeclub:agent-route', { detail: route }));
-      } catch (error) {
-        runMode = modeOverride === 'business' || modeOverride === 'development' ? modeOverride : inferAgentMode(content);
-        routeSpecialist = inferAgentSpecialist(content, runMode);
-        setChatMode(runMode);
-        void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'agent-router', input: { prompt: content, modeOverride }, output: { status: 'fallback-deterministic', mode: runMode, specialist: routeSpecialist, error: String(error) } });
-      }
-      const selectedToolset = runMode === 'business' ? businessTools : developmentTools;
-      const specialistToolName = runMode === 'business' ? 'delegateBusinessSpecialist' : 'subagent';
-      const routedToolset = routeSpecialist !== 'primary' && selectedToolset[specialistToolName]
-        ? { ...selectedToolset, [specialistToolName]: selectedToolset[specialistToolName] }
-        : selectedToolset;
+      runMode = modeOverride === 'business' || modeOverride === 'development' ? modeOverride : inferAgentMode(content);
+      routeSpecialist = inferAgentSpecialist(content, runMode);
+      setChatMode(runMode);
+      const selectedToolset = Object.fromEntries(Object.entries(runMode === 'business' ? businessTools : developmentTools).filter(([name]) => !/whatsapp/i.test(name)));
+      const artifactNames = runMode === 'business'
+        ? ['updateBusinessWorkspace', 'createQuote', 'createBudget', 'createExecutionPlan']
+        : ['createPlan', 'updatePlan', 'todo', 'getTaskStatus'];
+      const artifactTools = Object.fromEntries(artifactNames.filter((name) => selectedToolset[name]).map((name) => [name, selectedToolset[name]]));
+      const parentTools = createParentTools({ projectPath: toolProjectPath, projectScoped: Boolean(contextProjectPath), recordToolEvent, setAgentState: guardedSetAgentState, requestToolApproval: guardedRequestToolApproval, provider, modelId: currentModel.id, availableTools: selectedToolset, artifactTools });
+      tools = parentTools;
+      const routedToolset = parentTools;
+      window.dispatchEvent(new CustomEvent('codeclub:agent-route', { detail: { mode: runMode, specialist: routeSpecialist, confidence: 1, reason: 'Modo determinado por contexto; la delegación la decide el agente principal.' } }));
       try {
         const routing = await resolveToolsWithAI({
           model: provider(currentModel.id),
@@ -1322,25 +1314,19 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           },
         });
         tools = routing.tools;
-        routingRequiresAction = routing.requiresAction;
-        routingGoal = routing.goal;
-        routingVerification = routing.verification;
         toolRoutingContext = `La IA de intención resolvió: ${routing.reason || 'intención detectada'} (confianza ${routing.confidence}). Tools habilitadas: ${Object.keys(tools).join(', ')}.`;
         void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'tool-router', input: { mode: runMode, specialist: routeSpecialist, prompt: content }, output: { confidence: routing.confidence, reason: routing.reason, requiresAction: routing.requiresAction, tools: Object.keys(tools) } });
       } catch (error) {
         tools = selectToolsForPrompt(routedToolset, runMode, content);
         routingUsedFallback = true;
-        routingRequiresAction = ['writeFile', 'runCommand', 'terminal', 'subagent', 'updateBusinessWorkspace', 'createQuote', 'createExecutionPlan'].some((name) => Object.prototype.hasOwnProperty.call(tools, name));
         toolRoutingContext = `La IA de intención falló; se habilitó una selección determinista y acotada. Error: ${String(error)}`;
         void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'tool-router', input: { mode: runMode, specialist: routeSpecialist, prompt: content }, output: { status: 'fallback-deterministic', error: String(error), tools: Object.keys(tools) } });
       }
-      if (!routingUsedFallback && Object.keys(tools).some((name) => ['writeFile', 'runCommand', 'terminal', 'subagent', 'updateBusinessWorkspace', 'createQuote', 'createExecutionPlan'].includes(name))) routingRequiresAction = true;
-
       beforeWorkspaceSnapshot = runMode === 'business' && !contextProjectPath ? new Map<string, string | null>() : await readWorkspaceSnapshot(toolProjectPath);
       updateAssistantMessage();
       const legacySystem = runMode === 'business' ? [
         ...(projectChangeNotice ? [projectChangeNotice] : []),
-        'Sos el asistente de negocios de Codeclub.',
+        'Sos el Padre de negocios de Codeclub. No ejecutas tools operativas directamente: usa swarm, asigna hijos y revisa sus resultados.',
         'Usa getExecutionLog cuando necesites auditar que tools ejecuto la orquestacion o una sub-IA; el log contiene trazas observables, no pensamiento privado.',
         'Responde en español, claro y orientado a decisiones.',
         `El proyecto activo es ${contextProjectPath || 'Sin proyecto'}. El historial del chat es independiente del proyecto y no debe usarse para inferir el contexto de trabajo.`,
@@ -1348,16 +1334,15 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         `Proyectos indexados disponibles: ${indexedProjects.map((project) => `${project.name} (${project.path})`).join(', ') || 'ninguno'}.`,
         'Las tools economicas aceptan projectPath por nombre o ruta para trabajar cualquier proyecto indexado desde un chat global; usa ese parametro y no la raiz del sistema.',
         'Usa listIndexedProjects para consultar el portfolio, getBusinessWorkspace para leer la economía, getAIUsageMetrics para medir tokens, duración y costo estimado por período, updateBusinessWorkspace para mantenerla, createExecutionPlan para planes y createBudget para presupuestos.',
-        'Usa getWhatsAppBusinessContext para consultar conversaciones en tiempo real. Es estrictamente solo lectura: nunca envía mensajes.',
         'Usa listProjectFiles, readProjectFile y searchProjectText para entender la implementación, capacidades y límites técnicos. Son herramientas de solo lectura: no edites código desde Negocios.',
         'Delegá investigaciones amplias a sub-IA especialistas: en Código usa explorer, frontend, backend, qa, security o documentation; en Negocios usa delegateBusinessSpecialist con commercial, pricing, finance, operations, crm_whatsapp o strategy.',
         'Actuá como economista de resultados: analizá valor entregado, valor estimado y contratado, total cotizado, pipeline, impacto esperado, ROI, alcance, riesgo, software producido, hitos, abonos y criterios de aceptación. Nunca recomiendes tarifas basadas en tiempo ni uses tiempo como unidad comercial. Cuando estimes el valor de un proyecto, guardalo con updateBusinessWorkspace en project. Si el usuario pide mostrar, ocultar o recuperar paneles, leé dashboard.visible_panels y actualizalo permanentemente con updateBusinessWorkspace; nunca borres paneles, solo cambia su visibilidad. Si pide cambiar el formato visual, configurá dashboard.panel_types usando solo metric, progress, trend o status, según los datos disponibles; no inventes valores. Cuando pidan una cotización, usá createQuote con resultados, métricas e importes; no la simules solo en texto. Tus resultados son borradores estructurados y deben explicar supuestos cuando falten datos.',
         'Contrato operativo de Economia: distingue una pregunta comercial de una auditoria tecnica. Si el usuario habla de cuanto cobro, valor, fee, margen, ROI, cotizacion, rentabilidad o que salio mal comercialmente, analiza primero datos economicos y entregables; no recorras codigo ni delegues salvo que falte una capacidad tecnica concreta. Si necesitas contexto, llama las tools de lectura y cita sus resultados. Si no hay proyecto activo, lista los proyectos y resuelve explicitamente el proyecto objetivo antes de escribir. Nunca leas, muestres ni repitas secretos de .env, tokens, claves o credenciales. Toda afirmacion de cambio, guardado o calculo debe estar respaldada por el resultado real de una tool; si falla, informa el bloqueo.',
       ].join(' ') : [
         ...(projectChangeNotice ? [projectChangeNotice] : []),
-        'Sos el agente IDE de Codeclub.',
-        'Si necesitas delegar implementacion, usa subagent con specialist developer. Para controlar navegador o PC, delega en specialist computer_use; esa subIA debe observar, actuar y verificar. Elegi la especialista segun el contexto; no delegues por defecto.',
-        'La orquestadora recibe todas las tools disponibles y decide de forma autonoma si debe actuar, delegar o responder.',
+        'Sos el Padre y agente IDE de Codeclub.',
+        'No ejecutas tools operativas directamente. Usa swarm para crear hijos y asignarles herramientas por plantilla read_only, developer o custom. Comunicate con ellos, espera resultados, aprueba o rechaza cambios y fusiona evidencias.',
+        'listAvailableTools muestra el catálogo que podés asignar; el Padre solo controla la colmena.',
         `Contexto de la IA de intencion: ${toolRoutingContext}`,
         `Ruta elegida por la orquestadora: modo ${runMode}, especialista ${routeSpecialist}. Si delegas, usa ese especialista y devuelve sus evidencias.`,
         'Tenes autonomia operativa: si la intencion esta clara, ejecuta todas las tools necesarias en este mismo turno y no esperes un "Adelante". No anuncies una accion para luego detenerte; llama la tool inmediatamente y continua hasta completar el pedido. En pruebas de control de PC, la primera salida debe ser una llamada real a runCommand: no escribas planes, no redactes scripts en el chat y no repitas intentos de escaping. Nunca afirmes que modificaste archivos, ejecutaste comandos o completaste una accion si no existe un resultado exitoso de la tool correspondiente.',
@@ -1377,12 +1362,12 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       ].join(' ');
       const system = [
         projectChangeNotice,
-        `You are Codeclub's autonomous primary agent in ${runMode === 'business' ? 'Business' : 'Development'} mode. Think deeply and act independently until the user's goal is handled.`,
-        `Context: active project ${contextProjectPath || 'none'}; specialist ${routeSpecialist}; indexed projects: ${indexedProjects.map((project) => `${project.name} (${project.path})`).join(', ') || 'none'}.`,
-        runMode === 'business'
-          ? 'Use business tools for projects, value, pricing, quotes, budgets, outcomes, milestones, payments, expenses, invoices, dashboards, metrics and business specialists. Persist estimates, plans and milestones.'
-          : 'Use development tools for files, code, commands, terminal, browser, PC control, plans, TODOs, memory and development specialists. For multi-step work, persist a plan, update TODO status and resume from agent state.',
-        "Use the available tools directly, chain as many steps as needed, delegate when useful, and continue until the task is complete. Respond in the user's language.",
+        `Sos el Padre de Codeclub en modo ${runMode === 'business' ? 'Economía' : 'Desarrollo'}. Tu trabajo es entender el objetivo, coordinar una colmena de hijos y entregar un resultado comprobable.`,
+        `Contexto: proyecto ${contextProjectPath || 'sin proyecto'}; proyectos indexados: ${indexedProjects.map((project) => `${project.name} (${project.path})`).join(', ') || 'ninguno'}.`,
+        'Solo podés ejecutar swarm, listAvailableTools y las tools de artifacts habilitadas para el Padre. No ejecutes herramientas operativas directamente.',
+        'Primero consultá el catálogo si necesitás capacidades. Después creá hijos con read_only, developer, economist o custom; asigná únicamente las tools necesarias. Usá sendMessage, broadcast y wait para coordinar; revisá evidencias antes de approve, reject o merge.',
+        'El Padre es el único responsable de planes, TODOs, cotizaciones, presupuestos y persistencia de artifacts. Los hijos investigan o ejecutan trabajo asignado, pero no crean artifacts del Padre.',
+        'Para PC o navegador usá un hijo custom con herramientas explícitas. Exigí estado observable después de cada acción. Nunca afirmes éxito sin el resultado real de una tool; redactá secretos y respondé en español.',
       ].filter(Boolean).join(' ');
       // Algunos proveedores compatibles rechazan response_format junto con tools.
       // Los artifacts ya quedan validados y persistidos por sus tools; dejamos el
@@ -1524,55 +1509,36 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       }
       if (!assistantContent?.trim()) throw new Error('El modelo no devolvió una respuesta después de reintentar.');
 
-      if (!isCurrentGeneration() || abortController.signal.aborted) return;
-      const hasSuccessfulAction = () => assistantTools.some((event) => {
-        if (!event.output || event.output.error) return false;
-        if ((event.name === 'writeFile' || event.name === 'terminal') && event.output.ok === true) return true;
-        if (event.name === 'runCommand') return event.output.code === 0;
-        return ['updateBusinessWorkspace', 'createQuote', 'createExecutionPlan', 'todo', 'updatePlan', 'subagent'].includes(event.name);
-      });
-      let verificationResult: { completed?: boolean; retry?: boolean; reason?: string } | null = null;
-      if (routingRequiresAction) {
-        const verificationChanges = contextProjectPath ? summarizeWorkspaceDelta(beforeWorkspaceSnapshot, await readWorkspaceSnapshot(toolProjectPath)) : null;
-        try {
-          verificationResult = await verifyToolExecutionWithAI({ model: provider(currentModel.id), prompt: content, goal: routingGoal, verification: routingVerification, toolEvents: assistantTools, changes: verificationChanges, signal: abortController.signal });
-        } catch (error) {
-          verificationResult = { completed: false, retry: true, reason: String(error) };
-        }
-        if (!hasSuccessfulAction() || verificationResult.retry || verificationResult.completed === false) {
-          guardedSetAgentState('streaming');
-          assistantContent = await runAssistant(`El verificador interno indicó que la tarea todavía no está comprobada. Motivo: ${verificationResult.reason || 'faltan evidencias'}. Ejecutá las tools necesarias ahora, verificá sus resultados y no respondas como completado hasta lograr el objetivo: ${routingGoal}`);
-          const retryStructuredSummary = formatArtifactOutput(structuredArtifactOutput);
-          if (retryStructuredSummary) assistantContent = retryStructuredSummary;
-        }
+      let lastContinuationSignature = '';
+      const initialSwarmEvents = assistantTools.filter((event) => event.name === 'swarm');
+      const initialSwarmActions = initialSwarmEvents.map((event) => event.input?.action).filter(Boolean);
+      const activeSwarmName = initialSwarmEvents.map((event) => event.output?.swarmName || event.input?.swarmName).find(Boolean) || '';
+      const activeChildNames = initialSwarmEvents.map((event) => event.output?.childName || event.input?.childName).filter(Boolean);
+      let swarmOpen = initialSwarmActions.includes('spawn') && !initialSwarmActions.includes('merge') && !initialSwarmActions.includes('stop');
+      while (!abortController.signal.aborted) {
+        const swarmEvents = assistantTools.filter((event) => event.name === 'swarm');
+        const actions = swarmEvents.map((event) => event.input?.action).filter(Boolean);
+        if (!swarmOpen || actions.includes('merge') || actions.includes('stop')) break;
+        const signature = actions.join('|');
+        const hasProgressAction = actions.some((action) => ['sendMessage', 'broadcast', 'wait'].includes(action));
+        if ((signature && signature === lastContinuationSignature) || actions.includes('spawn') || !hasProgressAction) break;
+        const evidence = swarmEvents.slice(-8).map((event) => ({ input: event.input, output: event.output })).filter((event) => event.output?.status !== 'running');
+        lastContinuationSignature = signature;
+        assistantContent = await runAssistant(`El swarm ${activeSwarmName || 'activo'} sigue abierto. No respondas todavía ni crees otro swarm. Usá el nombre ${activeSwarmName || 'del swarm existente'} y los hijos ${JSON.stringify(activeChildNames)}: sendMessage o broadcast, luego wait y finalmente merge (o stop si hay un bloqueo). Usá estos resultados: ${JSON.stringify(evidence).slice(0, 5000)}`);
+        const retryStructuredSummary = formatArtifactOutput(structuredArtifactOutput);
+        if (retryStructuredSummary) assistantContent = retryStructuredSummary;
+        const continuationActions = assistantTools.filter((event) => event.name === 'swarm').map((event) => event.input?.action).filter(Boolean);
+        if (continuationActions.includes('merge') || continuationActions.includes('stop')) swarmOpen = false;
       }
+
+      if (!isCurrentGeneration() || abortController.signal.aborted) return;
       const changes = contextProjectPath ? summarizeWorkspaceDelta(beforeWorkspaceSnapshot, await readWorkspaceSnapshot(toolProjectPath)) : null;
-      const executedAction = hasSuccessfulAction();
-      const actionToolsEnabled = !routingUsedFallback && Object.keys(tools).some((name) => ['writeFile', 'runCommand', 'terminal'].includes(name));
-      routingRequiresAction = routingRequiresAction || actionToolsEnabled;
-      if (routingRequiresAction && verificationResult?.completed === false && executedAction) assistantContent = `${assistantContent.trim()}\n\nVerificacion incompleta: la IA verificadora no pudo confirmar el resultado.`.trim();
-      if (routingRequiresAction && !executedAction) assistantContent = `${assistantContent.trim()}\n\nAcción no verificada: no se ejecutó una tool de escritura o ejecución con resultado exitoso.`.trim();
       const assistantMessage = { role: 'assistant', content: assistantContent, tools: assistantTools, agentName: runMode === 'business' ? 'Negocios' : 'Desarrollo', meta: { provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt, status: 'completed', changes, usage: latestUsage ? { inputTokens: latestUsage.inputTokens, outputTokens: latestUsage.outputTokens, totalTokens: latestUsage.totalTokens, reasoningTokens: latestUsage.reasoningTokens } : null } };
-      runtime.messages = [...newMessages, { ...assistantMessage, displayContent: '' }];
+      // La respuesta ya se muestra progresivamente durante el stream. Al finalizar
+      // conservamos el contenido completo para evitar una burbuja vacía si la
+      // animación visual se interrumpe al cambiar de estado.
+      runtime.messages = [...newMessages, assistantMessage];
       if (isVisibleGeneration()) setMessages(runtime.messages);
-      let visibleLength = 0;
-      if (isVisibleGeneration()) visualAnimationRef.current = window.setInterval(() => {
-        const progress = assistantContent.length > 0 ? visibleLength / assistantContent.length : 1;
-        const charsPerTick = Math.min(5, Math.max(1, Math.floor(progress * 5) + 1));
-        visibleLength = Math.min(assistantContent.length, visibleLength + charsPerTick);
-        if (!isVisibleGeneration()) return;
-        setMessages((current) => {
-          const updated = [...current];
-          const last = updated[updated.length - 1];
-          if (!last || last.role !== 'assistant' || last.content !== assistantContent) return current;
-          updated[updated.length - 1] = { ...last, displayContent: assistantContent.slice(0, visibleLength) };
-          return updated;
-        });
-        if (visibleLength >= assistantContent.length && visualAnimationRef.current) {
-          clearInterval(visualAnimationRef.current);
-          visualAnimationRef.current = null;
-        }
-      }, 24);
       if (toolStateTimerRef.current) {
         clearTimeout(toolStateTimerRef.current);
         toolStateTimerRef.current = null;
@@ -1676,7 +1642,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
 
     if (/^\/terminal$/i.test(input.trim())) {
       const rect = e.currentTarget.getBoundingClientRect();
-      window.dispatchEvent(new CustomEvent('codeclub:open-terminal-dock', {
+      window.dispatchEvent(new CustomEvent('codeclub:open-terminal-panel', {
         detail: {
           toggle: true,
           anchorRect: {
@@ -1712,6 +1678,11 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       const action = (event as CustomEvent).detail?.action;
       if (isAgentBusy) return;
       const prompts: Record<string, string> = {
+        'test-swarm': '[TEST SWARM] El Padre debe usar solo swarm y listAvailableTools. Creá un swarm con un hijo read_only y otro developer; asignales tareas distintas, comunicate con ambos, esperá sus resultados y devolvé el estado y merge de evidencias. No modifiques archivos.',
+        'test-artifacts': '[TEST ARTIFACTS] El Padre debe gestionar un proyecto de prueba usando sus tools de artifacts: creá y actualizá un plan, un TODO, y en modo Economía generá un presupuesto o cotización de prueba. Los hijos solo investigan; el Padre persiste los artifacts.',
+        'test-programmatic': '[TEST PROGRAMÁTICO] Usá swarm para crear un hijo developer con tools custom de listFiles, readFile, searchText y runCommand. Pedile inspeccionar el proyecto y ejecutar un diagnóstico seguro; el Padre debe revisar y resumir evidencias.',
+        'test-custom-control': '[TEST CONTROL CUSTOM] Usá swarm para crear un hijo con template custom y asignale openBrowser, getBrowserState, browserAction, runCommand y terminal. Abrí https://example.com, observá el estado y realizá solo acciones seguras; devolvé evidencia real.',
+        'test-all': '[TEST INTEGRAL] Verificá todo el flujo de agentes en modo Desarrollo, sin borrar ni modificar archivos. Inspeccioná el workspace con listFiles, searchText y readFile; ejecutá un comando seguro de diagnóstico; creá y actualizá un plan de prueba; consultá getExecutionLog; delegá una investigación a developer y otra a qa, en secuencia. Registrá cada resultado real, errores y tiempos, y devolvé un resumen final en español.',
         'braille-tools': '[TESTING BRAILLE] Usá Desarrollo y ejecutá tools reales, una por vez: listFiles con maxFiles=8, searchText con query "TODO" y maxMatches=5, readFile usando un archivo real devuelto por listFiles y getExecutionLog con limit=3. No edites archivos y devolvé el resumen en español.',
         'braille-specialists': '[TESTING BRAILLE] Usá Desarrollo y delegá dos especialistas reales, en secuencia: developer y qa. Cada uno debe inspeccionar el proyecto y devolver evidencias breves. No edites archivos; quiero ver cada llamada como una tool con su patrón Braille.',
         'braille-business': '[TESTING BRAILLE] Usá Economía y delegá pricing y finance para analizar el workspace económico del proyecto activo. También consultá getBusinessWorkspace. No modifiques datos ni inventes resultados; quiero ver los patrones de especialistas.',
@@ -1963,7 +1934,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             type="button" 
             onClick={(e) => {
               const rect = e.currentTarget.getBoundingClientRect();
-              window.dispatchEvent(new CustomEvent('codeclub:open-terminal-dock', {
+              window.dispatchEvent(new CustomEvent('codeclub:open-terminal-panel', {
                 detail: { toggle: true, anchorRect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height } }
               }));
             }}
@@ -2004,11 +1975,11 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             )}
             {m.role === 'assistant' && m.meta && <div style={{ alignSelf: 'stretch', color: 'rgba(216, 216, 216, 0.42)', fontSize: '10px', letterSpacing: '0.01em', margin: '0 0 4px' }}>{m.meta.provider} · {m.meta.model} · {formatDuration(m.meta.durationMs)}</div>}
             <div style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '5px', maxWidth: '80%' }}>
-              {m.role === 'user' && <span style={{ alignSelf: 'start', justifySelf: 'end', color: 'rgba(216, 216, 216, 0.42)', fontSize: '10px', fontWeight: 500, letterSpacing: '0.01em', marginBottom: '2px', padding: '0 8px' }}>{username}</span>}
+              {m.role === 'user' && <span style={{ alignSelf: 'start', justifySelf: 'end', color: '#D8E0E6', fontSize: '10px', fontWeight: 500, letterSpacing: '0.01em', marginBottom: '2px', padding: '0 8px' }}>{username}</span>}
               {m.role === 'user' && m.attachments?.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: '5px', maxWidth: '100%' }}>{m.attachments.map((file) => file.mediaType?.startsWith('image/') ? <img key={file.path || file.name} src={file.previewUrl || convertFileSrc(file.path)} alt={file.name} title={file.name} style={{ width: '34px', height: '34px', display: 'block', objectFit: 'cover', border: '1px solid #2b2b2b', borderRadius: '8px', background: '#161616' }} /> : <span key={file.path || file.name} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', maxWidth: '190px', padding: '5px 8px', border: '1px solid #2b2b2b', borderRadius: '8px', background: '#161616', color: '#cfcfcf', fontSize: '10px' }}><Paperclip size={11} strokeWidth={1.8} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span></span>)}</div>}
               <div style={{ background: m.role === 'user' ? '#202020' : 'transparent', padding: m.role === 'user' ? '14px 20px' : '0', borderRadius: m.role === 'user' ? '24px 24px 4px 24px' : '0', color: '#eee', fontSize: '14px', width: 'fit-content', maxWidth: '100%', lineHeight: 1.5, overflowWrap: 'anywhere', wordBreak: 'break-word', boxShadow: m.role === 'user' ? '0 4px 14px rgba(0, 0, 0, 0.18)' : 'none' }}>
                 {m.role === 'assistant' && m.reasoning && <div style={{ margin: '0 0 12px', padding: '9px 11px', borderLeft: '2px solid #555555', color: 'rgba(216, 216, 216, 0.58)', fontSize: '12px', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}><div style={{ marginBottom: '4px', color: 'rgba(216, 216, 216, 0.42)', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Pensamiento</div>{m.reasoning}</div>}
-                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{ p: ({ children }) => <p style={{ margin: m.role === 'user' ? 0 : '0 0 12px', lineHeight: m.role === 'user' ? 1.4 : 1.6 }}>{children}</p>, ul: ({ children }) => <ul style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ul>, ol: ({ children }) => <ol style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ol>, li: ({ children }) => <li style={{ margin: m.role === 'user' ? 0 : '4px 0' }}>{children}</li>, table: ({ children }) => <div style={{ overflowX: 'auto', margin: '12px 0' }}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>{children}</table></div>, th: ({ children }) => <th style={{ border: '1px solid #2b2b2b', padding: '7px 9px', background: '#1c1c1c', textAlign: 'left', fontWeight: 600 }}>{children}</th>, td: ({ children }) => <td style={{ border: '1px solid #2b2b2b', padding: '7px 9px', verticalAlign: 'top' }}>{children}</td>, h1: ({ children }) => <h1 style={{ margin: '18px 0 10px', fontSize: '20px' }}>{children}</h1>, h2: ({ children }) => <h2 style={{ margin: '16px 0 8px', fontSize: '17px' }}>{children}</h2>, h3: ({ children }) => <h3 style={{ margin: '14px 0 7px', fontSize: '15px' }}>{children}</h3> }}>{m.displayContent ?? m.content}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{ p: ({ children }) => <p style={{ margin: m.role === 'user' ? 0 : '0 0 12px', lineHeight: m.role === 'user' ? 1.4 : 1.6 }}>{children}</p>, ul: ({ children }) => <ul style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ul>, ol: ({ children }) => <ol style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ol>, li: ({ children }) => <li style={{ margin: m.role === 'user' ? 0 : '4px 0' }}>{children}</li>, table: ({ children }) => <div style={{ overflowX: 'auto', margin: '12px 0' }}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>{children}</table></div>, th: ({ children }) => <th style={{ border: '1px solid #2b2b2b', padding: '7px 9px', background: '#1c1c1c', textAlign: 'left', fontWeight: 600 }}>{children}</th>, td: ({ children }) => <td style={{ border: '1px solid #2b2b2b', padding: '7px 9px', verticalAlign: 'top' }}>{children}</td>, h1: ({ children }) => <h1 style={{ margin: '18px 0 10px', fontSize: '20px' }}>{children}</h1>, h2: ({ children }) => <h2 style={{ margin: '16px 0 8px', fontSize: '17px' }}>{children}</h2>, h3: ({ children }) => <h3 style={{ margin: '14px 0 7px', fontSize: '15px' }}>{children}</h3> }}>{m.displayContent || m.content}</ReactMarkdown>
                 {m.role === 'assistant' && isStreaming && i === messages.length - 1 && <span style={{ display: 'inline-block', marginTop: m.content ? '2px' : 0, color: 'rgba(216, 216, 216, 0.58)', fontSize: '13px' }}>{m.content ? '▌' : 'Generando respuesta…'}</span>}
               </div>
               {m.role === 'assistant' && <ToolExecutionCards tools={m.tools} />}
@@ -2017,11 +1988,11 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               {m.role === 'assistant' && i === messages.length - 1 && <ApprovalCards approvals={pendingApprovals} onResolve={resolveToolApproval} />}
               {m.role === 'assistant' && <ChangeSummaryCard changes={m.meta?.changes} />}
               {(m.role === 'user' || !isStreaming || i !== messages.length - 1 || m.meta?.status === 'error') && <div style={{ alignSelf: m.role === 'user' ? 'end' : 'start', display: 'flex', alignItems: 'center', gap: '4px', opacity: 0.72 }}>
-                <button type="button" aria-label={copiedMessageIndex === i ? 'Mensaje copiado' : 'Copiar mensaje'} title={copiedMessageIndex === i ? 'Copiado' : 'Copiar'} onClick={() => void handleCopyMessage(m.content, i)} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: copiedMessageIndex === i ? 'var(--codeclub-accent)' : 'rgba(216, 216, 216, 0.62)', cursor: 'pointer', transition: 'color 700ms ease' }}>
+                <button type="button" aria-label={copiedMessageIndex === i ? 'Mensaje copiado' : 'Copiar mensaje'} title={copiedMessageIndex === i ? 'Copiado' : 'Copiar'} onClick={() => void handleCopyMessage(m.content, i)} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: copiedMessageIndex === i ? '#F8EAD8' : 'rgba(216, 216, 216, 0.62)', cursor: 'pointer', transition: 'color 700ms ease' }}>
                   {copiedMessageIndex === i ? <Check size={13} strokeWidth={2.2} /> : <Copy size={13} strokeWidth={2} />}
                 </button>
                 {m.role === 'assistant' && <button type="button" aria-label="Abrir Artifacts" title="Abrir Artifacts" onClick={() => { const projectPath = activeProject?.projectPath || activeChat?.projectPath || ''; if (projectPath) window.dispatchEvent(new CustomEvent('codeclub:active-project', { detail: { projectPath, projectName: activeProject?.name || '' } })); window.dispatchEvent(new CustomEvent('codeclub:open-artifacts', { detail: { projectPath } })); }} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: 'pointer' }}><ListTodo size={13} strokeWidth={1.8} /></button>}
-                {m.role === 'assistant' && m.tools?.length > 0 && <button type="button" aria-label={copiedToolLogIndex === i ? 'Log copiado' : 'Copiar log de tools'} title={copiedToolLogIndex === i ? 'Log copiado' : 'Copiar log de tools'} onClick={() => void handleCopyToolLog(m.tools, i)} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: copiedToolLogIndex === i ? 'var(--codeclub-accent)' : 'rgba(216, 216, 216, 0.62)', cursor: 'pointer', transition: 'color 700ms ease' }}>{copiedToolLogIndex === i ? <Check size={13} strokeWidth={2.2} /> : <Bug size={13} strokeWidth={1.8} />}</button>}
+                {m.role === 'assistant' && m.tools?.length > 0 && <button type="button" aria-label={copiedToolLogIndex === i ? 'Log copiado' : 'Copiar log de tools'} title={copiedToolLogIndex === i ? 'Log copiado' : 'Copiar log de tools'} onClick={() => void handleCopyToolLog(m.tools, i)} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: copiedToolLogIndex === i ? '#F8EAD8' : 'rgba(216, 216, 216, 0.62)', cursor: 'pointer', transition: 'color 700ms ease' }}>{copiedToolLogIndex === i ? <Check size={13} strokeWidth={2.2} /> : <Bug size={13} strokeWidth={1.8} />}</button>}
                 {m.role === 'user' && <button type="button" aria-label="Reintentar desde este mensaje" onClick={() => handleRetryMessage(i)} disabled={isAgentBusy} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: isAgentBusy ? 'not-allowed' : 'pointer' }}>
                   <RotateCcw size={13} strokeWidth={2} />
                 </button>}
@@ -2043,7 +2014,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                   key={ref.id}
                   type="button"
                   onClick={() => setBrowserReferences((current) => current.filter((item) => item.id !== ref.id))}
-                  className="flex max-w-[130px] min-w-0 shrink items-center gap-1.5 truncate rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-left text-[10px] text-[#cfcfcf] hover:bg-[#202020]"
+                  className="flex max-w-[130px] min-w-0 shrink items-center gap-1.5 truncate rounded-full border px-2.5 py-1 text-left text-[10px] font-medium transition-[filter] hover:brightness-105"
+                  style={{ borderColor: BUSINESS_TOKENS.lightCream, color: '#111111', background: `linear-gradient(135deg, ${BUSINESS_TOKENS.electricBlue} 0%, ${BUSINESS_TOKENS.softBlue} 38%, ${BUSINESS_TOKENS.warmIvory} 72%, ${BUSINESS_TOKENS.lightCream} 100%)` }}
                   title={`Quitar @${ref.title}`}
                 >
                   <span className="truncate">@{ref.title}</span>
@@ -2054,7 +2026,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 <button
                   type="button"
                   onClick={() => setBrowserReferences([])}
-                  className="shrink-0 rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-[10px] text-[#cfcfcf] hover:bg-[#202020]"
+                  className="shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-medium transition-[filter] hover:brightness-105"
+                  style={{ borderColor: BUSINESS_TOKENS.lightCream, color: '#111111', background: `linear-gradient(135deg, ${BUSINESS_TOKENS.electricBlue} 0%, ${BUSINESS_TOKENS.softBlue} 38%, ${BUSINESS_TOKENS.warmIvory} 72%, ${BUSINESS_TOKENS.lightCream} 100%)` }}
                   title="Quitar todas las referencias"
                 >
                   +{browserReferences.length - maxVisibleBrowserRefs} referencias
@@ -2140,8 +2113,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             style={{ appearance: 'none', flex: '1 1 auto', minWidth: 0, width: '100%', height: '22px', maxHeight: '140px', alignSelf: 'center', resize: 'none', border: 0, outline: 'none', background: 'transparent', color: '#eeeeee', fontSize: '12px', lineHeight: 1.4, padding: '4px 10px 4px 0', fontFamily: 'inherit', overflowY: 'hidden', scrollbarWidth: 'none', opacity: isAgentBusy ? 0.55 : 1 }}
           />
           {artifactReference && <button type="button" onClick={() => setArtifactReference(null)} className="absolute left-[16px] top-1/2 z-10 max-w-[130px] -translate-y-1/2 truncate rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar referencia">@{artifactReference.kind} · {artifactReference.title}</button>}
-          <button type={isAgentBusy ? 'button' : 'submit'} onClick={isAgentBusy ? cancelGeneration : undefined} disabled={!isAgentBusy && !input.trim() && !credentialProvider} className="send-button text-white/35 hover:text-white transition-colors" aria-label={isAgentBusy ? "Cancelar generación" : credentialProvider ? "Guardar credencial" : "Enviar"} title={isAgentBusy ? "Cancelar generación" : credentialProvider ? "Guardar credencial" : "Enviar"} style={{ flex: '0 0 36px', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, borderRadius: '50%', background: 'transparent', cursor: 'pointer' }}>
-            {isAgentBusy ? <Square size={15} strokeWidth={2.4} fill="currentColor" /> : <ArrowUpRight size={18} strokeWidth={2} />}
+          <button type={isAgentBusy ? 'button' : 'submit'} onClick={isAgentBusy ? cancelGeneration : undefined} disabled={!isAgentBusy && !input.trim() && !credentialProvider} className="send-button transition-[background,box-shadow,opacity,transform] duration-200 hover:scale-[1.03] disabled:cursor-not-allowed disabled:opacity-45" aria-label={isAgentBusy ? "Cancelar generación" : credentialProvider ? "Guardar credencial" : "Enviar"} title={isAgentBusy ? "Cancelar generación" : credentialProvider ? "Guardar credencial" : "Enviar"} style={{ flex: '0 0 34px', width: '34px', height: '34px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255, 243, 223, 0.78)', borderRadius: '50%', background: 'linear-gradient(135deg, #1687FF 0%, #67BAFF 38%, #F8EAD8 72%, #FFF3DF 100%)', color: '#111111', boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.72), 0 5px 18px rgba(103, 186, 255, 0.24)', cursor: 'pointer' }}>
+            {isAgentBusy ? <Square size={14} strokeWidth={2.4} fill="currentColor" /> : <ArrowUpRight size={16} strokeWidth={2.2} />}
           </button>
           </form>
           </div>
@@ -2315,12 +2288,12 @@ const TOOL_BRAILLE_FRAMES: Record<string, string[]> = {
   askUser: ['⠴', '⠦', '⠴', '⠦'], createPlan: ['⠇', '⠧', '⠷', '⠇'], createExecutionPlan: ['⠇', '⠧', '⠷', '⠇'], updatePlan: ['⠸', '⠼', '⠸'],
   todo: ['⠺', '⠻', '⠺', '⠻'], getTaskStatus: ['⠾', '⠿', '⠾'], remember: ['⠘', '⠸', '⠘'], recall: ['⠨', '⠸', '⠨'], forget: ['⠊', '⠉', '⠊'], getExecutionLog: ['⠫', '⠪', '⠫'],
   getBusinessWorkspace: ['⠍', '⠝', '⠍'], updateBusinessWorkspace: ['⠮', '⠯', '⠮'], getAIUsageMetrics: ['⠰', '⠸', '⠰'], createQuote: ['⠹', '⠺', '⠹'], createBudget: ['⠭', '⠮', '⠭'],
-  getWhatsAppBusinessContext: ['⠷', '⠿', '⠷'], listIndexedProjects: ['⠪', '⠫', '⠪'], delegateBusinessSpecialist: ['⠈', '⠉', '⠋', '⠙'], subagent: ['⠈', '⠉', '⠋', '⠙'],
+  listIndexedProjects: ['⠪', '⠫', '⠪'], delegateBusinessSpecialist: ['⠈', '⠉', '⠋', '⠙'], subagent: ['⠈', '⠉', '⠋', '⠙'],
 };
 
 const SPECIALIST_BRAILLE_FRAMES: Record<string, string[]> = {
   developer: ['⠈', '⠉', '⠋', '⠙'], frontend: ['⠈', '⠊', '⠒', '⠓'], backend: ['⠈', '⠐', '⠘', '⠸'], qa: ['⠈', '⠤', '⠦', '⠴'], security: ['⠈', '⠎', '⠴', '⠿'], documentation: ['⠈', '⠇', '⠧', '⠷'], computer_use: ['⠳', '⠲', '⠦', '⠴'],
-  commercial: ['⠈', '⠍', '⠝', '⠍'], pricing: ['⠈', '⠹', '⠺', '⠹'], finance: ['⠈', '⠰', '⠸', '⠰'], operations: ['⠈', '⠮', '⠯', '⠮'], crm_whatsapp: ['⠈', '⠷', '⠿', '⠷'], strategy: ['⠈', '⠇', '⠸', '⠇'],
+  commercial: ['⠈', '⠍', '⠝', '⠍'], pricing: ['⠈', '⠹', '⠺', '⠹'], finance: ['⠈', '⠰', '⠸', '⠰'], operations: ['⠈', '⠮', '⠯', '⠮'], strategy: ['⠈', '⠇', '⠸', '⠇'],
 };
 
 function BrailleToolMark({ name, specialist, state }: { name: string; specialist?: string; state: 'running' | 'completed' | 'error' }) {

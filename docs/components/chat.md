@@ -225,10 +225,11 @@ Loading indicator shown during streaming.
 - Line height: `1`.
 - Font size: `18px` (via `::before`).
 - Opacity: `0.78`.
-- Color: `#c7cbff`.
-- Text shadow:
-  - `0 0 10px rgba(123, 130, 255, 0.42)`
-  - `0 0 18px rgba(255, 117, 181, 0.18)`
+- State colors:
+  - Idle and working: `#F8EAD8` → `#FFF3DF`.
+  - Successful tool: `#1687FF` → `#67BAFF`.
+  - Error: `#FF7A45` → `#FFB77A`.
+- The secondary color in each pair is used in the glow, keeping the state readable without changing the spinner glyph.
 
 Animation cycles through braille characters every `880ms`:
 

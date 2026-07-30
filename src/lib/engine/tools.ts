@@ -7,7 +7,6 @@ import { createId, readAgentState, writeAgentState, type TaskStatus } from './pl
 import { ensureBusinessWorkspace, readBusinessWorkspace, writeBusinessWorkspace } from '../projectManager';
 import { appendGenerationUsage, readGenerationUsage, summarizeGenerationUsage } from '../usage';
 import { readExecutionLog } from '../execution-log';
-import { whatsappContextStore } from '../store';
 
 const specialistHandoff = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, 500);
 
@@ -91,6 +90,102 @@ function createSubagentTools(ctx: { projectPath: string; recordToolEvent: (name:
   };
 }
 
+const SWARM_DISPLAY_NAMES = ['Atlas', 'Hermes', 'Atenea', 'Apolo', 'Artemisa', 'Nix', 'Gaia', 'Eros'];
+const CHILD_DISPLAY_NAMES = ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon', 'Zeta', 'Eta', 'Theta'];
+const MAX_ACTIVE_CHILDREN = 4;
+type SwarmChild = { id: string; name: string; specialist: string; task: string; status: string; messages: string[]; result?: string };
+type SwarmState = { id: string; name: string; status: string; children: Record<string, SwarmChild> };
+const swarmStore = new Map<string, SwarmState>();
+const swarmChildTools = new Map<string, Record<string, any>>();
+const PARENT_ONLY_TOOLS = new Set(['createPlan', 'updatePlan', 'todo', 'getTaskStatus', 'createQuote', 'createBudget', 'createExecutionPlan', 'updateBusinessWorkspace']);
+const ECONOMY_READ_TOOLS = ['listProjectFiles', 'readProjectFile', 'searchProjectText', 'listIndexedProjects', 'getBusinessWorkspace', 'getAIUsageMetrics', 'getExecutionLog'];
+
+function createSwarmTool(ctx: { projectPath: string; projectScoped?: boolean; recordToolEvent: (name: string, input: any, output: any) => void; setAgentState: (state: string) => void; requestToolApproval?: (opts: { toolName: string; input: any; summary: string }) => Promise<boolean>; childTools?: Record<string, any>; provider?: any; modelId?: string }) {
+  const { projectPath, projectScoped = false, recordToolEvent, setAgentState, requestToolApproval, childTools = {}, provider, modelId } = ctx;
+  const runChild = async (swarm: SwarmState, child: SwarmChild, message: string) => {
+    if (!provider || !modelId) return { error: 'No hay modelo configurado para el swarm.' };
+    child.status = 'running';
+    child.messages.push(message);
+    const tools = swarmChildTools.get(child.id) || childTools;
+    const result = await runStream({
+      model: provider(modelId),
+      system: `Sos el hijo ${child.specialist} del swarm de Codeclub. ${projectScoped ? 'Trabajás únicamente dentro del proyecto activo.' : 'No hay proyecto seleccionado: trabajás sobre el alcance global de la máquina y no debés afirmar que estás aislado.'} Respondé con hallazgos concretos y evidencia. No inventes resultados.`,
+      messages: [{ role: 'user', content: child.messages.join('\n\n') }],
+      tools,
+      callbacks: { onTextDelta: () => {}, onUsage: (usage) => persistSubagentUsage(projectPath, modelId, `swarm-${child.specialist}`, usage) },
+    });
+    child.result = specialistHandoff(result);
+    child.status = 'completed';
+    return { childName: child.name, status: child.status, result: child.result };
+  };
+  return {
+    swarm: tool({
+      description: 'Create and manage a swarm of child agents. The parent can spawn, message, broadcast, wait, approve, reject, merge or stop children.',
+      inputSchema: jsonSchema({
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['spawn', 'sendMessage', 'broadcast', 'wait', 'approve', 'reject', 'merge', 'stop'] },
+          swarmName: { type: 'string' },
+          childName: { type: 'string' },
+          specialist: { type: 'string' },
+          task: { type: 'string', maxLength: 1000 },
+          message: { type: 'string', maxLength: 1000 },
+          template: { type: 'string', enum: ['read_only', 'developer', 'economist', 'custom'] },
+          tools: { type: 'array', items: { type: 'string' }, maxItems: 30 },
+        },
+        required: ['action'],
+        additionalProperties: false,
+      }),
+      execute: async ({ action, swarmId, swarmName, childId, childName, specialist, task, message, template, tools: requestedTools }) => {
+        setAgentState('tool_call');
+        let swarm = swarmId ? swarmStore.get(swarmId) : swarmName ? Array.from(swarmStore.values()).find((item) => item.name === swarmName) : undefined;
+        if (action === 'spawn') {
+          const id = swarmId || createId('swarm');
+          const displayName = swarmName || SWARM_DISPLAY_NAMES[Math.floor(Math.random() * SWARM_DISPLAY_NAMES.length)];
+          swarm = swarm || { id, name: displayName, status: 'active', children: {} };
+          const activeChildren = Object.values(swarm.children).filter((item) => !['completed', 'rejected', 'stopped'].includes(item.status));
+          if (activeChildren.length >= MAX_ACTIVE_CHILDREN) {
+            return { swarmName: swarm.name, status: 'blocked', error: `LÃ­mite de ${MAX_ACTIVE_CHILDREN} hijos activos alcanzado. EsperÃ¡, mergeÃ¡ o detenÃ© uno antes de crear otro.` };
+          }
+          const name = childName || CHILD_DISPLAY_NAMES[Object.keys(swarm.children).length % CHILD_DISPLAY_NAMES.length];
+          const child: SwarmChild = { id: childId || createId('child'), name, specialist: specialist || template || 'explorer', task: task || '', status: 'pending', messages: [] };
+          const selectedTools = template === 'read_only'
+            ? Object.fromEntries(Object.entries(childTools).filter(([name]) => ['listFiles', 'readFile', 'searchText', ...ECONOMY_READ_TOOLS].includes(name)))
+            : template === 'economist'
+              ? Object.fromEntries(Object.entries(childTools).filter(([name]) => ECONOMY_READ_TOOLS.includes(name)))
+            : requestedTools?.length
+              ? Object.fromEntries(requestedTools.filter((name) => childTools[name] && !PARENT_ONLY_TOOLS.has(name) && !['swarm', 'subagent', 'delegateBusinessSpecialist'].includes(name)).map((name) => [name, childTools[name]]))
+              : Object.fromEntries(Object.entries(childTools).filter(([name]) => !PARENT_ONLY_TOOLS.has(name) && !['swarm', 'subagent', 'delegateBusinessSpecialist', 'listAvailableTools'].includes(name)));
+          const originalTools = Object.keys(childTools);
+          Object.assign(child as any, { toolNames: Object.keys(selectedTools), availableToolNames: originalTools });
+          swarm.children[child.id] = child;
+          swarmStore.set(id, swarm);
+          swarmChildTools.set(child.id, selectedTools);
+          const output = await runChild(swarm, child, child.task);
+          const result = { swarmName: swarm.name, childName: child.name, ...output };
+          recordToolEvent('swarm', { action, swarmId: id, swarmName: swarm.name, childId: child.id, childName: child.name, specialist: child.specialist }, result);
+          return result;
+        }
+        if (!swarm) return { error: 'Swarm inexistente.' };
+        const child = childId ? swarm.children[childId] : childName ? Object.values(swarm.children).find((item) => item.name === childName) : undefined;
+        if (action === 'sendMessage' && child) return runChild(swarm, child, message || '');
+        if (action === 'broadcast') {
+          const results = await Promise.all(Object.values(swarm.children).filter((item) => item.status !== 'rejected' && item.status !== 'stopped').map((item) => runChild(swarm!, item, message || '')));
+          return { swarmName: swarm.name, results };
+        }
+        if (action === 'approve' && child) child.status = 'approved';
+        if (action === 'reject' && child) child.status = 'rejected';
+        if (action === 'stop') swarm.status = 'stopped';
+        if (action === 'merge') return { swarmName: swarm.name, results: Object.values(swarm.children).map(({ name, specialist, status, result }) => ({ name, specialist, status, result })) };
+        if (action === 'wait') return { swarmName: swarm.name, status: swarm.status, children: Object.values(swarm.children).map(({ name, specialist, status, result }) => ({ name, specialist, status, result })) };
+        const result = { swarmName: swarm.name, childName: child?.name || null, status: child?.status || swarm.status };
+        recordToolEvent('swarm', { action, swarmId: swarm.id, childId }, result);
+        return result;
+      },
+    }),
+  };
+}
+
 const businessSpecialistTools = (projectPath: string, recordToolEvent: (name: string, input: any, output: any) => void, setAgentState: (state: string) => void) => ({
   ...createSubagentTools({ projectPath, recordToolEvent, setAgentState }),
   getBusinessWorkspace: tool({
@@ -130,6 +225,7 @@ export function createBusinessTools(ctx: { recordToolEvent: (name: string, input
   };
   const projectPathProperty = { projectPath: { type: 'string', description: 'Nombre o ruta de un proyecto indexado. Omitir solo si ya hay un proyecto activo.' } };
   return {
+    ...createSwarmTool({ projectPath, recordToolEvent, setAgentState, provider, modelId }),
     listProjectFiles: tool({
       description: 'List project files for business context. Read-only; skips heavy folders.',
       inputSchema: jsonSchema({ type: 'object', properties: { maxFiles: { type: 'number' }, ...projectPathProperty }, additionalProperties: false }),
@@ -324,7 +420,7 @@ export function createBusinessTools(ctx: { recordToolEvent: (name: string, input
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
-          specialist: { type: 'string', enum: ['commercial', 'pricing', 'finance', 'operations', 'crm_whatsapp', 'strategy'] },
+          specialist: { type: 'string', enum: ['commercial', 'pricing', 'finance', 'operations', 'strategy'] },
           task: { type: 'string', maxLength: 500, description: 'English handoff, maximum 500 characters.' },
           ...projectPathProperty,
         },
@@ -368,7 +464,6 @@ export function selectToolsForPrompt(toolset: Record<string, any>, mode: 'busine
     if (has('cotiz', 'presupuesto', 'propuesta', 'precio', 'tarifa', 'estim')) add('createQuote', 'createBudget', 'updateBusinessWorkspace');
     if (has('plan', 'hito', 'roadmap', 'estrateg')) add('createExecutionPlan', 'updateBusinessWorkspace');
     if (has('panel', 'dashboard', 'mostrar', 'ocultar', 'esconder', 'visibilidad')) add('getBusinessWorkspace', 'updateBusinessWorkspace');
-    if (has('whatsapp', 'cliente', 'conversación', 'conversacion', 'crm')) add('getWhatsAppBusinessContext');
     if (has('proyecto', 'portfolio', 'cartera')) add('listIndexedProjects');
     if (has('log', 'auditar', 'ejecución', 'ejecucion', 'herramientas')) add('getExecutionLog');
     if (has('sub-ia', 'subia', 'especialista', 'deleg', 'investig')) add('delegateBusinessSpecialist');
@@ -392,7 +487,7 @@ const TOOL_ROUTER_CATALOG: Record<'business' | 'development', Record<string, str
     listFiles: 'listar archivos del workspace', readFile: 'leer archivos', searchText: 'buscar texto en archivos', writeFile: 'crear o editar archivos; también crea carpetas padre', runCommand: 'ejecutar comandos, tests, Git o procesos', terminal: 'crear procesos persistentes en background', openBrowser: 'abrir una URL en la pestaña Navegador', getBrowserState: 'obtener estado DOM y accesibilidad del navegador como JSON', browserAction: 'hacer click, escribir, pulsar teclas o scroll usando selectores', askUser: 'pedir una decisión al usuario', createPlan: 'crear planes de implementación', updatePlan: 'actualizar planes', todo: 'crear o actualizar tareas TODO', getTaskStatus: 'consultar estado de tareas', subagent: 'delegar investigación a un subagente', remember: 'guardar memoria', recall: 'consultar memoria', forget: 'borrar memoria', getExecutionLog: 'auditar ejecuciones y tools',
   },
   business: {
-    listProjectFiles: 'listar archivos del proyecto', readProjectFile: 'leer archivos del proyecto', searchProjectText: 'buscar texto en el proyecto', getBusinessWorkspace: 'leer datos económicos y configuración del panel', getAIUsageMetrics: 'medir tokens, duración y costos', updateBusinessWorkspace: 'actualizar datos económicos o visibilidad de paneles', createQuote: 'crear cotizaciones', createBudget: 'crear presupuestos', createExecutionPlan: 'crear planes de ejecución', getWhatsAppBusinessContext: 'consultar contexto comercial de WhatsApp', listIndexedProjects: 'listar proyectos', getExecutionLog: 'auditar ejecuciones y tools', delegateBusinessSpecialist: 'delegar investigación comercial',
+    listProjectFiles: 'listar archivos del proyecto', readProjectFile: 'leer archivos del proyecto', searchProjectText: 'buscar texto en el proyecto', getBusinessWorkspace: 'leer datos económicos y configuración del panel', getAIUsageMetrics: 'medir tokens, duración y costos', updateBusinessWorkspace: 'actualizar datos económicos o visibilidad de paneles', createQuote: 'crear cotizaciones', createBudget: 'crear presupuestos', createExecutionPlan: 'crear planes de ejecución', listIndexedProjects: 'listar proyectos', getExecutionLog: 'auditar ejecuciones y tools', delegateBusinessSpecialist: 'delegar investigación comercial',
   },
 };
 
@@ -412,28 +507,15 @@ const toolRouterOutput = Output.object({
   }),
 });
 
-const toolVerificationOutput = Output.object({
-  schema: jsonSchema({
-    type: 'object',
-    properties: {
-      completed: { type: 'boolean' },
-      retry: { type: 'boolean' },
-      reason: { type: 'string' },
-    },
-    required: ['completed', 'retry', 'reason'],
-    additionalProperties: false,
-  }),
-});
-
 export type AgentMode = 'development' | 'business';
-export type AgentSpecialist = 'primary' | 'developer' | 'explorer' | 'frontend' | 'backend' | 'qa' | 'security' | 'documentation' | 'computer_use' | 'commercial' | 'pricing' | 'finance' | 'operations' | 'crm_whatsapp' | 'strategy';
+export type AgentSpecialist = 'primary' | 'developer' | 'explorer' | 'frontend' | 'backend' | 'qa' | 'security' | 'documentation' | 'computer_use' | 'commercial' | 'pricing' | 'finance' | 'operations' | 'strategy';
 
 const agentRouteOutput = Output.object({
   schema: jsonSchema({
     type: 'object',
     properties: {
       mode: { type: 'string', enum: ['development', 'business'] },
-      specialist: { type: 'string', enum: ['primary', 'developer', 'explorer', 'frontend', 'backend', 'qa', 'security', 'documentation', 'computer_use', 'commercial', 'pricing', 'finance', 'operations', 'crm_whatsapp', 'strategy'] },
+      specialist: { type: 'string', enum: ['primary', 'developer', 'explorer', 'frontend', 'backend', 'qa', 'security', 'documentation', 'computer_use', 'commercial', 'pricing', 'finance', 'operations', 'strategy'] },
       confidence: { type: 'number' },
       reason: { type: 'string' },
     },
@@ -459,7 +541,7 @@ export async function resolveAgentRouteWithAI({ model, prompt, modeOverride, sig
   });
   if (!route?.mode || !route.specialist) throw new Error('La orquestadora no devolvio un modo y especialista validos.');
   const mode = modeOverride && modeOverride !== 'auto' ? modeOverride : route.mode;
-  const businessSpecialists = new Set<AgentSpecialist>(['commercial', 'pricing', 'finance', 'operations', 'crm_whatsapp', 'strategy']);
+  const businessSpecialists = new Set<AgentSpecialist>(['commercial', 'pricing', 'finance', 'operations', 'strategy']);
   const developmentSpecialists = new Set<AgentSpecialist>(['developer', 'explorer', 'frontend', 'backend', 'qa', 'security', 'documentation', 'computer_use']);
   const specialist = mode === 'business' && developmentSpecialists.has(route.specialist) || mode === 'development' && businessSpecialists.has(route.specialist) ? 'primary' : route.specialist;
   return { mode, specialist, confidence: route.confidence ?? 0, reason: route.reason || 'Ruta seleccionada por la orquestadora.' };
@@ -474,7 +556,7 @@ export function inferAgentSpecialist(prompt: string, mode: AgentMode): AgentSpec
   const text = prompt.toLowerCase();
   if (mode === 'business') {
     if (/cotiz|precio|pricing|valor|fee|margen|roi/.test(text)) return 'pricing';
-    if (/cliente|venta|comercial|whatsapp|crm/.test(text)) return 'commercial';
+    if (/cliente|venta|comercial/.test(text)) return 'commercial';
     if (/finanz|gasto|ingreso|costo|rentab|presupuesto/.test(text)) return 'finance';
     if (/operaci|proceso|hito|entrega/.test(text)) return 'operations';
     return 'strategy';
@@ -488,6 +570,7 @@ export function inferAgentSpecialist(prompt: string, mode: AgentMode): AgentSpec
 }
 
 export async function resolveToolsWithAI({ model, mode, prompt, toolset, signal, onUsage }: { model: any; mode: 'business' | 'development'; prompt: string; toolset: Record<string, any>; signal?: AbortSignal; onUsage?: (usage: any) => void | Promise<void> }) {
+  return { tools: toolset, confidence: 1, reason: 'El agente principal recibe todas las tools.', requiresAction: false, goal: prompt, verification: '' };
   const catalog = TOOL_ROUTER_CATALOG[mode];
   let decision: { tools?: string[]; confidence?: number; reason?: string; requiresAction?: boolean; goal?: string; verification?: string } | null = null;
   await runStream({
@@ -519,7 +602,7 @@ export async function verifyToolExecutionWithAI({ model, prompt, goal, verificat
     system: 'Sos la IA verificadora de Codeclub. Compará el objetivo y el criterio de verificación con las tools realmente ejecutadas, sus resultados y el diff local. No supongas que el texto del agente es evidencia. Para control de PC exigí evidencia observable: proceso, ventana, URL, salida estructurada o estado posterior; un código 0 por sí solo no prueba que una interfaz haya cambiado ni que un video esté disponible. Si falta evidencia, el resultado contradice el objetivo o aparece contenido no disponible, indicá retry=true y pedí observar nuevamente antes de repetir acciones. Devolvé JSON estructurado.',
     messages: [{ role: 'user', content: JSON.stringify({ contract: 'VERIFICATION CONTRACT: valida solamente outputs reales. Si falta evidencia, contradice el objetivo o una UI no fue observada despues de actuar, completed=false y retry=true. Nunca conviertas texto del agente, codigo 0 aislado o una intencion en evidencia.', prompt, goal, verification, toolEvents: toolEvents.slice(-20), changes }) }],
     tools: {},
-    structuredOutput: toolVerificationOutput,
+    structuredOutput: undefined,
     signal,
     callbacks: { onTextDelta: () => {}, onStructuredOutput: (output) => { result = output; }, onUsage },
   });
@@ -530,6 +613,7 @@ export function createTools(ctx: ToolContext) {
   const { projectPath, recordToolEvent, setAgentState, requestToolApproval, provider, modelId } = ctx;
 
   return {
+    ...createSwarmTool({ projectPath, recordToolEvent, setAgentState, requestToolApproval, provider, modelId }),
     listFiles: tool({
       description: 'List project files in the active Codeclub workspace. Skips heavy folders.',
       inputSchema: jsonSchema({
@@ -979,6 +1063,23 @@ export function createTools(ctx: ToolContext) {
         const ok = await deleteMemory(projectPath, key);
         recordToolEvent('forget', { key }, { ok });
         return { ok };
+      },
+    }),
+  };
+}
+
+export function createParentTools(ctx: ToolContext & { availableTools: Record<string, any>; artifactTools: Record<string, any>; projectScoped?: boolean }) {
+  const { projectPath, projectScoped, recordToolEvent, setAgentState, requestToolApproval, provider, modelId, availableTools, artifactTools } = ctx;
+  return {
+    ...createSwarmTool({ projectPath, projectScoped, recordToolEvent, setAgentState, requestToolApproval, childTools: availableTools, provider, modelId }),
+    ...artifactTools,
+    listAvailableTools: tool({
+      description: 'List every operational tool that the parent can assign to children. The parent cannot execute these tools directly.',
+      inputSchema: jsonSchema({ type: 'object', properties: {}, additionalProperties: false }),
+      execute: async () => {
+        const output = { tools: Object.keys(availableTools), parentTools: Object.keys(artifactTools), templates: ['read_only', 'developer', 'economist', 'custom'] };
+        recordToolEvent('listAvailableTools', {}, output);
+        return output;
       },
     }),
   };
