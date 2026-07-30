@@ -99,6 +99,16 @@ const swarmStore = new Map<string, SwarmState>();
 const swarmChildTools = new Map<string, Record<string, any>>();
 const PARENT_ONLY_TOOLS = new Set(['createPlan', 'updatePlan', 'todo', 'getTaskStatus', 'createQuote', 'createBudget', 'createExecutionPlan', 'updateBusinessWorkspace']);
 const ECONOMY_READ_TOOLS = ['listProjectFiles', 'readProjectFile', 'searchProjectText', 'listIndexedProjects', 'getBusinessWorkspace', 'getAIUsageMetrics', 'getExecutionLog'];
+const normalizeBrowserUrl = (raw: string) => {
+  const value = raw.trim();
+  if (!value) return null;
+  try {
+    const parsed = new URL(/^https?:\/\//i.test(value) ? value : `https://${value}`);
+    return ['http:', 'https:'].includes(parsed.protocol) && parsed.hostname ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+};
 
 function createSwarmTool(ctx: { projectPath: string; projectScoped?: boolean; recordToolEvent: (name: string, input: any, output: any) => void; setAgentState: (state: string) => void; requestToolApproval?: (opts: { toolName: string; input: any; summary: string }) => Promise<boolean>; childTools?: Record<string, any>; provider?: any; modelId?: string }) {
   const { projectPath, projectScoped = false, recordToolEvent, setAgentState, requestToolApproval, childTools = {}, provider, modelId } = ctx;
@@ -911,7 +921,12 @@ export function createTools(ctx: ToolContext) {
         additionalProperties: false,
       }),
       execute: async ({ url }) => {
-        const normalized = /^https?:\/\//i.test(url.trim()) ? url.trim() : `https://${url.trim()}`;
+        const normalized = normalizeBrowserUrl(url);
+        if (!normalized) {
+          const output = { ok: false, error: 'URL inválida. Usá una dirección http(s) con puerto válido.' };
+          recordToolEvent('openBrowser', { url }, output);
+          return output;
+        }
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('codeclub:open-right-panel'));
           window.dispatchEvent(new CustomEvent('codeclub:browser-navigate', { detail: { url: normalized } }));

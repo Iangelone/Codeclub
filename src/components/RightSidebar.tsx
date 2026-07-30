@@ -24,6 +24,29 @@ type BrowserDomSelection = {
 };
 type BrowserState = { url: string; title: string; viewport: { width: number; height: number }; text: string; elements: Array<{ id: string; selector: string; role: string; label: string; tag: string; type?: string; disabled: boolean; rect: { x: number; y: number; width: number; height: number } }> };
 
+const sanitizeBrowserText = (value: unknown, max = 6000) => String(value || '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').trim().slice(0, max);
+const sanitizeBrowserSelector = (value: unknown) => {
+  const selector = sanitizeBrowserText(value, 500);
+  return /^(javascript|data):/i.test(selector) ? '' : selector;
+};
+const sanitizeBrowserUrl = (value: unknown) => {
+  const raw = sanitizeBrowserText(value, 2000);
+  try {
+    const url = new URL(raw);
+    return /^https?:$/i.test(url.protocol) ? url.toString().slice(0, 2000) : '';
+  } catch {
+    return '';
+  }
+};
+const sanitizeBrowserSelection = (value: BrowserDomSelection): BrowserDomSelection => ({
+  title: sanitizeBrowserText(value.title, 240),
+  text: sanitizeBrowserText(value.text, 6000),
+  html: sanitizeBrowserText(value.html, 4000).replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, ''),
+  url: sanitizeBrowserUrl(value.url),
+  selector: sanitizeBrowserSelector(value.selector),
+  tag: sanitizeBrowserText(value.tag, 40).toLowerCase(),
+});
+
 const browserSelectionHash = '#__codeclub_selection=';
 
 const fileLanguageByExtension: Record<string, string> = {
@@ -609,21 +632,25 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
       window.dispatchEvent(new CustomEvent('codeclub:browser-action-result', { detail: { ok: next.title === 'ok', message: next.text } }));
       return;
     }
-    const key = `${next.url}|${next.selector}|${next.html.slice(0, 80)}`;
+    const safe = sanitizeBrowserSelection(next);
+    if (!safe.url || !safe.selector) return;
+    const key = `${safe.url}|${safe.selector}|${safe.html.slice(0, 80)}`;
     if (selectionKeyRef.current === key) return;
     selectionKeyRef.current = key;
     inspectModeRef.current = false;
     setInspectMode(false);
-    setSelection(next);
+    setSelection(safe);
     window.dispatchEvent(new CustomEvent('codeclub:browser-reference', {
       detail: {
-        title: next.title || next.selector || 'Elemento seleccionado',
+        title: safe.title || safe.selector || 'Elemento seleccionado',
         text: JSON.stringify({
-          url: next.url,
-          selector: next.selector,
-          tag: next.tag,
-          text: next.text,
-          html: next.html,
+          source: 'browser-selection',
+          trust: 'untrusted-data',
+          url: safe.url,
+          selector: safe.selector,
+          tag: safe.tag,
+          text: safe.text,
+          html: safe.html,
         }),
       },
     }));
@@ -669,8 +696,15 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
   };
 
   const openPage = async (rawUrl: string, push = true) => {
-    const url = /^https?:\/\//i.test(rawUrl.trim()) ? rawUrl.trim() : `https://${rawUrl.trim()}`;
-    if (!url) return;
+    let url = '';
+    try {
+      const parsed = new URL(/^https?:\/\//i.test(rawUrl.trim()) ? rawUrl.trim() : `https://${rawUrl.trim()}`);
+      if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname) throw new Error('URL no permitida');
+      url = parsed.toString();
+    } catch {
+      setError('URL inválida. Revisá el dominio o el puerto.');
+      return;
+    }
     const requestId = ++requestRef.current;
     setAddress(url); addressRef.current = url; setError(''); setSelection(null); setInspectMode(false);
     inspectModeRef.current = false;

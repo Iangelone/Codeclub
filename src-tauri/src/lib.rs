@@ -96,7 +96,10 @@ fn codeclub_browser_create(app: AppHandle, url: String, x: f64, y: f64, width: f
         let _ = existing.close();
     }
     let window = app.get_window("main").ok_or_else(|| "No se encontró la ventana principal.".to_string())?;
-    let parsed_url = url.parse().map_err(|error| format!("URL inválida: {error}"))?;
+    let parsed_url: tauri::Url = url.parse().map_err(|error| format!("URL inválida: {error}"))?;
+    if !matches!(parsed_url.scheme(), "http" | "https") || parsed_url.host().is_none() {
+        return Err("Solo se permiten URLs http(s) con dominio válido.".to_string());
+    }
     let builder = WebviewBuilder::new("codeclub-browser", WebviewUrl::External(parsed_url))
         .on_page_load(|webview, payload| {
             if matches!(payload.event(), PageLoadEvent::Finished) {

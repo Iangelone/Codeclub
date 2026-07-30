@@ -1,4 +1,4 @@
-import { streamText } from 'ai';
+import { smoothStream, streamText } from 'ai';
 import type { EngineCallbacks } from './types';
 
 type RunStreamArgs = {
@@ -22,6 +22,7 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
     system: `${system}${styleInstruction}`,
     messages,
     tools,
+    experimental_transform: smoothStream(),
     // Sin límite fijo: después de una tool el modelo puede continuar hasta
     // responder. La cancelación sigue bajo control del usuario/watchdog.
     stopWhen: () => false,
