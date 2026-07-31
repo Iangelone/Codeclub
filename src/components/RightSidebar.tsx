@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, ArrowUpRight, CheckCircle2, ChevronRight, Circle, CircleDot, CircleX, ExternalLink, File, FileCode2, FileImage, FileText, Folder, FolderOpen, Folders, GitBranch, GitCompare, Globe, LockKeyhole, LogOut, MessageCircle, Plus, RefreshCw, Search, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ArrowUpRight, Ban, CheckCircle2, ChevronRight, Circle, CircleDot, CircleX, ExternalLink, File, FileCode2, FileImage, FileText, Folder, FolderOpen, Folders, GitBranch, GitCompare, Globe, LockKeyhole, LogOut, MessageCircle, Plus, RefreshCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi';
@@ -395,6 +395,19 @@ function FilesView({ projectPath }: { projectPath: string }) {
   }, [projectPath]);
 
   useEffect(() => {
+    const refreshWorkspace = (event: Event) => {
+      const changedProjectPath = (event as CustomEvent<{ projectPath?: string }>).detail?.projectPath;
+      if (!changedProjectPath || changedProjectPath === projectPath) void loadFiles();
+    };
+    window.addEventListener('codeclub:workspace-changed', refreshWorkspace);
+    const interval = window.setInterval(() => void loadFiles(), 2500);
+    return () => {
+      window.removeEventListener('codeclub:workspace-changed', refreshWorkspace);
+      window.clearInterval(interval);
+    };
+  }, [projectPath]);
+
+  useEffect(() => {
     if (treeScrollRef.current) treeScrollRef.current.scrollTop = treeScrollTopRef.current;
   });
 
@@ -416,25 +429,25 @@ function FilesView({ projectPath }: { projectPath: string }) {
     const isOpen = expanded.has(node.path) || Boolean(query.trim());
     const isDirectory = node.kind === 'directory';
     return <React.Fragment key={node.path}>
-      <button type="button" onClick={() => isDirectory ? setExpanded((current) => { const next = new Set(current); next.has(node.path) ? next.delete(node.path) : next.add(node.path); return next; }) : void openFile(node.path)} className={`flex min-h-[30px] w-max min-w-full items-center gap-2 whitespace-nowrap rounded-md px-2 text-left text-[12px] transition-colors hover:bg-white/[0.04] ${selectedPath === node.path ? 'bg-[#1e1e1e] text-[#eeeeee]' : 'text-[#eeeeee]'}`} style={{ paddingLeft: `${8 + depth * 14}px` }}>
-        <span className="w-4 shrink-0 text-[#8b8b8b]">{isDirectory && <ChevronRight size={15} className={isOpen ? 'rotate-90 transition-transform' : 'transition-transform'} />}</span>
-        {isDirectory ? (isOpen ? <FolderOpen size={15} className="text-[#c8c8c8]" /> : <Folder size={15} className="text-[#c8c8c8]" />) : iconForFile(node.name)}
+      <button type="button" onClick={() => isDirectory ? setExpanded((current) => { const next = new Set(current); next.has(node.path) ? next.delete(node.path) : next.add(node.path); return next; }) : void openFile(node.path)} className={`grid min-h-[30px] w-max min-w-full grid-cols-[16px_20px_minmax(0,1fr)] items-center gap-2 whitespace-nowrap rounded-md px-2 text-left text-[12px] transition-colors hover:bg-white/[0.04] ${selectedPath === node.path ? 'bg-[#1e1e1e] text-[#eeeeee]' : 'text-[#eeeeee]'}`} style={{ paddingLeft: `${8 + depth * 28}px` }}>
+        <span className="flex h-4 w-4 shrink-0 items-center justify-center text-[#8b8b8b]">{isDirectory && <ChevronRight size={15} className={isOpen ? 'rotate-90 transition-transform' : 'transition-transform'} />}</span>
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center">{isDirectory ? (isOpen ? <FolderOpen size={15} className="text-[#c8c8c8]" /> : <Folder size={15} className="text-[#c8c8c8]" />) : iconForFile(node.name)}</span>
         <span className="whitespace-nowrap">{node.name}</span>
       </button>
-      {isDirectory && isOpen && <div className="relative"><span className="pointer-events-none absolute bottom-0 top-0 border-l border-[#2b2b2b]" style={{ left: `${8 + depth * 14}px` }} />{renderTree(node.children, depth + 1)}</div>}
+      {isDirectory && isOpen && <div className="relative"><span className="pointer-events-none absolute bottom-0 top-0 border-l border-[#2b2b2b]" style={{ left: `${8 + depth * 28}px` }} />{renderTree(node.children, depth + 1)}</div>}
     </React.Fragment>;
   });
 
-  return <div className="flex h-full max-h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#111111]">
-    <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-[#2b2b2b] bg-[#111111] px-2">
+  return <div className="flex h-full max-h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#1A1A1A]">
+    <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-[#2b2b2b] bg-[#1A1A1A] px-2">
       <span className="min-w-0 truncate text-[12px] leading-none text-[#eeeeee]">{selectedPath ? `/${selectedPath.replace(/\\/g, '/')}` : '/'}</span>
-      <button type="button" onClick={toggleTree} disabled={topbarCoolingDown} className={`grid h-7 w-7 place-items-center rounded-[7px] border-0 transition-[background-color,color,transform] duration-700 ease-out active:scale-95 disabled:cursor-wait disabled:opacity-60 ${showTree ? 'codeclub-accent-surface' : 'bg-[#202020] text-[#777777]'} codeclub-accent-hover`} title="Mostrar u ocultar árbol del workspace" aria-label="Mostrar u ocultar árbol del workspace" aria-pressed={showTree}><FolderOpen size={15} /></button>
+      <button type="button" onClick={toggleTree} disabled={topbarCoolingDown} className={`grid h-7 w-7 place-items-center rounded-[7px] border-0 transition-[background-color,color,transform] duration-700 ease-out active:scale-95 disabled:cursor-wait disabled:opacity-60 ${showTree ? 'bg-[#2B2B2B] text-[#eeeeee]' : 'bg-[#202020] text-[#777777]'} hover:bg-[#2B2B2B] hover:text-[#eeeeee]`} title="Mostrar u ocultar árbol del workspace" aria-label="Mostrar u ocultar árbol del workspace" aria-pressed={showTree}><FolderOpen size={15} /></button>
     </div>
     <div className="flex h-0 min-h-0 max-h-full flex-1 overflow-hidden">
-      <main className="flex h-full min-w-0 min-h-0 flex-1 flex-col bg-[#111111]">
+      <main className="flex h-full min-w-0 min-h-0 flex-1 flex-col bg-[#1A1A1A]">
         {selectedPath ? <div className="flex min-h-0 flex-1 flex-col">{fileLoading ? <div className="flex flex-1 items-center justify-center text-xs text-[#777777]">Cargando archivo...</div> : <pre className="file-preview-scrollbar m-0 min-h-0 flex-1 overflow-auto whitespace-pre p-4 font-mono text-[12px] leading-5 text-[#d8d8d8]"><code className="codeclub-file-code">{highlightedFileLines.map((line, index) => <span key={index} className="codeclub-file-line flex min-w-max"><span className="mr-4 w-10 shrink-0 select-none text-right text-[#555555]">{index + 1}</span><span className="whitespace-pre" dangerouslySetInnerHTML={{ __html: line }} /></span>)}</code></pre>}</div> : <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center"><Folders size={42} strokeWidth={1.5} className="text-[#a7a7a7]" /><div className="max-w-[300px]"><p className="m-0 text-[18px] font-semibold text-[#eeeeee]">Abrir archivo</p><p className="m-0 mt-2 text-[14px] leading-5 text-[#a7a7a7]">Selecciona un archivo del árbol del espacio de trabajo</p></div></div>}
       </main>
-      <aside className={`h-full max-h-full min-h-0 self-stretch flex shrink-0 flex-col border-l border-[#2b2b2b] bg-[#121212] transition-[width,transform,opacity] duration-200 ease-out ${showTree ? 'w-[35%]' : 'w-0 translate-x-full opacity-0 pointer-events-none'}`}>
+      <aside className={`h-full max-h-full min-h-0 self-stretch flex shrink-0 flex-col border-l border-[#2b2b2b] bg-[#1A1A1A] transition-[width,transform,opacity] duration-200 ease-out ${showTree ? 'w-[35%]' : 'w-0 translate-x-full opacity-0 pointer-events-none'}`}>
         <div className="mt-0 flex h-0 min-h-0 flex-1 flex-col px-3 py-3">
           <label className="mb-2 flex h-8 shrink-0 items-center gap-2 rounded-[10px] border border-[#353535] bg-[#1d1d1d] px-2.5 text-[#9a9a9a] focus-within:border-[#555555]"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} className="min-w-0 flex-1 bg-transparent text-[12px] text-[#eeeeee] outline-none placeholder:text-[#929292]" placeholder="Filtrar archivos..." aria-label="Filtrar archivos" /></label>
           <div ref={treeScrollRef} onScroll={(event) => { treeScrollTopRef.current = event.currentTarget.scrollTop; }} style={{ overscrollBehavior: 'none', overflowAnchor: 'none' }} className="h-0 min-h-0 flex-1 overflow-x-auto overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -576,13 +589,13 @@ function ReviewView({ projectPath }: { projectPath: string }) {
   const deletions = files.reduce((total, file) => total + file.deletions, 0);
 
   if (!projectPath) return <div className="flex flex-1 items-center justify-center p-5 text-center text-[11px] text-[#777]">Seleccioná un proyecto para revisar sus cambios.</div>;
-  return <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#111111]">
+  return <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#1A1A1A]">
     <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-[#2b2b2b] px-2 [&>div:first-child]:hidden">
       <div className="flex min-w-0 items-center gap-2"><GitCompare size={14} className="shrink-0 text-[#a7a7a7]" /><div className="min-w-0"><div className="truncate text-[12px] text-[#eeeeee]">Cambios</div><div className="text-[10px] text-[#666]">{files.length} {files.length === 1 ? 'archivo' : 'archivos'} · <span className="text-[#76c893]">+{additions}</span> <span className="text-[#d77878]">-{deletions}</span></div></div></div>
       <span className="min-w-0 truncate text-[12px] leading-none text-[#eeeeee]">{files.length} {files.length === 1 ? 'archivo' : 'archivos'} · <span className="text-[#76c893]">+{additions}</span> <span className="text-[#d77878]">-{deletions}</span></span>
       <div className="flex shrink-0 items-center gap-1">
-        <button type="button" onClick={() => runTopbarAction(() => setShowFiles((visible) => !visible))} disabled={topbarCoolingDown} className={`grid h-7 w-7 place-items-center rounded-[7px] border-0 transition-[background-color,color,transform] duration-700 ease-out active:scale-95 disabled:cursor-wait disabled:opacity-60 ${showFiles ? 'codeclub-accent-surface' : 'bg-[#202020] text-[#777777]'} codeclub-accent-hover`} title="Mostrar u ocultar archivos" aria-label="Mostrar u ocultar archivos" aria-pressed={showFiles}><FileText size={13} /></button>
-        <button type="button" onClick={() => runTopbarAction(() => loadReview())} disabled={loading || topbarCoolingDown} className={`grid h-7 w-7 shrink-0 place-items-center rounded-[7px] border-0 transition-[background-color,color,transform] duration-700 ease-out active:scale-95 disabled:cursor-wait disabled:opacity-60 ${loading || topbarCoolingDown ? 'codeclub-accent-surface' : 'bg-[#202020] text-[#777777]'} codeclub-accent-hover`} title="Actualizar cambios" aria-label="Actualizar cambios"><RefreshCw size={13} className={loading ? 'animate-spin' : ''} /></button>
+        <button type="button" onClick={() => runTopbarAction(() => setShowFiles((visible) => !visible))} disabled={topbarCoolingDown} className={`grid h-7 w-7 place-items-center rounded-[7px] border-0 transition-[background-color,color,transform] duration-700 ease-out active:scale-95 disabled:cursor-wait disabled:opacity-60 ${showFiles ? 'bg-[#2B2B2B] text-[#eeeeee]' : 'bg-[#202020] text-[#777777]'} hover:bg-[#2B2B2B] hover:text-[#eeeeee]`} title="Mostrar u ocultar archivos" aria-label="Mostrar u ocultar archivos" aria-pressed={showFiles}><FileText size={13} /></button>
+        <button type="button" onClick={() => runTopbarAction(() => loadReview())} disabled={loading || topbarCoolingDown} className={`grid h-7 w-7 shrink-0 place-items-center rounded-[7px] border-0 transition-[background-color,color,transform] duration-700 ease-out active:scale-95 disabled:cursor-wait disabled:opacity-60 ${loading || topbarCoolingDown ? 'bg-[#2B2B2B] text-[#eeeeee]' : 'bg-[#202020] text-[#777777]'} hover:bg-[#2B2B2B] hover:text-[#eeeeee]`} title="Actualizar cambios" aria-label="Actualizar cambios"><RefreshCw size={13} className={loading ? 'animate-spin' : ''} /></button>
       </div>
     </div>
     {loading ? <div className="flex flex-1 items-center justify-center text-[11px] text-[#777]">Revisando cambios...</div> : error ? <div className="p-3 text-[11px] leading-5 text-[#c28d8d]">{error}</div> : !files.length ? <div className="flex flex-1 flex-col items-center justify-center gap-2 p-5 text-center text-[11px] text-[#777]"><GitCompare size={28} strokeWidth={1.5} /><span>Sin cambios pendientes.</span></div> : <div className="flex min-h-0 flex-1 flex-row-reverse overflow-hidden">
@@ -817,7 +830,7 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
     text: JSON.stringify({ url: selection.url, selector: selection.selector, tag: selection.tag, text: selection.text, html: selection.html }),
   } : { title: address.replace(/^https?:\/\//, '').split('/')[0] || 'Página', text: `Página abierta: ${address}` } }));
 
-  return <div className="flex h-full min-h-0 flex-col bg-[#111111] text-[#d8d8d8]">
+  return <div className="flex h-full min-h-0 flex-col bg-[#1A1A1A] text-[#d8d8d8]">
     <div className="flex shrink-0 items-center gap-1 border-b border-[#202020] px-2 py-2">
       <button type="button" onClick={goBack} disabled={historyIndex === 0} className="grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent text-[#666] hover:bg-[#1c1c1c] hover:text-[#eee] disabled:opacity-30" title="Atrás"><ArrowLeft size={13} /></button>
       <button type="button" onClick={goForward} disabled={historyIndex >= history.length - 1} className="grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent text-[#666] hover:bg-[#1c1c1c] hover:text-[#eee] disabled:opacity-30" title="Adelante"><ArrowRight size={13} /></button>
@@ -920,7 +933,7 @@ function BrowserView({ initialUrl = 'https://www.google.com' }: { initialUrl?: s
     setInspectMode(false);
   };
 
-  return <div className="flex h-full min-h-0 flex-col bg-[#111111] text-[#d8d8d8]">
+  return <div className="flex h-full min-h-0 flex-col bg-[#1A1A1A] text-[#d8d8d8]">
     <div className="flex shrink-0 items-center gap-1 border-b border-[#202020] px-2 py-2">
       <button type="button" onClick={goBack} disabled={historyIndexRef.current === 0} className="grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent text-[#666] hover:bg-[#1c1c1c] hover:text-[#eee] disabled:opacity-30" title="Atrás"><ArrowLeft size={13} /></button>
       <button type="button" onClick={goForward} disabled={historyIndexRef.current >= historyRef.current.length - 1} className="grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent text-[#666] hover:bg-[#1c1c1c] hover:text-[#eee] disabled:opacity-30" title="Adelante"><ArrowRight size={13} /></button>
@@ -970,8 +983,8 @@ function WhatsAppTerminalView() {
     return () => { disposed = true; unlisten?.(); void invoke('codeclub_whatsapp_stop').catch(() => undefined); };
   }, []);
 
-  return <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#111111]">
-    <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-[#2b2b2b] bg-[#111111] px-2 text-[12px] text-[#eeeeee]">
+  return <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#1A1A1A]">
+    <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-[#2b2b2b] bg-[#1A1A1A] px-2 text-[12px] text-[#eeeeee]">
       <span>WhatsApp</span>
       <div className="flex items-center gap-1">
         <button type="button" onClick={() => { setRefreshing(true); setLogs((current) => [...current, `${new Date().toLocaleTimeString()}  Actualizando bridge...`].slice(-500)); void invoke('codeclub_whatsapp_refresh').catch((error) => { setRefreshing(false); setLogs((current) => [...current, `ERROR ${String(error)}`].slice(-500)); }); }} className="grid h-7 w-7 place-items-center rounded-[7px] bg-[#202020] text-[#eeeeee] hover:bg-[#2b2b2b]" title="Actualizar WhatsApp" aria-label="Actualizar WhatsApp"><RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} /></button>
@@ -1065,8 +1078,8 @@ function LegacyWhatsAppView() {
     await invoke('codeclub_whatsapp_get_messages', { chatId }).catch(() => undefined);
   };
 
-  return <div className="flex h-full max-h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#111111]">
-    <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-[#2b2b2b] bg-[#111111] px-2">
+  return <div className="flex h-full max-h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#1A1A1A]">
+    <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-[#2b2b2b] bg-[#1A1A1A] px-2">
       <span className="min-w-0 truncate text-[12px] leading-none text-[#eeeeee]">{activeChatTitle}</span>
       <div className="flex items-center gap-1">
         <button type="button" onClick={() => { setRefreshing(true); setChatDebug('Actualizando conversaciones...'); void invoke('codeclub_whatsapp_refresh').catch((error) => { setRefreshing(false); setChatDebug(String(error)); }); }} className="grid h-7 w-7 place-items-center rounded-[7px] bg-[#202020] text-[#eeeeee] hover:bg-[#2b2b2b]" title="Actualizar conversaciones" aria-label="Actualizar conversaciones">
@@ -1081,7 +1094,7 @@ function LegacyWhatsAppView() {
       </div>
     </div>
     <div className="flex h-0 min-h-0 max-h-full flex-1 overflow-hidden">
-      <main className="flex h-full min-w-0 min-h-0 flex-1 flex-col bg-[#111111]">
+      <main className="flex h-full min-w-0 min-h-0 flex-1 flex-col bg-[#1A1A1A]">
         {qr ? <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center"><img src={qr} alt="Código QR de WhatsApp" className="h-[220px] w-[220px] rounded-xl bg-white p-2" /><div><p className="m-0 text-[17px] font-semibold text-[#eeeeee]">Vincular WhatsApp</p><p className="m-0 mt-2 text-[13px] leading-5 text-[#a7a7a7]">Abrí WhatsApp en tu teléfono y escaneá este código</p></div></div> : activeChat ? <div className="flex min-h-0 flex-1 flex-col"><div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{(messages[activeChatId] || []).map((message) => <div key={message.id} className={`max-w-[78%] rounded-lg px-2.5 py-1.5 text-[12px] ${message.fromMe ? 'self-end bg-[#1e3a2b] text-[#e2f4e9]' : 'self-start bg-[#1d1d1d] text-[#eeeeee]'}`}>{message.body}</div>)}</div><div className="shrink-0 border-t border-[#2b2b2b] p-2"><div className="flex items-center gap-2 rounded-full border border-[#353535] bg-[#1d1d1d] px-3 py-1"><input value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void sendMessage(); }} className="min-w-0 flex-1 bg-transparent py-1 text-[12px] text-[#eeeeee] outline-none" placeholder="Escribí un mensaje..." /><button type="button" onClick={() => void sendMessage()} className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[#79c893] text-[#111111]" aria-label="Enviar mensaje" title="Enviar mensaje"><ArrowUpRight size={16} strokeWidth={2} /></button></div></div></div> : <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center"><MessageCircle size={42} strokeWidth={1.5} className="text-[#a7a7a7]" /><div className="max-w-[300px]"><p className="m-0 text-[18px] font-semibold text-[#eeeeee]">{status}</p><p className="m-0 mt-2 text-[14px] leading-5 text-[#a7a7a7]">Seleccioná un chat cuando WhatsApp esté conectado</p></div></div>}
       </main>
       <aside className={`h-full max-h-full min-h-0 shrink-0 overflow-hidden border-l border-[#2b2b2b] bg-[#121212] transition-[width,transform,opacity] duration-200 ease-out ${showConversations ? 'w-[35%]' : 'w-0 translate-x-full opacity-0 border-l-0 pointer-events-none'}`}>
@@ -1230,17 +1243,29 @@ export default function RightSidebar() {
   }, [activeProjectPath]);
 
   const closeTab = (tab: RightTab) => {
-    setTabs((current) => current.filter((item) => item !== tab));
-    setActiveTab((current) => current === tab ? null : current);
+    setTabs((current) => {
+      const index = current.indexOf(tab);
+      const next = current.filter((item) => item !== tab);
+      setActiveTab((active) => active === tab ? next[index] ?? next[index - 1] ?? null : active);
+      return next;
+    });
+  };
+
+  const tabIcon = (tab: RightTab) => {
+    if (tab === 'files') return <FolderOpen size={18} strokeWidth={1.7} />;
+    if (tab === 'review') return <GitCompare size={18} strokeWidth={1.7} />;
+    if (tab === 'browser') return <Globe size={18} strokeWidth={1.7} />;
+    if (tab === 'artifacts') return <FileText size={18} strokeWidth={1.7} />;
+    return <SquareTerminal size={18} strokeWidth={1.7} />;
   };
 
   return (
-    <aside className="right-sidebar-shell right-sidebar relative z-40 row-start-2 col-start-3 h-full max-h-full min-w-0 min-h-0 border-l border-[var(--color-surface-10)] bg-[var(--color-bg)] text-[#d8d8d8] shadow-[-4px_0_14px_rgba(0,0,0,0.16)]" aria-label="Panel lateral derecho">
+    <aside className="right-sidebar-shell right-sidebar relative z-40 row-start-2 col-start-3 h-full max-h-full min-w-0 min-h-0 border-0 bg-[#1A1A1A] text-[#d8d8d8] shadow-none" style={{ borderTop: '1px solid rgba(255, 255, 255, 0.22)', borderLeft: '1px solid rgba(255, 255, 255, 0.22)' }} aria-label="Panel lateral derecho">
       <div onPointerDown={startResize} className="absolute -left-[3px] top-0 z-20 h-full w-[6px] cursor-col-resize bg-transparent transition-colors hover:bg-[#2f2f2f]" aria-label="Redimensionar panel derecho" role="separator" />
       <div className="flex h-full min-w-[264px] flex-col overflow-hidden">
-        <div className="terminal-tabs h-[34px] shrink-0 border-b border-[var(--color-surface-10)] px-1" style={{ overflow: 'visible' }}>
+        <div className="terminal-tabs h-[34px] shrink-0 border-b-0 px-1" style={{ overflow: 'visible' }}>
           {tabs.map((tab) => (
-            <button key={tab} type="button" onDoubleClick={() => closeTab(tab)} onClick={() => setActiveTab(tab)} className={`terminal-tab h-[30px] min-w-0 flex-1 justify-center rounded-[6px] border-0 px-3 text-[10px] ${activeTab === tab ? 'is-active' : ''}`}>
+            <button key={tab} type="button" onDoubleClick={() => closeTab(tab)} onClick={() => setActiveTab(tab)} className={`terminal-tab h-[30px] min-w-0 flex-1 justify-center rounded-[6px] border-0 px-3 text-[10px] ${activeTab === tab ? 'is-active' : ''}`} style={{ backgroundColor: '#2B2B2B' }}>
               {labels[tab]}
             </button>
           ))}
@@ -1259,10 +1284,13 @@ export default function RightSidebar() {
            {activeTab === 'browser' && <NativeBrowserView initialUrl={browserUrl} />}
            {activeTab === 'artifacts' && <ArtifactsView state={artifactState} business={businessState} projectPath={activeProjectPath} projectName={activeProjectName} hasProject={Boolean(activeProjectPath)} />}
            <div className={`h-full min-h-0 w-full min-w-0 ${activeTab === 'terminals' ? 'flex' : 'hidden'}`}><TerminalDock embedded /></div>
-          {tabs.length === 0 && <div className="flex flex-1 items-center justify-center">
-            <button type="button" onClick={() => setMenuOpen(true)} className="min-h-[30px] rounded-lg border border-[#202020] bg-transparent px-3 text-[11px] text-[#777777] transition-colors hover:bg-[#1c1c1c] hover:text-[#eeeeee]">
-              Crear panel
-            </button>
+          {tabs.length === 0 && <div className="flex flex-1 items-center justify-center px-6">
+            <div className="flex w-full max-w-[420px] flex-col gap-2">
+              {availableTabs.map((tab) => <button key={tab} type="button" onClick={() => createTab(tab)} className="flex min-h-[48px] items-center gap-3 rounded-xl border-0 bg-[#2B2B2B] px-4 text-left text-[14px] text-[#eeeeee] transition-colors hover:bg-[#303030]">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center text-[#bdbdbd]">{tabIcon(tab)}</span>
+                <span className="min-w-0 flex-1">{labels[tab]}</span>
+              </button>)}
+            </div>
           </div>}
         </div>
       </div>
@@ -1285,19 +1313,6 @@ function ArtifactsView({ state, business, projectPath, projectName, hasProject }
     window.dispatchEvent(new CustomEvent('codeclub:artifact-reference', { detail: { projectPath, kind, id, title } }));
   };
   const plans = state.plans?.length ? state.plans : state.plan ? [state.plan] : [];
-  const getTodoFromEvent = (event: React.SyntheticEvent) => {
-    const row = (event.target as HTMLElement).closest('div.rounded-md');
-    const titles = Array.from(row?.querySelectorAll('[title]') || []).map((element) => element.getAttribute('title'));
-    const todo = state.todos.find((item) => titles.includes(item.title));
-    if (!todo) return undefined;
-    if (event.type === 'contextmenu') {
-      event.preventDefault();
-      void copyArtifact('todo', todo);
-      return undefined;
-    }
-    if (event.type === 'dblclick') return undefined;
-    return todo;
-  };
   const removePlan = async (id: string) => {
     const current = await readAgentState(projectPath);
     const nextPlans = (current.plans || (current.plan ? [current.plan] : [])).filter((plan) => plan.id !== id);
@@ -1469,30 +1484,30 @@ function ArtifactsView({ state, business, projectPath, projectName, hasProject }
     }
   };
   if (!hasProject) return <div className="flex flex-1 items-center justify-center p-5 text-center text-[11px] text-[#777]">Seleccioná un proyecto para ver sus artifacts.</div>;
-  return <div onDoubleClick={(event) => { const todo = getTodoFromEvent(event); if (todo) void removeTodo(todo.id); }} onContextMenu={(event) => { const todo = getTodoFromEvent(event); if (todo) { event.preventDefault(); pushReference('todo', todo.id, todo.title); } }} onMouseMove={(event) => { const row = (event.target as HTMLElement).closest('div.rounded-md') as HTMLElement | null; if (row) row.style.cursor = 'pointer'; }} className="h-full max-h-full min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 [scrollbar-width:thin] [scrollbar-color:#2b2b2b_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#2b2b2b] [&_section+section]:mt-4">
+  return <div className="h-full max-h-full min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 [scrollbar-width:thin] [scrollbar-color:#2b2b2b_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#2b2b2b] [&_section+section]:mt-4">
     <div className="mb-4 flex items-center justify-between">
       <div><div className="text-[12px] font-medium text-[#eee]">Artifacts</div><div className="mt-0.5 text-[10px] text-[#666]">Elementos generados y utilizados por la IA.</div></div>
       <span className="max-w-[120px] truncate text-right text-[10px] text-[#555]" title={projectName}>{projectName}</span>
     </div>
     {plans.length > 0 && <section className="mb-4"><div className="mb-2 text-[10px] font-medium uppercase tracking-[0.08em] text-[#666]">PLAN</div><div className="grid gap-3">{plans.map((plan) => <div key={plan.id} onClick={() => setSelectedArtifact({ kind: 'plan', id: plan.id })} onDoubleClick={() => pushReference('plan', plan.id, plan.title)} onContextMenu={(event) => { event.preventDefault(); void copyArtifact('plan', plan); }} className="cursor-pointer rounded-lg border bg-[#151515] p-2.5" style={{ borderColor: isSelected('plan', plan.id) ? selectionColor : '#202020' }}>
-      <div className="mb-2 flex items-center justify-between gap-2"><span className="min-w-0 truncate text-[11px] font-medium text-[#ddd]">{plan.title}</span><ArtifactStatus status={plan.status} /></div>
+      <div className="mb-2 flex items-center justify-between gap-2"><span className="min-w-0 truncate text-[11px] font-medium text-[#ddd]">{plan.title}</span><div className="flex shrink-0 items-center gap-1"><ArtifactStatus status={plan.status} />{isSelected('plan', plan.id) && <button type="button" onClick={(event) => { event.stopPropagation(); void removePlan(plan.id); }} className="grid h-5 w-5 place-items-center rounded text-[#777] hover:bg-[#2a1b1b] hover:text-[#e58c8c]" title="Eliminar plan" aria-label="Eliminar plan"><Trash2 size={12} /></button>}</div></div>
       <div className="grid gap-1.5">{plan.steps.map((step) => <div key={step.id} className="flex min-w-0 items-center gap-2 text-[10px]"><ArtifactStatus status={step.status} /><span title={step.title} className="min-w-0 truncate text-[#999]">{step.title}</span></div>)}</div>
     </div>)}</div><div className="mt-4 h-px bg-[#202020]" /></section>}
-    {state.todos.length > 0 ? <section className="grid gap-1.5"><div className="mb-1 text-[10px] font-medium uppercase tracking-[0.08em] text-[#666]">TODO</div>{state.todos.map((todo) => <div key={todo.id} onClick={() => setSelectedArtifact({ kind: 'todo', id: todo.id })} onDoubleClick={() => pushReference('todo', todo.id, todo.title)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); void copyArtifact('todo', todo); }} className="flex min-w-0 cursor-pointer items-center gap-2 rounded-md border bg-[#151515] px-2 py-1.5" style={{ borderColor: isSelected('todo', todo.id) ? selectionColor : '#202020' }}><ArtifactStatus status={todo.status} /><span title={todo.title} className="min-w-0 flex-1 truncate text-[11px] text-[#bbb]">{todo.title}</span></div>)}</section> : !state.plan && <div className="rounded-lg border border-dashed border-[#252525] px-3 py-5 text-center text-[11px] text-[#666]">Todavía no hay TODOs ni planes.</div>}
-    {business?.quotes?.length ? <section className={`grid gap-2 ${state.plan || state.todos.length ? 'border-t border-[#202020] pt-4' : ''}`}><div className="text-[10px] font-medium uppercase tracking-[0.08em] text-[#666]">COTIZACIONES</div>{business.quotes.map((quote: any) => <QuoteArtifact key={quote.id} quote={quote} selected={isSelected('quote', quote.id)} selectionColor={selectionColor} onSelect={() => setSelectedArtifact({ kind: 'quote', id: quote.id })} onCopy={() => void copyArtifact('quote', quote)} onReference={() => pushReference('quote', quote.id, quote.title || 'Cotización')} />)}</section> : null}
+    {state.todos.length > 0 ? <section className="grid gap-1.5"><div className="mb-1 text-[10px] font-medium uppercase tracking-[0.08em] text-[#666]">TODO</div>{state.todos.map((todo) => <div key={todo.id} onClick={() => setSelectedArtifact({ kind: 'todo', id: todo.id })} onDoubleClick={() => pushReference('todo', todo.id, todo.title)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); void copyArtifact('todo', todo); }} className="flex min-w-0 cursor-pointer items-center gap-2 rounded-md border bg-[#151515] px-2 py-1.5" style={{ borderColor: isSelected('todo', todo.id) ? selectionColor : '#202020' }}><ArtifactStatus status={todo.status} /><span title={todo.title} className="min-w-0 flex-1 truncate text-[11px] text-[#bbb]">{todo.title}</span>{isSelected('todo', todo.id) && <button type="button" onClick={(event) => { event.stopPropagation(); void removeTodo(todo.id); }} className="grid h-5 w-5 shrink-0 place-items-center rounded text-[#777] hover:bg-[#2a1b1b] hover:text-[#e58c8c]" title="Eliminar TODO" aria-label="Eliminar TODO"><Trash2 size={12} /></button>}</div>)}</section> : !state.plan && <div className="rounded-lg border border-dashed border-[#252525] px-3 py-5 text-center text-[11px] text-[#666]">Todavía no hay TODOs ni planes.</div>}
+    {business?.quotes?.length ? <section className={`grid gap-2 ${state.plan || state.todos.length ? 'border-t border-[#202020] pt-4' : ''}`}><div className="text-[10px] font-medium uppercase tracking-[0.08em] text-[#666]">COTIZACIONES</div>{business.quotes.map((quote: any) => <QuoteArtifact key={quote.id} quote={quote} selected={isSelected('quote', quote.id)} selectionColor={selectionColor} onSelect={() => setSelectedArtifact({ kind: 'quote', id: quote.id })} onCopy={() => void copyArtifact('quote', quote)} onReference={() => pushReference('quote', quote.id, quote.title || 'Cotización')} onRemove={() => void removeQuote(quote.id)} />)}</section> : null}
   </div>;
 }
 
-function QuoteArtifact({ quote, selected, selectionColor, onSelect, onCopy, onReference }: { quote: any; selected: boolean; selectionColor: string; onSelect: () => void; onCopy: () => void; onReference: () => void }) {
+function QuoteArtifact({ quote, selected, selectionColor, onSelect, onCopy, onReference, onRemove }: { quote: any; selected: boolean; selectionColor: string; onSelect: () => void; onCopy: () => void; onReference: () => void; onRemove: () => void }) {
   const formatMoney = (value: number) => { try { return new Intl.NumberFormat('es-AR', { style: 'currency', currency: quote.currency || 'USD', maximumFractionDigits: 2 }).format(Number(value || 0)); } catch { return `${quote.currency || 'USD'} ${Number(value || 0).toFixed(2)}`; } };
   return <section onClick={onSelect} onDoubleClick={onReference} onContextMenu={(event) => { event.preventDefault(); void onCopy(); }} className="cursor-pointer overflow-hidden rounded-lg border bg-[#151515] [&_thead]:bg-[#101010] [&_thead_tr]:text-[#777]" style={{ borderColor: selected ? selectionColor : '#202020' }}>
-    <div className="border-b border-[#202020] px-2.5 py-2"><div className="truncate text-[11px] font-medium text-[#ddd]">{quote.title || 'Cotización'}</div><div title={quote.description} className="mt-1 overflow-hidden text-ellipsis whitespace-nowrap text-[10px] text-[#777]">{quote.description}</div></div>
+    <div className="flex items-center justify-between gap-2 border-b border-[#202020] px-2.5 py-2"><div className="min-w-0"><div className="truncate text-[11px] font-medium text-[#ddd]">{quote.title || 'Cotización'}</div><div title={quote.description} className="mt-1 overflow-hidden text-ellipsis whitespace-nowrap text-[10px] text-[#777]">{quote.description}</div></div>{selected && <button type="button" onClick={(event) => { event.stopPropagation(); onRemove(); }} className="grid h-5 w-5 shrink-0 place-items-center rounded text-[#777] hover:bg-[#2a1b1b] hover:text-[#e58c8c]" title="Eliminar cotización" aria-label="Eliminar cotización"><Trash2 size={12} /></button>}</div>
     <div className="overflow-x-auto"><table className="w-full border-collapse text-left text-[10px]"><thead><tr className="border-b border-[#202020] text-[#666]"><th className="px-2.5 py-1.5 font-medium">Resultado</th><th className="px-2.5 py-1.5 font-medium">Métrica</th><th className="px-2.5 py-1.5 text-right font-medium">Importe</th></tr></thead><tbody>{(quote.items || []).map((item: any, index: number) => <tr key={`${quote.id}-${index}`} className="border-b border-[#1d1d1d] text-[#aaa]"><td title={item.outcome || item.description} className="max-w-[150px] truncate px-2.5 py-1.5">{item.outcome || item.description}</td><td title={item.metric} className="max-w-[110px] truncate px-2.5 py-1.5">{item.metric || '—'}</td><td className="px-2.5 py-1.5 text-right">{formatMoney(item.total ?? item.amount)}</td></tr>)}</tbody><tfoot><tr><td colSpan={2} className="px-2.5 py-2 text-right font-medium text-[#bbb]">Total</td><td className="px-2.5 py-2 text-right font-medium text-[#eee]">{formatMoney(quote.total)}</td></tr></tfoot></table></div>
   </section>;
 }
 
 function ArtifactStatus({ status }: { status: TaskStatus }) {
-  const values: Record<TaskStatus, [React.ElementType, string]> = { pending: [Circle, '#777'], in_progress: [CircleDot, '#d8d8d8'], completed: [CheckCircle2, '#c2c2c2'], blocked: [CircleX, '#d98b8b'] };
-  const [Icon, color] = values[status] || values.pending;
-  return <span title={status} style={{ color }} className="grid h-4 w-4 shrink-0 place-items-center"><Icon size={13} strokeWidth={1.8} /></span>;
+  const values: Record<TaskStatus, [React.ElementType, string, string]> = { pending: [Circle, '#999', 'Pendiente'], in_progress: [CircleDot, '#999', 'En curso'], completed: [CheckCircle2, '#999', 'Completado'], cancelled: [Ban, '#999', 'Cancelado'], blocked: [CircleX, '#999', 'Bloqueado'] };
+  const [Icon, color, label] = values[status] || values.pending;
+  return <span title={label} style={{ color }} className="flex shrink-0 items-center gap-1 text-[10px]"><Icon size={13} strokeWidth={1.8} /><span>{label}</span></span>;
 }

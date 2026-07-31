@@ -1,5 +1,5 @@
 import { appCacheDir, appConfigDir, join } from "@tauri-apps/api/path";
-import { exists, mkdir, readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
+import { copyFile, exists, mkdir, readDir, readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
 
 const PERSISTENCE_LOG = "persistence-log.jsonl";
 const SETTINGS_FILE = "settings.json";
@@ -7,8 +7,35 @@ const SETTINGS_FILE = "settings.json";
 export const getAppConfigFilePath = async (...parts: string[]) => join(await appConfigDir(), ...parts);
 export const getAppCacheFilePath = async (...parts: string[]) => join(await appCacheDir(), ...parts);
 
+/** Project data travels with the project so it remains portable. */
 export const getProjectDataDir = async (projectPath: string, ...parts: string[]) => {
-  return join(await appConfigDir(), "projects", encodeURIComponent(projectPath), ...parts);
+  if (!projectPath) return join(await appConfigDir(), "projects", "global", ...parts);
+  return join(projectPath, ".codeclub", ...parts);
+};
+
+const getLegacyProjectDataDir = async (projectPath: string) => join(await appConfigDir(), "projects", encodeURIComponent(projectPath));
+
+let projectMigrationQueue = Promise.resolve();
+const migrateDirectory = async (source: string, target: string): Promise<void> => {
+  if (!(await exists(source))) return;
+  await mkdir(target, { recursive: true });
+  for (const entry of await readDir(source)) {
+    const sourceEntry = await join(source, entry.name);
+    const targetEntry = await join(target, entry.name);
+    if (entry.isDirectory) await migrateDirectory(sourceEntry, targetEntry);
+    else if (!(await exists(targetEntry))) await copyFile(sourceEntry, targetEntry);
+  }
+};
+
+export const migrateLegacyProjectData = async (projectPath: string) => {
+  if (!projectPath) return;
+  const operation = projectMigrationQueue.then(async () => {
+    const source = await getLegacyProjectDataDir(projectPath);
+    const target = await getProjectDataDir(projectPath);
+    if (await exists(source)) await migrateDirectory(source, target);
+  });
+  projectMigrationQueue = operation.catch(() => undefined);
+  await operation;
 };
 
 export const getProjectFilePath = (projectPath: string, ...parts: string[]) => getProjectDataDir(projectPath, ...parts);

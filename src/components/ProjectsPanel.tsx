@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { FolderOpen, Plus } from "lucide-react";
+import { Folder, MoreVertical, Plus } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { ensureProjectMeta, indexProjectContents, readProjectIndex, saveProjectIndex, type ProjectEntry } from "../lib/projectManager";
 
@@ -7,6 +7,12 @@ const formatSize = (bytes = 0) => {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const formatIndexedAt = (value?: string) => {
+  if (!value) return "Sin fecha";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "Sin fecha" : new Intl.DateTimeFormat("es-AR", { day: "2-digit", month: "short", year: "numeric" }).format(date);
 };
 
 export default function ProjectsPanel() {
@@ -65,15 +71,18 @@ export default function ProjectsPanel() {
 
   return (
     <div className="projects-panel-scroll h-full w-full overflow-y-auto p-8 md:p-12">
-      <div className="mx-auto grid w-full max-w-6xl grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
-        {loading && Array.from({ length: 5 }, (_, index) => <div key={index} className="h-[178px] animate-pulse rounded-2xl border border-[#202020] bg-[#161616]" />)}
+      <div className="mx-auto flex w-full max-w-6xl flex-col overflow-hidden rounded-lg border border-[#2B2B2B] bg-[#2B2B2B]">
+        {loading && Array.from({ length: 5 }, (_, index) => <div key={index} className="h-[58px] animate-pulse border-b border-[#3a3a3a] bg-[#2B2B2B]" />)}
         {!loading && projects.map((project) => (
-          <button key={project.path} type="button" onClick={() => { if (renamingPath !== project.path) selectProject(project); }} onContextMenu={(event) => { event.preventDefault(); window.dispatchEvent(new CustomEvent("codeclub:project-context-menu", { detail: { path: project.path, name: project.name, top: event.clientY, left: event.clientX } })); }} className="group flex h-[178px] flex-col justify-between rounded-2xl border border-[#202020] bg-[#161616] p-5 text-left transition hover:border-[#2f2f2f] hover:bg-[#1c1c1c]">
-            <div className="flex items-start justify-between"><div className="grid h-10 w-10 place-items-center rounded-xl bg-[#202020] text-[#9b9b9b] group-hover:text-[#eeeeee]"><FolderOpen size={19} /></div><span className="text-[10px] text-[#666]">{project.file_count ?? 0} archivos</span></div>
-            <div>{renamingPath === project.path ? <input autoFocus value={renameValue} onChange={(event) => setRenameValue(event.target.value)} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { event.stopPropagation(); if (event.key === "Enter") { event.preventDefault(); void renameProject(project); } if (event.key === "Escape") { setRenamingPath(null); setRenameValue(""); } }} className="w-full rounded border border-[#2b2b2b] bg-[#1c1c1c] px-1.5 py-1 text-sm text-[#eee] outline-none" /> : <div className="truncate text-sm font-medium text-[#dedede]">{project.name}</div>}<div className="mt-1 truncate text-[11px] text-[#666]">{formatSize(project.total_size)}</div></div>
+          <button key={project.path} type="button" onClick={() => { if (renamingPath !== project.path) selectProject(project); }} onContextMenu={(event) => { event.preventDefault(); window.dispatchEvent(new CustomEvent("codeclub:project-context-menu", { detail: { path: project.path, name: project.name, top: event.clientY, left: event.clientX } })); }} className="group grid min-h-[58px] grid-cols-[minmax(0,1fr)_70px_32px] items-center gap-3 border-b border-[#3a3a3a] bg-[#2B2B2B] px-4 text-left transition hover:bg-[#303030] md:grid-cols-[minmax(0,1fr)_150px_110px_110px_32px] md:gap-4">
+            <div className="flex min-w-0 items-center gap-3"><div className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-[#343434] text-[#c7c7c7] group-hover:text-white"><Folder size={17} /></div>{renamingPath === project.path ? <input autoFocus value={renameValue} onChange={(event) => setRenameValue(event.target.value)} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { event.stopPropagation(); if (event.key === "Enter") { event.preventDefault(); void renameProject(project); } if (event.key === "Escape") { setRenamingPath(null); setRenameValue(""); } }} className="min-w-0 w-full rounded border border-[#555] bg-[#303030] px-1.5 py-1 text-[13px] text-[#eee] outline-none" /> : <span className="truncate text-[13px] font-medium text-[#eeeeee]">{project.name}</span>}</div>
+            <span className="hidden text-[12px] text-[#bdbdbd] md:block">{formatIndexedAt(project.indexed_at)}</span>
+            <span className="text-[11px] text-[#999]">{formatSize(project.total_size)}</span>
+            <span className="hidden text-[12px] text-[#bdbdbd] sm:block">yo</span>
+            <MoreVertical size={16} className="text-[#888] opacity-0 transition-opacity group-hover:opacity-100" />
           </button>
         ))}
-        {!loading && <button type="button" onClick={addProject} className="group flex h-[178px] flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-[#2b2b2b] bg-transparent text-[#666] transition hover:border-[#555] hover:bg-[#161616] hover:text-[#bdbdbd]">{adding ? <div className="h-7 w-7 animate-pulse rounded-lg bg-[#2b2b2b]" /> : <div className="grid h-10 w-10 place-items-center rounded-xl border border-[#2b2b2b] group-hover:border-[#555]"><Plus size={19} /></div>}</button>}
+        {!loading && <button type="button" onClick={addProject} className="group flex min-h-[58px] items-center gap-3 border-b border-[#3a3a3a] bg-[#2B2B2B] px-4 text-left text-[13px] text-[#999] transition hover:bg-[#303030] hover:text-[#eeeeee]"><span className="grid h-8 w-8 place-items-center rounded-md border border-dashed border-[#666] group-hover:border-[#aaa]"><Plus size={17} /></span>Agregar proyecto</button>}
       </div>
     </div>
   );

@@ -769,23 +769,23 @@ export default function Sidebar() {
   };
 
   return (
-      <div className="sidebar-shell row-start-2 col-start-1 min-w-[264px] w-[264px] h-[calc(100vh-36px)] min-h-0 overflow-hidden flex flex-col border-r border-[var(--color-surface-10)] bg-[var(--color-bg)] shadow-[4px_0_14px_rgba(0,0,0,0.16)] -translate-x-full transition-transform duration-140 ease-out z-10 group-[.has-sidebar]:translate-x-0">
+      <div className="acrylic-panel sidebar-shell row-start-2 col-start-1 min-w-[264px] w-[264px] h-[calc(100vh-36px)] min-h-0 overflow-hidden flex flex-col -translate-x-full transition-transform duration-140 ease-out z-10 group-[.has-sidebar]:translate-x-0">
       <section className="min-h-0 flex-1 flex flex-col p-[10px_10px_0] overflow-hidden">
-        <div className="h-[24px] shrink-0 mb-1 flex items-center gap-[6px] px-[10px] text-[#9f9f9f] text-xs">
+        <div className="h-[28px] shrink-0 mb-1 flex items-center gap-[6px] px-[10px] text-[#b8bbc3] text-sm">
           Codeclub
         </div>
         <div className="shrink-0 flex flex-col gap-1 pb-1">
-          <div data-sidebar-item onClick={() => void openNewChat()} className={`codeclub-motion-control w-full min-h-[34px] flex cursor-pointer items-center gap-[9px] rounded-md px-[10px] text-xs text-left transition-colors hover:translate-x-px ${activeSection === "chat" && !activeArtifactId ? "bg-[#1E1E1E] text-[#eeeeee]" : "text-[#777777] hover:bg-[var(--color-surface-3)] hover:text-[#eeeeee]"}`}>
-            <MessageSquarePlus size={15} /> Nuevo chat
+          <div data-sidebar-item onClick={() => void openNewChat()} className={`codeclub-motion-control w-full min-h-[32px] flex cursor-pointer items-center gap-[8px] rounded-[7px] px-[8px] text-[12px] text-left transition-colors hover:translate-x-px ${activeSection === "chat" && !activeArtifactId ? "bg-[#30333b] text-[#f3f4f6] shadow-[inset_0_1px_rgba(255,255,255,0.06)]" : "text-[#b8bbc3] hover:bg-[var(--color-surface-3)] hover:text-[#f3f4f6]"}`}>
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center"><MessageSquarePlus size={16} strokeWidth={1.8} /></span> Nuevo chat
           </div>
-          <div data-sidebar-item role="button" tabIndex={0} onClick={openProjectsPanel} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openProjectsPanel(); } }} className={`codeclub-motion-control w-full min-h-[34px] flex cursor-pointer items-center gap-[9px] rounded-md px-[10px] text-xs text-left transition-colors hover:translate-x-px focus-visible:outline-none ${activeSection === "projects" ? "bg-[#1E1E1E] text-[#eeeeee]" : "text-[#777777] hover:bg-[var(--color-surface-3)] hover:text-[#eeeeee]"}`}>
-            <Folder size={15} /> Proyectos
+          <div data-sidebar-item role="button" tabIndex={0} onClick={openProjectsPanel} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openProjectsPanel(); } }} className={`codeclub-motion-control w-full min-h-[32px] flex cursor-pointer items-center gap-[8px] rounded-[7px] px-[8px] text-[12px] text-left transition-colors hover:translate-x-px focus-visible:outline-none ${activeSection === "projects" ? "bg-[#30333b] text-[#f3f4f6] shadow-[inset_0_1px_rgba(255,255,255,0.06)]" : "text-[#b8bbc3] hover:bg-[var(--color-surface-3)] hover:text-[#f3f4f6]"}`}>
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center"><Folder size={16} strokeWidth={1.8} /></span> Proyectos
           </div>
-          <button type="button" className={`codeclub-motion-control w-full min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left transition-colors hover:translate-x-px ${activeSection === "businesses" ? "bg-[#1E1E1E] text-[#eeeeee]" : "text-[#777777] hover:bg-[var(--color-surface-3)] hover:text-[#eeeeee]"} border-0 appearance-none`} onClick={() => { setActiveSection("businesses"); window.dispatchEvent(new CustomEvent("codeclub:open-businesses")); window.setTimeout(() => setActiveSection("businesses"), 80); }}>
-            <Target size={15} /> Negocios
+          <button type="button" className={`codeclub-motion-control w-full min-h-[32px] flex items-center gap-[8px] rounded-[7px] px-[8px] text-[12px] text-left transition-colors hover:translate-x-px ${activeSection === "businesses" ? "bg-[#30333b] text-[#f3f4f6] shadow-[inset_0_1px_rgba(255,255,255,0.06)]" : "text-[#b8bbc3] hover:bg-[var(--color-surface-3)] hover:text-[#f3f4f6]"} border-0 appearance-none`} onClick={() => { setActiveSection("businesses"); window.dispatchEvent(new CustomEvent("codeclub:open-businesses")); window.setTimeout(() => setActiveSection("businesses"), 80); }}>
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center"><Target size={16} strokeWidth={1.8} /></span> Negocios
           </button>
-          <button type="button" className="codeclub-motion-control w-full min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left text-[#777777] hover:bg-[var(--color-surface-3)] hover:text-[#eeeeee] hover:translate-x-px bg-transparent border-0 appearance-none" onClick={() => window.dispatchEvent(new CustomEvent("codeclub:open-extensions"))}>
-            <Blocks size={15} /> Complementos
+          <button type="button" className="codeclub-motion-control w-full min-h-[32px] flex items-center gap-[8px] rounded-[7px] px-[8px] text-[12px] text-left text-[#b8bbc3] hover:bg-[var(--color-surface-3)] hover:text-[#f3f4f6] hover:translate-x-px bg-transparent border-0 appearance-none" onClick={() => window.dispatchEvent(new CustomEvent("codeclub:open-extensions"))}>
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center"><Blocks size={16} strokeWidth={1.8} /></span> Complementos
           </button>
         </div>
         
@@ -819,7 +819,7 @@ export default function Sidebar() {
               <div key={proj.path} className={`flex flex-col gap-[3px] min-w-0 group/card ${isSelected ? "is-selected" : ""} ${isExpanded ? "is-expanded" : ""}`}>
                 <div
                   data-sidebar-item
-                  className="min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer bg-transparent w-full min-w-0 box-border text-[#d8d8d8] hover:bg-white/2 focus-visible:bg-[var(--color-surface-7)] focus-visible:outline-none group-[.is-selected]/card:bg-[#1c1c1c] group-[.is-selected]/card:text-[#eeeeee] group-[.is-selected]/card:hover:bg-[#1e1e1e] group/prow outline-none appearance-none border-0"
+                  className="min-h-[30px] flex items-center gap-[8px] rounded-[6px] px-[8px] text-[11px] text-left cursor-pointer bg-[#2B2B2B] w-full min-w-0 box-border text-[#d8d8d8] hover:bg-[var(--color-surface-3)] focus-visible:bg-[var(--color-surface-7)] focus-visible:outline-none group-[.is-selected]/card:bg-[#2B2B2B] group-[.is-selected]/card:text-[#eeeeee] group-[.is-selected]/card:hover:bg-[var(--color-surface-3)] group/prow outline-none appearance-none border-0"
                   tabIndex={0}
                   onClick={() => handleProjectSelection(proj)}
                   onContextMenu={(e) => openProjectMenu(e, proj)}
@@ -1002,7 +1002,7 @@ export default function Sidebar() {
         document.body
       )}
 
-      <section className="shrink-0 flex flex-col gap-1 p-[10px] border-t border-[var(--color-surface-9)] bg-[var(--color-bg)] relative z-[2]">
+      <section className="shrink-0 flex flex-col gap-1 p-[10px] bg-transparent relative z-[2]">
         <button className="min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer bg-transparent border-0 text-[#d8d8d8] hover:bg-white/2 appearance-none" type="button" onClick={() => setSettingsOpen(true)}>
           <Settings size={15} /> Ajustes
         </button>

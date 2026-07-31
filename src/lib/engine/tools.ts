@@ -738,9 +738,9 @@ export function createTools(ctx: ToolContext) {
         properties: {
           planId: { type: 'string', description: 'Optional plan ID. Defaults to the active plan.' },
           title: { type: 'string', description: 'Optional new plan title.' },
-          status: { type: 'string', enum: ['pending', 'in_progress', 'completed', 'blocked'] },
+          status: { type: 'string', enum: ['pending', 'in_progress', 'completed', 'cancelled', 'blocked'] },
           stepId: { type: 'string', description: 'Optional step ID to update.' },
-          stepStatus: { type: 'string', enum: ['pending', 'in_progress', 'completed', 'blocked'] },
+          stepStatus: { type: 'string', enum: ['pending', 'in_progress', 'completed', 'cancelled', 'blocked'] },
         },
         additionalProperties: false,
       }),
@@ -775,7 +775,7 @@ export function createTools(ctx: ToolContext) {
           id: { type: 'string' },
           title: { type: 'string' },
           description: { type: 'string' },
-          status: { type: 'string', enum: ['pending', 'in_progress', 'completed', 'blocked'] },
+          status: { type: 'string', enum: ['pending', 'in_progress', 'completed', 'cancelled', 'blocked'] },
         },
         required: ['action'],
         additionalProperties: false,
@@ -838,7 +838,7 @@ export function createTools(ctx: ToolContext) {
       execute: async ({ path, content }) => {
         setAgentState('running');
         await invoke('codeclub_write_file', { projectPath, path, content });
-        const output = { ok: true, path };
+        const output = { ok: true, path, workspace: projectPath };
         recordToolEvent('writeFile', { path }, output);
         return output;
       },
@@ -850,17 +850,18 @@ export function createTools(ctx: ToolContext) {
         properties: {
           command: { type: 'string', description: 'Any executable command available on the system.' },
           args: { type: 'array', items: { type: 'string' }, description: 'Command arguments.' },
+          cwd: { type: 'string', description: 'Optional working directory. Relative paths resolve inside the active workspace; omit to use the workspace root.' },
         },
         required: ['command', 'args'],
         additionalProperties: false,
       }),
-      execute: async ({ command, args }) => {
+      execute: async ({ command, args, cwd }) => {
         setAgentState('running');
         const output = await invoke('codeclub_run_command', {
           projectPath,
-          request: { command, args: Array.isArray(args) ? args : [] },
+          request: { command, args: Array.isArray(args) ? args : [], cwd: cwd || null },
         });
-        recordToolEvent('runCommand', { command, args }, output);
+        recordToolEvent('runCommand', { command, args, cwd: cwd || null }, output);
         return output;
       },
     }),

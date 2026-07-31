@@ -38,12 +38,14 @@ struct CommandOutput {
     code: Option<i32>,
     stdout: String,
     stderr: String,
+    cwd: String,
 }
 
 #[derive(Deserialize)]
 struct CommandRequest {
     command: String,
     args: Vec<String>,
+    cwd: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -705,9 +707,21 @@ fn codeclub_run_command(
     request: CommandRequest,
 ) -> Result<CommandOutput, String> {
     let root = workspace_root(&project_path)?;
+    let cwd = match request.cwd.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+        None => root.clone(),
+        Some(raw) => {
+            let candidate = PathBuf::from(raw);
+            let candidate = if candidate.is_absolute() { candidate } else { root.join(candidate) };
+            let resolved = candidate.canonicalize().map_err(|error| format!("No se pudo resolver el cwd: {error}"))?;
+            if !resolved.starts_with(&root) {
+                return Err("El cwd debe permanecer dentro del workspace activo.".into());
+            }
+            resolved
+        }
+    };
     let mut child = Command::new(&request.command)
         .args(&request.args)
-        .current_dir(root)
+        .current_dir(&cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -746,6 +760,7 @@ fn codeclub_run_command(
             .chars()
             .take(12_000)
             .collect(),
+        cwd: cwd.to_string_lossy().to_string(),
     })
 }
 

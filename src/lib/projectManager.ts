@@ -1,6 +1,6 @@
 import { appConfigDir, join } from "@tauri-apps/api/path";
 import { exists, mkdir, readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
-import { getAppConfigFilePath, getProjectFilePath, getSetting, logPersistence, setSetting } from "./persistence.ts";
+import { getAppConfigFilePath, getProjectFilePath, getSetting, logPersistence, migrateLegacyProjectData, setSetting } from "./persistence.ts";
 import { invoke } from "@tauri-apps/api/core";
 
 const PROJECTS_INDEX = "projects.json";
@@ -124,6 +124,7 @@ export const saveProjectIndex = async (name: string, projectPath: string) => {
 };
 
 export const ensureCodeclubFolder = async (projectPath: string) => {
+  await migrateLegacyProjectData(projectPath);
   await mkdir(await join(projectPath, ".codeclub"), { recursive: true });
 };
 

@@ -67,6 +67,7 @@ const AnimatedBraille = ({ kind }: { kind: keyof typeof SPINNER_FRAMES }) => {
 
 const formatDuration = (durationMs: number) => durationMs >= 60000 ? `${(durationMs / 60000).toFixed(1)} min` : `${Math.max(0.1, durationMs / 1000).toFixed(1)} s`;
 const formatProcessingDuration = (durationMs: number) => durationMs >= 60000 ? `${(durationMs / 60000).toFixed(1)}min` : `${Math.max(0, Math.round(durationMs / 1000))}s`;
+const escapeXml = (value: unknown) => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 
 type ChatAttachment = { path: string; name: string; mediaType: string; size?: number; previewUrl?: string };
 type ChatRuntime = {
@@ -151,7 +152,7 @@ const getArtifactOutputConfig = (mode: 'business' | 'development', prompt: strin
       schema: jsonSchema({
         type: 'object',
         properties: {
-          items: { type: 'array', items: { type: 'object', properties: { title: { type: 'string' }, description: { type: 'string' }, status: { type: 'string', enum: ['pending', 'in_progress', 'completed', 'blocked'] } }, required: ['title', 'description', 'status'], additionalProperties: false } },
+          items: { type: 'array', items: { type: 'object', properties: { title: { type: 'string' }, description: { type: 'string' }, status: { type: 'string', enum: ['pending', 'in_progress', 'completed', 'cancelled', 'blocked'] } }, required: ['title', 'description', 'status'], additionalProperties: false } },
         },
         required: ['items'],
         additionalProperties: false,
@@ -168,7 +169,7 @@ const getArtifactOutputConfig = (mode: 'business' | 'development', prompt: strin
           title: { type: 'string' },
           objective: { type: 'string' },
           steps: { type: 'array', items: { type: 'string' } },
-          status: { type: 'string', enum: ['pending', 'in_progress', 'completed', 'blocked'] },
+          status: { type: 'string', enum: ['pending', 'in_progress', 'completed', 'cancelled', 'blocked'] },
         },
         required: ['title', 'objective', 'steps', 'status'],
         additionalProperties: false,
@@ -1263,6 +1264,9 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         if (['writeFile', 'runCommand', 'terminal'].includes(name)) window.dispatchEvent(new CustomEvent('codeclub:workspace-changed', { detail: { projectPath: contextProjectPath, tool: name } }));
         if (['todo', 'createPlan', 'updatePlan', 'createQuote', 'updateBusinessWorkspace'].includes(name)) {
           window.dispatchEvent(new CustomEvent('codeclub:artifacts-changed', { detail: { projectPath: contextProjectPath } }));
+          if (['createPlan', 'updatePlan'].includes(name)) {
+            window.dispatchEvent(new CustomEvent('codeclub:open-artifacts', { detail: { projectPath: contextProjectPath } }));
+          }
         }
       };
       const toolProjectPath = contextProjectPath || await invoke<string>('codeclub_get_system_root');
@@ -1282,10 +1286,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       runMode = modeOverride === 'business' || modeOverride === 'development' ? modeOverride : inferAgentMode(content);
       routeSpecialist = inferAgentSpecialist(content, runMode);
       setChatMode(runMode);
-      const selectedToolset = Object.fromEntries(Object.entries(runMode === 'business' ? businessTools : developmentTools).filter(([name]) => !/whatsapp/i.test(name)));
-      const artifactNames = runMode === 'business'
-        ? ['updateBusinessWorkspace', 'createQuote', 'createBudget', 'createExecutionPlan']
-        : ['createPlan', 'updatePlan', 'todo', 'getTaskStatus'];
+      const selectedToolset = Object.fromEntries([...Object.entries(developmentTools), ...Object.entries(businessTools)].filter(([name]) => !/whatsapp/i.test(name)));
+      const artifactNames = ['createPlan', 'updatePlan', 'todo', 'getTaskStatus', 'updateBusinessWorkspace', 'createQuote', 'createBudget', 'createExecutionPlan'];
       const artifactTools = Object.fromEntries(artifactNames.filter((name) => selectedToolset[name]).map((name) => [name, selectedToolset[name]]));
       const parentTools = createParentTools({ projectPath: toolProjectPath, projectScoped: Boolean(contextProjectPath), recordToolEvent, setAgentState: guardedSetAgentState, requestToolApproval: guardedRequestToolApproval, provider, modelId: currentModel.id, availableTools: selectedToolset, artifactTools });
       tools = parentTools;
@@ -1357,7 +1359,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         'Para modificar archivos usa writeFile con el contenido completo del archivo.',
         'Para comandos usa runCommand sin pedir confirmación; puede ejecutar cualquier comando disponible en el sistema.',
         'Para procesos persistentes, servidores o trabajo interactivo usa la tool terminal; crea procesos background sin abrir UI.',
-        'Usa createPlan, updatePlan, todo y getTaskStatus para organizar tareas de programacion.',
+        'Usa createPlan, updatePlan, todo y getTaskStatus para organizar tareas de programacion. Despues de cada paso, actualiza el plan con su stepId exacto y usa status pending, in_progress, completed o cancelled segun corresponda; no dejes todos los pasos en blanco por defecto.',
         'Cuando el usuario pida crear o actualizar TODOs, ejecuta la tool todo y usa los IDs exactos que devuelva; no reemplaces la acción por una tabla o explicación en Markdown.',
         'Usa askUser solo cuando falte una decision importante; devuelve una solicitud estructurada sin asumir la respuesta.',
         'Las acciones riesgosas piden aprobacion humana antes de ejecutarse.',
@@ -1372,6 +1374,12 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         'El Padre es el único responsable de planes, TODOs, cotizaciones, presupuestos y persistencia de artifacts. Los hijos investigan o ejecutan trabajo asignado, pero no crean artifacts del Padre.',
         'Para PC o navegador usá un hijo custom con herramientas explícitas. Exigí estado observable después de cada acción. Nunca afirmes éxito sin el resultado real de una tool; redactá secretos y respondé en español.',
       ].filter(Boolean).join(' ');
+      const xmlSystem = `<codeclub_agent>
+  <identity>Agente principal de Codeclub</identity>
+  <mode>${escapeXml(runMode === 'business' ? 'Economía' : 'Desarrollo')}</mode>
+  <context>${escapeXml(system)}</context>
+  <protocol>Coordinar hijos, ejecutar tools asignadas, verificar resultados y responder solo con evidencias comprobables.</protocol>
+</codeclub_agent>`;
       // Algunos proveedores compatibles rechazan response_format junto con tools.
       // Los artifacts ya quedan validados y persistidos por sus tools; dejamos el
       // JSON forzado solo para respuestas sin ejecución de tools.
@@ -1390,7 +1398,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         const executionMessages = retryInstruction ? [...newMessages, { role: 'user', content: `${retryInstruction}\n\nUse a different strategy or tool sequence; do not repeat the same failed call.` }] : newMessages;
         return runStream({
           model: provider(currentModel.id),
-          system,
+          system: xmlSystem,
           messages: executionMessages.map((message, index) => ({
             role: message.role,
             content: index === executionMessages.length - 1 && attachmentParts.length > 0 && !retryInstruction
@@ -1721,6 +1729,11 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         'markdown-rendering': '[TESTING MARKDOWN] Respondé únicamente con una demostración completa en Markdown, sin tools: encabezados H1/H2/H3, texto en **negrita**, *cursiva*, ~~tachado~~, enlace, cita, listas numeradas y con viñetas, código inline, bloque de código con lenguaje, regla horizontal y una tabla con encabezados, tres filas y alineación. Incluí emojis y caracteres especiales. No describas la prueba: renderizá directamente todos los elementos.',
       };
       Object.assign(prompts, {
+        'web-folder': 'Usá la carpeta nueva que acabo de crear para este sitio web. Inspeccioná el workspace, identificá esa carpeta, verificá su ruta y devolveme evidencia real. No crees todavía la página ni otra carpeta.',
+        'web-page': 'Usá la carpeta del sitio que acabamos de crear. Armá allí una página web simple y presentable, con sus archivos necesarios. Verificá la estructura y explicame qué quedó listo.',
+        'web-debug': 'Abrí el sitio web que acabamos de preparar en el navegador. Inspeccioná su estado, probá la interacción principal y corregí cualquier problema que encuentres. Mostrame el resultado comprobable.',
+        'web-quote': 'Tomá el sitio web que acabamos de preparar y generá una cotización clara para el cliente: alcance, tareas, tiempos, costos y total. Persistí el artifact económico correspondiente y no inventes datos que no puedas justificar.',
+        'web-charge': 'A partir de la cotización anterior, prepará el flujo de cobro del trabajo: concepto, monto, estado y próximos pasos. Registrá el artifact económico correspondiente y dejá claro qué falta confirmar antes de cobrar.',
         'test-labels': '[TEST LABELS] Ejecuta una operacion real y segura con un hijo read_only. Debes provocar y mostrar los estados Pensando, tool en ejecucion, resultado completado y resumen final. Ejecuta, no describas; no modifiques archivos.',
         'test-tools': '[TEST TOOLS] Usa listAvailableTools y crea un hijo developer con listFiles, readFile, searchText y runCommand. El hijo debe ejecutar las cuatro tools en secuencia con datos reales del workspace, sin modificar archivos. Comunicate, espera y mergea evidencias.',
         'test-swarm-visual': '[TEST SWARM VISUAL] Crea un swarm con dos hijos: read_only y developer. Asignales tareas distintas, envia un mensaje a cada uno, espera sus respuestas y haz merge. Muestra evidencias reales y resumen final; no modifiques archivos.',
@@ -2027,9 +2040,9 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             )}
             <div className={m.role === 'assistant' ? 'chat-assistant-message' : 'chat-user-message'} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '5px', maxWidth: '80%', marginTop: m.role === 'assistant' ? '50px' : 0 }}>
               {m.role === 'user' && m.attachments?.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: '5px', maxWidth: '100%' }}>{m.attachments.map((file) => file.mediaType?.startsWith('image/') ? <img key={file.path || file.name} src={file.previewUrl || convertFileSrc(file.path)} alt={file.name} title={file.name} style={{ width: '34px', height: '34px', display: 'block', objectFit: 'cover', border: '1px solid #2b2b2b', borderRadius: '8px', background: '#161616' }} /> : <span key={file.path || file.name} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', maxWidth: '190px', padding: '5px 8px', border: '1px solid #2b2b2b', borderRadius: '8px', background: '#161616', color: '#cfcfcf', fontSize: '10px' }}><Paperclip size={11} strokeWidth={1.8} /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span></span>)}</div>}
-              <div style={{ background: m.role === 'user' ? '#202020' : 'transparent', padding: m.role === 'user' ? '14px 20px' : '0', borderRadius: m.role === 'user' ? '24px 24px 4px 24px' : '0', color: '#eee', fontSize: '14px', width: 'fit-content', maxWidth: '100%', lineHeight: 1.5, overflowWrap: 'anywhere', wordBreak: 'break-word', boxShadow: m.role === 'user' ? '0 4px 14px rgba(0, 0, 0, 0.18)' : 'none' }}>
+              <div style={{ background: m.role === 'user' ? '#2B2B2B' : 'transparent', padding: m.role === 'user' ? '14px 20px' : '0', borderRadius: m.role === 'user' ? '24px 24px 4px 24px' : '0', color: '#eee', fontSize: '14px', width: 'fit-content', maxWidth: '100%', lineHeight: 1.5, overflowWrap: 'anywhere', wordBreak: 'break-word', boxShadow: 'none' }}>
                 <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{ p: ({ children }) => <p style={{ margin: m.role === 'user' ? 0 : '0 0 12px', lineHeight: m.role === 'user' ? 1.4 : 1.6 }}>{children}</p>, ul: ({ children }) => <ul style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ul>, ol: ({ children }) => <ol style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ol>, li: ({ children }) => <li style={{ margin: m.role === 'user' ? 0 : '4px 0' }}>{children}</li>, table: ({ children }) => <div style={{ overflowX: 'auto', margin: '12px 0' }}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>{children}</table></div>, th: ({ children }) => <th style={{ border: '1px solid #2b2b2b', padding: '7px 9px', background: '#1c1c1c', textAlign: 'left', fontWeight: 600 }}>{children}</th>, td: ({ children }) => <td style={{ border: '1px solid #2b2b2b', padding: '7px 9px', verticalAlign: 'top' }}>{children}</td>, h1: ({ children }) => <h1 style={{ margin: '18px 0 10px', fontSize: '20px' }}>{children}</h1>, h2: ({ children }) => <h2 style={{ margin: '16px 0 8px', fontSize: '17px' }}>{children}</h2>, h3: ({ children }) => <h3 style={{ margin: '14px 0 7px', fontSize: '15px' }}>{children}</h3> }}>{m.displayContent || m.content}</ReactMarkdown>
-                {m.role === 'assistant' && isStreaming && i === messages.length - 1 && <span style={{ display: 'inline-block', marginTop: m.content ? '2px' : 0, color: 'rgba(216, 216, 216, 0.58)', fontSize: '13px' }}>{m.content ? '▌' : 'Pensando'}</span>}
+                {m.role === 'assistant' && isStreaming && i === messages.length - 1 && <span className={!m.content ? 'chat-thinking-label' : undefined} style={{ display: 'inline-block', marginTop: m.content ? '2px' : 0, color: 'rgba(216, 216, 216, 0.58)', fontSize: '13px' }}>{m.content ? '▌' : 'Pensando'}</span>}
               </div>
               {m.role === 'assistant' && <ExecutionTimeline timeline={m.timeline} active={isStreaming && i === messages.length - 1} />}
               {m.role === 'assistant' && <AskUserCards tools={m.tools} onSelect={(answer) => void sendMessage(answer)} disabled={isAgentBusy} />}
@@ -2055,7 +2068,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
 
       <div className="chat-composer" style={{ width: '100%', justifySelf: 'center', alignSelf: 'center', position: 'relative', display: 'grid', gap: '10px' }}>
         <div className="composer-row" style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }}>
-          <div className="composer-box [&>[aria-label='Referencia de artifact']]:relative [&>[aria-label='Referencia de artifact']]:z-50 [&>[aria-label='Referencia de artifact']>span]:hidden" style={{ minHeight: '40px', flex: '1 1 auto', minWidth: 0, padding: '1px', borderRadius: '22px', background: '#1a1a1a', border: '1px solid transparent', boxShadow: '0 18px 52px rgba(0, 0, 0, 0.26)' } as React.CSSProperties}>
+          <div className="composer-box [&>[aria-label='Referencia de artifact']]:relative [&>[aria-label='Referencia de artifact']]:z-50 [&>[aria-label='Referencia de artifact']>span]:hidden" style={{ minHeight: '40px', flex: '1 1 auto', minWidth: 0, padding: 0, borderRadius: '22px', background: '#2B2B2B', border: '1px solid rgba(255, 255, 255, 0.22)', boxShadow: 'none' } as React.CSSProperties}>
           {artifactReference && <div className="flex min-h-[28px] items-center gap-2 border-b border-[#202020] px-4 py-1.5" aria-label="Referencia de artifact"><span className="shrink-0 text-[10px] uppercase tracking-[0.08em] text-[#666]">Referencia</span><button type="button" onClick={() => setArtifactReference(null)} className="min-w-0 max-w-[260px] truncate rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-left text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar referencia">@{artifactReference.kind} · {artifactReference.title}</button></div>}
           {browserReferences.length > 0 && (
             <div ref={browserRefContainerRef} className="flex min-h-[28px] max-w-full items-center gap-1.5 overflow-hidden border-b border-[#202020] px-3 py-1.5" aria-label="Referencias de navegador">
@@ -2087,7 +2100,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           )}
            {attachedFiles.length > 0 && <div className="flex min-h-[28px] items-center gap-1.5 overflow-hidden border-b border-[#202020] px-3 py-1.5" aria-label="Archivos adjuntos">{attachedFiles.slice(0, 3).map((file, index) => <button key={file.path} type="button" onClick={() => setAttachedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} className="flex max-w-[180px] min-w-0 shrink items-center gap-1.5 truncate rounded-full border border-[#2b2b2b] bg-[#161616] px-2.5 py-1 text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar archivo">{file.mediaType.startsWith('image/') ? <img src={file.previewUrl || convertFileSrc(file.path)} alt={file.name} style={{ width: '18px', height: '18px', objectFit: 'cover', borderRadius: '4px' }} /> : <Paperclip size={11} strokeWidth={1.8} />}<span className="truncate">{file.name}</span></button>)}{attachedFiles.length > 3 && <span className="shrink-0 rounded-full border border-[#2b2b2b] bg-[#161616] px-2.5 py-1 text-[10px] text-[#999]">+{attachedFiles.length - 3} archivos</span>}</div>}
           <div ref={commandMenuHostRef} className="w-full" />
-          <form onSubmit={handleSubmit} className="composer-box-inner [&>button.absolute]:hidden" style={{ minHeight: '40px', width: '100%', minWidth: 0, display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 6px 5px 16px', border: 0, borderRadius: '21px', background: '#121212', position: 'relative' }}>
+          <form onSubmit={handleSubmit} className="composer-box-inner [&>button.absolute]:hidden" style={{ minHeight: '40px', width: '100%', minWidth: 0, display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 6px 5px 16px', border: 0, borderRadius: '21px', background: '#2B2B2B', position: 'relative' }}>
            {false && (
           <button type="button" onClick={handleAttachFiles} className="text-white/40 hover:text-white transition-colors" aria-label="Añadir archivos" style={{ flex: '0 0 28px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, background: 'transparent', cursor: 'pointer' }}>
             <Paperclip size={16} strokeWidth={1.8} />
@@ -2175,12 +2188,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           tabIndex={-1}
           onKeyDown={handleCommandMenuKeyDown}
           className={`command-menu ${menuOpen ? 'is-open' : ''}`}
-          style={{ position: 'static', width: 'calc(100% - 16px)', margin: '0 8px', display: menuOpen ? 'grid' : 'none', gap: '8px', padding: '8px', border: 0, borderRadius: '10px', background: '#1a1a1a', boxShadow: 'none', zIndex: 10, outline: 'none' }}
+          style={{ position: 'static', width: 'calc(100% - 16px)', margin: '0 8px', display: menuOpen ? 'grid' : 'none', gap: '8px', padding: '8px', border: 0, borderRadius: '10px', background: 'transparent', boxShadow: 'none', zIndex: 10, outline: 'none' }}
         >
-          <div className="flex min-h-[24px] items-center justify-between px-1 text-[10px] uppercase tracking-[0.08em] text-[#666]">
-            <span>{commandKind === 'provider' ? 'Proveedor' : commandKind === 'model' ? 'Modelo' : commandKind === 'project' ? 'Proyecto' : 'Comandos'}</span>
-            <button type="button" onClick={() => setMenuOpen(false)} className="grid h-5 w-5 place-items-center rounded-md bg-transparent text-[#666] hover:bg-[#1c1c1c] hover:text-[#ddd]" aria-label="Cerrar menú"><X size={12} strokeWidth={1.8} /></button>
-          </div>
           {commandKind !== 'credential' && commandKind !== 'custom-config' && <input
             ref={searchInputRef}
             type="text"
@@ -2188,7 +2197,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={handleSearchKeyDown}
             placeholder={commandKind === 'provider' ? 'Buscar proveedor' : commandKind === 'model' ? 'Buscar modelo del proveedor activo' : commandKind === 'project' ? 'Buscar proyecto' : 'Buscar comando'}
-            style={{ height: '30px', padding: '0 9px', borderRadius: '7px', background: '#151515', fontSize: '11px', color: '#eeeeee', border: 0, outline: 'none' }}
+            style={{ height: '30px', padding: '0 9px', borderRadius: '7px', background: 'transparent', fontSize: '11px', color: '#eeeeee', border: 0, outline: 'none' }}
           />}
           {commandKind === 'credential' ? (
             <div style={{ position: 'relative', minHeight: '34px' }}>
@@ -2230,7 +2239,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             </div>
           ) : <div className="command-list" style={{ display: 'grid', gap: '4px', maxHeight: '300px', overflow: 'auto', scrollbarWidth: 'none', paddingBottom: '12px', maskImage: 'linear-gradient(to bottom, black 92%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to bottom, black 92%, transparent 100%)' }}>
             {activeSelection && (
-              <div aria-current="true" style={{ minHeight: '30px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', borderRadius: '7px', background: '#1E1E1E', color: '#eeeeee', fontSize: '11px', padding: '0 9px' }}>
+              <div aria-current="true" style={{ minHeight: '30px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', borderRadius: '7px', background: '#30333b', color: '#eeeeee', fontSize: '11px', padding: '0 9px' }}>
                 <span>{activeSelection.label || activeSelection.id}</span>
                 <small style={{ color: 'rgba(216, 216, 216, 0.5)', fontSize: '11px' }}>Seleccionado</small>
               </div>
@@ -2393,7 +2402,7 @@ function ExecutionTimeline({ timeline = [], active }: { timeline?: any[]; active
   const detail = command || event.input?.path || event.input?.childName || event.input?.specialist || '';
   const label = detail ? `${event.name} ${detail}` : event.name;
   const failed = event.status === 'error' || event.output?.error;
-  return <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '10px 0 3px', color: failed ? '#d98b8b' : '#999', fontSize: '13px' }}><ToolIcon name={event.name} /><span>{failed ? `Falló ${label}` : `${event.status === 'running' ? 'Ejecutando' : 'Ejecutado'} ${label}`}</span></div>;
+  return <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '10px 0 3px', color: failed ? '#d98b8b' : '#999', fontSize: '13px' }}><ToolIcon name={event.name} /><span className={event.status === 'running' && !failed ? 'chat-thinking-label chat-tool-thinking-label' : undefined}>{failed ? `Falló ${label}` : `${event.status === 'running' ? 'Ejecutando' : 'Ejecutado'} ${label}`}</span></div>;
 }
 
 function ToolExecutionCards({ tools = [] }: { tools?: any[] }) {
@@ -2518,14 +2527,14 @@ function TodoCards({ tools = [] }: { tools?: any[] }) {
   const todos = latest?.output?.todos || [];
   if (!todos.length) return null;
 
-  const statusLabel = { pending: 'Pendiente', in_progress: 'En curso', completed: 'Completado', blocked: 'Bloqueado' };
-  const statusIcon = { pending: '•', in_progress: '◐', completed: '✓', blocked: '×' };
+  const statusLabel = { pending: 'Pendiente', in_progress: 'En curso', completed: 'Completado', cancelled: 'Cancelado', blocked: 'Bloqueado' };
+  const statusIcon = { pending: '•', in_progress: '◐', completed: '✓', cancelled: '⊘', blocked: '×' };
   return <div style={{ display: 'grid', gap: '7px', width: 'min(520px, 100%)', margin: '4px 0 2px' }}>
     <div style={{ display: 'grid', gap: '6px', padding: '8px 10px', border: '1px solid #2b2b2b', borderRadius: '9px', background: '#151515' }}>
       <div style={{ color: '#d8d8d8', fontSize: '11px', fontWeight: 600 }}>TODO</div>
       {todos.map((todo: any) => {
         const status = todo.status || 'pending';
-        const color = status === 'completed' ? '#8fbe9b' : status === 'blocked' ? '#d98b8b' : status === 'in_progress' ? '#d8d8d8' : '#777';
+        const color = '#999';
         return <div key={todo.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, minHeight: '30px', padding: '4px 7px', borderRadius: '7px', background: '#111' }}>
           <span aria-hidden="true" style={{ display: 'grid', placeItems: 'center', flex: '0 0 16px', width: '16px', height: '16px', color, fontSize: '14px', lineHeight: 1 }}>{statusIcon[status] || '•'}</span>
           <span title={todo.title} style={{ minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#ccc', fontSize: '11px' }}>{todo.title}</span>

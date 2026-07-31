@@ -15,7 +15,7 @@ export default function SettingsModal({ isOpen, onClose }: { isOpen: boolean; on
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="settings-title">
       <button className="absolute inset-0 cursor-default border-0 bg-black/65 backdrop-blur-[4px]" onClick={onClose} aria-label="Cerrar ajustes" />
-      <div className="relative w-[380px] max-w-[90vw] overflow-hidden rounded-[5%] border border-white/10 bg-[#161616]/90 shadow-[0_30px_60px_rgba(0,0,0,0.6)] backdrop-blur-[40px]">
+      <div className="acrylic-panel relative w-[380px] max-w-[90vw] overflow-hidden rounded-[5%] shadow-[0_30px_60px_rgba(0,0,0,0.6)]">
         <div className="p-6">
           <div className="mb-6 flex items-center justify-between">
             <h2 id="settings-title" className="text-lg font-semibold text-white">Ajustes</h2>

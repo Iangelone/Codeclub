@@ -1,6 +1,6 @@
 import { getProjectFilePath } from '../persistence';
 
-export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'blocked';
+export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled' | 'blocked';
 
 export interface PlanStep {
   id: string;

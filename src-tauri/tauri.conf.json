@@ -24,7 +24,7 @@
         "transparent": true,
         "windowEffects": {
           "effects": ["mica"],
-          "color": "#111111"
+    "color": "#202633"
         }
       }
     ],
