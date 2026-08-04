@@ -14,7 +14,7 @@ src/pages/index.astro            → App shell (Astro, CSS Grid layout)
 
 src/lib/engine/                  → AI execution layer
   ├── types.ts                   → ToolEvent, ToolContext, EngineCallbacks
-  ├── tools.ts                   → createTools, createBusinessTools, tool router
+  ├── tools.ts                   → createTools, development tool router
   ├── run.ts                     → runStream (streamText wrapper)
   ├── memory.ts                  → Persistent agent memory
   └── planning.ts                → Plans, TODOs, agent state
@@ -47,11 +47,10 @@ All data stored locally in OS app config/cache directories (`appConfigDir`, `app
 |---|---|---|
 | `settings.json` | appConfigDir | User settings (API keys, preferences) |
 | `projects.json` | appConfigDir | Project index (with backup) |
-| `meta.json` | per-project | Project metadata, chat list |
-| `agent-state.json` | per-project | Plans, TODOs |
-| `usage.jsonl` | per-project / global | Generation usage (tokens, cost, duration) |
-| `execution.jsonl` | per-project | Tool execution audit log |
-| `business.json` | per-project | Business workspace data |
+| `meta.json` | appConfigDir / project key | Project metadata, chat list |
+| `agent-state.json` | appConfigDir / project key | Plans, TODOs |
+| `usage.jsonl` | appConfigDir / project key | Generation usage (tokens, cost, duration) |
+| `execution.jsonl` | appConfigDir / project key | Tool execution audit log |
 | `persistence-log.jsonl` | appCacheDir | Persistence diagnostics |
 
 ## Color Tokens

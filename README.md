@@ -38,7 +38,7 @@ It is **local-first**: all data lives on your filesystem. No cloud, no vendor lo
 | `getExecutionLog` | Auditable tool execution history |
 
 ### Agent Tools (Business / Economy)
-Extends development tools with: `getBusinessWorkspace`, `updateBusinessWorkspace`, `createQuote`, `createBudget`, `createExecutionPlan`, `getAIUsageMetrics`, `getWhatsAppBusinessContext`, `delegateBusinessSpecialist`.
+Provides development tools for files, terminal, browser, memory, plans, TODOs and agent delegation.
 
 ### Panels & Views
 - **Left sidebar**: project management, chat history, file explorer with CRUD, drag-and-drop
@@ -78,7 +78,7 @@ Extends development tools with: `getBusinessWorkspace`, `updateBusinessWorkspace
 
 ```
 ChatInterface.tsx (React orchestrator)
-  ├── createTools() / createBusinessTools()  — AI agent tools
+  ├── createTools()  — AI agent tools
   ├── runStream() → streamText (AI SDK v7)   — core agent loop
   └── Tool execution backed by Tauri commands (Rust → native OS)
 ```

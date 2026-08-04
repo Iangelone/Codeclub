@@ -3,7 +3,6 @@ import { Cpu, Folder, House, Play, Server, Terminal, X } from 'lucide-react';
 import { activeChatStore, chatsStore, type GlobalChat } from '../lib/store';
 import ChatInterface from './ChatInterface.tsx';
 import ProjectsPanel from './ProjectsPanel.tsx';
-import BusinessPanel from './BusinessPanel.tsx';
 import { readProjectIndex, type ProjectEntry } from '../lib/projectManager';
 
 type SelectedProject = { projectPath: string; projectName?: string };
@@ -163,7 +162,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
     <div className="workspace-panels group relative flex h-full w-full min-w-0 min-h-0 flex-col overflow-hidden">
       <div className="absolute left-0 top-0 z-[60] h-12 w-full" aria-label="Accesos rápidos">
         <div className={`codeclub-motion-panel absolute left-1/2 top-1 flex h-11 -translate-x-1/2 items-start justify-center rounded-2xl px-1.5 pt-1.5 ${dockVisible ? 'pointer-events-auto translate-y-0 scale-100 opacity-100' : 'pointer-events-none translate-y-0 scale-100 opacity-0'}`}>
-        <div className="flex items-center gap-1 rounded-[14px] border border-[#202020] bg-[#111111] p-1">
+        <div className="flex items-center gap-1 rounded-[14px] border border-[#3A3A3A] bg-[#2F2F2F] p-1">
           <button type="button" aria-label="Nuevo chat" title="Nuevo chat" onClick={() => window.dispatchEvent(new CustomEvent('codeclub:request-new-chat'))} className="grid h-7 w-7 place-items-center rounded-[9px] border-0 bg-transparent text-[#777777] transition-colors hover:bg-[#1e1e1e] hover:text-[#eeeeee]"><House size={14} strokeWidth={1.8} /></button>
           <button type="button" aria-pressed={commandMenuKind === 'provider'} aria-label={`Proveedor: ${commandMenuKind === 'provider' ? 'Activo' : 'Desactivado'}`} title={`Proveedor: ${commandMenuKind === 'provider' ? 'Activo' : 'Desactivado'}`} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-command-menu', { detail: { kind: 'provider' } }))} className={`grid h-7 w-7 place-items-center rounded-[9px] border-0 transition-colors ${commandMenuKind === 'provider' ? 'bg-[#1e1e1e] text-[#eeeeee]' : 'bg-transparent text-[#777777] hover:bg-[#1e1e1e] hover:text-[#eeeeee]'}`}><Server size={14} strokeWidth={1.8} /></button>
           <button type="button" aria-pressed={commandMenuKind === 'model'} aria-label={`Modelo: ${commandMenuKind === 'model' ? 'Activo' : 'Desactivado'}`} title={`Modelo: ${commandMenuKind === 'model' ? 'Activo' : 'Desactivado'}`} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-command-menu', { detail: { kind: 'model' } }))} className={`grid h-7 w-7 place-items-center rounded-[9px] border-0 transition-colors ${commandMenuKind === 'model' ? 'bg-[#1e1e1e] text-[#eeeeee]' : 'bg-transparent text-[#777777] hover:bg-[#1e1e1e] hover:text-[#eeeeee]'}`}><Cpu size={14} strokeWidth={1.8} /></button>
@@ -182,7 +181,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
       </div>
       <div className="workspace-pane acrylic-panel min-h-0 min-w-0 flex-1 overflow-hidden">
         <div key={showProjects ? 'projects' : showBusinesses ? 'businesses' : 'chat'} className="workspace-panel-content h-full min-h-0 min-w-0">
-          {showProjects ? <ProjectsPanel /> : showBusinesses ? <BusinessPanel /> : <ChatInterface
+          {showProjects ? <ProjectsPanel /> : showBusinesses ? <div className="h-full min-h-0 bg-[#1A1A1A]" aria-label="Agentes" /> : <ChatInterface
             catalog={catalog}
             defaultProvider={defaultProvider}
             defaultModel={defaultModel}

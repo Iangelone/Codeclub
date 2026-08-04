@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, ArrowUpRight, Ban, CheckCircle2, ChevronRight, Circle, CircleDot, CircleX, ExternalLink, File, FileCode2, FileImage, FileText, Folder, FolderOpen, Folders, GitBranch, GitCompare, Globe, LockKeyhole, LogOut, MessageCircle, Plus, RefreshCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ArrowUpRight, Ban, CheckCircle2, ChevronRight, Circle, CircleDot, CircleX, EllipsisVertical, ExternalLink, File, FileCode2, FileImage, FileText, Folder, FolderOpen, Folders, GitBranch, GitCompare, Globe, LockKeyhole, LogOut, MessageCircle, MessageCirclePlus, Plus, RefreshCw, Search, SlidersHorizontal, SquareTerminal, Trash2, X } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi';
@@ -9,7 +9,6 @@ import hljs from 'highlight.js/lib/common';
 import { whatsappContextStore } from '../lib/store';
 import TerminalDock from './TerminalDock';
 import { readAgentState, writeAgentState, type AgentState, type TaskStatus } from '../lib/engine/planning';
-import { readBusinessWorkspace, writeBusinessWorkspace, type BusinessWorkspace } from '../lib/projectManager';
 
 type FileEntry = { path: string; kind: 'file' | 'directory' };
 type FileNode = FileEntry & { name: string; children: FileNode[] };
@@ -48,6 +47,9 @@ const sanitizeBrowserSelection = (value: BrowserDomSelection): BrowserDomSelecti
 });
 
 const browserSelectionHash = '#__codeclub_selection=';
+const browserHost = (value: string) => {
+  try { return new URL(value).hostname.replace(/^www\./i, '') || 'Navegador'; } catch { return 'Navegador'; }
+};
 
 const fileLanguageByExtension: Record<string, string> = {
   js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript', ts: 'typescript', tsx: 'typescript',
@@ -610,6 +612,57 @@ function ReviewView({ projectPath }: { projectPath: string }) {
   </div>;
 }
 
+function BrowserToolbar({
+  address,
+  onAddressChange,
+  onSubmit,
+  onBack,
+  onForward,
+  canGoBack,
+  canGoForward,
+  onReload,
+  onInspect,
+  onReference,
+  inspectMode,
+}: {
+  address: string;
+  onAddressChange: (value: string) => void;
+  onSubmit: () => void;
+  onBack: () => void;
+  onForward: () => void;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  onReload: () => void;
+  onInspect: () => void;
+  onReference: () => void;
+  inspectMode: boolean;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [focused, setFocused] = useState(false);
+  const host = address.replace(/^https?:\/\//i, '').split('/')[0] || address;
+
+  const focusAddress = () => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  };
+
+  return <div className="flex h-9 shrink-0 items-center gap-1.5 border-b border-[#242424] bg-[#1A1A1A] px-2">
+    <button type="button" onClick={onBack} disabled={!canGoBack} className="grid h-7 w-7 shrink-0 place-items-center rounded-md border-0 bg-transparent text-[#777] transition-colors hover:bg-[#242424] hover:text-[#ddd] disabled:opacity-30" title="Atrás"><ArrowLeft size={16} strokeWidth={1.7} /></button>
+    <button type="button" onClick={onForward} disabled={!canGoForward} className="grid h-7 w-7 shrink-0 place-items-center rounded-md border-0 bg-transparent text-[#777] transition-colors hover:bg-[#242424] hover:text-[#ddd] disabled:opacity-30" title="Adelante"><ArrowRight size={16} strokeWidth={1.7} /></button>
+    <button type="button" onClick={onReload} className="grid h-7 w-7 shrink-0 place-items-center rounded-md border-0 bg-transparent text-[#888] transition-colors hover:bg-[#242424] hover:text-[#ddd]" title="Recargar"><RefreshCw size={16} strokeWidth={1.7} /></button>
+    <div onClick={focusAddress} className={`group/address relative flex h-8 min-w-0 flex-1 items-center justify-center rounded-[11px] border px-2.5 transition-colors ${focused ? 'border-[#343434] bg-[#242424]' : 'border-transparent hover:border-[#303030] hover:bg-[#292929]'}`}>
+      <SlidersHorizontal size={14} strokeWidth={1.6} onClick={(event) => { event.stopPropagation(); onInspect(); }} className={`absolute left-2.5 z-10 cursor-pointer text-[#8a8a8a] transition-colors hover:text-[#d6d6d6] ${inspectMode ? 'text-[#d6d6d6]' : ''}`} title="Seleccionar elemento" />
+      <span className={`pointer-events-none truncate text-[13px] text-[#e4e4e4] transition-opacity ${focused ? 'opacity-0' : 'opacity-100'}`}>{host}</span>
+      <form className="absolute inset-0 flex items-center px-8" onSubmit={(event) => { event.preventDefault(); onSubmit(); }}>
+        <input ref={inputRef} value={address} onChange={(event) => onAddressChange(event.target.value)} onFocus={(event) => { setFocused(true); event.currentTarget.select(); }} onBlur={() => setFocused(false)} className={`min-w-0 flex-1 bg-transparent text-center text-[13px] text-[#eeeeee] outline-none transition-opacity ${focused ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`} aria-label="Dirección web" />
+      </form>
+      <button type="button" onClick={(event) => { event.stopPropagation(); onReference(); }} className={`absolute right-2 grid h-6 w-6 place-items-center rounded-md border-0 bg-transparent text-[#999] transition-colors hover:bg-[#333] hover:text-[#eee] ${focused ? 'opacity-100' : 'opacity-0 group-hover/address:opacity-100'}`} title="Referenciar página"><ArrowUpRight size={15} strokeWidth={1.7} /></button>
+    </div>
+    <button type="button" onClick={onReference} className="grid h-7 w-7 shrink-0 place-items-center rounded-md border-0 bg-transparent text-[#888] transition-colors hover:bg-[#242424] hover:text-[#ddd]" title="Nuevo chat con esta página"><MessageCirclePlus size={17} strokeWidth={1.6} /></button>
+    <button type="button" className="grid h-7 w-7 shrink-0 place-items-center rounded-md border-0 bg-transparent text-[#888] transition-colors hover:bg-[#242424] hover:text-[#ddd]" title="Más opciones"><EllipsisVertical size={16} strokeWidth={1.7} /></button>
+  </div>;
+}
+
 function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialUrl?: string }) {
   const [address, setAddress] = useState(initialUrl);
   const [history, setHistory] = useState([initialUrl]);
@@ -720,6 +773,7 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
     }
     const requestId = ++requestRef.current;
     setAddress(url); addressRef.current = url; setError(''); setSelection(null); setInspectMode(false);
+    window.dispatchEvent(new CustomEvent('codeclub:browser-tab-changed', { detail: { url } }));
     inspectModeRef.current = false;
     selectionKeyRef.current = '';
     try {
@@ -831,10 +885,18 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
   } : { title: address.replace(/^https?:\/\//, '').split('/')[0] || 'Página', text: `Página abierta: ${address}` } }));
 
   return <div className="flex h-full min-h-0 flex-col bg-[#1A1A1A] text-[#d8d8d8]">
-    <div className="flex shrink-0 items-center gap-1 border-b border-[#202020] px-2 py-2">
+    <BrowserToolbar address={address} onAddressChange={setAddress} onSubmit={() => void openPage(address)} onBack={goBack} onForward={goForward} canGoBack={historyIndex > 0} canGoForward={historyIndex < history.length - 1} onReload={() => void openPage(address, false)} onInspect={() => {
+      const active = !inspectModeRef.current;
+      inspectModeRef.current = active;
+      selectionKeyRef.current = '';
+      if (active) setSelection(null);
+      setInspectMode(active);
+      void installInspector(active);
+    }} onReference={referencePage} inspectMode={inspectMode} />
+    <div className="hidden flex shrink-0 items-center gap-1 border-b border-[#202020] px-2 py-2">
       <button type="button" onClick={goBack} disabled={historyIndex === 0} className="grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent text-[#666] hover:bg-[#1c1c1c] hover:text-[#eee] disabled:opacity-30" title="Atrás"><ArrowLeft size={13} /></button>
       <button type="button" onClick={goForward} disabled={historyIndex >= history.length - 1} className="grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent text-[#666] hover:bg-[#1c1c1c] hover:text-[#eee] disabled:opacity-30" title="Adelante"><ArrowRight size={13} /></button>
-      <form className="flex min-w-0 flex-1" onSubmit={(event) => { event.preventDefault(); void openPage(address); }}><input value={address} onChange={(event) => setAddress(event.target.value)} className="min-w-0 flex-1 rounded-md border border-[#202020] bg-[#161616] px-2.5 py-1.5 text-[10px] text-[#cfcfcf] outline-none focus:border-[#2f2f2f]" aria-label="Dirección web" /></form>
+      <form className="flex min-w-0 flex-1" onSubmit={(event) => { event.preventDefault(); void openPage(address); }}><input value={address} onChange={(event) => setAddress(event.target.value)} onFocus={(event) => event.currentTarget.select()} className="min-w-0 flex-1 rounded-md border border-[#202020] bg-[#161616] px-2.5 py-1.5 text-[10px] text-[#cfcfcf] outline-none focus:border-[#2f2f2f]" aria-label="Dirección web" /></form>
       <button type="button" onClick={() => void openPage(address, false)} className="grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent text-[#777] hover:bg-[#1c1c1c] hover:text-[#eee]" title="Cargar"><RefreshCw size={12} /></button>
       <button type="button" onClick={() => {
         const active = !inspectModeRef.current;
@@ -934,10 +996,11 @@ function BrowserView({ initialUrl = 'https://www.google.com' }: { initialUrl?: s
   };
 
   return <div className="flex h-full min-h-0 flex-col bg-[#1A1A1A] text-[#d8d8d8]">
-    <div className="flex shrink-0 items-center gap-1 border-b border-[#202020] px-2 py-2">
+    <BrowserToolbar address={address} onAddressChange={setAddress} onSubmit={() => void loadPage()} onBack={goBack} onForward={goForward} canGoBack={historyIndexRef.current > 0} canGoForward={historyIndexRef.current < historyRef.current.length - 1} onReload={() => void loadPage(address, false)} onInspect={() => setInspectMode((active) => !active)} onReference={() => pushReference(selectedBox || selection || title, selectedBox ? 'Elemento seleccionado' : selection ? 'Selección' : title)} inspectMode={inspectMode} />
+    <div className="hidden flex shrink-0 items-center gap-1 border-b border-[#202020] px-2 py-2">
       <button type="button" onClick={goBack} disabled={historyIndexRef.current === 0} className="grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent text-[#666] hover:bg-[#1c1c1c] hover:text-[#eee] disabled:opacity-30" title="Atrás"><ArrowLeft size={13} /></button>
       <button type="button" onClick={goForward} disabled={historyIndexRef.current >= historyRef.current.length - 1} className="grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent text-[#666] hover:bg-[#1c1c1c] hover:text-[#eee] disabled:opacity-30" title="Adelante"><ArrowRight size={13} /></button>
-      <form className="flex min-w-0 flex-1" onSubmit={(event) => { event.preventDefault(); void loadPage(); }}><input value={address} onChange={(event) => setAddress(event.target.value)} className="min-w-0 flex-1 rounded-md border border-[#202020] bg-[#161616] px-2.5 py-1.5 text-[10px] text-[#cfcfcf] outline-none focus:border-[#2f2f2f]" aria-label="Dirección web" /></form>
+      <form className="flex min-w-0 flex-1" onSubmit={(event) => { event.preventDefault(); void loadPage(); }}><input value={address} onChange={(event) => setAddress(event.target.value)} onFocus={(event) => event.currentTarget.select()} className="min-w-0 flex-1 rounded-md border border-[#202020] bg-[#161616] px-2.5 py-1.5 text-[10px] text-[#cfcfcf] outline-none focus:border-[#2f2f2f]" aria-label="Dirección web" /></form>
       <button type="button" onClick={() => void loadPage(address, false)} className="grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent text-[#777] hover:bg-[#1c1c1c] hover:text-[#eee]" title="Cargar"><RefreshCw size={12} /></button>
       <button type="button" onClick={() => pushReference(selectedBox || selection || title, selectedBox ? 'Elemento seleccionado' : selection ? 'Selección' : title)} className="grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent text-[#777] hover:bg-[#1c1c1c] hover:text-[#eee]" title="Enviar referencia al chat"><ArrowUpRight size={13} /></button>
       <button type="button" onClick={() => setInspectMode((active) => !active)} className={`grid h-7 w-7 place-items-center rounded-md border-0 text-[#777] hover:bg-[#1c1c1c] hover:text-[#eee] ${inspectMode ? 'bg-[#242424] text-[#eee]' : 'bg-transparent'}`} title="Seleccionar elemento de la página"><Globe size={12} /></button>
@@ -1117,8 +1180,8 @@ export default function RightSidebar() {
   const [activeProjectPath, setActiveProjectPath] = useState('');
   const [activeProjectName, setActiveProjectName] = useState('');
   const [artifactState, setArtifactState] = useState<AgentState>({ plan: null, plans: [], todos: [] });
-  const [businessState, setBusinessState] = useState<BusinessWorkspace | null>(null);
   const [browserUrl, setBrowserUrl] = useState('https://www.google.com');
+  const [browserFaviconFailed, setBrowserFaviconFailed] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const resizingRef = useRef(false);
 
@@ -1144,11 +1207,9 @@ export default function RightSidebar() {
   useEffect(() => {
     let cancelled = false;
     const loadArtifacts = async () => {
-      if (!activeProjectPath) { setArtifactState({ plan: null, plans: [], todos: [] }); setBusinessState(null); return; }
+      if (!activeProjectPath) { setArtifactState({ plan: null, plans: [], todos: [] }); return; }
       const next = await readAgentState(activeProjectPath);
       if (!cancelled) setArtifactState(next);
-      const business = await readBusinessWorkspace(activeProjectPath);
-      if (!cancelled) setBusinessState(business);
     };
     void loadArtifacts();
     const handleArtifactsChanged = (event: Event) => {
@@ -1160,10 +1221,22 @@ export default function RightSidebar() {
   }, [activeProjectPath, activeTab]);
 
   useEffect(() => {
+    const handleBrowserTabChanged = (event: Event) => {
+      const url = (event as CustomEvent<{ url?: string }>).detail?.url;
+      if (!url) return;
+      setBrowserUrl(url);
+      setBrowserFaviconFailed(false);
+    };
+    window.addEventListener('codeclub:browser-tab-changed', handleBrowserTabChanged);
+    return () => window.removeEventListener('codeclub:browser-tab-changed', handleBrowserTabChanged);
+  }, []);
+
+  useEffect(() => {
     const handleBrowserNavigate = (event: Event) => {
       const url = (event as CustomEvent<{ url?: string }>).detail?.url;
       if (!url) return;
       setBrowserUrl(url);
+      setBrowserFaviconFailed(false);
       window.dispatchEvent(new CustomEvent('codeclub:open-right-panel'));
       setTabs((current) => current.includes('browser') ? current : [...current, 'browser']);
       setActiveTab('browser');
@@ -1266,7 +1339,7 @@ export default function RightSidebar() {
         <div className="terminal-tabs h-[34px] shrink-0 border-b-0 px-1" style={{ overflow: 'visible' }}>
           {tabs.map((tab) => (
             <button key={tab} type="button" onDoubleClick={() => closeTab(tab)} onClick={() => setActiveTab(tab)} className={`terminal-tab h-[30px] min-w-0 flex-1 justify-center rounded-[6px] border-0 px-3 text-[10px] ${activeTab === tab ? 'is-active' : ''}`} style={{ backgroundColor: '#2B2B2B' }}>
-              {labels[tab]}
+              {tab === 'browser' ? <span className="flex min-w-0 items-center justify-center gap-1.5"><span className="grid h-4 w-4 shrink-0 place-items-center">{browserFaviconFailed ? <Globe size={13} strokeWidth={1.7} /> : <img src={`${new URL(browserUrl).origin}/favicon.ico`} onError={() => setBrowserFaviconFailed(true)} alt="" className="h-3.5 w-3.5 rounded-sm" />}</span><span className="min-w-0 truncate">{browserHost(browserUrl)}</span></span> : labels[tab]}
             </button>
           ))}
           <div ref={menuRef} className="terminal-new relative">
@@ -1282,7 +1355,7 @@ export default function RightSidebar() {
            {activeTab === 'files' && <FilesView projectPath={activeProjectPath} />}
            {activeTab === 'review' && <ReviewView projectPath={activeProjectPath} />}
            {activeTab === 'browser' && <NativeBrowserView initialUrl={browserUrl} />}
-           {activeTab === 'artifacts' && <ArtifactsView state={artifactState} business={businessState} projectPath={activeProjectPath} projectName={activeProjectName} hasProject={Boolean(activeProjectPath)} />}
+           {activeTab === 'artifacts' && <ArtifactsView state={artifactState} projectPath={activeProjectPath} projectName={activeProjectName} hasProject={Boolean(activeProjectPath)} />}
            <div className={`h-full min-h-0 w-full min-w-0 ${activeTab === 'terminals' ? 'flex' : 'hidden'}`}><TerminalDock embedded /></div>
           {tabs.length === 0 && <div className="flex flex-1 items-center justify-center px-6">
             <div className="flex w-full max-w-[420px] flex-col gap-2">
@@ -1298,8 +1371,8 @@ export default function RightSidebar() {
   );
 }
 
-function ArtifactsView({ state, business, projectPath, projectName, hasProject }: { state: AgentState; business: BusinessWorkspace | null; projectPath: string; projectName: string; hasProject: boolean }) {
-  const [selectedArtifact, setSelectedArtifact] = useState<{ kind: 'plan' | 'todo' | 'quote'; id: string } | null>(null);
+function ArtifactsView({ state, projectPath, projectName, hasProject }: { state: AgentState; projectPath: string; projectName: string; hasProject: boolean }) {
+  const [selectedArtifact, setSelectedArtifact] = useState<{ kind: 'plan' | 'todo'; id: string } | null>(null);
   const selectionColor = '#3a3a3a';
   useEffect(() => setSelectedArtifact(null), [projectPath]);
   useEffect(() => {
@@ -1309,7 +1382,7 @@ function ArtifactsView({ state, business, projectPath, projectName, hasProject }
     document.addEventListener('click', clearSelectionOutsideArtifacts);
     return () => document.removeEventListener('click', clearSelectionOutsideArtifacts);
   }, []);
-  const pushReference = (kind: 'plan' | 'todo' | 'quote', id: string, title: string) => {
+  const pushReference = (kind: 'plan' | 'todo', id: string, title: string) => {
     window.dispatchEvent(new CustomEvent('codeclub:artifact-reference', { detail: { projectPath, kind, id, title } }));
   };
   const plans = state.plans?.length ? state.plans : state.plan ? [state.plan] : [];
@@ -1324,17 +1397,10 @@ function ArtifactsView({ state, business, projectPath, projectName, hasProject }
     await writeAgentState(projectPath, { ...current, todos: current.todos.filter((todo) => todo.id !== id) });
     window.dispatchEvent(new CustomEvent('codeclub:artifacts-changed', { detail: { projectPath } }));
   };
-  const removeQuote = async (id: string) => {
-    const current = await readBusinessWorkspace(projectPath);
-    if (!current) return;
-    await writeBusinessWorkspace(projectPath, { ...current, quotes: current.quotes.filter((quote: any) => quote.id !== id) });
-    window.dispatchEvent(new CustomEvent('codeclub:artifacts-changed', { detail: { projectPath } }));
-  };
   const removeSelectedArtifact = async () => {
     if (!selectedArtifact) return;
     if (selectedArtifact.kind === 'plan') await removePlan(selectedArtifact.id);
     if (selectedArtifact.kind === 'todo') await removeTodo(selectedArtifact.id);
-    if (selectedArtifact.kind === 'quote') await removeQuote(selectedArtifact.id);
     setSelectedArtifact(null);
   };
   useEffect(() => {
@@ -1348,7 +1414,7 @@ function ArtifactsView({ state, business, projectPath, projectName, hasProject }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedArtifact, projectPath]);
-  const isSelected = (kind: 'plan' | 'todo' | 'quote', id: string) => selectedArtifact?.kind === kind && selectedArtifact.id === id;
+  const isSelected = (kind: 'plan' | 'todo', id: string) => selectedArtifact?.kind === kind && selectedArtifact.id === id;
   const csvCell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
   const exportQuoteCsv = (quote: any) => {
     const rows = [
@@ -1494,7 +1560,6 @@ function ArtifactsView({ state, business, projectPath, projectName, hasProject }
       <div className="grid gap-1.5">{plan.steps.map((step) => <div key={step.id} className="flex min-w-0 items-center gap-2 text-[10px]"><ArtifactStatus status={step.status} /><span title={step.title} className="min-w-0 truncate text-[#999]">{step.title}</span></div>)}</div>
     </div>)}</div><div className="mt-4 h-px bg-[#202020]" /></section>}
     {state.todos.length > 0 ? <section className="grid gap-1.5"><div className="mb-1 text-[10px] font-medium uppercase tracking-[0.08em] text-[#666]">TODO</div>{state.todos.map((todo) => <div key={todo.id} onClick={() => setSelectedArtifact({ kind: 'todo', id: todo.id })} onDoubleClick={() => pushReference('todo', todo.id, todo.title)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); void copyArtifact('todo', todo); }} className="flex min-w-0 cursor-pointer items-center gap-2 rounded-md border bg-[#151515] px-2 py-1.5" style={{ borderColor: isSelected('todo', todo.id) ? selectionColor : '#202020' }}><ArtifactStatus status={todo.status} /><span title={todo.title} className="min-w-0 flex-1 truncate text-[11px] text-[#bbb]">{todo.title}</span>{isSelected('todo', todo.id) && <button type="button" onClick={(event) => { event.stopPropagation(); void removeTodo(todo.id); }} className="grid h-5 w-5 shrink-0 place-items-center rounded text-[#777] hover:bg-[#2a1b1b] hover:text-[#e58c8c]" title="Eliminar TODO" aria-label="Eliminar TODO"><Trash2 size={12} /></button>}</div>)}</section> : !state.plan && <div className="rounded-lg border border-dashed border-[#252525] px-3 py-5 text-center text-[11px] text-[#666]">Todavía no hay TODOs ni planes.</div>}
-    {business?.quotes?.length ? <section className={`grid gap-2 ${state.plan || state.todos.length ? 'border-t border-[#202020] pt-4' : ''}`}><div className="text-[10px] font-medium uppercase tracking-[0.08em] text-[#666]">COTIZACIONES</div>{business.quotes.map((quote: any) => <QuoteArtifact key={quote.id} quote={quote} selected={isSelected('quote', quote.id)} selectionColor={selectionColor} onSelect={() => setSelectedArtifact({ kind: 'quote', id: quote.id })} onCopy={() => void copyArtifact('quote', quote)} onReference={() => pushReference('quote', quote.id, quote.title || 'Cotización')} onRemove={() => void removeQuote(quote.id)} />)}</section> : null}
   </div>;
 }
 

@@ -782,7 +782,7 @@ export default function Sidebar() {
             <span className="flex h-4 w-4 shrink-0 items-center justify-center"><Folder size={16} strokeWidth={1.8} /></span> Proyectos
           </div>
           <button type="button" className={`codeclub-motion-control w-full min-h-[32px] flex items-center gap-[8px] rounded-[7px] px-[8px] text-[12px] text-left transition-colors hover:translate-x-px ${activeSection === "businesses" ? "bg-[#30333b] text-[#f3f4f6] shadow-[inset_0_1px_rgba(255,255,255,0.06)]" : "text-[#b8bbc3] hover:bg-[var(--color-surface-3)] hover:text-[#f3f4f6]"} border-0 appearance-none`} onClick={() => { setActiveSection("businesses"); window.dispatchEvent(new CustomEvent("codeclub:open-businesses")); window.setTimeout(() => setActiveSection("businesses"), 80); }}>
-            <span className="flex h-4 w-4 shrink-0 items-center justify-center"><Target size={16} strokeWidth={1.8} /></span> Negocios
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center"><Target size={16} strokeWidth={1.8} /></span> Agentes
           </button>
           <button type="button" className="codeclub-motion-control w-full min-h-[32px] flex items-center gap-[8px] rounded-[7px] px-[8px] text-[12px] text-left text-[#b8bbc3] hover:bg-[var(--color-surface-3)] hover:text-[#f3f4f6] hover:translate-x-px bg-transparent border-0 appearance-none" onClick={() => window.dispatchEvent(new CustomEvent("codeclub:open-extensions"))}>
             <span className="flex h-4 w-4 shrink-0 items-center justify-center"><Blocks size={16} strokeWidth={1.8} /></span> Complementos

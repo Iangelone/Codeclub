@@ -7,13 +7,14 @@ const SETTINGS_FILE = "settings.json";
 export const getAppConfigFilePath = async (...parts: string[]) => join(await appConfigDir(), ...parts);
 export const getAppCacheFilePath = async (...parts: string[]) => join(await appCacheDir(), ...parts);
 
-/** Project data travels with the project so it remains portable. */
+/** All project data stays inside the app, keyed by the canonical project path. */
 export const getProjectDataDir = async (projectPath: string, ...parts: string[]) => {
   if (!projectPath) return join(await appConfigDir(), "projects", "global", ...parts);
-  return join(projectPath, ".codeclub", ...parts);
+  return join(await appConfigDir(), "projects", encodeURIComponent(projectPath), ...parts);
 };
 
-const getLegacyProjectDataDir = async (projectPath: string) => join(await appConfigDir(), "projects", encodeURIComponent(projectPath));
+const getLegacyAppProjectDataDir = async (projectPath: string) => join(await appConfigDir(), "projects", encodeURIComponent(projectPath));
+const getLegacyProjectDataDir = async (projectPath: string) => join(projectPath, ".codeclub");
 
 let projectMigrationQueue = Promise.resolve();
 const migrateDirectory = async (source: string, target: string): Promise<void> => {
@@ -30,9 +31,11 @@ const migrateDirectory = async (source: string, target: string): Promise<void> =
 export const migrateLegacyProjectData = async (projectPath: string) => {
   if (!projectPath) return;
   const operation = projectMigrationQueue.then(async () => {
-    const source = await getLegacyProjectDataDir(projectPath);
     const target = await getProjectDataDir(projectPath);
-    if (await exists(source)) await migrateDirectory(source, target);
+    const legacySources = [await getLegacyAppProjectDataDir(projectPath), await getLegacyProjectDataDir(projectPath)];
+    for (const source of legacySources) {
+      if (source !== target && await exists(source)) await migrateDirectory(source, target);
+    }
   });
   projectMigrationQueue = operation.catch(() => undefined);
   await operation;

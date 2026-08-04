@@ -7,7 +7,7 @@ The engine is the AI execution layer, separated from the React UI. Lives in `src
 | File | Purpose |
 |---|---|
 | `types.ts` | Shared types: `ToolEvent`, `ToolContext`, `EngineCallbacks` |
-| `tools.ts` | `createTools(ctx)` — development tools, `createBusinessTools(ctx)` — business tools, tool router AI |
+| `tools.ts` | `createTools(ctx)` — development tools and agent router |
 | `run.ts` | `runStream(params)` — AI SDK `streamText` loop, returns assistant content |
 | `memory.ts` | `saveMemory`, `loadMemory`, `searchMemory`, `deleteMemory`, `deleteMemoriesByTag` |
 | `planning.ts` | `readAgentState`, `writeAgentState` — plans, TODOs persisted in `agent-state.json` |
@@ -77,8 +77,6 @@ Business mode extends development tools with business-specific capabilities:
 |---|---|---|
 | `getBusinessWorkspace` | `readBusinessWorkspace` | Reads business data: quotes, invoices, milestones, payments |
 | `updateBusinessWorkspace` | `writeBusinessWorkspace` | Creates/updates business entries |
-| `createQuote` | `writeBusinessWorkspace` | Creates a formal quote with items and pricing |
-| `createBudget` | `writeBusinessWorkspace` | Creates a project budget |
 | `createExecutionPlan` | `writeBusinessWorkspace` | Creates execution plan with milestones |
 | `getAIUsageMetrics` | `summarizeGenerationUsage` | Aggregates token usage, cost, and duration |
 | `getWhatsAppBusinessContext` | `whatsappContextStore` | Reads WhatsApp chats for business analysis |

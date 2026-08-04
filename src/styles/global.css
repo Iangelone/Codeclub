@@ -193,33 +193,6 @@ button[title="Proveedor, modelo y proyecto"] {
   border-radius: 999px;
 }
 
-.business-table-scrollbar,
-.business-dashboard-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: #2f2f2f transparent;
-}
-
-.business-table-scrollbar::-webkit-scrollbar,
-.business-dashboard-scrollbar::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-.business-table-scrollbar::-webkit-scrollbar-track,
-.business-dashboard-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.business-table-scrollbar::-webkit-scrollbar-thumb,
-.business-dashboard-scrollbar::-webkit-scrollbar-thumb {
-  background: #2f2f2f;
-  border-radius: 999px;
-}
-
-.business-history-track {
-  min-width: max-content;
-}
-
 html,
 body {
   background-color: #111111;

@@ -4,7 +4,6 @@ import type { ToolContext } from './types';
 import { runStream } from './run';
 import { saveMemory, searchMemory, deleteMemory } from './memory';
 import { createId, readAgentState, writeAgentState, type TaskStatus } from './planning';
-import { ensureBusinessWorkspace, readBusinessWorkspace, writeBusinessWorkspace } from '../projectManager';
 import { appendGenerationUsage, readGenerationUsage, summarizeGenerationUsage } from '../usage';
 import { readExecutionLog } from '../execution-log';
 
@@ -97,8 +96,7 @@ type SwarmChild = { id: string; name: string; specialist: string; task: string; 
 type SwarmState = { id: string; name: string; status: string; children: Record<string, SwarmChild> };
 const swarmStore = new Map<string, SwarmState>();
 const swarmChildTools = new Map<string, Record<string, any>>();
-const PARENT_ONLY_TOOLS = new Set(['createPlan', 'updatePlan', 'todo', 'getTaskStatus', 'createQuote', 'createBudget', 'createExecutionPlan', 'updateBusinessWorkspace']);
-const ECONOMY_READ_TOOLS = ['listProjectFiles', 'readProjectFile', 'searchProjectText', 'listIndexedProjects', 'getBusinessWorkspace', 'getAIUsageMetrics', 'getExecutionLog'];
+const PARENT_ONLY_TOOLS = new Set(['createPlan', 'updatePlan', 'todo', 'getTaskStatus']);
 const normalizeBrowserUrl = (raw: string) => {
   const value = raw.trim();
   if (!value) return null;
@@ -140,7 +138,7 @@ function createSwarmTool(ctx: { projectPath: string; projectScoped?: boolean; re
           specialist: { type: 'string' },
           task: { type: 'string', maxLength: 1000 },
           message: { type: 'string', maxLength: 1000 },
-          template: { type: 'string', enum: ['read_only', 'developer', 'economist', 'custom'] },
+          template: { type: 'string', enum: ['read_only', 'developer', 'custom'] },
           tools: { type: 'array', items: { type: 'string' }, maxItems: 30 },
         },
         required: ['action'],
@@ -160,9 +158,7 @@ function createSwarmTool(ctx: { projectPath: string; projectScoped?: boolean; re
           const name = childName || CHILD_DISPLAY_NAMES[Object.keys(swarm.children).length % CHILD_DISPLAY_NAMES.length];
           const child: SwarmChild = { id: childId || createId('child'), name, specialist: specialist || template || 'explorer', task: task || '', status: 'pending', messages: [] };
           const selectedTools = template === 'read_only'
-            ? Object.fromEntries(Object.entries(childTools).filter(([name]) => ['listFiles', 'readFile', 'searchText', ...ECONOMY_READ_TOOLS].includes(name)))
-            : template === 'economist'
-              ? Object.fromEntries(Object.entries(childTools).filter(([name]) => ECONOMY_READ_TOOLS.includes(name)))
+            ? Object.fromEntries(Object.entries(childTools).filter(([name]) => ['listFiles', 'readFile', 'searchText'].includes(name)))
             : requestedTools?.length
               ? Object.fromEntries(requestedTools.filter((name) => childTools[name] && !PARENT_ONLY_TOOLS.has(name) && !['swarm', 'subagent', 'delegateBusinessSpecialist'].includes(name)).map((name) => [name, childTools[name]]))
               : Object.fromEntries(Object.entries(childTools).filter(([name]) => !PARENT_ONLY_TOOLS.has(name) && !['swarm', 'subagent', 'delegateBusinessSpecialist', 'listAvailableTools'].includes(name)));
@@ -196,6 +192,7 @@ function createSwarmTool(ctx: { projectPath: string; projectScoped?: boolean; re
   };
 }
 
+/* Economy, quotes and commercial specialist tools were removed from the product surface.
 const businessSpecialistTools = (projectPath: string, recordToolEvent: (name: string, input: any, output: any) => void, setAgentState: (state: string) => void) => ({
   ...createSubagentTools({ projectPath, recordToolEvent, setAgentState }),
   getBusinessWorkspace: tool({
@@ -460,17 +457,16 @@ export function createBusinessTools(ctx: { recordToolEvent: (name: string, input
     }),
   };
 }
+*/
 
-export function selectToolsForPrompt(toolset: Record<string, any>, mode: 'business' | 'development', prompt: string) {
+export function selectToolsForPrompt(toolset: Record<string, any>, _mode: 'development', prompt: string) {
   const text = prompt.toLowerCase();
-  const keys = new Set(mode === 'business'
-    ? ['listProjectFiles', 'readProjectFile', 'searchProjectText', 'getBusinessWorkspace', 'getAIUsageMetrics']
-    : ['listFiles', 'readFile', 'searchText', 'askUser', 'createPlan', 'updatePlan', 'todo', 'getTaskStatus']);
+  const keys = new Set(['listFiles', 'readFile', 'searchText', 'askUser', 'createPlan', 'updatePlan', 'todo', 'getTaskStatus']);
 
   const add = (...names: string[]) => names.forEach((name) => keys.add(name));
   const has = (...terms: string[]) => terms.some((term) => text.includes(term));
 
-  if (mode === 'business') {
+  if (false) {
     if (has('cotiz', 'presupuesto', 'propuesta', 'precio', 'tarifa', 'estim')) add('createQuote', 'createBudget', 'updateBusinessWorkspace');
     if (has('plan', 'hito', 'roadmap', 'estrateg')) add('createExecutionPlan', 'updateBusinessWorkspace');
     if (has('panel', 'dashboard', 'mostrar', 'ocultar', 'esconder', 'visibilidad')) add('getBusinessWorkspace', 'updateBusinessWorkspace');
@@ -487,11 +483,12 @@ export function selectToolsForPrompt(toolset: Record<string, any>, mode: 'busine
     if (has('log', 'auditar', 'ejecución', 'ejecucion', 'herramientas', 'debug')) add('getExecutionLog');
   }
 
-  if (mode === 'development' && has('control de pc', 'computadora', 'mouse', 'teclado', 'navegador', 'edge', 'notepad', 'bloc de notas')) add('subagent', 'runCommand', 'openBrowser', 'getBrowserState', 'browserAction');
+  if (_mode === 'development' && has('control de pc', 'computadora', 'mouse', 'teclado', 'navegador', 'edge', 'notepad', 'bloc de notas')) add('subagent', 'runCommand', 'openBrowser', 'getBrowserState', 'browserAction');
 
   return Object.fromEntries([...keys].filter((name) => toolset[name]).map((name) => [name, toolset[name]]));
 }
 
+/* Legacy economy-aware routing removed. Development is the only agent mode now.
 const TOOL_ROUTER_CATALOG: Record<'business' | 'development', Record<string, string>> = {
   development: {
     listFiles: 'listar archivos del workspace', readFile: 'leer archivos', searchText: 'buscar texto en archivos', writeFile: 'crear o editar archivos; también crea carpetas padre', runCommand: 'ejecutar comandos, tests, Git o procesos', terminal: 'crear procesos persistentes en background', openBrowser: 'abrir una URL en la pestaña Navegador', getBrowserState: 'obtener estado DOM y accesibilidad del navegador como JSON', browserAction: 'hacer click, escribir, pulsar teclas o scroll usando selectores', askUser: 'pedir una decisión al usuario', createPlan: 'crear planes de implementación', updatePlan: 'actualizar planes', todo: 'crear o actualizar tareas TODO', getTaskStatus: 'consultar estado de tareas', subagent: 'delegar investigación a un subagente', remember: 'guardar memoria', recall: 'consultar memoria', forget: 'borrar memoria', getExecutionLog: 'auditar ejecuciones y tools',
@@ -603,6 +600,31 @@ export async function resolveToolsWithAI({ model, mode, prompt, toolset, signal,
   const actionTools = ['writeFile', 'runCommand', 'terminal', 'subagent'].filter((name) => allowed.has(name));
   const resolved = [...new Set(decision?.requiresAction ? [...selected, ...actionTools] : selected)];
   return { tools: Object.fromEntries(resolved.map((name) => [name, toolset[name]])), confidence: decision?.confidence ?? 0, reason: decision?.reason || 'intención detectada', requiresAction: decision?.requiresAction === true, goal: decision?.goal || prompt, verification: decision?.verification || 'La tool correspondiente debe devolver un resultado exitoso.' };
+}
+
+*/
+
+export type AgentMode = 'development';
+export type AgentSpecialist = 'primary' | 'developer' | 'explorer' | 'frontend' | 'backend' | 'qa' | 'security' | 'documentation' | 'computer_use';
+
+export async function resolveAgentRouteWithAI({ prompt }: { model?: any; prompt: string; modeOverride?: 'auto' | AgentMode; signal?: AbortSignal; onUsage?: (usage: any) => void | Promise<void> }) {
+  return { mode: 'development' as const, specialist: inferAgentSpecialist(prompt, 'development'), confidence: 1, reason: 'Desarrollo es el modo único de Codeclub.' };
+}
+
+export function inferAgentMode(_prompt: string): AgentMode { return 'development'; }
+
+export function inferAgentSpecialist(prompt: string, _mode: AgentMode): AgentSpecialist {
+  const text = prompt.toLowerCase();
+  if (/navegador|browser|pc|mouse|teclado|edge|youtube/.test(text)) return 'computer_use';
+  if (/test|qa|probar|error|bug|falla/.test(text)) return 'qa';
+  if (/ui|ux|diseño|css|componente|interfaz/.test(text)) return 'frontend';
+  if (/api|backend|servidor|rust|tauri|base de datos/.test(text)) return 'backend';
+  if (/document|readme|explicar/.test(text)) return 'documentation';
+  return 'developer';
+}
+
+export async function resolveToolsWithAI({ toolset, prompt }: { model?: any; mode?: AgentMode; prompt: string; toolset: Record<string, any>; signal?: AbortSignal; onUsage?: (usage: any) => void | Promise<void> }) {
+  return { tools: selectToolsForPrompt(toolset, 'development', prompt), confidence: 1, reason: 'Selección de tools de desarrollo.', requiresAction: false, goal: prompt, verification: 'La tool correspondiente debe devolver un resultado exitoso.' };
 }
 
 export async function verifyToolExecutionWithAI({ model, prompt, goal, verification, toolEvents, changes, signal, onUsage }: { model: any; prompt: string; goal: string; verification: string; toolEvents: any[]; changes: any; signal?: AbortSignal; onUsage?: (usage: any) => void | Promise<void> }) {
@@ -1093,7 +1115,7 @@ export function createParentTools(ctx: ToolContext & { availableTools: Record<st
       description: 'List every operational tool that the parent can assign to children. The parent cannot execute these tools directly.',
       inputSchema: jsonSchema({ type: 'object', properties: {}, additionalProperties: false }),
       execute: async () => {
-        const output = { tools: Object.keys(availableTools), parentTools: Object.keys(artifactTools), templates: ['read_only', 'developer', 'economist', 'custom'] };
+        const output = { tools: Object.keys(availableTools), parentTools: Object.keys(artifactTools), templates: ['read_only', 'developer', 'custom'] };
         recordToolEvent('listAvailableTools', {}, output);
         return output;
       },

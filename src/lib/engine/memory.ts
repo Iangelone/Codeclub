@@ -1,4 +1,4 @@
-import { getProjectFilePath } from '../persistence';
+import { getProjectFilePath, migrateLegacyProjectData } from '../persistence';
 
 export interface MemoryEntry {
   key: string;
@@ -18,6 +18,7 @@ export async function saveMemory(
   tags: string[] = [],
 ): Promise<MemoryEntry> {
   const { mkdir, writeTextFile, readTextFile, exists } = await import('@tauri-apps/plugin-fs');
+  await migrateLegacyProjectData(projectPath);
   const memoryDir = await dir(projectPath);
   await mkdir(memoryDir, { recursive: true });
   const fp = await filePath(projectPath, key);
@@ -34,6 +35,7 @@ export async function saveMemory(
 
 export async function loadMemory(projectPath: string, key: string): Promise<MemoryEntry | null> {
   const { readTextFile, exists } = await import('@tauri-apps/plugin-fs');
+  await migrateLegacyProjectData(projectPath);
   const fp = await filePath(projectPath, key);
   if (!(await exists(fp))) return null;
   return JSON.parse(await readTextFile(fp));
@@ -41,6 +43,7 @@ export async function loadMemory(projectPath: string, key: string): Promise<Memo
 
 export async function searchMemory(projectPath: string, query: string): Promise<MemoryEntry[]> {
   const { readDir, readTextFile } = await import('@tauri-apps/plugin-fs');
+  await migrateLegacyProjectData(projectPath);
   const d = await dir(projectPath);
   try {
     const entries = await readDir(d);
@@ -60,6 +63,7 @@ export async function searchMemory(projectPath: string, query: string): Promise<
 
 export async function deleteMemory(projectPath: string, key: string): Promise<boolean> {
   const { remove, exists } = await import('@tauri-apps/plugin-fs');
+  await migrateLegacyProjectData(projectPath);
   const fp = await filePath(projectPath, key);
   if (!(await exists(fp))) return false;
   await remove(fp);
@@ -68,6 +72,7 @@ export async function deleteMemory(projectPath: string, key: string): Promise<bo
 
 export async function deleteMemoriesByTag(projectPath: string, tag: string): Promise<number> {
   const { readDir, readTextFile, remove } = await import('@tauri-apps/plugin-fs');
+  await migrateLegacyProjectData(projectPath);
   const d = await dir(projectPath);
   let count = 0;
   try {

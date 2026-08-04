@@ -1,4 +1,4 @@
-import { getProjectFilePath } from '../persistence';
+import { getProjectFilePath, migrateLegacyProjectData } from '../persistence';
 
 export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled' | 'blocked';
 
@@ -36,6 +36,7 @@ const statePath = (projectPath: string) => getProjectFilePath(projectPath, 'agen
 
 export async function readAgentState(projectPath: string): Promise<AgentState> {
   const { exists, readTextFile } = await import('@tauri-apps/plugin-fs');
+  await migrateLegacyProjectData(projectPath);
   const path = await statePath(projectPath);
   if (!(await exists(path))) return { plan: null, plans: [], todos: [] };
   try {

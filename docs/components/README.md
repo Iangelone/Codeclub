@@ -19,7 +19,6 @@ Open-source project. AI-powered desktop IDE, made in Argentina.
 | [Sidebar](sidebar.md) | `src/components/Sidebar.tsx` | Left panel: projects, chats, file tree, settings |
 | [Chat](chat.md) | `src/components/ChatPanel.astro`, `ChatInterface.tsx` | Main chat workspace, composer, command menu |
 | [Dropdown](dropdown.md) | `src/pages/index.astro` | App menu dropdowns |
-| BusinessPanel | `src/components/BusinessPanel.tsx` | Business dashboard: metrics, charts, activity |
 | RightSidebar | `src/components/RightSidebar.tsx` | Right panel: files, review, browser, artifacts, WhatsApp |
 | TerminalDock | `src/components/TerminalDock.tsx` | Floating multi-tab terminal (PowerShell, CMD, Git Bash, WSL2) |
 | WorkspaceManager | `src/components/WorkspaceManager.tsx` | Workspace orchestrator (project/chat/business mode) |
