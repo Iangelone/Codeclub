@@ -7,6 +7,8 @@ import { createId, readAgentState, writeAgentState, type TaskStatus } from './pl
 import { appendGenerationUsage, readGenerationUsage, summarizeGenerationUsage } from '../usage';
 import { readExecutionLog } from '../execution-log';
 import { readProjectIndex } from '../projectManager';
+import { getSetting, setSetting } from '../persistence';
+import { protectedExtensionIds } from '../extensions';
 
 const specialistHandoff = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, 500);
 
@@ -477,6 +479,9 @@ export function selectToolsForPrompt(toolset: Record<string, any>, _mode: 'devel
   } else {
     // Failsafe de escritura: el router IA sigue siendo la decisión principal.
     if (has('editar', 'modific', 'crear', 'crea', 'creá', 'armar', 'armá', 'hacer', 'hacé', 'agregar', 'agrega', 'agregá', 'meter', 'mete', 'meté', 'carpeta', 'archivo', 'txt', 'escrib', 'implement', 'fix', 'correg', 'refactor', 'cambio')) add('writeFile');
+    if (has('habilidad', 'skill', '.codeclub')) add('createSkill');
+    if (has('complemento', 'extension', 'plugin')) add('createExtension', 'deleteExtension');
+    if (has('mcp', 'servidor de tools', 'model context protocol')) add('createMcpServer', 'deleteMcpServer');
     if (has('terminal', 'comando', 'ejecut', 'build', 'compil', 'test', 'prueba', 'git', 'servidor', 'background', 'proceso', 'bloc', 'notepad', 'pc', 'computadora')) add('runCommand', 'terminal');
     if (has('sub-ia', 'subia', 'subagente', 'especialista', 'deleg')) add('subagent');
     if (has('navegador', 'browser', 'web', 'url', 'dom', 'elemento', 'botón', 'boton', 'click', 'clic', 'escrib')) add('openBrowser', 'getBrowserState', 'browserAction');
@@ -495,6 +500,11 @@ export function createDynamicToolAccess(availableTools: Record<string, any>, rec
     readFile: ['leer', 'archivo', 'contenido', 'file', 'read'],
     searchText: ['buscar', 'busqueda', 'texto', 'todo', 'encontrar', 'search'],
     writeFile: ['crear', 'editar', 'escribir', 'modificar', 'archivo', 'write'],
+    createSkill: ['habilidad', 'skill', 'instrucciones', 'codeclub'],
+    createExtension: ['complemento', 'extension', 'plugin', 'integracion'],
+    deleteExtension: ['eliminar complemento', 'borrar extension', 'quitar plugin'],
+    createMcpServer: ['mcp', 'servidor', 'conectar tools'],
+    deleteMcpServer: ['eliminar mcp', 'borrar servidor', 'quitar mcp'],
     runCommand: ['comando', 'ejecutar', 'diagnostico', 'proceso', 'shell', 'command'],
     terminal: ['terminal', 'servidor', 'background', 'proceso'],
     openBrowser: ['navegador', 'browser', 'web', 'url', 'abrir'],
@@ -733,7 +743,7 @@ export async function verifyToolExecutionWithAI({ model, prompt, goal, verificat
 }
 
 export function createTools(ctx: ToolContext) {
-  const { projectPath, recordToolEvent, setAgentState, requestToolApproval, provider, modelId } = ctx;
+  const { projectPath, projectScoped = false, recordToolEvent, setAgentState, requestToolApproval, provider, modelId } = ctx;
 
   return {
     ...createSwarmTool({ projectPath, recordToolEvent, setAgentState, requestToolApproval, provider, modelId }),
@@ -954,6 +964,90 @@ export function createTools(ctx: ToolContext) {
         const output = { ok: true, path, workspace: projectPath };
         recordToolEvent('writeFile', { path }, output);
         return output;
+      },
+    }),
+    createSkill: tool({
+      description: 'Create a reusable Codeclub skill in the active project at .codeclub/skills/<name>/SKILL.md. The skill becomes available in /habilidad during the same session after creation.',
+      inputSchema: jsonSchema({
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Stable kebab-case skill identifier, for example frontend-review.' },
+          description: { type: 'string', description: 'Short description shown in the skills menu.' },
+          instructions: { type: 'string', description: 'Complete Markdown instructions that the agent should follow when the skill is loaded.' },
+        },
+        required: ['name', 'description', 'instructions'],
+        additionalProperties: false,
+      }),
+      execute: async ({ name, description, instructions }) => {
+        setAgentState('running');
+        if (!projectScoped) return { ok: false, error: 'Seleccioná un proyecto antes de crear una skill.' };
+        const skillName = String(name || '').trim().toLowerCase();
+        const skillDescription = String(description || '').trim().replace(/[\r\n]+/g, ' ');
+        const skillInstructions = String(instructions || '').trim();
+        if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(skillName) || skillName.length > 64) return { ok: false, error: 'El nombre debe usar kebab-case, solo letras minúsculas, números y guiones.' };
+        if (!skillDescription || skillDescription.length > 300) return { ok: false, error: 'La descripción debe tener entre 1 y 300 caracteres.' };
+        if (!skillInstructions || skillInstructions.length > 180000) return { ok: false, error: 'Las instrucciones deben tener entre 1 y 180000 caracteres.' };
+        const content = `---\nname: ${skillName}\ndescription: ${skillDescription}\n---\n\n${skillInstructions}\n`;
+        const path = `.codeclub/skills/${skillName}/SKILL.md`;
+        await invoke('codeclub_write_file', { projectPath, path, content });
+        const output = { ok: true, name: skillName, path, workspace: projectPath, availableInSession: true };
+        recordToolEvent('createSkill', { name: skillName, description: skillDescription, path }, output);
+        window.dispatchEvent(new CustomEvent('codeclub:skills-changed', { detail: { projectPath, skillName } }));
+        return output;
+      },
+    }),
+    createExtension: tool({
+      description: 'Create a custom Codeclub extension that appears in Complementos and the slash menu during the same session.',
+      inputSchema: jsonSchema({ type: 'object', properties: { name: { type: 'string' }, description: { type: 'string' }, instructions: { type: 'string' } }, required: ['name', 'description', 'instructions'], additionalProperties: false }),
+      execute: async ({ name, description, instructions }) => {
+        setAgentState('running');
+        const id = String(name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 64);
+        if (!id || protectedExtensionIds.has(id)) return { ok: false, error: 'Ese nombre estÃ¡ reservado para un complemento integrado.' };
+        const raw = await getSetting('codeclub_custom_extensions', '[]');
+        let items: any[] = []; try { items = JSON.parse(raw || '[]'); } catch { items = []; }
+        const extension = { id: `custom-${id}`, name: String(name).trim().slice(0, 80), description: String(description).trim().slice(0, 300), slash: `/${id}`, instruction: String(instructions).trim().slice(0, 180000), custom: true };
+        if (items.some((item) => item.id === extension.id)) return { ok: false, error: 'Ya existe un complemento con ese nombre.' };
+        await setSetting('codeclub_custom_extensions', JSON.stringify([...items, extension]));
+        window.dispatchEvent(new CustomEvent('codeclub:extensions-changed'));
+        recordToolEvent('createExtension', { name, description }, extension);
+        return { ok: true, extension, availableInSession: true };
+      },
+    }),
+    deleteExtension: tool({
+      description: 'Delete a custom Codeclub extension. Built-in extensions are protected and cannot be deleted.',
+      inputSchema: jsonSchema({ type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' } }, additionalProperties: false }),
+      execute: async ({ id, name }) => {
+        setAgentState('running');
+        if (protectedExtensionIds.has(String(id || '').replace(/^custom-/, ''))) return { ok: false, error: 'Los complementos integrados estÃ¡n protegidos.' };
+        const raw = await getSetting('codeclub_custom_extensions', '[]'); let items: any[] = []; try { items = JSON.parse(raw || '[]'); } catch { items = []; }
+        const next = items.filter((item) => item.id !== id && item.name !== name);
+        if (next.length === items.length) return { ok: false, error: 'No se encontrÃ³ el complemento personalizado.' };
+        await setSetting('codeclub_custom_extensions', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('codeclub:extensions-changed'));
+        const output = { ok: true, deleted: id || name }; recordToolEvent('deleteExtension', { id, name }, output); return output;
+      },
+    }),
+    createMcpServer: tool({
+      description: 'Register a custom HTTP(S) MCP server in Codeclub so its tools can be loaded in the next session message.',
+      inputSchema: jsonSchema({ type: 'object', properties: { name: { type: 'string' }, url: { type: 'string' } }, required: ['name', 'url'], additionalProperties: false }),
+      execute: async ({ name, url }) => {
+        setAgentState('running'); const cleanUrl = String(url || '').trim();
+        if (!/^https?:\/\/\S+$/i.test(cleanUrl)) return { ok: false, error: 'La URL debe ser HTTP(S).' };
+        const raw = await getSetting('codeclub_mcp_servers', '[]'); let items: any[] = []; try { items = JSON.parse(raw || '[]'); } catch { items = []; }
+        if (items.some((item) => item.url === cleanUrl)) return { ok: false, error: 'Ese MCP ya estÃ¡ registrado.' };
+        const server = { id: crypto.randomUUID(), name: String(name || new URL(cleanUrl).hostname).trim().slice(0, 80), url: cleanUrl, enabled: true, custom: true };
+        await setSetting('codeclub_mcp_servers', JSON.stringify([...items, server])); window.dispatchEvent(new CustomEvent('codeclub:mcp-changed'));
+        recordToolEvent('createMcpServer', { name, url: cleanUrl }, server); return { ok: true, server, availableNextMessage: true };
+      },
+    }),
+    deleteMcpServer: tool({
+      description: 'Delete a registered custom MCP server by id, name, or URL.',
+      inputSchema: jsonSchema({ type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' }, url: { type: 'string' } }, additionalProperties: false }),
+      execute: async ({ id, name, url }) => {
+        setAgentState('running'); const raw = await getSetting('codeclub_mcp_servers', '[]'); let items: any[] = []; try { items = JSON.parse(raw || '[]'); } catch { items = []; }
+        const next = items.filter((item) => item.id !== id && item.name !== name && item.url !== url);
+        if (next.length === items.length) return { ok: false, error: 'No se encontrÃ³ el servidor MCP.' };
+        await setSetting('codeclub_mcp_servers', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('codeclub:mcp-changed'));
+        const output = { ok: true, deleted: id || name || url }; recordToolEvent('deleteMcpServer', { id, name, url }, output); return output;
       },
     }),
     runCommand: tool({

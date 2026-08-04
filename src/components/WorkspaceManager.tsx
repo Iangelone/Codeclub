@@ -206,7 +206,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
       </div>
       <div className="workspace-pane acrylic-panel min-h-0 min-w-0 flex-1 overflow-hidden">
         <div key={showProjects ? 'projects' : showBusinesses ? 'businesses' : showExtensions ? 'extensions' : 'chat'} className="workspace-panel-content h-full min-h-0 min-w-0">
-          {showProjects ? <ProjectsPanel /> : showBusinesses ? <div className="h-full min-h-0 bg-[#1A1A1A]" aria-label="Agentes" /> : showExtensions ? <ExtensionsPanel /> : <ChatInterface
+          {showProjects ? <ProjectsPanel /> : showBusinesses ? <div className="h-full min-h-0 bg-[#1A1A1A]" aria-label="Agentes" /> : showExtensions ? <ExtensionsPanel selectedProject={selectedProject} /> : <ChatInterface
             catalog={catalog}
             defaultProvider={defaultProvider}
             defaultModel={defaultModel}

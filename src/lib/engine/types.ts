@@ -8,6 +8,7 @@ export interface ToolEvent {
 
 export interface ToolContext {
   projectPath: string;
+  projectScoped?: boolean;
   recordToolEvent: (name: string, input: any, output: any) => void;
   setAgentState: (state: string) => void;
   requestToolApproval: (opts: { toolName: string; input: any; summary: string }) => Promise<boolean>;

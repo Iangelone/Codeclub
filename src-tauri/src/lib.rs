@@ -41,6 +41,16 @@ struct CommandOutput {
     cwd: String,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SkillEntry {
+    id: String,
+    name: String,
+    description: String,
+    source: String,
+    content: String,
+}
+
 #[derive(Deserialize)]
 struct CommandRequest {
     command: String,
@@ -764,6 +774,47 @@ fn codeclub_run_command(
     })
 }
 
+fn skill_roots(project_path: &str) -> Vec<(PathBuf, String)> {
+    let mut roots = Vec::new();
+    if !project_path.is_empty() {
+        let project = PathBuf::from(project_path);
+        roots.push((project.join(".codeclub").join("skills"), "project".into()));
+    }
+    roots
+}
+
+fn frontmatter_value(content: &str, key: &str) -> Option<String> {
+    content.lines().take(24).find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        if name.trim() == key { Some(value.trim().trim_matches(['"', '\'']).to_string()) } else { None }
+    })
+}
+
+#[tauri::command]
+fn codeclub_list_skills(project_path: String) -> Result<Vec<SkillEntry>, String> {
+    let mut skills = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for (root, source) in skill_roots(&project_path) {
+        if !root.is_dir() { continue; }
+        let entries = fs::read_dir(&root).map_err(|error| format!("No se pudieron listar habilidades: {error}"))?;
+        for entry in entries {
+            let entry = entry.map_err(|error| format!("No se pudo leer una habilidad: {error}"))?;
+            let dir = entry.path();
+            if !dir.is_dir() { continue; }
+            let skill_file = dir.join("SKILL.md");
+            if !skill_file.is_file() { continue; }
+            let content = fs::read_to_string(&skill_file).map_err(|error| format!("No se pudo leer {}: {error}", skill_file.display()))?;
+            let id = dir.file_name().and_then(|name| name.to_str()).unwrap_or_default().to_string();
+            if id.is_empty() || !seen.insert(id.clone()) { continue; }
+            let name = frontmatter_value(&content, "name").unwrap_or_else(|| id.clone());
+            let description = frontmatter_value(&content, "description").unwrap_or_else(|| "Habilidad disponible para esta sesión.".into());
+            skills.push(SkillEntry { id, name, description, source: source.clone(), content });
+        }
+    }
+    skills.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+    Ok(skills)
+}
+
 #[tauri::command]
 fn codeclub_terminal_list(state: State<'_, TerminalRegistry>) -> Result<Vec<TerminalInfo>, String> {
     let sessions = state
@@ -1177,6 +1228,7 @@ pub fn run() {
             codeclub_list_files,
             codeclub_index_project,
             codeclub_get_username,
+            codeclub_list_skills,
             codeclub_get_system_root,
             codeclub_read_file,
             codeclub_search_text,

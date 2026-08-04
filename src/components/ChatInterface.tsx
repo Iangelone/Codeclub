@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUpRight, Bug, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, Folders as FolderOpen, Globe, KeyRound, ListChecks, ListTodo, MessageSquare, MousePointer2, Orbit, Paperclip, Pencil, RotateCcw, Search, ScrollText, Square, Terminal, Folder, FolderTree, RefreshCw, X } from 'lucide-react';
+import { ArrowUpRight, Box, Bug, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, LayoutTemplate, ListChecks, ListTodo, MessageSquare, MousePointer2, Orbit, Paperclip, Pencil, Presentation, RotateCcw, Search, ScrollText, Sparkles, Square, Table2, Terminal, Folder, FolderTree, RefreshCw, X } from 'lucide-react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -30,6 +30,7 @@ import { getProjectFilePath, getSetting, logPersistence, setSetting } from '../l
 import { appendGenerationUsage, type GenerationUsageRecord } from '../lib/usage';
 import { appendExecutionLog } from '../lib/execution-log';
 import { getProjectChatPath, readGlobalChatHistory, readGlobalChats, readProjectIndex, readProjectMeta, writeGlobalChatHistory, writeGlobalChats, writeProjectMeta } from '../lib/projectManager';
+import { codeclubExtensions, type CodeclubExtension } from '../lib/extensions';
 
 const SPINNER_FRAMES = {
   chat: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"],
@@ -69,6 +70,8 @@ const formatProcessingDuration = (durationMs: number) => durationMs >= 60000 ? `
 const escapeXml = (value: unknown) => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 
 type ChatAttachment = { path: string; name: string; mediaType: string; size?: number; previewUrl?: string };
+type SessionSkill = { id: string; name: string; description: string; source: string; content: string };
+const extensionIcons: Record<string, any> = { documents: FileText, pdf: FileType2, spreadsheets: Table2, presentations: Presentation, 'template-creator': LayoutTemplate };
 type ChatRuntime = {
   controller: AbortController;
   state: string;
@@ -244,6 +247,11 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [commandKind, setCommandKind] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [projectOptions, setProjectOptions] = useState<any[]>([]);
+  const [skillOptions, setSkillOptions] = useState<SessionSkill[]>([]);
+  const [activeSkills, setActiveSkills] = useState<SessionSkill[]>([]);
+  const [activeExtensions, setActiveExtensions] = useState<CodeclubExtension[]>([]);
+  const [availableExtensions, setAvailableExtensions] = useState<CodeclubExtension[]>(codeclubExtensions);
+  const [enabledExtensions, setEnabledExtensions] = useState<Record<string, boolean>>(() => Object.fromEntries(codeclubExtensions.map((extension) => [extension.id, true])));
   const [activeCommandIndex, setActiveCommandIndex] = useState(0);
   const [activeProject, setActiveProject] = useState<{projectPath: string, name: string} | null>(() => selectedProject ? { projectPath: selectedProject.projectPath, name: selectedProject.projectName || 'Proyecto' } : null);
   const [projectMeta, setProjectMeta] = useState<{chats: any[]} | null>(null);
@@ -260,6 +268,34 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [workspaceMode, setWorkspaceMode] = useState('blank');
   const [chatMode, setChatMode] = useState<'development' | 'business'>(workspaceChatMode);
   const [selectedStructurePath, setSelectedStructurePath] = useState('');
+
+  useEffect(() => {
+    const loadSkills = () => invoke<SessionSkill[]>('codeclub_list_skills', { projectPath: activeProject?.projectPath || '' })
+      .then((skills) => setSkillOptions(skills || []))
+      .catch(() => setSkillOptions([]));
+    const handleSkillsChanged = (event: Event) => {
+      const projectPath = (event as CustomEvent).detail?.projectPath;
+      if (!projectPath || projectPath === activeProject?.projectPath) void loadSkills();
+    };
+    void loadSkills();
+    window.addEventListener('codeclub:skills-changed', handleSkillsChanged);
+    return () => window.removeEventListener('codeclub:skills-changed', handleSkillsChanged);
+  }, [activeProject?.projectPath]);
+
+  useEffect(() => {
+    const loadEnabledExtensions = async () => {
+      let custom: CodeclubExtension[] = [];
+      try { custom = JSON.parse(await getSetting('codeclub_custom_extensions', '[]') || '[]'); } catch { custom = []; }
+      const all = [...codeclubExtensions, ...custom];
+      setAvailableExtensions(all);
+      return Promise.all(all.map(async (extension) => [extension.id, await getSetting(`codeclub_extension_enabled_${extension.id}`, 'true') !== 'false'] as const))
+      .then((entries) => setEnabledExtensions(Object.fromEntries(entries)));
+    };
+    const handleExtensionsChanged = () => { void loadEnabledExtensions(); };
+    void loadEnabledExtensions();
+    window.addEventListener('codeclub:extensions-changed', handleExtensionsChanged);
+    return () => window.removeEventListener('codeclub:extensions-changed', handleExtensionsChanged);
+  }, []);
   const agentStatusText = {
     idle: "Listo cuando tú lo estés.",
     connecting: "Conectando con el proveedor...",
@@ -652,12 +688,18 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
           openCommandMenu('project');
         });
       }
+      if (kind === 'skill') {
+        setSkillOptions((current) => current.length ? current : []);
+        if (menuOpen && commandKind === kind) setMenuOpen(false);
+        else openCommandMenu('skill');
+      }
     };
     window.addEventListener('codeclub:open-command-menu', handleOpenCommandMenu);
     return () => window.removeEventListener('codeclub:open-command-menu', handleOpenCommandMenu);
   }, [menuOpen, commandKind]);
 
-  const filteredCatalog = (commandKind === 'project' ? projectOptions : catalog).filter((item) => {
+  const commandOptions = commandKind === 'project' ? projectOptions : commandKind === 'skill' ? skillOptions.map((skill) => ({ ...skill, type: 'skill', label: skill.name })) : catalog;
+  const filteredCatalog = commandOptions.filter((item) => {
     const matchesKind = item.type === commandKind;
     const itemLabel = item.label || item.id || '';
     const matchesQuery = itemLabel.toLowerCase().includes(searchQuery.toLowerCase());
@@ -666,9 +708,11 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   });
   const activeSelection = commandKind === 'provider' ? currentProvider : commandKind === 'model' ? currentModel : commandKind === 'project' && activeProject ? { id: activeProject.projectPath, label: activeProject.name } : null;
   const slashCommands = [
-    { id: 'proveedor', label: '/proveedor', description: 'Seleccionar proveedor', type: 'command' },
-    { id: 'modelo', label: '/modelo', description: 'Seleccionar modelo', type: 'command' },
-    { id: 'proyecto', label: '/proyecto', description: 'Seleccionar proyecto', type: 'command' },
+    { id: 'proveedor', label: 'Proveedor', description: 'Seleccionar proveedor', type: 'command', icon: Globe },
+    { id: 'modelo', label: 'Modelo', description: 'Seleccionar modelo', type: 'command', icon: Box },
+    { id: 'proyecto', label: 'Proyecto', description: 'Seleccionar proyecto', type: 'command', icon: FolderTree },
+    { id: 'habilidad', label: 'Habilidad', description: 'Cargar habilidad en esta sesión', type: 'command', icon: Sparkles },
+    ...availableExtensions.filter((extension) => enabledExtensions[extension.id]).map((extension) => ({ id: extension.id, label: extension.name, description: extension.description, type: 'extension' as const, icon: extensionIcons[extension.id] || Box, extension })),
   ].filter((command) => command.label.toLowerCase().includes(searchQuery.toLowerCase()));
 
   useEffect(() => {
@@ -702,6 +746,12 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
 
   const handleItemClick = (item) => {
     if (item.type === 'command') {
+      if (item.id === 'proveedor' || item.id === 'modelo') {
+        setInput('');
+        setSearchQuery('');
+        openCommandMenu(item.id === 'proveedor' ? 'provider' : 'model');
+        return;
+      }
       if (item.id === 'proyecto') {
         void readProjectIndex().then((projects) => {
           setProjectOptions([{ id: '__none__', label: 'Sin proyecto', type: 'project', projectPath: null, isNone: true }, ...projects.map((project) => ({ id: project.path, label: project.name, type: 'project', projectPath: project.path }))]);
@@ -709,8 +759,32 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
         });
         return;
       }
+      if (item.id === 'habilidad') {
+        setInput('');
+        setSearchQuery('');
+        openCommandMenu('skill');
+        return;
+      }
       setInput(`/${item.id}`);
       setMenuOpen(false);
+      chatInputRef.current?.focus();
+      return;
+    }
+    if (item.type === 'skill') {
+      setActiveSkills((current) => current.some((skill) => skill.id === item.id) ? current : [...current, item]);
+      setInput('');
+      setSearchQuery('');
+      setMenuOpen(false);
+      setCommandKind('');
+      chatInputRef.current?.focus();
+      return;
+    }
+    if (item.type === 'extension') {
+      setActiveExtensions((current) => current.some((extension) => extension.id === item.extension.id) ? current : [...current, item.extension]);
+      setInput('');
+      setSearchQuery('');
+      setMenuOpen(false);
+      setCommandKind('');
       chatInputRef.current?.focus();
       return;
     }
@@ -787,6 +861,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   };
 
   const handleCommandMenuKeyDown = (e) => {
+    const selectableItems = commandKind === 'command' ? slashCommands : filteredCatalog;
     if (e.key === 'Escape') {
       e.preventDefault();
       setMenuOpen(false);
@@ -796,21 +871,21 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
 
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      if (filteredCatalog.length === 0) return;
-      setActiveCommandIndex((index) => Math.min(index + 1, filteredCatalog.length - 1));
+      if (selectableItems.length === 0) return;
+      setActiveCommandIndex((index) => Math.min(index + 1, selectableItems.length - 1));
       return;
     }
 
     if (e.key === 'ArrowUp') {
       e.preventDefault();
-      if (filteredCatalog.length === 0) return;
+      if (selectableItems.length === 0) return;
       setActiveCommandIndex((index) => Math.max(index - 1, 0));
       return;
     }
 
-    if (e.key === 'Enter' && filteredCatalog[activeCommandIndex]) {
+    if (e.key === 'Enter' && selectableItems[activeCommandIndex]) {
       e.preventDefault();
-      handleItemClick(filteredCatalog[activeCommandIndex]);
+      handleItemClick(selectableItems[activeCommandIndex]);
     }
   };
 
@@ -1149,6 +1224,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       setBrowserReferences([]);
     }
     const abortController = new AbortController();
+    const mcpClients: Array<{ close: () => Promise<void> }> = [];
     const generationStartedAt = Date.now();
     let chat = activeChatRef.current;
     if (!chat) {
@@ -1272,12 +1348,34 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       const indexedProjects = await readProjectIndex();
       const developmentTools = createTools({
         projectPath: toolProjectPath,
+        projectScoped: Boolean(contextProjectPath),
         recordToolEvent,
         setAgentState: guardedSetAgentState,
         requestToolApproval: guardedRequestToolApproval,
         provider,
         modelId: currentModel.id,
       });
+      const externalMcpTools: Record<string, any> = {};
+      try {
+        const rawMcpServers = await getSetting('codeclub_mcp_servers', '[]');
+        const mcpServers = JSON.parse(rawMcpServers || '[]').filter((server) => server?.enabled && /^https?:\/\//i.test(server?.url));
+        if (mcpServers.length > 0) {
+          const { createMCPClient } = await import('@ai-sdk/mcp');
+          for (const server of mcpServers) {
+            try {
+              const client = await createMCPClient({ transport: { type: 'http', url: server.url } });
+              mcpClients.push(client);
+              const serverTools = await client.tools();
+              const prefix = String(server.name || 'server').replace(/[^a-zA-Z0-9_]/g, '_');
+              Object.entries(serverTools).forEach(([name, tool]) => { externalMcpTools[`mcp_${prefix}_${name}`] = tool; });
+            } catch (error) {
+              console.warn(`No se pudo conectar MCP ${server.url}:`, error);
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('No se pudieron cargar los servidores MCP:', error);
+      }
       let tools: Record<string, any> = {};
       let toolRoutingContext = 'La IA principal recibe directamente las tools necesarias y ejecuta el trabajo.';
       let beforeWorkspaceSnapshot: WorkspaceSnapshot = new Map();
@@ -1285,10 +1383,11 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       routeSpecialist = inferAgentSpecialist(content, runMode);
       setChatMode(runMode);
       const selectedToolset = Object.fromEntries(Object.entries(developmentTools).filter(([name]) => !/whatsapp/i.test(name) && !['swarm', 'subagent', 'listAvailableTools', 'delegateBusinessSpecialist'].includes(name)));
-      const dynamicToolAccess = createDynamicToolAccess(selectedToolset, recordToolEvent);
+      const availableToolset = { ...selectedToolset, ...externalMcpTools };
+      const dynamicToolAccess = createDynamicToolAccess(availableToolset, recordToolEvent);
       const artifactNames = ['createPlan', 'updatePlan', 'todo', 'getTaskStatus', 'switchProject'];
       const artifactTools = Object.fromEntries(artifactNames.filter((name) => selectedToolset[name]).map((name) => [name, selectedToolset[name]]));
-      tools = { ...dynamicToolAccess, ...artifactTools };
+      tools = { ...dynamicToolAccess, ...artifactTools, ...externalMcpTools };
       const routedToolset = tools;
       window.dispatchEvent(new CustomEvent('codeclub:agent-route', { detail: { mode: runMode, specialist: routeSpecialist, confidence: 1, reason: 'Una única IA ejecuta directamente las tools necesarias.' } }));
       try {
@@ -1363,8 +1462,16 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         'Las acciones riesgosas piden aprobacion humana antes de ejecutarse.',
         'Contrato operativo de Desarrollo: inspecciona primero, actua despues y verifica al final. No leas, muestres ni repitas secretos de .env, tokens, claves privadas o credenciales salvo una auditoria de seguridad explicita; si aparecen, redactalos. Nunca afirmes que un archivo, proceso, navegador o cambio existe sin una salida exitosa y una comprobacion observable. Si una tool falla, recupera con otra estrategia o explica el bloqueo. Delega solo cuando el subagente aporte una capacidad distinta y devuelve sus evidencias, no una promesa.',
       ].join(' ');
+      const activeSkillsContext = activeSkills.length > 0
+        ? `Habilidades cargadas explícitamente para esta sesión:\n${activeSkills.map((skill) => `## ${skill.name}\n${skill.content.slice(0, 120000)}`).join('\n\n')}`
+        : '';
+      const activeExtensionsContext = activeExtensions.length > 0
+        ? `Complementos activados explícitamente para esta sesión:\n${activeExtensions.map((extension) => `## ${extension.name}\n${extension.instruction}`).join('\n\n')}`
+        : '';
       const system = [
         projectChangeNotice,
+        activeSkillsContext,
+        activeExtensionsContext,
         `Sos el Padre de Codeclub en modo ${runMode === 'business' ? 'Economía' : 'Desarrollo'}. Tu trabajo es entender el objetivo, coordinar una colmena de hijos y entregar un resultado comprobable.`,
         `Contexto: proyecto ${contextProjectPath || 'sin proyecto'}; proyectos indexados: ${indexedProjects.map((project) => `${project.name} (${project.path})`).join(', ') || 'ninguno'}.`,
         'Para capacidades operativas, consultá searchTools con palabras clave, leé el schema exacto y ejecutá la elegida mediante executeTool. No inventes nombres ni parámetros.',
@@ -1622,6 +1729,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       runtime.messages = updateErrorMessages(runtime.messages);
       if (isVisibleGeneration()) setMessages(runtime.messages);
     } finally {
+      await Promise.all(mcpClients.map((client) => client.close().catch(() => undefined)));
       if (!isCurrentGeneration()) return;
       if (toolStateTimerRef.current) {
         clearTimeout(toolStateTimerRef.current);
@@ -2106,6 +2214,14 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             </div>
           )}
            {attachedFiles.length > 0 && <div className="flex min-h-[28px] items-center gap-1.5 overflow-hidden border-b border-[#202020] px-3 py-1.5" aria-label="Archivos adjuntos">{attachedFiles.slice(0, 3).map((file, index) => <button key={file.path} type="button" onClick={() => setAttachedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} className="flex max-w-[180px] min-w-0 shrink items-center gap-1.5 truncate rounded-full border border-[#2b2b2b] bg-[#161616] px-2.5 py-1 text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar archivo">{file.mediaType.startsWith('image/') ? <img src={file.previewUrl || convertFileSrc(file.path)} alt={file.name} style={{ width: '18px', height: '18px', objectFit: 'cover', borderRadius: '4px' }} /> : <Paperclip size={11} strokeWidth={1.8} />}<span className="truncate">{file.name}</span></button>)}{attachedFiles.length > 3 && <span className="shrink-0 rounded-full border border-[#2b2b2b] bg-[#161616] px-2.5 py-1 text-[10px] text-[#999]">+{attachedFiles.length - 3} archivos</span>}</div>}
+          {activeSkills.length > 0 && <div className="flex min-h-[28px] items-center gap-1.5 overflow-x-auto border-b border-[#202020] px-3 py-1.5" aria-label="Habilidades activas">
+            {activeSkills.map((skill) => <button key={skill.id} type="button" onClick={() => setActiveSkills((current) => current.filter((item) => item.id !== skill.id))} className="flex shrink-0 items-center gap-1 rounded-full border border-[#3d9bff]/50 bg-[#1687ff]/10 px-2.5 py-1 text-[10px] text-[#b9dcff] hover:bg-[#1687ff]/20" title="Quitar habilidad de esta sesión">
+              <span className="max-w-[150px] truncate">{skill.name}</span><span className="text-[#8bc7ff]/70">×</span>
+            </button>)}
+          </div>}
+          {activeExtensions.length > 0 && <div className="flex min-h-[28px] items-center gap-1.5 overflow-x-auto border-b border-[#202020] px-3 py-1.5" aria-label="Complementos activos">
+            {activeExtensions.map((extension) => { const Icon = extensionIcons[extension.id] || Box; return <button key={extension.id} type="button" onClick={() => setActiveExtensions((current) => current.filter((item) => item.id !== extension.id))} className="flex shrink-0 items-center gap-1 rounded-full border border-[#3d9bff]/50 bg-[#1687ff]/10 px-2.5 py-1 text-[10px] text-[#b9dcff] hover:bg-[#1687ff]/20" title="Quitar complemento de esta sesión"><Icon size={11} /><span>{extension.name}</span><span className="text-[#8bc7ff]/70">×</span></button>; })}
+          </div>}
           <div ref={commandMenuHostRef} className="w-full" />
           <form onSubmit={handleSubmit} className="composer-box-inner [&>button.absolute]:hidden" style={{ minHeight: '40px', width: '100%', minWidth: 0, display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 6px 5px 16px', border: 0, borderRadius: '21px', background: '#2B2B2B', position: 'relative' }}>
            {false && (
@@ -2166,6 +2282,12 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               target.style.overflowY = target.scrollHeight > 140 ? 'auto' : 'hidden';
             }}
             onKeyDown={(e) => {
+              const slashMenuActive = ['command', 'provider', 'model', 'project', 'skill'].includes(commandKind) && (menuOpen || commandKind === 'command');
+              if (slashMenuActive && ['ArrowDown', 'ArrowUp', 'Enter', 'Escape'].includes(e.key)) {
+                e.preventDefault();
+                handleCommandMenuKeyDown(e);
+                return;
+              }
               if (e.key === 'Enter' && /^\/(proveedor|modelo)$/i.test(input.trim())) {
                 e.preventDefault();
                 openCommandMenu(input.trim().toLowerCase() === '/proveedor' ? 'provider' : 'model');
@@ -2203,7 +2325,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={handleSearchKeyDown}
-            placeholder={commandKind === 'provider' ? 'Buscar proveedor' : commandKind === 'model' ? 'Buscar modelo del proveedor activo' : commandKind === 'project' ? 'Buscar proyecto' : 'Buscar comando'}
+            placeholder={commandKind === 'provider' ? 'Buscar proveedor' : commandKind === 'model' ? 'Buscar modelo del proveedor activo' : commandKind === 'project' ? 'Buscar proyecto' : commandKind === 'skill' ? 'Buscar habilidad' : 'Buscar comando'}
             style={{ height: '30px', padding: '0 9px', borderRadius: '7px', background: 'transparent', fontSize: '11px', color: '#eeeeee', border: 0, outline: 'none' }}
           />}
           {commandKind === 'credential' ? (
@@ -2261,9 +2383,9 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 onMouseEnter={() => setActiveCommandIndex(index)}
                 style={{ minHeight: '32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', border: 0, borderRadius: '7px', background: index === activeCommandIndex ? 'var(--color-surface-7, #2c2c2c)' : 'transparent', color: index === activeCommandIndex ? '#ffffff' : 'rgba(238, 238, 238, 0.78)', fontSize: '12px', padding: '0 9px', textAlign: 'left', cursor: 'pointer' }}
               >
-                <span>{item.label}</span>
+                <span className="flex min-w-0 items-center gap-2">{item.icon && React.createElement(item.icon, { size: 14, strokeWidth: 1.8 })}<span className="truncate">{item.label}</span></span>
                 <small style={{ color: 'rgba(216, 216, 216, 0.36)', fontSize: '11px' }}>
-                  {item.type === 'command' ? item.description : item.type === 'provider' ? 'proveedor' : item.type === 'project' ? 'proyecto' : 'modelo'}
+                  {item.type === 'command' ? item.description : item.type === 'provider' ? 'proveedor' : item.type === 'project' ? 'proyecto' : item.type === 'skill' ? item.source : item.type === 'extension' ? 'complemento' : 'modelo'}
                 </small>
               </button>
             ))}
