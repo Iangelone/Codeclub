@@ -346,9 +346,38 @@ html.is-windows #app-background {
 }
 
 .projects-panel-scroll {
+  container-type: inline-size;
   min-height: 0;
   scrollbar-width: none;
   overscroll-behavior: contain;
+}
+
+.projects-panel-content {
+  width: calc(100% - 96px);
+  margin: 48px auto;
+}
+
+@container (max-width: 720px) {
+  .projects-panel-scroll {
+    padding: 0;
+  }
+
+  .projects-panel-scroll .projects-panel-content {
+    width: calc(100% - 32px);
+    margin: 16px auto;
+  }
+
+  .projects-panel-scroll .project-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    padding-inline: 12px;
+  }
+
+  .projects-panel-scroll .project-date,
+  .projects-panel-scroll .project-owner,
+  .projects-panel-scroll .project-menu {
+    display: none;
+  }
 }
 
 .projects-panel-scroll::-webkit-scrollbar {

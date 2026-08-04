@@ -31,12 +31,18 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
   }, []);
 
   useEffect(() => {
+    const handleProjectPanelSelection = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      if (!detail.projectPath) return;
+      setSelectedProject({ projectPath: detail.projectPath, projectName: detail.projectName });
+      setShowBusinesses(false);
+    };
     const handleProjectSelection = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
       setSelectedProject(detail.selected === true && detail.projectPath
         ? { projectPath: detail.projectPath, projectName: detail.projectName }
         : null);
-      setShowProjects(detail.selected !== true && detail.keepChat !== true);
+      setShowProjects(detail.selected !== true && detail.keepChat !== true && detail.keepView !== true);
       if (detail.selected === true || detail.keepChat === true) setShowBusinesses(false);
     };
 
@@ -48,9 +54,11 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
       setShowBusinesses(false);
     };
 
+    window.addEventListener('codeclub:project-panel-selected', handleProjectPanelSelection);
     window.addEventListener('codeclub:project-selection-changed', handleProjectSelection);
     window.addEventListener('codeclub:active-project', handleActiveProject);
     return () => {
+      window.removeEventListener('codeclub:project-panel-selected', handleProjectPanelSelection);
       window.removeEventListener('codeclub:project-selection-changed', handleProjectSelection);
       window.removeEventListener('codeclub:active-project', handleActiveProject);
     };
