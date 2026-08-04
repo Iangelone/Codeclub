@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, ArrowUpRight, Ban, CheckCircle2, ChevronRight, Circle, CircleDot, CircleX, EllipsisVertical, ExternalLink, File, FileCode2, FileImage, FileText, Folder, FolderOpen, Folders, GitBranch, GitCompare, Globe, LockKeyhole, LogOut, MessageCircle, MessageCirclePlus, Plus, RefreshCw, Search, SlidersHorizontal, SquareTerminal, Trash2, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ArrowUpRight, Ban, CheckCircle2, ChevronRight, Circle, CircleDot, CircleX, EllipsisVertical, ExternalLink, File, FileCode2, FileImage, FileText, Folder, FolderOpen, Folders, GitBranch, GitCompare, Globe, LockKeyhole, LogOut, MessageCircle, Plus, RefreshCw, Search, SlidersHorizontal, SquareTerminal, Trash2, X } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi';
@@ -110,7 +110,7 @@ const browserActionScript = (action: { type: string; selector?: string; text?: s
 const browserAgentOverlayScript = (selector?: string) => `(() => {
   const overlayId = '__codeclub-agent-overlay';
   const bannerId = '__codeclub-agent-banner';
-  const cursor = 'url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2234%22 height=%2234%22 viewBox=%220 0 34 34%22 fill=%22none%22%3E%3Cdefs%3E%3ClinearGradient id=%22avatarGradient%22 x1=%220%22 y1=%220%22 x2=%221%22 y2=%221%22%3E%3Cstop offset=%220%25%22 stop-color=%22%231687FF%22/%3E%3Cstop offset=%2238%25%22 stop-color=%22%2367BAFF%22/%3E%3Cstop offset=%2268%25%22 stop-color=%22%23F8EAD8%22/%3E%3Cstop offset=%22100%25%22 stop-color=%22%23FFF3DF%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M 5 5 L 14 29 A 1.5 1.5 0 0 0 17 28.5 L 19.5 20 L 28.5 17 A 1.5 1.5 0 0 0 29 14 L 5 5 Z%22 fill=%22url(%23avatarGradient)%22 stroke=%22white%22 stroke-width=%223%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E") 5 5, crosshair';
+  const cursor = 'url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2234%22 height=%2234%22 viewBox=%220 0 34 34%22 fill=%22none%22%3E%3Cdefs%3E%3ClinearGradient id=%22avatarGradient%22 x1=%220%22 y1=%220%22 x2=%221%22 y2=%221%22%3E%3Cstop offset=%220%25%22 stop-color=%22%238BC7FF%22/%3E%3Cstop offset=%2244%25%22 stop-color=%22%233D9BFF%22/%3E%3Cstop offset=%22100%25%22 stop-color=%22%231687FF%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M 5 5 L 14 29 A 1.5 1.5 0 0 0 17 28.5 L 19.5 20 L 28.5 17 A 1.5 1.5 0 0 0 29 14 L 5 5 Z%22 fill=%22url(%23avatarGradient)%22 stroke=%22white%22 stroke-width=%223%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E") 5 5, crosshair';
   const overlay = document.getElementById(overlayId) || Object.assign(document.body.appendChild(document.createElement('div')), { id: overlayId });
   const banner = document.getElementById(bannerId) || Object.assign(document.body.appendChild(document.createElement('div')), { id: bannerId });
   Object.assign(overlay.style, { position: 'fixed', zIndex: '2147483646', pointerEvents: 'none', border: '2px solid #1687FF', background: 'rgba(22,135,255,.12)', boxShadow: '0 0 0 1px rgba(255,255,255,.35), 0 0 18px rgba(22,135,255,.45)', display: 'none' });
@@ -126,7 +126,7 @@ const browserAgentOverlayScript = (selector?: string) => `(() => {
 })()`;
 
 const browserInspectorScript = (active: boolean) => {
-  const cursor = `url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2234%22 height=%2234%22 viewBox=%220 0 34 34%22 fill=%22none%22%3E%3Cdefs%3E%3ClinearGradient id=%22avatarGradient%22 x1=%220%22 y1=%220%22 x2=%221%22 y2=%221%22%3E%3Cstop offset=%220%25%22 stop-color=%22%231687FF%22/%3E%3Cstop offset=%2238%25%22 stop-color=%22%2367BAFF%22/%3E%3Cstop offset=%2268%25%22 stop-color=%22%23F8EAD8%22/%3E%3Cstop offset=%22100%25%22 stop-color=%22%23FFF3DF%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M 5 5 L 14 29 A 1.5 1.5 0 0 0 17 28.5 L 19.5 20 L 28.5 17 A 1.5 1.5 0 0 0 29 14 L 5 5 Z%22 fill=%22url(%23avatarGradient)%22 stroke=%22white%22 stroke-width=%223%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E") 5 5, crosshair`;
+  const cursor = `url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2234%22 height=%2234%22 viewBox=%220 0 34 34%22 fill=%22none%22%3E%3Cdefs%3E%3ClinearGradient id=%22avatarGradient%22 x1=%220%22 y1=%220%22 x2=%221%22 y2=%221%22%3E%3Cstop offset=%220%25%22 stop-color=%22%238BC7FF%22/%3E%3Cstop offset=%2244%25%22 stop-color=%22%233D9BFF%22/%3E%3Cstop offset=%22100%25%22 stop-color=%22%231687FF%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M 5 5 L 14 29 A 1.5 1.5 0 0 0 17 28.5 L 19.5 20 L 28.5 17 A 1.5 1.5 0 0 0 29 14 L 5 5 Z%22 fill=%22url(%23avatarGradient)%22 stroke=%22white%22 stroke-width=%223%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E") 5 5, crosshair`;
   return `(() => {
     const active = ${active ? 'true' : 'false'};
     const root = document.documentElement;
@@ -656,7 +656,6 @@ function BrowserToolbar({
       </form>
       <button type="button" onClick={(event) => { event.stopPropagation(); onReference(); }} className={`absolute right-2 grid h-6 w-6 place-items-center rounded-md border-0 bg-transparent text-[#999] transition-colors hover:bg-[#333] hover:text-[#eee] ${focused ? 'opacity-100' : 'opacity-0 group-hover/address:opacity-100'}`} title="Referenciar página"><ArrowUpRight size={15} strokeWidth={1.7} /></button>
     </div>
-    <button type="button" onClick={onReference} className="grid h-7 w-7 shrink-0 place-items-center rounded-md border-0 bg-transparent text-[#888] transition-colors hover:bg-[#242424] hover:text-[#ddd]" title="Nuevo chat con esta página"><MessageCirclePlus size={17} strokeWidth={1.6} /></button>
     <button type="button" className="grid h-7 w-7 shrink-0 place-items-center rounded-md border-0 bg-transparent text-[#888] transition-colors hover:bg-[#242424] hover:text-[#ddd]" title="Más opciones"><EllipsisVertical size={16} strokeWidth={1.7} /></button>
   </div>;
 }

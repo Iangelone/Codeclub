@@ -3,15 +3,17 @@ import { Cpu, Folder, House, Play, Server, Terminal, X } from 'lucide-react';
 import { activeChatStore, chatsStore, type GlobalChat } from '../lib/store';
 import ChatInterface from './ChatInterface.tsx';
 import ProjectsPanel from './ProjectsPanel.tsx';
+import ExtensionsPanel from './ExtensionsPanel.tsx';
 import { readProjectIndex, type ProjectEntry } from '../lib/projectManager';
 
 type SelectedProject = { projectPath: string; projectName?: string };
-const CHAT_AVATAR_GRADIENT = 'linear-gradient(112deg, #1687FF 0%, #67BAFF 38%, #F8EAD8 68%, #FFF3DF 100%)';
+const CHAT_AVATAR_GRADIENT = 'linear-gradient(145deg, #8BC7FF 0%, #3D9BFF 44%, #1687FF 100%)';
 
 export default function WorkspaceManager({ catalog, defaultProvider, defaultModel }) {
   const [selectedProject, setSelectedProject] = useState<SelectedProject | null>(null);
   const [showProjects, setShowProjects] = useState(true);
   const [showBusinesses, setShowBusinesses] = useState(false);
+  const [showExtensions, setShowExtensions] = useState(false);
   const [dockVisible, setDockVisible] = useState(false);
   const [commandMenuKind, setCommandMenuKind] = useState('');
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
@@ -33,7 +35,10 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
   useEffect(() => {
     const handleProjectPanelSelection = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
-      if (!detail.projectPath) return;
+      if (!detail.projectPath) {
+        setSelectedProject(null);
+        return;
+      }
       setSelectedProject({ projectPath: detail.projectPath, projectName: detail.projectName });
       setShowBusinesses(false);
     };
@@ -111,22 +116,34 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
     const handleOpenBusinesses = () => {
       setShowBusinesses(true);
       setShowProjects(false);
+      setShowExtensions(false);
       setSelectedProject(null);
     };
-    const handleOpenEmptyChat = () => { setShowProjects(false); setShowBusinesses(false); };
+    const handleOpenExtensions = () => {
+      setShowExtensions(true);
+      setShowBusinesses(false);
+      setShowProjects(false);
+      setSelectedProject(null);
+    };
+    const handleOpenChat = () => { setShowProjects(false); setShowBusinesses(false); setShowExtensions(false); };
+    const handleOpenEmptyChat = () => { setShowProjects(false); setShowBusinesses(false); setShowExtensions(false); };
+    window.addEventListener('codeclub:open-chat', handleOpenChat);
     window.addEventListener('codeclub:open-projects', handleOpenProjects);
     window.addEventListener('codeclub:open-businesses', handleOpenBusinesses);
+    window.addEventListener('codeclub:open-extensions', handleOpenExtensions);
     window.addEventListener('codeclub:open-empty-chat', handleOpenEmptyChat);
     return () => {
       window.removeEventListener('codeclub:open-projects', handleOpenProjects);
       window.removeEventListener('codeclub:open-businesses', handleOpenBusinesses);
+      window.removeEventListener('codeclub:open-extensions', handleOpenExtensions);
       window.removeEventListener('codeclub:open-empty-chat', handleOpenEmptyChat);
+      window.removeEventListener('codeclub:open-chat', handleOpenChat);
     };
   }, []);
 
   useEffect(() => {
-    if (!showProjects && !showBusinesses && !activeChatStore.get().id) window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
-  }, [showProjects, showBusinesses]);
+    if (!showProjects && !showBusinesses && !showExtensions && !activeChatStore.get().id) window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
+  }, [showProjects, showBusinesses, showExtensions]);
 
   useEffect(() => {
     if (showBusinesses) window.dispatchEvent(new CustomEvent('codeclub:open-businesses'));
@@ -177,7 +194,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
           <button type="button" aria-pressed={commandMenuKind === 'project'} aria-label={`Proyecto: ${commandMenuKind === 'project' ? 'Activo' : 'Desactivado'}`} title={`Proyecto: ${commandMenuKind === 'project' ? 'Activo' : 'Desactivado'}`} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-command-menu', { detail: { kind: 'project' } }))} className={`grid h-7 w-7 place-items-center rounded-[9px] border-0 transition-colors ${commandMenuKind === 'project' ? 'bg-[#1e1e1e] text-[#eeeeee]' : 'bg-transparent text-[#777777] hover:bg-[#1e1e1e] hover:text-[#eeeeee]'}`}><Folder size={14} strokeWidth={1.8} /></button>
           {recentChats.map((chat) => (
             <button key={`${chat.projectPath}:${chat.id}`} type="button" aria-label={`Abrir ${chat.name}`} title={chat.name} onClick={() => openDockChat(chat)} className="codeclub-motion-control grid h-7 w-7 place-items-center rounded-[9px] border-0 bg-transparent hover:bg-[#1e1e1e] hover:scale-[1.04]">
-              <span className="grid h-5 w-5 place-items-center rounded-[6px] text-[8px] font-medium uppercase" style={{ background: activeChatId === chat.id ? CHAT_AVATAR_GRADIENT : '#2b2b2b', color: '#111111' }}>{chat.name.trim().charAt(0).toUpperCase() || '?'}</span>
+              <span className="grid h-5 w-5 place-items-center rounded-[6px] text-[8px] font-medium uppercase transition-shadow" style={{ background: activeChatId === chat.id ? CHAT_AVATAR_GRADIENT : '#343434', color: activeChatId === chat.id ? '#ffffff' : '#777777', boxShadow: activeChatId === chat.id ? '0 0 8px rgba(45,145,255,0.42)' : 'inset 0 1px rgba(255,255,255,0.08)' }}>{chat.name.trim().charAt(0).toUpperCase() || '?'}</span>
             </button>
           ))}
         </div>
@@ -188,8 +205,8 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
         </div>}
       </div>
       <div className="workspace-pane acrylic-panel min-h-0 min-w-0 flex-1 overflow-hidden">
-        <div key={showProjects ? 'projects' : showBusinesses ? 'businesses' : 'chat'} className="workspace-panel-content h-full min-h-0 min-w-0">
-          {showProjects ? <ProjectsPanel /> : showBusinesses ? <div className="h-full min-h-0 bg-[#1A1A1A]" aria-label="Agentes" /> : <ChatInterface
+        <div key={showProjects ? 'projects' : showBusinesses ? 'businesses' : showExtensions ? 'extensions' : 'chat'} className="workspace-panel-content h-full min-h-0 min-w-0">
+          {showProjects ? <ProjectsPanel /> : showBusinesses ? <div className="h-full min-h-0 bg-[#1A1A1A]" aria-label="Agentes" /> : showExtensions ? <ExtensionsPanel /> : <ChatInterface
             catalog={catalog}
             defaultProvider={defaultProvider}
             defaultModel={defaultModel}

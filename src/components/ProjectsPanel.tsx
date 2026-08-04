@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { MoreVertical, Plus } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { ensureProjectMeta, indexProjectContents, readProjectIndex, saveProjectIndex, type ProjectEntry } from "../lib/projectManager";
@@ -35,6 +35,7 @@ export default function ProjectsPanel() {
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const selectedAvatarRef = useRef<HTMLDivElement | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -74,7 +75,8 @@ export default function ProjectsPanel() {
   };
 
   const moveAvatarEyes = (event: React.MouseEvent<HTMLDivElement>) => {
-    const avatar = event.currentTarget;
+    const avatar = selectedAvatarRef.current;
+    if (!avatar) return;
     const bounds = avatar.getBoundingClientRect();
     const x = ((event.clientX - bounds.left) / bounds.width) - 0.5;
     const y = ((event.clientY - bounds.top) / bounds.height) - 0.5;
@@ -83,8 +85,16 @@ export default function ProjectsPanel() {
   };
 
   const resetAvatarEyes = (event: React.MouseEvent<HTMLDivElement>) => {
-    event.currentTarget.style.setProperty("--eye-x", "0px");
-    event.currentTarget.style.setProperty("--eye-y", "0px");
+    const avatar = selectedAvatarRef.current;
+    if (!avatar) return;
+    avatar.style.setProperty("--eye-x", "0px");
+    avatar.style.setProperty("--eye-y", "0px");
+  };
+
+  const clearProjectSelection = (event: React.MouseEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest(".project-row")) return;
+    setSelectedPath(null);
+    window.dispatchEvent(new CustomEvent("codeclub:project-panel-selected", { detail: { projectPath: null } }));
   };
 
   const renameProject = async (project: ProjectEntry) => {
@@ -98,12 +108,16 @@ export default function ProjectsPanel() {
   };
 
   return (
-    <div className="projects-panel-scroll h-full w-full overflow-y-auto">
-      <div className="projects-panel-content mx-auto flex w-full max-w-6xl flex-col overflow-hidden rounded-lg border border-[#2B2B2B] bg-[#2B2B2B]">
+    <div className="projects-panel-scroll h-full w-full overflow-y-auto" onClick={clearProjectSelection} onMouseMove={selectedPath ? moveAvatarEyes : undefined} onMouseLeave={selectedPath ? resetAvatarEyes : undefined}>
+      <header className="projects-panel-heading">
+        <h1 className="m-0 text-[28px] font-normal tracking-[-0.04em] text-[#eeeeee]">Proyectos</h1>
+        <p className="mt-1.5 text-[14px] text-[#999999]">Administrá tus proyectos y espacios de trabajo</p>
+      </header>
+      <div className="projects-panel-content mx-auto flex w-full max-w-[1040px] flex-col overflow-hidden rounded-lg border border-[#2B2B2B] bg-[#2B2B2B]">
         {loading && Array.from({ length: 5 }, (_, index) => <div key={index} className="h-[58px] animate-pulse border-b border-[#3a3a3a] bg-[#2B2B2B]" />)}
         {!loading && projects.map((project) => (
           <button key={project.path} type="button" aria-pressed={selectedPath === project.path} onClick={(event) => { event.stopPropagation(); if (renamingPath !== project.path) selectProject(project); }} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); window.dispatchEvent(new CustomEvent("codeclub:project-context-menu", { detail: { path: project.path, name: project.name, top: event.clientY, left: event.clientX } })); }} className={`project-row group grid min-h-[58px] min-w-0 grid-cols-[minmax(0,1fr)_150px_110px_110px_32px] items-center gap-4 border-b border-[#3a3a3a] px-4 text-left transition hover:bg-[#303030] ${selectedPath === project.path ? "bg-[#303030] shadow-[inset_2px_0_0_#4ca4ff]" : "bg-[#2B2B2B]"}`}>
-            <div className="project-name-cell flex min-w-0 items-center gap-3"><div aria-hidden="true" onMouseMove={selectedPath === project.path ? moveAvatarEyes : undefined} onMouseLeave={selectedPath === project.path ? resetAvatarEyes : undefined} className={`relative h-8 w-8 shrink-0 rounded-[11px] transition ${selectedPath === project.path ? "shadow-[inset_0_1px_2px_rgba(255,255,255,0.5),0_0_12px_rgba(45,145,255,0.42)] group-hover:brightness-110" : "shadow-[inset_0_1px_rgba(255,255,255,0.08)]"}`} style={{ background: selectedPath === project.path ? getAvatarGradient(project.name) : "#343434" }}><span className={`absolute left-[8px] top-[7px] h-[10px] w-[4px] translate-x-[var(--eye-x)] translate-y-[var(--eye-y)] rounded-full transition-transform ${selectedPath === project.path ? "bg-white" : "bg-[#666666]"}`} /><span className={`absolute right-[8px] top-[7px] h-[10px] w-[4px] translate-x-[var(--eye-x)] translate-y-[var(--eye-y)] rounded-full transition-transform ${selectedPath === project.path ? "bg-white" : "bg-[#666666]"}`} /></div>{renamingPath === project.path ? <input autoFocus value={renameValue} onChange={(event) => setRenameValue(event.target.value)} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { event.stopPropagation(); if (event.key === "Enter") { event.preventDefault(); void renameProject(project); } if (event.key === "Escape") { setRenamingPath(null); setRenameValue(""); } }} className="min-w-0 w-full rounded border border-[#555] bg-[#303030] px-1.5 py-1 text-[13px] text-[#eee] outline-none" /> : <span className="project-name truncate text-[13px] font-medium text-[#eeeeee]">{project.name}</span>}</div>
+            <div className="project-name-cell flex min-w-0 items-center gap-3"><div ref={selectedPath === project.path ? selectedAvatarRef : undefined} aria-hidden="true" className={`relative h-8 w-8 shrink-0 rounded-[11px] transition ${selectedPath === project.path ? "shadow-[inset_0_1px_2px_rgba(255,255,255,0.5),0_0_12px_rgba(45,145,255,0.42)] group-hover:brightness-110" : "shadow-[inset_0_1px_rgba(255,255,255,0.08)]"}`} style={{ background: selectedPath === project.path ? getAvatarGradient(project.name) : "#343434" }}><span className={`absolute left-[6px] top-[8px] h-[8px] w-[6px] translate-x-[var(--eye-x)] translate-y-[var(--eye-y)] rounded-full transition-transform duration-200 ease-out ${selectedPath === project.path ? "bg-white" : "bg-[#666666]"}`} /><span className={`absolute right-[6px] top-[8px] h-[8px] w-[6px] translate-x-[var(--eye-x)] translate-y-[var(--eye-y)] rounded-full transition-transform duration-200 ease-out ${selectedPath === project.path ? "bg-white" : "bg-[#666666]"}`} /></div>{renamingPath === project.path ? <input autoFocus value={renameValue} onChange={(event) => setRenameValue(event.target.value)} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { event.stopPropagation(); if (event.key === "Enter") { event.preventDefault(); void renameProject(project); } if (event.key === "Escape") { setRenamingPath(null); setRenameValue(""); } }} className="min-w-0 w-full rounded border border-[#555] bg-[#303030] px-1.5 py-1 text-[13px] text-[#eee] outline-none" /> : <span className="project-name truncate text-[13px] font-medium text-[#eeeeee]">{project.name}</span>}</div>
             <span className="project-date text-[12px] text-[#bdbdbd]">{formatIndexedAt(project.indexed_at)}</span>
             <span className="project-size text-[11px] text-[#999]">{formatSize(project.total_size)}</span>
             <span className="project-owner text-[12px] text-[#bdbdbd]">yo</span>

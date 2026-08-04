@@ -353,8 +353,13 @@ html.is-windows #app-background {
 }
 
 .projects-panel-content {
-  width: calc(100% - 96px);
-  margin: 48px auto;
+  width: calc(100% - 64px);
+  margin: 24px auto 48px;
+}
+
+.projects-panel-heading {
+  width: calc(100% - 64px);
+  margin: 28px auto 0;
 }
 
 @container (max-width: 720px) {
@@ -365,6 +370,11 @@ html.is-windows #app-background {
   .projects-panel-scroll .projects-panel-content {
     width: calc(100% - 32px);
     margin: 16px auto;
+  }
+
+  .projects-panel-scroll .projects-panel-heading {
+    width: calc(100% - 32px);
+    margin: 20px auto 0;
   }
 
   .projects-panel-scroll .project-row {

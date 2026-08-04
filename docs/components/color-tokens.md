@@ -69,13 +69,39 @@ All hex values used across the app UI.
 | `#D8B4FE` | Tool running indicator (purple). |
 | `#FCA5A5` | Error indicator (red). |
 
+## UI Accent and Interaction Colors
+
+The primary Codeclub accent is now an electric-blue family. Use the lightest shade as the highlight, the middle shades for gradients, and the darker shades for depth. Do not introduce the former warm ivory/orange accent gradient for new UI work.
+
+| Token | Hex | Usage |
+|---|---|---|
+| `accentHighlight` | `#8BC7FF` | Gradient highlight and light edge. |
+| `accentBright` | `#3D9BFF` | Main gradient midpoint and active controls. |
+| `accentBlue` | `#1687FF` | Core accent and primary positive action. |
+| `accentDeep` | `#237BFF` | Deeper gradient transition. |
+| `accentShadow` | `#1469E8` | Gradient depth and selected states. |
+| `accentIndigo` | `#385FEF` | Optional blue-violet depth variant. |
+
+Canonical gradient:
+
+```css
+linear-gradient(145deg, #8BC7FF 0%, #3D9BFF 44%, #1687FF 100%)
+```
+
+Canonical glow:
+
+```css
+box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.5),
+  0 0 12px rgba(45, 145, 255, 0.42);
+```
+
 ## Spinner and Interaction Colors
 
 | State | Primary | Glow |
 |---|---|---|
-| Idle / working | `#F8EAD8` | `#FFF3DF` |
+| Idle / working | `#8BC7FF` | `#3D9BFF` |
 | Successful tool | `#1687FF` | `#67BAFF` |
-| Error | `#FF7A45` | `#FFB77A` |
+| Error | `#FCA5A5` | `#EF4444` |
 
 ## Business Dashboard Tokens
 
@@ -84,11 +110,12 @@ The Business dashboard uses one semantic source of truth: `src/lib/business-toke
 | Token | Hex | Meaning |
 |---|---|---|
 | `electricBlue` | `#1687FF` | Primary positive result, revenue and completed work. |
-| `softBlue` | `#67BAFF` | Supporting metrics, impact and activity. |
-| `warmIvory` | `#F8EAD8` | Neutral highlights and internal activity. |
-| `lightCream` | `#FFF3DF` | Accepted/contracted or secondary positive state. |
-| `electricOrange` | `#FF7A45` | Attention, risk or negative result. |
-| `softPeach` | `#FFB77A` | Softer warning and internal cost state. |
+| `softBlue` | `#8BC7FF` | Supporting metrics, impact and activity. |
+| `deepBlue` | `#1469E8` | Selected states and depth. |
+| `warmIvory` | `#F8EAD8` | Legacy neutral token; avoid for new UI accents. |
+| `lightCream` | `#FFF3DF` | Legacy secondary token; avoid for new UI accents. |
+| `electricOrange` | `#FF7A45` | Legacy warning token; prefer semantic error colors for new UI. |
+| `softPeach` | `#FFB77A` | Legacy warning token; prefer semantic error colors for new UI. |
 
 ## Syntax Highlighting Palette
 

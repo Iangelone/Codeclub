@@ -35,7 +35,8 @@ import {
 } from "lucide-react";
 import { activeChatStore, chatsStore, type GlobalChat } from "../lib/store";
 
-const CHAT_AVATAR_GRADIENT = 'linear-gradient(112deg, #1687FF 0%, #67BAFF 38%, #F8EAD8 68%, #FFF3DF 100%)';
+const CHAT_AVATAR_GRADIENT = 'linear-gradient(145deg, #8BC7FF 0%, #3D9BFF 44%, #1687FF 100%)';
+const MiniCreature = ({ active = false, avatarRef }: { active?: boolean; avatarRef?: React.RefObject<HTMLSpanElement | null> }) => <span ref={avatarRef} aria-hidden="true" className={`relative grid h-5 w-5 shrink-0 rounded-[6px] transition ${active ? 'shadow-[0_0_7px_rgba(45,145,255,0.42)]' : ''}`} style={{ background: active ? CHAT_AVATAR_GRADIENT : '#343434' }}><span className="absolute inset-0 flex items-center justify-center gap-1"><span className={`h-[6px] w-[4px] flex-none translate-x-[var(--chat-eye-x)] translate-y-[var(--chat-eye-y)] rounded-full transition-transform ${active ? 'bg-white' : 'bg-[#666666]'}`} /><span className={`h-[6px] w-[4px] flex-none translate-x-[var(--chat-eye-x)] translate-y-[var(--chat-eye-y)] rounded-full transition-transform ${active ? 'bg-white' : 'bg-[#666666]'}`} /></span></span>;
 const getAgentActivityLabel = (activity: { state: string; tool?: string; agent?: string }) => activity.tool || ({ connecting: 'Conectando con el proveedor…', streaming: 'Generando respuesta…', tool_call: 'Usando herramienta…', approval: 'Esperando aprobación…', running: 'Ejecutando…', error: 'Revisando error…' }[activity.state] || activity.agent || 'Trabajando…');
 
 // --- Types ---
@@ -64,7 +65,7 @@ export default function Sidebar() {
   const [activeArtifactId, setActiveArtifactId] = useState<string | null>(null);
   const [agentActivities, setAgentActivities] = useState<Record<string, { state: string; tool?: string; agent?: string; ready?: boolean }>>({});
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [activeSection, setActiveSection] = useState<"chat" | "projects" | "businesses">("projects");
+  const [activeSection, setActiveSection] = useState<"chat" | "projects" | "businesses" | "extensions">("projects");
 
   useEffect(() => {
     const handleAgentActivity = (event: Event) => {
@@ -88,6 +89,23 @@ export default function Sidebar() {
   const [newProjectName, setNewProjectName] = useState("");
   const [creatingArtifact, setCreatingArtifact] = useState<{ projectPath: string; projectName: string } | null>(null);
   const [newArtifactName, setNewArtifactName] = useState("");
+  const activeChatAvatarRef = useRef<HTMLSpanElement | null>(null);
+
+  const moveActiveChatEyes = (event: React.MouseEvent<HTMLDivElement>) => {
+    const avatar = activeChatAvatarRef.current;
+    if (!avatar) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const x = ((event.clientX - bounds.left) / bounds.width) - 0.5;
+    const y = ((event.clientY - bounds.top) / bounds.height) - 0.5;
+    avatar.style.setProperty("--chat-eye-x", `${Math.max(-1, Math.min(1, x * 2))}px`);
+    avatar.style.setProperty("--chat-eye-y", `${Math.max(-0.75, Math.min(0.75, y * 1.5))}px`);
+  };
+
+  const resetActiveChatEyes = () => {
+    const avatar = activeChatAvatarRef.current;
+    avatar?.style.setProperty("--chat-eye-x", "0px");
+    avatar?.style.setProperty("--chat-eye-y", "0px");
+  };
   const [renamingItemId, setRenamingItemId] = useState<string | null>(null);
   const [renameInput, setRenameInput] = useState("");
   const [projectMenu, setProjectMenu] = useState<{
@@ -164,6 +182,7 @@ export default function Sidebar() {
     };
     const handleOpenProjects = () => setActiveSection("projects");
     const handleOpenBusinesses = () => setActiveSection("businesses");
+    const handleOpenExtensions = () => setActiveSection("extensions");
     const handleOpenSettings = () => setSettingsOpen(true);
     const handleProjectContextMenu = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
@@ -216,6 +235,7 @@ export default function Sidebar() {
     window.addEventListener("codeclub:rename-chat", handleChatRename);
     window.addEventListener("codeclub:open-projects", handleOpenProjects);
     window.addEventListener("codeclub:open-businesses", handleOpenBusinesses);
+    window.addEventListener("codeclub:open-extensions", handleOpenExtensions);
     window.addEventListener("codeclub:open-settings", handleOpenSettings);
     window.addEventListener("codeclub:project-context-menu", handleProjectContextMenu);
     window.addEventListener("codeclub:project-selection-changed", handleProjectSelection);
@@ -232,6 +252,7 @@ export default function Sidebar() {
       window.removeEventListener("codeclub:rename-chat", handleChatRename);
       window.removeEventListener("codeclub:open-projects", handleOpenProjects);
       window.removeEventListener("codeclub:open-businesses", handleOpenBusinesses);
+      window.removeEventListener("codeclub:open-extensions", handleOpenExtensions);
       window.removeEventListener("codeclub:open-settings", handleOpenSettings);
       window.removeEventListener("codeclub:project-context-menu", handleProjectContextMenu);
       window.removeEventListener("codeclub:project-selection-changed", handleProjectSelection);
@@ -769,7 +790,7 @@ export default function Sidebar() {
   };
 
   return (
-      <div className="acrylic-panel sidebar-shell row-start-2 col-start-1 min-w-[264px] w-[264px] h-[calc(100vh-36px)] min-h-0 overflow-hidden flex flex-col -translate-x-full transition-transform duration-140 ease-out z-10 group-[.has-sidebar]:translate-x-0">
+      <div onMouseMove={activeSection === "chat" && activeArtifactId ? moveActiveChatEyes : undefined} onMouseLeave={activeSection === "chat" && activeArtifactId ? resetActiveChatEyes : undefined} className="acrylic-panel sidebar-shell row-start-2 col-start-1 min-w-[264px] w-[264px] h-[calc(100vh-36px)] min-h-0 overflow-hidden flex flex-col -translate-x-full transition-transform duration-140 ease-out z-10 group-[.has-sidebar]:translate-x-0">
       <section className="min-h-0 flex-1 flex flex-col p-[10px_10px_0] overflow-hidden">
         <div className="h-[28px] shrink-0 mb-1 flex items-center gap-[6px] px-[10px] text-[#b8bbc3] text-sm">
           Codeclub
@@ -784,7 +805,7 @@ export default function Sidebar() {
           <button type="button" className={`codeclub-motion-control w-full min-h-[32px] flex items-center gap-[8px] rounded-[7px] px-[8px] text-[12px] text-left transition-colors hover:translate-x-px ${activeSection === "businesses" ? "bg-[#30333b] text-[#f3f4f6] shadow-[inset_0_1px_rgba(255,255,255,0.06)]" : "text-[#b8bbc3] hover:bg-[var(--color-surface-3)] hover:text-[#f3f4f6]"} border-0 appearance-none`} onClick={() => { setActiveSection("businesses"); window.dispatchEvent(new CustomEvent("codeclub:open-businesses")); window.setTimeout(() => setActiveSection("businesses"), 80); }}>
             <span className="flex h-4 w-4 shrink-0 items-center justify-center"><Target size={16} strokeWidth={1.8} /></span> Agentes
           </button>
-          <button type="button" className="codeclub-motion-control w-full min-h-[32px] flex items-center gap-[8px] rounded-[7px] px-[8px] text-[12px] text-left text-[#b8bbc3] hover:bg-[var(--color-surface-3)] hover:text-[#f3f4f6] hover:translate-x-px bg-transparent border-0 appearance-none" onClick={() => window.dispatchEvent(new CustomEvent("codeclub:open-extensions"))}>
+          <button type="button" className={`codeclub-motion-control w-full min-h-[32px] flex items-center gap-[8px] rounded-[7px] px-[8px] text-[12px] text-left transition-colors hover:translate-x-px ${activeSection === "extensions" ? "bg-[#30333b] text-[#f3f4f6] shadow-[inset_0_1px_rgba(255,255,255,0.06)]" : "text-[#b8bbc3] hover:bg-[var(--color-surface-3)] hover:text-[#f3f4f6]"} border-0 appearance-none`} onClick={() => window.dispatchEvent(new CustomEvent("codeclub:open-extensions"))}>
             <span className="flex h-4 w-4 shrink-0 items-center justify-center"><Blocks size={16} strokeWidth={1.8} /></span> Complementos
           </button>
         </div>
@@ -921,12 +942,13 @@ export default function Sidebar() {
           <div className="mt-2">
             <div className="h-[24px] shrink-0 mb-1 flex items-center gap-[6px] px-[10px] text-[#9f9f9f] text-xs">Chats</div>
             <div className="flex flex-col gap-1">
-              {[...globalChats].reverse().map((chat) => (
-                <button key={`${chat.projectPath}:${chat.id}`} type="button" className={`codeclub-motion-control w-full min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left text-[#777777] hover:bg-[var(--color-surface-3)] hover:translate-x-px bg-transparent border-0 appearance-none ${activeSection === "chat" && activeArtifactId === chat.id ? "bg-white/5 text-[#eeeeee]" : ""}`} onClick={() => openGlobalChat(chat)} onContextMenu={(event) => { event.preventDefault(); openArtifactMenu(event, "chat", { id: chat.id, name: chat.name }, { name: chat.projectName, path: chat.projectPath, chats: [] }); }} title={chat.projectName}>
-                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded-[6px] border-0 text-[8px] font-medium uppercase transition-colors duration-200" style={{ background: activeSection === "chat" && activeArtifactId === chat.id ? CHAT_AVATAR_GRADIENT : '#2b2b2b', color: '#111111' }} aria-hidden="true">{chat.name.trim().charAt(0).toUpperCase() || 'C'}</span>
+              {[...globalChats].reverse().map((chat) => {
+                const isActiveChat = activeSection === "chat" && activeArtifactId === chat.id;
+                return <button key={`${chat.projectPath}:${chat.id}`} type="button" className={`codeclub-motion-control w-full min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left text-[#777777] hover:bg-[var(--color-surface-3)] hover:translate-x-px bg-transparent border-0 appearance-none ${isActiveChat ? "bg-white/5 text-[#eeeeee]" : ""}`} onClick={() => openGlobalChat(chat)} onContextMenu={(event) => { event.preventDefault(); openArtifactMenu(event, "chat", { id: chat.id, name: chat.name }, { name: chat.projectName, path: chat.projectPath, chats: [] }); }} title={chat.projectName}>
+                  <MiniCreature active={isActiveChat} avatarRef={isActiveChat ? activeChatAvatarRef : undefined} />
                   {renamingItemId === `chat-${chat.id}` ? <input autoFocus value={renameInput} onChange={(event) => setRenameInput(event.target.value)} onBlur={() => void handleRenameCommit("chat", chat.id, chat.projectPath, chat.name)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void handleRenameCommit("chat", chat.id, chat.projectPath, chat.name); } if (event.key === "Escape") { setRenamingItemId(null); setRenameInput(""); } }} onClick={(event) => event.stopPropagation()} className="min-w-0 flex-1 h-[22px] rounded-md border-0 bg-[#1c1c1c] px-1 text-xs text-[#eeeeee] outline-none" /> : <span className="min-w-0 flex-1 truncate">{activeSection === "chat" && activeArtifactId === chat.id ? chat.name : agentActivities[chat.id]?.ready ? 'Listo para revisión' : agentActivities[chat.id]?.state && agentActivities[chat.id].state !== 'idle' ? getAgentActivityLabel(agentActivities[chat.id]) : chat.name}</span>}
                 </button>
-              ))}
+              })}
             </div>
           </div>
         </div>

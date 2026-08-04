@@ -55,7 +55,7 @@ All data stored locally in OS app config/cache directories (`appConfigDir`, `app
 
 ## Color Tokens
 
-- UI accent gradient: `#1687FF`, `#67BAFF`, `#F8EAD8`, `#FFF3DF`, `#FF7A45`, and `#FFB77A`.
+- UI accent gradient: electric blue palette `#8BC7FF`, `#3D9BFF`, `#1687FF`, with deeper variants `#237BFF`, `#1469E8`, and `#385FEF`. Use this palette for interactive accents, avatars, buttons, glows, and browser cursors.
 - Syntax highlighting uses the Material Theme / Material Palenight palette: `#C792EA`, `#82AAFF`, `#C3E88D`, `#F78C6C`, `#FFCB6B`, `#7F8C98`, and `#89DDFF`.
 - `#111111` -> base app background.
 - `#101010` -> deepest surface.

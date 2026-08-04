@@ -40,3 +40,4 @@ Open-source project. AI-powered desktop IDE, made in Argentina.
 | [Shadows](shadows.md) | Box shadows for every element |
 | [CSS Custom Properties](css-custom-properties.md) | CSS variables mapped to usage |
 | [Spinner](spinner.md) | Braille spinner palette and states |
+| [Project Avatar](project-avatar.md) | Blue creature avatar, active/inactive states, and mouse tracking |
