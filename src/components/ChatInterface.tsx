@@ -24,7 +24,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import { createPortal } from 'react-dom';
 import mammoth from 'mammoth';
-import { createTools, inferAgentMode, inferAgentSpecialist, selectToolsForPrompt, resolveToolsWithAI, type AgentMode, type AgentSpecialist } from '../lib/engine/tools';
+import { createDynamicToolAccess, createTools, inferAgentMode, inferAgentSpecialist, selectToolsForPrompt, resolveToolsWithAI, type AgentMode, type AgentSpecialist } from '../lib/engine/tools';
 import { runStream } from '../lib/engine/run';
 import { getProjectFilePath, getSetting, logPersistence, setSetting } from '../lib/persistence';
 import { appendGenerationUsage, type GenerationUsageRecord } from '../lib/usage';
@@ -1285,9 +1285,10 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       routeSpecialist = inferAgentSpecialist(content, runMode);
       setChatMode(runMode);
       const selectedToolset = Object.fromEntries(Object.entries(developmentTools).filter(([name]) => !/whatsapp/i.test(name) && !['swarm', 'subagent', 'listAvailableTools', 'delegateBusinessSpecialist'].includes(name)));
-      const artifactNames = ['createPlan', 'updatePlan', 'todo', 'getTaskStatus'];
+      const dynamicToolAccess = createDynamicToolAccess(selectedToolset, recordToolEvent);
+      const artifactNames = ['createPlan', 'updatePlan', 'todo', 'getTaskStatus', 'switchProject'];
       const artifactTools = Object.fromEntries(artifactNames.filter((name) => selectedToolset[name]).map((name) => [name, selectedToolset[name]]));
-      tools = { ...selectedToolset, ...artifactTools };
+      tools = { ...dynamicToolAccess, ...artifactTools };
       const routedToolset = tools;
       window.dispatchEvent(new CustomEvent('codeclub:agent-route', { detail: { mode: runMode, specialist: routeSpecialist, confidence: 1, reason: 'Una única IA ejecuta directamente las tools necesarias.' } }));
       try {
@@ -1315,11 +1316,11 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             });
           },
         });
-        tools = routing.tools;
+        tools = { ...routing.tools, searchTools: dynamicToolAccess.searchTools, executeTool: dynamicToolAccess.executeTool };
         toolRoutingContext = `La IA de intención resolvió: ${routing.reason || 'intención detectada'} (confianza ${routing.confidence}). Tools habilitadas: ${Object.keys(tools).join(', ')}.`;
         void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'tool-router', input: { mode: runMode, specialist: routeSpecialist, prompt: content }, output: { confidence: routing.confidence, reason: routing.reason, requiresAction: routing.requiresAction, tools: Object.keys(tools) } });
       } catch (error) {
-        tools = selectToolsForPrompt(routedToolset, runMode, content);
+        tools = { ...selectToolsForPrompt(routedToolset, runMode, content), searchTools: dynamicToolAccess.searchTools, executeTool: dynamicToolAccess.executeTool };
         routingUsedFallback = true;
         toolRoutingContext = `La IA de intención falló; se habilitó una selección determinista y acotada. Error: ${String(error)}`;
         void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'tool-router', input: { mode: runMode, specialist: routeSpecialist, prompt: content }, output: { status: 'fallback-deterministic', error: String(error), tools: Object.keys(tools) } });
@@ -1366,8 +1367,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         projectChangeNotice,
         `Sos el Padre de Codeclub en modo ${runMode === 'business' ? 'Economía' : 'Desarrollo'}. Tu trabajo es entender el objetivo, coordinar una colmena de hijos y entregar un resultado comprobable.`,
         `Contexto: proyecto ${contextProjectPath || 'sin proyecto'}; proyectos indexados: ${indexedProjects.map((project) => `${project.name} (${project.path})`).join(', ') || 'ninguno'}.`,
-        'Podés ejecutar directamente las tools operativas y de artifacts necesarias para completar el pedido.',
-        'Usá las tools disponibles directamente y verificá cada resultado antes de responder.',
+        'Para capacidades operativas, consultá searchTools con palabras clave, leé el schema exacto y ejecutá la elegida mediante executeTool. No inventes nombres ni parámetros.',
+        'Podés ejecutar directamente las tools de artifacts necesarias y verificá cada resultado antes de responder.',
         'La única IA es responsable de ejecutar acciones y persistir planes, TODOs y artifacts.',
         'Para PC o navegador usá un hijo custom con herramientas explícitas. Exigí estado observable después de cada acción. Nunca afirmes éxito sin el resultado real de una tool; redactá secretos y respondé en español.',
       ].filter(Boolean).join(' ');
@@ -1463,14 +1464,16 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             },
             onToolExecutionEnd: ({ callId, toolCall, toolExecutionMs, toolOutput }) => {
               if (!isCurrentGeneration()) return;
+              const toolResult = toolOutput?.output ?? toolOutput?.result ?? toolOutput;
+              const toolStatus = toolOutput?.type === 'tool-result' && toolResult?.ok !== false ? 'completed' : 'error';
               const eventKey = callId || toolCall?.toolCallId || '';
               if (eventKey) {
                 assistantTools = assistantTools.map((event) => event.callId === eventKey ? { ...event, durationMs: toolExecutionMs } : event);
                 const toolEvent = assistantTools.find((event) => event.callId === eventKey);
-                if (toolEvent) assistantTimeline = assistantTimeline.map((event) => event.id === toolEvent.id ? { ...event, status: toolOutput?.type === 'tool-result' ? 'completed' : 'error', output: toolOutput, durationMs: toolExecutionMs } : event);
+                if (toolEvent) assistantTimeline = assistantTimeline.map((event) => event.id === toolEvent.id ? { ...event, status: toolStatus, output: toolOutput, durationMs: toolExecutionMs } : event);
               }
               updateAssistantMessage();
-              void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'tool.execution.end', input: { callId, toolCallId: toolCall?.toolCallId, toolName: toolCall?.toolName }, output: { durationMs: toolExecutionMs, status: toolOutput?.type === 'tool-result' ? 'completed' : 'error' } });
+              void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'tool.execution.end', input: { callId, toolCallId: toolCall?.toolCallId, toolName: toolCall?.toolName }, output: { durationMs: toolExecutionMs, status: toolStatus } });
             },
             onToolCall: () => {
               if (!isCurrentGeneration()) return;
@@ -1726,6 +1729,13 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         'markdown-rendering': '[TESTING MARKDOWN] Respondé únicamente con una demostración completa en Markdown, sin tools: encabezados H1/H2/H3, texto en **negrita**, *cursiva*, ~~tachado~~, enlace, cita, listas numeradas y con viñetas, código inline, bloque de código con lenguaje, regla horizontal y una tabla con encabezados, tres filas y alineación. Incluí emojis y caracteres especiales. No describas la prueba: renderizá directamente todos los elementos.',
       };
       Object.assign(prompts, {
+        'dev-inspect': 'Inspeccioná el workspace actual. Listá archivos, buscá algunos TODO y leé un archivo pequeño. Resumí qué herramientas usaste, cuánto tardó cada paso y qué evidencia encontraste. No modifiques nada.',
+        'dev-memory': 'Guardá en la memoria de la aplicación una nota temporal sobre esta prueba, recuperala y luego eliminála. Mostrá el resultado real de cada operación y medí la secuencia completa.',
+        'dev-plan': 'Creá un plan breve para verificar el workspace con tres pasos, actualizá el primer paso y consultá el estado final. Usá las tools directamente y devolvé los IDs y estados reales.',
+        'dev-edit': 'Creá un archivo temporal dentro del workspace con una línea de texto, leelo para comprobarlo y después eliminálo. Verificá cada resultado y no toques archivos existentes.',
+        'dev-browser': 'Abrí https://example.com, observá el estado del navegador y verificá que el título o contenido principal esté disponible. No hagas acciones destructivas ni inventes resultados.',
+        'dev-diagnostics': 'Hacé un diagnóstico completo y seguro del workspace: inspeccioná archivos, buscá TODOs, consultá el log de ejecución, verificá el estado de las tareas y medí cuánto tarda cada tool. No modifiques nada.',
+        'dev-recovery': 'Provocá un error controlado leyendo una ruta inexistente, registrá la evidencia y recuperate buscando un archivo real para leerlo. Informá claramente el fallo, la recuperación y los tiempos.',
         'web-folder': 'Usá la carpeta nueva que acabo de crear para este sitio web. Inspeccioná el workspace, identificá esa carpeta, verificá su ruta y devolveme evidencia real. No crees todavía la página ni otra carpeta.',
         'web-page': 'Usá la carpeta del sitio que acabamos de crear. Armá allí una página web simple y presentable, con sus archivos necesarios. Verificá la estructura y explicame qué quedó listo.',
         'web-debug': 'Abrí el sitio web que acabamos de preparar en el navegador. Inspeccioná su estado, probá la interacción principal y corregí cualquier problema que encuentres. Mostrame el resultado comprobable.',

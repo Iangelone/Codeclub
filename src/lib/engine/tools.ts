@@ -6,6 +6,7 @@ import { saveMemory, searchMemory, deleteMemory } from './memory';
 import { createId, readAgentState, writeAgentState, type TaskStatus } from './planning';
 import { appendGenerationUsage, readGenerationUsage, summarizeGenerationUsage } from '../usage';
 import { readExecutionLog } from '../execution-log';
+import { readProjectIndex } from '../projectManager';
 
 const specialistHandoff = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, 500);
 
@@ -461,7 +462,7 @@ export function createBusinessTools(ctx: { recordToolEvent: (name: string, input
 
 export function selectToolsForPrompt(toolset: Record<string, any>, _mode: 'development', prompt: string) {
   const text = prompt.toLowerCase();
-  const keys = new Set(['listFiles', 'readFile', 'searchText', 'askUser', 'createPlan', 'updatePlan', 'todo', 'getTaskStatus']);
+  const keys = new Set(['searchTools', 'executeTool', 'askUser', 'createPlan', 'updatePlan', 'todo', 'getTaskStatus']);
 
   const add = (...names: string[]) => names.forEach((name) => keys.add(name));
   const has = (...terms: string[]) => terms.some((term) => text.includes(term));
@@ -486,6 +487,96 @@ export function selectToolsForPrompt(toolset: Record<string, any>, _mode: 'devel
   if (_mode === 'development' && has('control de pc', 'computadora', 'mouse', 'teclado', 'navegador', 'edge', 'notepad', 'bloc de notas')) add('subagent', 'runCommand', 'openBrowser', 'getBrowserState', 'browserAction');
 
   return Object.fromEntries([...keys].filter((name) => toolset[name]).map((name) => [name, toolset[name]]));
+}
+
+export function createDynamicToolAccess(availableTools: Record<string, any>, recordToolEvent?: (name: string, input: any, output: any) => void) {
+  const keywordMap: Record<string, string[]> = {
+    listFiles: ['archivos', 'archivo', 'carpetas', 'carpeta', 'workspace', 'proyecto', 'inspeccionar', 'listar', 'files', 'folders'],
+    readFile: ['leer', 'archivo', 'contenido', 'file', 'read'],
+    searchText: ['buscar', 'busqueda', 'texto', 'todo', 'encontrar', 'search'],
+    writeFile: ['crear', 'editar', 'escribir', 'modificar', 'archivo', 'write'],
+    runCommand: ['comando', 'ejecutar', 'diagnostico', 'proceso', 'shell', 'command'],
+    terminal: ['terminal', 'servidor', 'background', 'proceso'],
+    openBrowser: ['navegador', 'browser', 'web', 'url', 'abrir'],
+    getBrowserState: ['navegador', 'browser', 'estado', 'observar', 'dom'],
+    browserAction: ['click', 'escribir', 'scroll', 'navegador', 'browser', 'accion'],
+    switchProject: ['proyecto', 'proyectos', 'cambiar', 'seleccionar', 'workspace', 'sin proyecto'],
+    remember: ['memoria', 'guardar', 'recordar', 'nota', 'remember'],
+    recall: ['memoria', 'recuperar', 'recordar', 'buscar memoria'],
+    forget: ['memoria', 'eliminar', 'olvidar', 'borrar'],
+    getExecutionLog: ['log', 'registro', 'ejecucion', 'auditoria', 'tiempos', 'rendimiento'],
+    getTaskStatus: ['tareas', 'estado', 'plan', 'status'],
+    askUser: ['preguntar', 'usuario', 'aclaracion'],
+  };
+  const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const plainSchema = (schema: unknown) => {
+    try { return schema ? JSON.parse(JSON.stringify(schema)) : null; } catch { return { type: 'object', properties: {}, additionalProperties: true }; }
+  };
+  const entries = Object.entries(availableTools)
+    .filter(([name, definition]) => definition && !['swarm', 'subagent', 'listAvailableTools', 'delegateBusinessSpecialist'].includes(name))
+    .map(([name, definition]) => ({
+      name,
+      description: String(definition.description || 'Sin descripción'),
+      keywords: keywordMap[name] || [],
+      schema: plainSchema(definition.inputSchema),
+    }));
+  const definitions = new Map(entries.map((entry) => [entry.name, availableTools[entry.name]]));
+  return {
+    searchTools: tool({
+      description: 'Search the available Codeclub tools and return compact descriptions plus exact input schemas. Use this before executeTool when you need a capability.',
+      inputSchema: jsonSchema({
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Capability or keywords to search. Empty returns all tools.' },
+          page: { type: 'number', description: '1-based page number.' },
+          pageSize: { type: 'number', description: 'Results per page, maximum 20.' },
+        },
+        additionalProperties: false,
+      }),
+      execute: async ({ query, page, pageSize }) => {
+        const startedAt = performance.now();
+        const normalizedQuery = normalize(String(query || '').trim());
+        const terms = normalizedQuery.split(/\s+/).filter((term) => term.length > 2 && !['con', 'para', 'que', 'una', 'uno', 'del', 'por'].includes(term));
+        const ranked = entries.map((entry) => {
+          const haystack = normalize(`${entry.name} ${entry.description} ${entry.keywords.join(' ')}`);
+          const score = terms.reduce((total, term) => total + (haystack.includes(term) ? (entry.name.toLowerCase().includes(term) ? 3 : 1) : 0), 0);
+          return { entry, score };
+        }).filter(({ score }) => !terms.length || score > 0).sort((a, b) => b.score - a.score);
+        const matches = ranked.map(({ entry }) => entry);
+        const size = Math.min(Math.max(Number(pageSize) || 10, 1), 20);
+        const currentPage = Math.max(Number(page) || 1, 1);
+        const start = (currentPage - 1) * size;
+        return { query: normalizedQuery, page: currentPage, pageSize: size, total: matches.length, hasMore: start + size < matches.length, durationMs: Math.round(performance.now() - startedAt), tools: matches.slice(start, start + size) };
+      },
+    }),
+    executeTool: tool({
+      description: 'Execute one tool returned by searchTools using its exact name and input object.',
+      inputSchema: jsonSchema({
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Exact tool name returned by searchTools.' },
+          input: { type: 'object', description: 'Arguments matching the tool schema returned by searchTools.' },
+        },
+        required: ['name'],
+        additionalProperties: false,
+      }),
+      execute: async ({ name, input }) => {
+        const definition = definitions.get(name);
+        if (!definition?.execute) return { ok: false, error: `Tool no disponible: ${name}` };
+        const startedAt = performance.now();
+        try {
+          const result = await definition.execute(input || {});
+          const output = { ok: true, tool: name, durationMs: Math.round(performance.now() - startedAt), result };
+          recordToolEvent?.('executeTool', { name, input: input || {} }, output);
+          return output;
+        } catch (error) {
+          const output = { ok: false, tool: name, durationMs: Math.round(performance.now() - startedAt), error: String(error) };
+          recordToolEvent?.('executeTool', { name, input: input || {} }, output);
+          return output;
+        }
+      },
+    }),
+  };
 }
 
 /* Legacy economy-aware routing removed. Development is the only agent mode now.
@@ -1002,6 +1093,36 @@ export function createTools(ctx: ToolContext) {
         });
         recordToolEvent('browserAction', action, output);
         return output;
+      },
+    }),
+    switchProject: tool({
+      description: 'Switch the active workspace project, or select no project. Accepts an indexed project name or full path.',
+      inputSchema: jsonSchema({
+        type: 'object',
+        properties: {
+          project: { type: 'string', description: 'Indexed project name or full path. Use "Sin proyecto" to clear the active project.' },
+        },
+        required: ['project'],
+        additionalProperties: false,
+      }),
+      execute: async ({ project }) => {
+        const requested = String(project || '').trim();
+        const normalizedRequested = requested.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        if (!requested || normalizedRequested === 'sin proyecto' || normalizedRequested === 'ninguno') {
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('codeclub:project-selection-changed', { detail: { selected: false, keepChat: true, projectPath: null, projectName: 'Sin proyecto' } }));
+            window.dispatchEvent(new CustomEvent('codeclub:active-project', { detail: { projectPath: null, projectName: 'Sin proyecto' } }));
+          }
+          return { ok: true, project: null, projectName: 'Sin proyecto' };
+        }
+        const projects = await readProjectIndex();
+        const match = projects.find((entry) => entry.path === requested || entry.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() === normalizedRequested);
+        if (!match) return { ok: false, error: `No encontré un proyecto indexado llamado o ubicado en: ${requested}`, availableProjects: projects.map((entry) => ({ name: entry.name, path: entry.path })) };
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('codeclub:project-selection-changed', { detail: { selected: true, projectPath: match.path, projectName: match.name } }));
+          window.dispatchEvent(new CustomEvent('codeclub:active-project', { detail: { projectPath: match.path, projectName: match.name } }));
+        }
+        return { ok: true, project: match.path, projectName: match.name };
       },
     }),
     subagent: tool({

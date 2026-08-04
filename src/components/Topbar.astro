@@ -20,6 +20,8 @@ import {
   Terminal,
   X,
 } from "lucide-astro";
+
+const showDevelopmentControls = import.meta.env.DEV;
 ---
 
 <header class="acrylic-panel relative z-[100] col-span-full h-[36px] grid grid-cols-[auto_1fr_auto_138px] select-none">
@@ -71,33 +73,20 @@ import {
       </div>
 
       <div class="relative h-full flex items-center group/menu">
-        <button class="h-[28px] px-[9px] text-xs border-0 rounded-md bg-transparent text-[#d8d8d8] hover:bg-[var(--color-surface-7)]" type="button">Testing</button>
+        <button class="h-[28px] px-[9px] text-xs border-0 rounded-md bg-[#2F2F2F] text-[#eeeeee]" type="button">Developer</button>
         <div class="absolute top-[34px] left-0 min-w-[240px] flex flex-col gap-[3px] p-2 border border-[var(--color-surface-10)] rounded-lg bg-[rgba(18,18,18,0.96)] shadow-[0_18px_54px_rgba(0,0,0,0.38)] opacity-0 pointer-events-none -translate-y-1 transition-all duration-120 ease-out group-hover/menu:opacity-100 group-hover/menu:pointer-events-auto group-hover/menu:translate-y-0 z-20">
-          <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="web-folder">1. Verificar carpeta del sitio</button>
-          <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="web-page">2. Armar la página web</button>
-          <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="web-debug">3. Abrir y debuguear</button>
-          <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="web-quote">4. Preparar cotización</button>
-          <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="web-charge">5. Preparar cobro</button>
-        </div>
-        <div class="testing-menu hidden absolute top-[34px] left-0 min-w-[265px] flex flex-col gap-[3px] p-2 border border-[var(--color-surface-10)] rounded-lg bg-[rgba(18,18,18,0.96)] shadow-[0_18px_54px_rgba(0,0,0,0.38)] opacity-0 pointer-events-none -translate-y-1 transition-all duration-120 ease-out group-hover/menu:opacity-100 group-hover/menu:pointer-events-auto group-hover/menu:translate-y-0 z-20" style="display:none">
-          <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="test-swarm"><Bot class="shrink-0" size={14} /> Test swarm e hijos</button>
-          <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="test-artifacts"><Target class="shrink-0" size={14} /> Test proyectos y artifacts</button>
-          <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="test-programmatic"><Terminal class="shrink-0" size={14} /> Test acciones programáticas</button>
-          <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="test-custom-control"><Eye class="shrink-0" size={14} /> Test control custom</button>
-          <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="test-timeline"><MessageSquarePlus class="shrink-0" size={14} /> Test timeline y resumen</button>
-          <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="test-browser"><Eye class="shrink-0" size={14} /> Test navegador seguro</button>
-          <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="test-retry"><X class="shrink-0" size={14} /> Test retry y error</button>
-          <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="test-capacity"><Bot class="shrink-0" size={14} /> Test slots del swarm</button>
-          <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="test-all"><Bug class="shrink-0" size={14} /> Test · verificar todo</button>
-          <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="braille-tools"><Bug class="shrink-0" size={14} /> Braille · atlas de tools</button>
-          <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="braille-specialists"><Bot class="shrink-0" size={14} /> Braille · especialistas</button>
-          <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="braille-business"><PiggyBank class="shrink-0" size={14} /> Braille · Economía</button>
-          <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="braille-error"><X class="shrink-0" size={14} /> Braille · estado error</button>
-          <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="braille-browser"><Eye class="shrink-0" size={14} /> Braille · navegador</button>
-          <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="braille-complete"><MessageSquarePlus class="shrink-0" size={14} /> Braille · secuencia completa</button>
-          <button class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="markdown-rendering"><Bug class="shrink-0" size={14} /> Markdown · render completo</button>
+          <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="dev-inspect">1. Inspeccionar el workspace</button>
+          <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="dev-memory">2. Probar memoria</button>
+          <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="dev-plan">3. Crear y verificar un plan</button>
+          <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="dev-edit">4. Editar y comprobar un archivo</button>
+          <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="dev-browser">5. Probar el navegador</button>
+          <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="dev-diagnostics">6. Diagnóstico completo</button>
+          <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="dev-recovery">7. Recuperar un error</button>
         </div>
       </div>
+      {showDevelopmentControls && <div class="flex items-center gap-[2px] ml-1 h-full" aria-label="Development tools">
+        <button class="h-[28px] px-[9px] text-xs border-0 rounded-md bg-transparent text-[#777777]" type="button" aria-label="Assistant">Assistant</button>
+      </div>}
     </nav>
   </div>
   

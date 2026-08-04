@@ -73,8 +73,6 @@ const highlightFileLines = (content: string, path: string) => {
 };
 
 const browserStateScript = `(() => {
-  const invoke = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke;
-  if (typeof invoke !== 'function') return;
   const selectorFor = (element) => {
     if (element.id) return '#' + CSS.escape(element.id);
     const parts = [];
@@ -91,7 +89,7 @@ const browserStateScript = `(() => {
   const labelFor = (element) => (element.getAttribute('aria-label') || element.getAttribute('title') || element.innerText || element.textContent || element.getAttribute('placeholder') || element.id || element.tagName).trim().replace(/\\s+/g, ' ').slice(0, 120);
   const elements = Array.from(document.querySelectorAll('button,a,input,textarea,select,[role="button"],[role="link"],[role="textbox"],[role="checkbox"],[role="combobox"]')).slice(0, 250).map((element, index) => { const rect = element.getBoundingClientRect(); return { id: 'element-' + index, selector: selectorFor(element), role: element.getAttribute('role') || element.tagName.toLowerCase(), label: labelFor(element), tag: element.tagName.toLowerCase(), type: element.getAttribute('type') || undefined, disabled: Boolean(element.disabled || element.getAttribute('aria-disabled') === 'true'), rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) } }; }).filter((element) => element.rect.width > 0 && element.rect.height > 0);
   const state = { url: location.href, title: document.title, viewport: { width: innerWidth, height: innerHeight }, text: (document.body?.innerText || '').replace(/\\s+/g, ' ').slice(0, 12000), elements };
-  invoke('codeclub_browser_selection', { selection: { title: document.title, text: JSON.stringify(state), html: '', url: location.href, selector: '__codeclub_state__', tag: 'document' } });
+  location.hash = '#__codeclub_selection=' + encodeURIComponent(JSON.stringify({ title: document.title, text: JSON.stringify(state), html: '', url: location.href, selector: '__codeclub_state__', tag: 'document' }));
 })()`;
 
 const browserActionScript = (action: { type: string; selector?: string; text?: string; key?: string; amount?: number }) => `(() => {
