@@ -55,6 +55,7 @@ import ChatPanel from "../components/ChatPanel.astro";
         const menuActions = {
           'new-chat': 'codeclub:request-new-chat',
           'open-projects': 'codeclub:open-projects',
+          'open-agent': 'codeclub:open-agent',
           'open-extensions': 'codeclub:open-extensions',
         };
         Object.entries(menuActions).forEach(([action, eventName]) => {
@@ -68,6 +69,7 @@ import ChatPanel from "../components/ChatPanel.astro";
           'codeclub:open-empty-chat': 'chat',
           'codeclub:open-chat': 'chat',
           'codeclub:open-projects': 'projects',
+          'codeclub:open-agent': 'agent',
           'codeclub:open-extensions': 'extensions',
           'codeclub:open-settings': 'settings',
         };
@@ -167,6 +169,7 @@ import ChatPanel from "../components/ChatPanel.astro";
 
         const setProjectsView = (enabled) => document.body.classList.toggle('projects-view', enabled);
         window.addEventListener('codeclub:open-projects', () => setProjectsView(true));
+        window.addEventListener('codeclub:open-agent', () => setProjectsView(false));
         window.addEventListener('codeclub:open-chat', () => setProjectsView(false));
         window.addEventListener('codeclub:request-new-chat', () => setProjectsView(false));
 

@@ -13,6 +13,7 @@ const CHAT_AVATAR_GRADIENT = 'linear-gradient(145deg, #8BC7FF 0%, #3D9BFF 44%, #
 export default function WorkspaceManager({ catalog, defaultProvider, defaultModel }) {
   const [selectedProject, setSelectedProject] = useState<SelectedProject | null>(null);
   const [showProjects, setShowProjects] = useState(true);
+  const [showAgent, setShowAgent] = useState(false);
   const [showExtensions, setShowExtensions] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [dockVisible, setDockVisible] = useState(false);
@@ -108,26 +109,31 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
   useEffect(() => {
     const handleOpenProjects = () => {
       setShowProjects(true);
+      setShowAgent(false);
       setShowExtensions(false);
       setShowSettings(false);
       setSelectedProject(null);
     };
     const handleOpenExtensions = () => {
       setShowExtensions(true);
+      setShowAgent(false);
       setShowProjects(false);
       setShowSettings(false);
       setSelectedProject(null);
     };
-    const handleOpenSettings = () => { setShowProjects(false); setShowExtensions(false); setShowSettings(true); setSelectedProject(null); };
-    const handleOpenChat = () => { setShowProjects(false); setShowExtensions(false); setShowSettings(false); };
-    const handleOpenEmptyChat = () => { setShowProjects(false); setShowExtensions(false); setShowSettings(false); };
+    const handleOpenSettings = () => { setShowProjects(false); setShowAgent(false); setShowExtensions(false); setShowSettings(true); setSelectedProject(null); };
+    const handleOpenAgent = () => { setShowProjects(false); setShowAgent(true); setShowExtensions(false); setShowSettings(false); setSelectedProject(null); };
+    const handleOpenChat = () => { setShowProjects(false); setShowAgent(false); setShowExtensions(false); setShowSettings(false); };
+    const handleOpenEmptyChat = () => { setShowProjects(false); setShowAgent(false); setShowExtensions(false); setShowSettings(false); };
     window.addEventListener('codeclub:open-chat', handleOpenChat);
     window.addEventListener('codeclub:open-projects', handleOpenProjects);
+    window.addEventListener('codeclub:open-agent', handleOpenAgent);
     window.addEventListener('codeclub:open-extensions', handleOpenExtensions);
     window.addEventListener('codeclub:open-settings', handleOpenSettings);
     window.addEventListener('codeclub:open-empty-chat', handleOpenEmptyChat);
     return () => {
       window.removeEventListener('codeclub:open-projects', handleOpenProjects);
+      window.removeEventListener('codeclub:open-agent', handleOpenAgent);
       window.removeEventListener('codeclub:open-extensions', handleOpenExtensions);
       window.removeEventListener('codeclub:open-settings', handleOpenSettings);
       window.removeEventListener('codeclub:open-empty-chat', handleOpenEmptyChat);
@@ -136,8 +142,8 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
   }, []);
 
   useEffect(() => {
-    if (!showProjects && !showExtensions && !showSettings && !activeChatStore.get().id) window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
-  }, [showProjects, showExtensions, showSettings]);
+    if (!showProjects && !showAgent && !showExtensions && !showSettings && !activeChatStore.get().id) window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
+  }, [showProjects, showAgent, showExtensions, showSettings]);
 
   useEffect(() => {
     const toggleDock = () => setDockVisible((visible) => !visible);
@@ -195,8 +201,8 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
         </div>}
       </div>
       <div className="workspace-pane acrylic-panel min-h-0 min-w-0 flex-1 overflow-hidden">
-        <div key={showProjects ? 'projects' : showExtensions ? 'extensions' : showSettings ? 'settings' : 'chat'} className="workspace-panel-content h-full min-h-0 min-w-0">
-          {showProjects ? <ProjectsPanel /> : showExtensions ? <ExtensionsPanel selectedProject={selectedProject} /> : showSettings ? <SettingsPanel /> : <ChatInterface
+        <div key={showProjects ? 'projects' : showAgent ? 'agent' : showExtensions ? 'extensions' : showSettings ? 'settings' : 'chat'} className="workspace-panel-content h-full min-h-0 min-w-0">
+          {showProjects ? <ProjectsPanel /> : showAgent ? <div aria-label="Agente" className="h-full w-full" /> : showExtensions ? <ExtensionsPanel selectedProject={selectedProject} /> : showSettings ? <SettingsPanel /> : <ChatInterface
             catalog={catalog}
             defaultProvider={defaultProvider}
             defaultModel={defaultModel}

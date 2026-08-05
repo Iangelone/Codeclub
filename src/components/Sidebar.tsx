@@ -23,8 +23,9 @@ import {
   FolderPlus,
   Settings,
   MessageSquare,
-  MessageSquarePlus,
+  MessageCirclePlus,
   Blocks,
+  FingerprintPattern,
   FileText,
   FileCode2,
   MousePointer2,
@@ -65,7 +66,7 @@ export default function Sidebar() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [activeArtifactId, setActiveArtifactId] = useState<string | null>(null);
   const [agentActivities, setAgentActivities] = useState<Record<string, { state: string; tool?: string; agent?: string; ready?: boolean }>>({});
-  const [activeSection, setActiveSection] = useState<"chat" | "projects" | "extensions" | "settings">("projects");
+  const [activeSection, setActiveSection] = useState<"chat" | "projects" | "agent" | "extensions" | "settings">("projects");
 
   useEffect(() => {
     if (window.localStorage.getItem(LANGUAGE_STORAGE_KEY) === "en") setLanguage("en");
@@ -191,6 +192,7 @@ export default function Sidebar() {
       if (chat?.id) openGlobalChat(chat);
     };
     const handleOpenProjects = () => setActiveSection("projects");
+    const handleOpenAgent = () => { setActiveSection("agent"); setActiveArtifactId(null); activeChatStore.set({}); };
     const handleOpenExtensions = () => setActiveSection("extensions");
     const handleOpenSettings = () => setActiveSection("settings");
     const handleProjectContextMenu = (event: Event) => {
@@ -243,6 +245,7 @@ export default function Sidebar() {
     window.addEventListener("codeclub:chat-created", handleChatCreated);
     window.addEventListener("codeclub:rename-chat", handleChatRename);
     window.addEventListener("codeclub:open-projects", handleOpenProjects);
+    window.addEventListener("codeclub:open-agent", handleOpenAgent);
     window.addEventListener("codeclub:open-extensions", handleOpenExtensions);
     window.addEventListener("codeclub:open-settings", handleOpenSettings);
     window.addEventListener("codeclub:project-context-menu", handleProjectContextMenu);
@@ -259,6 +262,7 @@ export default function Sidebar() {
       window.removeEventListener("codeclub:chat-created", handleChatCreated);
       window.removeEventListener("codeclub:rename-chat", handleChatRename);
       window.removeEventListener("codeclub:open-projects", handleOpenProjects);
+      window.removeEventListener("codeclub:open-agent", handleOpenAgent);
       window.removeEventListener("codeclub:open-extensions", handleOpenExtensions);
       window.removeEventListener("codeclub:open-settings", handleOpenSettings);
       window.removeEventListener("codeclub:project-context-menu", handleProjectContextMenu);
@@ -742,6 +746,16 @@ export default function Sidebar() {
     window.dispatchEvent(new CustomEvent("codeclub:open-blank", { detail: {} }));
   };
 
+  const openAgentPanel = () => {
+    setActiveSection("agent");
+    setSelectedProjectId(null);
+    setActiveArtifactId(null);
+    setProjectMenu(null);
+    setArtifactMenu(null);
+    activeChatStore.set({});
+    window.dispatchEvent(new CustomEvent("codeclub:open-agent"));
+  };
+
   const openNewChat = async () => {
     setActiveSection("chat");
     setActiveArtifactId(null);
@@ -804,11 +818,14 @@ export default function Sidebar() {
         </div>
         <div className="sidebar-main-nav shrink-0 flex flex-col gap-1 pb-1">
           <div data-sidebar-item onClick={() => void openNewChat()} className={`codeclub-motion-control w-full min-h-[32px] flex cursor-pointer items-center gap-[8px] rounded-[7px] px-[8px] text-[12px] text-left transition-colors hover:translate-x-px ${activeSection === "chat" && !activeArtifactId ? "bg-[#30333b] text-[#f3f4f6] shadow-[inset_0_1px_rgba(255,255,255,0.06)]" : "text-[#b8bbc3] hover:bg-[#252525] hover:text-[#f3f4f6]"}`}>
-            <span className="flex h-4 w-4 shrink-0 items-center justify-center"><MessageSquarePlus size={16} strokeWidth={1.8} /></span> {text.newChat}
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center"><MessageCirclePlus size={16} strokeWidth={1.8} /></span> {text.newChat}
           </div>
           <div data-sidebar-item role="button" tabIndex={0} onClick={openProjectsPanel} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openProjectsPanel(); } }} className={`codeclub-motion-control w-full min-h-[32px] flex cursor-pointer items-center gap-[8px] rounded-[7px] px-[8px] text-[12px] text-left transition-colors hover:translate-x-px focus-visible:outline-none ${activeSection === "projects" ? "bg-[#30333b] text-[#f3f4f6] shadow-[inset_0_1px_rgba(255,255,255,0.06)]" : "text-[#b8bbc3] hover:bg-[#252525] hover:text-[#f3f4f6]"}`}>
             <span className="flex h-4 w-4 shrink-0 items-center justify-center"><Folder size={16} strokeWidth={1.8} /></span> {text.projects}
           </div>
+          <button type="button" className={`codeclub-motion-control w-full min-h-[32px] flex items-center gap-[8px] rounded-[7px] px-[8px] text-[12px] text-left transition-colors hover:translate-x-px ${activeSection === "agent" ? "bg-[#30333b] text-[#f3f4f6] shadow-[inset_0_1px_rgba(255,255,255,0.06)]" : "text-[#b8bbc3] hover:bg-[#252525] hover:text-[#f3f4f6]"} border-0 appearance-none`} onClick={openAgentPanel}>
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center"><FingerprintPattern size={16} strokeWidth={1.8} /></span> {text.agents}
+          </button>
           <button type="button" className={`codeclub-motion-control w-full min-h-[32px] flex items-center gap-[8px] rounded-[7px] px-[8px] text-[12px] text-left transition-colors hover:translate-x-px ${activeSection === "extensions" ? "bg-[#30333b] text-[#f3f4f6] shadow-[inset_0_1px_rgba(255,255,255,0.06)]" : "text-[#b8bbc3] hover:bg-[#252525] hover:text-[#f3f4f6]"} border-0 appearance-none`} onClick={() => window.dispatchEvent(new CustomEvent("codeclub:open-extensions"))}>
             <span className="flex h-4 w-4 shrink-0 items-center justify-center"><Blocks size={16} strokeWidth={1.8} /></span> {text.extensions}
           </button>
