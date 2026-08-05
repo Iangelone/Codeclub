@@ -24,6 +24,8 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
   const [availableProjects, setAvailableProjects] = useState<ProjectEntry[]>([]);
   const [recentChats, setRecentChats] = useState<GlobalChat[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | undefined>(activeChatStore.get().id);
+  const pendingChatRef = useRef<any>(null);
+  const [chatOpenVersion, setChatOpenVersion] = useState(0);
   const agentCreatureRef = useRef<HTMLDivElement>(null);
 
   const moveAgentEyes = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -141,7 +143,14 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
     };
     const handleOpenSettings = () => { setShowProjects(false); setShowAgent(false); setShowExtensions(false); setShowSettings(true); setSelectedProject(null); };
     const handleOpenAgent = () => { setShowProjects(false); setShowAgent(true); setShowExtensions(false); setShowSettings(false); };
-    const handleOpenChat = () => { setShowProjects(false); setShowAgent(false); setShowExtensions(false); setShowSettings(false); };
+    const handleOpenChat = (event: Event) => {
+      pendingChatRef.current = (event as CustomEvent).detail || null;
+      setShowProjects(false);
+      setShowAgent(false);
+      setShowExtensions(false);
+      setShowSettings(false);
+      setChatOpenVersion((version) => version + 1);
+    };
     const handleOpenEmptyChat = () => { setShowProjects(false); setShowAgent(false); setShowExtensions(false); setShowSettings(false); };
     window.addEventListener('codeclub:open-chat', handleOpenChat);
     window.addEventListener('codeclub:open-projects', handleOpenProjects);
@@ -158,6 +167,14 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
       window.removeEventListener('codeclub:open-chat', handleOpenChat);
     };
   }, []);
+
+  useEffect(() => {
+    if (showProjects || showAgent || showExtensions || showSettings || !pendingChatRef.current) return;
+    const detail = pendingChatRef.current;
+    pendingChatRef.current = null;
+    const timer = window.setTimeout(() => window.dispatchEvent(new CustomEvent('codeclub:panel-left:open-chat', { detail })), 0);
+    return () => window.clearTimeout(timer);
+  }, [showProjects, showAgent, showExtensions, showSettings, chatOpenVersion]);
 
   useEffect(() => {
     if (!showProjects && !showAgent && !showExtensions && !showSettings && !activeChatStore.get().id) window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
