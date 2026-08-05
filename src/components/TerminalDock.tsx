@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import '@xterm/xterm/css/xterm.css';
 import { getSetting, setSetting } from '../lib/persistence';
+import { LANGUAGE_STORAGE_KEY, rightSidebarTranslations, type AppLanguage } from '../lib/i18n';
 
 type ShellKind = 'auto' | 'powershell' | 'git-bash' | 'wsl' | 'cmd';
 
@@ -31,14 +32,6 @@ type TerminalSnapshot = {
 
 const STORAGE_KEY = 'codeclub_terminal_tabs_v1';
 
-const shellOptions: { id: ShellKind; label: string }[] = [
-  { id: 'auto', label: 'Sistema' },
-  { id: 'powershell', label: 'PowerShell' },
-  { id: 'cmd', label: 'Command Prompt' },
-  { id: 'git-bash', label: 'Git Bash' },
-  { id: 'wsl', label: 'WSL2' },
-];
-
 const shellLabels: Record<string, string> = {
   auto: 'Default',
   powershell: 'PowerShell',
@@ -46,8 +39,6 @@ const shellLabels: Record<string, string> = {
   'git-bash': 'Git Bash',
   wsl: 'WSL2',
 };
-
-const AVATAR_GRADIENT = 'linear-gradient(112deg, #1687FF 0%, #67BAFF 38%, #F8EAD8 68%, #FFF3DF 100%)';
 
 const computeTerminalName = (shell: string, existing: TerminalInfo[]) => {
   const base = shellLabels[shell] || shell;
@@ -92,18 +83,17 @@ const getDefaultHeight = () => {
   return Math.min(360, Math.max(220, window.innerHeight * 0.36));
 };
 
-export default function TerminalDock({ embedded = false }: { embedded?: boolean }) {
+export default function TerminalDock({ embedded = false, terminalId }: { embedded?: boolean; terminalId?: string }) {
+  const [language, setLanguage] = useState<AppLanguage>('es');
+  const text = rightSidebarTranslations[language];
   const [mounted, setMounted] = useState(false);
   const [terminals, setTerminals] = useState<TerminalInfo[]>([]);
   const [activeProjectPath, setActiveProjectPath] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(embedded);
-  const [shellMenuOpen, setShellMenuOpen] = useState(false);
-  const [shellMenuPosition, setShellMenuPosition] = useState({ left: 0, top: 0 });
   const [position, setPosition] = useState<{ x: number; y: number }>(getDefaultPosition);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const barRef = useRef<HTMLDivElement | null>(null);
-  const plusButtonRef = useRef<HTMLButtonElement | null>(null);
   const activeIdRef = useRef<string | null>(null);
   const activeProjectPathRef = useRef<string | null>(null);
   const visibleTerminalCountRef = useRef(0);
@@ -112,12 +102,26 @@ export default function TerminalDock({ embedded = false }: { embedded?: boolean 
   const xtermRef = useRef<any>(null);
   const fitAddonRef = useRef<any>(null);
   const outputRef = useRef(new Map<string, string>());
+  const commandBuffersRef = useRef(new Map<string, string>());
   const loadedRef = useRef(false);
   const restoredRef = useRef(false);
   const [dockHeight, setDockHeight] = useState(getDefaultHeight);
   const dragRef = useRef({ isDragging: false, startX: 0, startY: 0, startPosX: 0, startPosY: 0 });
   const positionRef = useRef(position);
   positionRef.current = position;
+
+  useEffect(() => {
+    if (terminalId) setActiveId(terminalId);
+  }, [terminalId]);
+
+  useEffect(() => {
+    const handleLanguageChange = (event: Event) => {
+      const nextLanguage = (event as CustomEvent<{ language?: AppLanguage }>).detail?.language;
+      if (nextLanguage === 'es' || nextLanguage === 'en') setLanguage(nextLanguage);
+    };
+    window.addEventListener('codeclub:language-change', handleLanguageChange);
+    return () => window.removeEventListener('codeclub:language-change', handleLanguageChange);
+  }, []);
   const resizeRef = useRef({ isResizing: false, startY: 0, startHeight: 0 });
   const dockHeightRef = useRef(dockHeight);
   dockHeightRef.current = dockHeight;
@@ -225,33 +229,14 @@ export default function TerminalDock({ embedded = false }: { embedded?: boolean 
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        if (shellMenuOpen) {
-          setShellMenuOpen(false);
-          return;
-        }
-        if (isOpen) {
+      if (e.key === 'Escape' && isOpen) {
           e.stopPropagation();
           setIsOpen(false);
-        }
       }
     };
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [isOpen, shellMenuOpen]);
-
-  const shellMenuRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!shellMenuOpen) return;
-    const handleClick = (e: MouseEvent) => {
-      if (shellMenuRef.current && !shellMenuRef.current.contains(e.target as Node)) {
-        setShellMenuOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [shellMenuOpen]);
+  }, [isOpen]);
 
   const disposeActiveTerminal = () => {
     terminalRef.current?.dispose?.();
@@ -281,11 +266,11 @@ export default function TerminalDock({ embedded = false }: { embedded?: boolean 
       scrollback: 5000,
       allowTransparency: true,
       theme: {
-        background: '#111111',
+        background: '#1A1A1A',
         foreground: '#cfcfcf',
         cursor: '#d8d8d8',
         selectionBackground: '#404040',
-        black: '#111111',
+        black: '#101010',
         red: '#e57373',
         green: '#81c784',
         yellow: '#ffd54f',
@@ -308,6 +293,13 @@ export default function TerminalDock({ embedded = false }: { embedded?: boolean 
     term.open(hostRef.current);
     fitAddon.fit();
     term.onData((data) => {
+      const commandBuffer = `${commandBuffersRef.current.get(id) || ''}${data}`;
+      const lines = commandBuffer.split(/[\r\n]/);
+      if (lines.length > 1) {
+        const command = lines.slice(0, -1).join('').replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '').trim();
+      if (command) window.dispatchEvent(new CustomEvent('codeclub:terminal-command', { detail: { terminalId: id, command } }));
+      }
+      commandBuffersRef.current.set(id, lines[lines.length - 1] || '');
       invoke('codeclub_terminal_write', { id, data }).catch(() => {});
     });
     terminalRef.current = term;
@@ -397,6 +389,7 @@ export default function TerminalDock({ embedded = false }: { embedded?: boolean 
       if (existing.length > 0) {
         setTerminals(existing);
         setActiveId(existing.find((terminal) => terminal.is_agent && (!activeProjectPathRef.current || terminal.projectPath === activeProjectPathRef.current))?.id || existing.find((terminal) => !terminal.is_agent)?.id || null);
+        window.dispatchEvent(new CustomEvent('codeclub:terminal-list', { detail: { terminals: existing.filter((terminal) => !terminal.is_agent) } }));
         restoredRef.current = true;
       }
       loadedRef.current = true;
@@ -406,6 +399,7 @@ export default function TerminalDock({ embedded = false }: { embedded?: boolean 
           setTerminals((items) => upsertTerminal(items, event.payload));
           setActiveId(event.payload.id);
           setIsOpen(true);
+          if (embedded && !event.payload.is_agent) window.dispatchEvent(new CustomEvent('codeclub:terminal-created', { detail: event.payload }));
         }),
         listen<TerminalInfo>('codeclub-terminal-updated', (event) => {
           setTerminals((items) => upsertTerminal(items, event.payload));
@@ -456,19 +450,6 @@ export default function TerminalDock({ embedded = false }: { embedded?: boolean 
     if (!isOpen) persistPosition();
   }, [isOpen]);
 
-  const toggleShellMenu = () => {
-    const rect = plusButtonRef.current?.getBoundingClientRect();
-    const barRect = barRef.current?.getBoundingClientRect();
-    if (rect && barRect) {
-      const menuWidth = 158;
-      setShellMenuPosition({
-        left: Math.max(6, Math.min(rect.left - barRect.left, barRect.width - menuWidth - 6)),
-        top: rect.bottom + 4,
-      });
-    }
-    setShellMenuOpen((value) => !value);
-  };
-
   const createTerminal = async (
     shell: ShellKind = 'powershell',
     options: { cwd?: string; projectPath?: string; isAgent?: boolean; open?: boolean } = {},
@@ -488,8 +469,15 @@ export default function TerminalDock({ embedded = false }: { embedded?: boolean 
     if (terminal.is_agent) return terminal;
     setActiveId(terminal.id);
     setIsOpen(options.open !== false);
+    if (embedded) window.dispatchEvent(new CustomEvent('codeclub:terminal-created', { detail: terminal }));
     return terminal;
   };
+
+  useEffect(() => {
+    const handleNewTerminal = () => { void createTerminal('powershell'); };
+    window.addEventListener('codeclub:new-terminal', handleNewTerminal);
+    return () => window.removeEventListener('codeclub:new-terminal', handleNewTerminal);
+  }, [activeProjectPath, terminals]);
 
   const deleteTerminal = async (id: string) => {
     const deleted = terminals.find((t) => t.id === id);
@@ -519,10 +507,19 @@ export default function TerminalDock({ embedded = false }: { embedded?: boolean 
     }
   };
 
+  useEffect(() => {
+    const handleCloseTerminal = (event: Event) => {
+      const id = (event as CustomEvent<{ id?: string }>).detail?.id;
+      if (id) void deleteTerminal(id);
+    };
+    window.addEventListener('codeclub:terminal-close', handleCloseTerminal);
+    return () => window.removeEventListener('codeclub:terminal-close', handleCloseTerminal);
+  }, [terminals, activeId]);
+
   if (!mounted || typeof document === 'undefined') return null;
   const terminalView = (
       <div
-        className={embedded ? 'terminal-embedded flex h-full w-full min-h-0 min-w-0 flex-col overflow-hidden bg-[#111111]' : `terminal-floating ${isOpen ? 'is-open' : ''}`}
+        className={embedded ? 'terminal-embedded flex h-full w-full min-h-0 min-w-0 flex-col overflow-hidden bg-[#1A1A1A]' : `terminal-floating ${isOpen ? 'is-open' : ''}`}
         style={{
           ...(embedded ? {} : { left: `${position.x}px`, top: `${position.y}px`, height: `${dockHeight}px` }),
         }}
@@ -535,46 +532,30 @@ export default function TerminalDock({ embedded = false }: { embedded?: boolean 
             resizeRef.current = { isResizing: true, startY: e.clientY, startHeight: dockHeight };
           }}
         />}
-        <div ref={barRef} className="terminal-floating-bar" onMouseDown={embedded ? undefined : handleBarMouseDown}>
-          <div className="terminal-tabs" role="tablist" aria-label="Terminales">
+        {!embedded && <div ref={barRef} className="terminal-floating-bar" onMouseDown={handleBarMouseDown}>
+          <div className="terminal-tabs" role="tablist" aria-label={text.terminals}>
             {visibleTerminals.map((terminal) => (
-              <div key={terminal.id} className={`terminal-tab ${terminal.id === activeId ? 'is-active' : ''}`} style={terminal.id === activeId ? { background: AVATAR_GRADIENT, color: '#111111', border: '1px solid rgba(255,255,255,0.92)' } : undefined}>
-                <button type="button" className="terminal-tab-main" style={terminal.id === activeId ? { color: '#111111' } : undefined} onClick={() => { setActiveId(terminal.id); setIsOpen(true); }} aria-label={`Activar ${terminal.name}`}>
+              <div key={terminal.id} className={`terminal-tab ${terminal.id === activeId ? 'is-active' : ''}`} style={terminal.id === activeId ? { background: '#2B2B2B', color: '#eeeeee', border: '1px solid #3A3A3A' } : undefined}>
+                <button type="button" className="terminal-tab-main" style={terminal.id === activeId ? { color: '#eeeeee' } : undefined} onClick={() => { setActiveId(terminal.id); setIsOpen(true); }} aria-label={`${text.activateTerminal} ${terminal.name}`}>
                   <span>{terminal.name}</span>
                 </button>
-                <button type="button" className="terminal-tab-close" style={terminal.id === activeId ? { color: '#111111' } : undefined} onClick={() => void deleteTerminal(terminal.id)} aria-label={`Cerrar ${terminal.name}`} title="Cerrar terminal"><X size={11} strokeWidth={2} /></button>
+                <button type="button" className="terminal-tab-close" style={terminal.id === activeId ? { color: '#eeeeee' } : undefined} onClick={() => void deleteTerminal(terminal.id)} aria-label={`${text.closeTerminal} ${terminal.name}`} title={text.closeTerminal}><X size={11} strokeWidth={2} /></button>
               </div>
             ))}
             <div className="terminal-new">
-              <button ref={plusButtonRef} type="button" className="terminal-new-tab" aria-label="Nueva terminal" onClick={toggleShellMenu}>
+              <button type="button" className="terminal-new-tab" aria-label={text.newTerminal} onClick={() => void createTerminal('powershell')}>
                 <Plus size={14} />
               </button>
             </div>
           </div>
-          {!embedded && <div className="terminal-actions"><button type="button" aria-label="Ocultar terminal" onClick={() => setIsOpen(false)}><PanelBottomClose size={14} /></button></div>}
-          {shellMenuOpen && (
-            <div ref={shellMenuRef} className="terminal-shell-menu" style={embedded ? { position: 'fixed', left: shellMenuPosition.left, top: shellMenuPosition.top, width: 158, minWidth: 158 } : { left: shellMenuPosition.left }}>
-              {shellOptions.map((shell) => (
-                <button
-                  key={shell.id}
-                  type="button"
-                  onClick={() => {
-                    createTerminal(shell.id);
-                    setShellMenuOpen(false);
-                  }}
-                >
-                  {shell.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+          {!embedded && <div className="terminal-actions"><button type="button" aria-label={text.hideTerminal} title={text.hideTerminal} onClick={() => setIsOpen(false)}><PanelBottomClose size={14} /></button></div>}
+        </div>}
         <div className="terminal-stage">
           {activeTerminal ? (
             <div ref={hostRef} className="terminal-host" />
           ) : (
             <div className="terminal-empty">
-              <button type="button" onClick={toggleShellMenu}>Crear terminal</button>
+              <button type="button" onClick={() => void createTerminal('powershell')}>{text.createTerminal}</button>
             </div>
           )}
         </div>

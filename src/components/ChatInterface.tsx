@@ -31,6 +31,7 @@ import { appendGenerationUsage, type GenerationUsageRecord } from '../lib/usage'
 import { appendExecutionLog } from '../lib/execution-log';
 import { getProjectChatPath, readGlobalChatHistory, readGlobalChats, readProjectIndex, readProjectMeta, writeGlobalChatHistory, writeGlobalChats, writeProjectMeta } from '../lib/projectManager';
 import { codeclubExtensions, type CodeclubExtension } from '../lib/extensions';
+import { LANGUAGE_STORAGE_KEY, type AppLanguage } from '../lib/i18n';
 
 const SPINNER_FRAMES = {
   chat: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"],
@@ -199,6 +200,8 @@ const formatToolExecutionFallback = (mode: AgentMode, specialist: AgentSpecialis
 };
 
 export default function ChatInterface({ catalog, defaultProvider, defaultModel, panelId = 'left', eventPrefix = 'codeclub', selectedProject, blockedPanelState = 'blank', chatMode: workspaceChatMode = 'development', modeOverride = 'auto' }) {
+  const [language, setLanguage] = useState<AppLanguage>('es');
+  const chatText = language === 'en' ? { greeting: 'What are we working on today', send: 'Send', cancel: 'Cancel generation', message: 'Message', attach: 'Add files', removeFiles: 'Remove added files', activeSkills: 'Active skills', activeExtensions: 'Active extensions', removeSkill: 'Remove skill from this session', removeExtension: 'Remove extension from this session', selected: 'Selected', provider: 'provider', model: 'model', project: 'project', skill: 'skill', extension: 'extension', command: 'command', searchProvider: 'Search provider', searchModel: 'Search active provider model', searchProject: 'Search project', searchSkill: 'Search skill', searchCommand: 'Search command', noProject: 'No project', slash: { provider: 'Provider', model: 'Model', project: 'Project', skill: 'Skill', providerDescription: 'Select provider', modelDescription: 'Select model', projectDescription: 'Select project', skillDescription: 'Load skill in this session' }, status: { idle: 'Ready when you are.', connecting: 'Connecting to provider...', streaming: 'Thinking...', tool_call: 'Using tool...', approval: 'Waiting for approval...', running: 'Running...', error: 'Something went wrong.' } } : { greeting: '¿Qué toca hoy', send: 'Enviar', cancel: 'Cancelar generación', message: 'Mensaje', attach: 'Añadir archivos', removeFiles: 'Quitar archivos añadidos', activeSkills: 'Habilidades activas', activeExtensions: 'Extensiones activas', removeSkill: 'Quitar habilidad de esta sesión', removeExtension: 'Quitar extensión de esta sesión', selected: 'Seleccionado', provider: 'proveedor', model: 'modelo', project: 'proyecto', skill: 'habilidad', extension: 'extensión', command: 'comando', searchProvider: 'Buscar proveedor', searchModel: 'Buscar modelo del proveedor activo', searchProject: 'Buscar proyecto', searchSkill: 'Buscar habilidad', searchCommand: 'Buscar comando', noProject: 'Sin proyecto', slash: { provider: 'Proveedor', model: 'Modelo', project: 'Proyecto', skill: 'Habilidad', providerDescription: 'Seleccionar proveedor', modelDescription: 'Seleccionar modelo', projectDescription: 'Seleccionar proyecto', skillDescription: 'Cargar habilidad en esta sesión' }, status: { idle: 'Listo cuando tú lo estés.', connecting: 'Conectando con el proveedor...', streaming: 'Pensando...', tool_call: 'Usando herramienta...', approval: 'Esperando aprobación...', running: 'Ejecutando...', error: 'Algo salió mal.' } };
   const [messages, setMessages] = useState([]);
   const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
   const [copiedToolLogIndex, setCopiedToolLogIndex] = useState<number | null>(null);
@@ -223,6 +226,16 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [composerDocked, setComposerDocked] = useState(true);
   const composerDockedRef = useRef(false);
 
+  useEffect(() => {
+    if (window.localStorage.getItem(LANGUAGE_STORAGE_KEY) === 'en') setLanguage('en');
+    const handleLanguageChange = (event: Event) => {
+      const nextLanguage = (event as CustomEvent<{ language?: AppLanguage }>).detail?.language;
+      if (nextLanguage === 'es' || nextLanguage === 'en') setLanguage(nextLanguage);
+    };
+    window.addEventListener('codeclub:language-change', handleLanguageChange);
+    return () => window.removeEventListener('codeclub:language-change', handleLanguageChange);
+  }, []);
+
   const [currentProvider, setCurrentProvider] = useState(defaultProvider);
   const [currentModel, setCurrentModel] = useState(defaultModel);
   const [settingsReady, setSettingsReady] = useState(false);
@@ -231,13 +244,10 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [credentialProvider, setCredentialProvider] = useState(null);
   const [credentialInput, setCredentialInput] = useState('');
   const credentialInputRef = useRef<HTMLInputElement>(null);
-  const [customHeader, setCustomHeader] = useState('');
-  const [customBody, setCustomBody] = useState('');
   const [customToolsFormat, setCustomToolsFormat] = useState<'json' | 'xml'>('json');
-  const [customCredentialInput, setCustomCredentialInput] = useState('');
   const [customUrl, setCustomUrl] = useState('');
   const [customConfigError, setCustomConfigError] = useState('');
-  const customHeaderRef = useRef<HTMLInputElement>(null);
+  const customUrlRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     void invoke<string>('codeclub_get_username').then((name) => setUsername(name || 'Usuario')).catch(() => setUsername('Usuario'));
@@ -296,7 +306,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     window.addEventListener('codeclub:extensions-changed', handleExtensionsChanged);
     return () => window.removeEventListener('codeclub:extensions-changed', handleExtensionsChanged);
   }, []);
-  const agentStatusText = {
+  const legacyAgentStatusText = {
     idle: "Listo cuando tú lo estés.",
     connecting: "Conectando con el proveedor...",
     streaming: "Pensando...",
@@ -305,6 +315,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     running: "Ejecutando...",
     error: "Algo salió mal.",
   }[agentState] || "Listo cuando tú lo estés.";
+  const agentStatusText = chatText.status[agentState as keyof typeof chatText.status] || chatText.status.idle;
   const isAgentBusy = isStreaming;
   useEffect(() => {
     if (!isStreaming) { setAgentElapsedMs(0); return undefined; }
@@ -684,7 +695,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
           return;
         }
         void readProjectIndex().then((projects) => {
-          setProjectOptions([{ id: '__none__', label: 'Sin proyecto', type: 'project', projectPath: null, isNone: true }, ...projects.map((project) => ({ id: project.path, label: project.name, type: 'project', projectPath: project.path }))]);
+          setProjectOptions([{ id: '__none__', label: chatText.noProject, type: 'project', projectPath: null, isNone: true }, ...projects.map((project) => ({ id: project.path, label: project.name, type: 'project', projectPath: project.path }))]);
           openCommandMenu('project');
         });
       }
@@ -708,12 +719,16 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   });
   const activeSelection = commandKind === 'provider' ? currentProvider : commandKind === 'model' ? currentModel : commandKind === 'project' && activeProject ? { id: activeProject.projectPath, label: activeProject.name } : null;
   const slashCommands = [
-    { id: 'proveedor', label: 'Proveedor', description: 'Seleccionar proveedor', type: 'command', icon: Globe },
-    { id: 'modelo', label: 'Modelo', description: 'Seleccionar modelo', type: 'command', icon: Box },
-    { id: 'proyecto', label: 'Proyecto', description: 'Seleccionar proyecto', type: 'command', icon: FolderTree },
-    { id: 'habilidad', label: 'Habilidad', description: 'Cargar habilidad en esta sesión', type: 'command', icon: Sparkles },
+    { id: 'proveedor', label: chatText.slash.provider, description: chatText.slash.providerDescription, type: 'command', icon: Globe },
+    { id: 'modelo', label: chatText.slash.model, description: chatText.slash.modelDescription, type: 'command', icon: Box },
+    { id: 'proyecto', label: chatText.slash.project, description: chatText.slash.projectDescription, type: 'command', icon: FolderTree },
+    { id: 'habilidad', label: chatText.slash.skill, description: chatText.slash.skillDescription, type: 'command', icon: Sparkles },
     ...availableExtensions.filter((extension) => enabledExtensions[extension.id]).map((extension) => ({ id: extension.id, label: extension.name, description: extension.description, type: 'extension' as const, icon: extensionIcons[extension.id] || Box, extension })),
   ].filter((command) => command.label.toLowerCase().includes(searchQuery.toLowerCase()));
+  const commandMenuItems = commandKind === 'command'
+    ? slashCommands
+    : filteredCatalog.filter((item) => item.id !== activeSelection?.id);
+  const hasCommandMenuResults = commandMenuItems.length > 0;
 
   useEffect(() => {
     setActiveCommandIndex(0);
@@ -723,7 +738,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     if (!menuOpen) return;
     const activeItem = commandMenuRef.current?.querySelector(`[data-command-index="${activeCommandIndex}"]`);
     activeItem?.scrollIntoView({ block: 'nearest' });
-  }, [activeCommandIndex, menuOpen, filteredCatalog.length]);
+  }, [activeCommandIndex, menuOpen, commandMenuItems.length]);
 
   useEffect(() => {
     if (!composerDocked) return;
@@ -812,22 +827,15 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       setSearchQuery('');
       if (isCustomProvider) {
         void Promise.all([
-          getSetting('codeclub_custom_header', ''),
-          getSetting('codeclub_custom_body', ''),
           getSetting<'json' | 'xml'>('codeclub_custom_tools_format', 'json'),
-          getSetting('custom_api_key', ''),
           getSetting('codeclub_custom_url', ''),
-        ]).then(([header, body, format, credential, url]) => {
-          setCustomHeader(header);
-          setCustomBody(body);
+        ]).then(([format, url]) => {
           setCustomToolsFormat(format === 'xml' ? 'xml' : 'json');
-          setCustomCredentialInput(credential);
           setCustomUrl(url);
           setCurrentProvider((current) => current ? { ...current, api: url } : current);
         });
       }
-      const firstModel = catalog.find((m) => m.type === 'model' && m.providerId === item.id);
-      if (firstModel) setCurrentModel(firstModel);
+      setCurrentModel(null);
     } else if (item.type === 'model') {
       setCurrentModel(item);
       setCredentialProvider(null);
@@ -842,7 +850,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       setCommandKind('');
     }
     if (item.type === 'provider') {
-      setTimeout(() => (item.id === 'custom' ? customHeaderRef.current : credentialInputRef.current)?.focus(), 0);
+      setTimeout(() => (item.id === 'custom' ? customUrlRef.current : credentialInputRef.current)?.focus(), 0);
     } else {
       chatInputRef.current?.focus();
     }
@@ -861,7 +869,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   };
 
   const handleCommandMenuKeyDown = (e) => {
-    const selectableItems = commandKind === 'command' ? slashCommands : filteredCatalog;
+    const selectableItems = commandMenuItems;
     if (e.key === 'Escape') {
       e.preventDefault();
       setMenuOpen(false);
@@ -905,10 +913,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       return;
     }
     void Promise.all([
-      setSetting('codeclub_custom_header', customHeader.trim()),
-      setSetting('codeclub_custom_body', customBody),
       setSetting('codeclub_custom_tools_format', customToolsFormat),
-      setSetting('custom_api_key', customCredentialInput.trim()),
       setSetting('codeclub_custom_url', customUrl.trim()),
     ]);
     setCurrentProvider((current) => current ? { ...current, api: customUrl.trim() } : current);
@@ -2138,7 +2143,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       {/* Zona de mensajes */}
       <div className="messages-area" style={{ position: 'relative', minHeight: 0, height: '100%', overflowY: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none', display: composerDocked ? 'flex' : 'none', flexDirection: 'column', gap: '6px', paddingBottom: '10px', overscrollBehavior: 'contain' }}>
         <div aria-hidden="true" style={{ flex: '1 1 auto', minHeight: 0 }} />
-        {showEmptyGreeting && <div aria-hidden={messages.length > 0} style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', padding: '0 20px', color: '#eeeeee', fontSize: '18px', fontWeight: 500, letterSpacing: '-0.02em', opacity: messages.length === 0 ? 1 : 0, transform: messages.length === 0 ? 'none' : 'translateY(4px)', transition: 'opacity 280ms ease, transform 280ms ease', whiteSpace: 'nowrap', pointerEvents: 'none' }}>¿Qué toca hoy, {username}?</div>}
+        {showEmptyGreeting && <div aria-hidden={messages.length > 0} style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', padding: '0 20px', color: '#eeeeee', fontSize: '18px', fontWeight: 500, letterSpacing: '-0.02em', opacity: messages.length === 0 ? 1 : 0, transform: messages.length === 0 ? 'none' : 'translateY(4px)', transition: 'opacity 280ms ease, transform 280ms ease', whiteSpace: 'nowrap', pointerEvents: 'none' }}>{chatText.greeting}, {username}?</div>}
         {messages.map((turnMessage, turnIndex) => {
           if (turnMessage.role !== 'user') return null;
           const assistantMessage = messages[turnIndex + 1]?.role === 'assistant' ? messages[turnIndex + 1] : null;
@@ -2214,12 +2219,12 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             </div>
           )}
            {attachedFiles.length > 0 && <div className="flex min-h-[28px] items-center gap-1.5 overflow-hidden border-b border-[#202020] px-3 py-1.5" aria-label="Archivos adjuntos">{attachedFiles.slice(0, 3).map((file, index) => <button key={file.path} type="button" onClick={() => setAttachedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} className="flex max-w-[180px] min-w-0 shrink items-center gap-1.5 truncate rounded-full border border-[#2b2b2b] bg-[#161616] px-2.5 py-1 text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar archivo">{file.mediaType.startsWith('image/') ? <img src={file.previewUrl || convertFileSrc(file.path)} alt={file.name} style={{ width: '18px', height: '18px', objectFit: 'cover', borderRadius: '4px' }} /> : <Paperclip size={11} strokeWidth={1.8} />}<span className="truncate">{file.name}</span></button>)}{attachedFiles.length > 3 && <span className="shrink-0 rounded-full border border-[#2b2b2b] bg-[#161616] px-2.5 py-1 text-[10px] text-[#999]">+{attachedFiles.length - 3} archivos</span>}</div>}
-          {activeSkills.length > 0 && <div className="flex min-h-[28px] items-center gap-1.5 overflow-x-auto border-b border-[#202020] px-3 py-1.5" aria-label="Habilidades activas">
+          {activeSkills.length > 0 && <div className="flex min-h-[28px] items-center gap-1.5 overflow-x-auto border-b border-[#202020] px-3 py-1.5" aria-label={chatText.activeSkills}>
             {activeSkills.map((skill) => <button key={skill.id} type="button" onClick={() => setActiveSkills((current) => current.filter((item) => item.id !== skill.id))} className="flex shrink-0 items-center gap-1 rounded-full border border-[#3d9bff]/50 bg-[#1687ff]/10 px-2.5 py-1 text-[10px] text-[#b9dcff] hover:bg-[#1687ff]/20" title="Quitar habilidad de esta sesión">
               <span className="max-w-[150px] truncate">{skill.name}</span><span className="text-[#8bc7ff]/70">×</span>
             </button>)}
           </div>}
-          {activeExtensions.length > 0 && <div className="flex min-h-[28px] items-center gap-1.5 overflow-x-auto border-b border-[#202020] px-3 py-1.5" aria-label="Complementos activos">
+          {activeExtensions.length > 0 && <div className="flex min-h-[28px] items-center gap-1.5 overflow-x-auto border-b border-[#202020] px-3 py-1.5" aria-label={chatText.activeExtensions}>
             {activeExtensions.map((extension) => { const Icon = extensionIcons[extension.id] || Box; return <button key={extension.id} type="button" onClick={() => setActiveExtensions((current) => current.filter((item) => item.id !== extension.id))} className="flex shrink-0 items-center gap-1 rounded-full border border-[#3d9bff]/50 bg-[#1687ff]/10 px-2.5 py-1 text-[10px] text-[#b9dcff] hover:bg-[#1687ff]/20" title="Quitar complemento de esta sesión"><Icon size={11} /><span>{extension.name}</span><span className="text-[#8bc7ff]/70">×</span></button>; })}
           </div>}
           <div ref={commandMenuHostRef} className="w-full" />
@@ -2301,7 +2306,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             onFocus={() => { setInputFocused(true); if (commandKind !== 'credential') setMenuOpen(false); }}
             onBlur={() => setInputFocused(false)}
             placeholder=""
-            aria-label="Mensaje"
+            aria-label={chatText.message}
             style={{ appearance: 'none', flex: '1 1 auto', minWidth: 0, width: '100%', height: '22px', maxHeight: '140px', alignSelf: 'center', resize: 'none', border: 0, outline: 'none', background: 'transparent', color: '#eeeeee', fontSize: '12px', lineHeight: 1.4, padding: '4px 10px 4px 0', fontFamily: 'inherit', overflowY: 'hidden', scrollbarWidth: 'none', opacity: isAgentBusy ? 0.55 : 1 }}
           />
           {artifactReference && <button type="button" onClick={() => setArtifactReference(null)} className="absolute left-[16px] top-1/2 z-10 max-w-[130px] -translate-y-1/2 truncate rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar referencia">@{artifactReference.kind} · {artifactReference.title}</button>}
@@ -2317,20 +2322,23 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           tabIndex={-1}
           onKeyDown={handleCommandMenuKeyDown}
           className={`command-menu ${menuOpen ? 'is-open' : ''}`}
-          style={{ position: 'static', width: 'calc(100% - 16px)', margin: '0 8px', display: menuOpen ? 'grid' : 'none', gap: '8px', padding: '8px', border: 0, borderRadius: '10px', background: 'transparent', boxShadow: 'none', zIndex: 10, outline: 'none' }}
+          style={{ position: 'static', width: 'calc(100% - 16px)', margin: '0 8px', display: menuOpen && (commandKind === 'credential' || commandKind === 'custom-config' || hasCommandMenuResults) ? 'grid' : 'none', gap: '8px', padding: '8px', border: 0, borderRadius: '10px', background: 'transparent', boxShadow: 'none', zIndex: 10, outline: 'none' }}
         >
-          {commandKind !== 'credential' && commandKind !== 'custom-config' && <input
-            ref={searchInputRef}
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={handleSearchKeyDown}
-            placeholder={commandKind === 'provider' ? 'Buscar proveedor' : commandKind === 'model' ? 'Buscar modelo del proveedor activo' : commandKind === 'project' ? 'Buscar proyecto' : commandKind === 'skill' ? 'Buscar habilidad' : 'Buscar comando'}
-            style={{ height: '30px', padding: '0 9px', borderRadius: '7px', background: 'transparent', fontSize: '11px', color: '#eeeeee', border: 0, outline: 'none' }}
-          />}
+          {commandKind !== 'credential' && commandKind !== 'custom-config' && <div style={{ position: 'relative' }}>
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={handleSearchKeyDown}
+              placeholder={commandKind === 'provider' ? chatText.searchProvider : commandKind === 'model' ? chatText.searchModel : commandKind === 'project' ? chatText.searchProject : commandKind === 'skill' ? chatText.searchSkill : chatText.searchCommand}
+              style={{ boxSizing: 'border-box', width: '100%', height: '30px', padding: '0 32px 0 9px', borderRadius: '7px', background: 'transparent', fontSize: '11px', color: '#eeeeee', border: 0, outline: 'none' }}
+            />
+            <Search size={14} strokeWidth={1.8} aria-hidden="true" style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: 'rgba(238, 238, 238, 0.48)', pointerEvents: 'none' }} />
+          </div>}
           {commandKind === 'credential' ? (
             <div style={{ position: 'relative', minHeight: '34px' }}>
-              <KeyRound size={15} strokeWidth={1.8} className="credential-key-icon" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+              <KeyRound size={15} strokeWidth={1.8} className="credential-key-icon" style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
               <input
                 ref={credentialInputRef}
                 type="password"
@@ -2339,24 +2347,15 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); saveCredential(); } }}
                 placeholder={`Escribí tu credencial de ${credentialProvider?.label || credentialProvider?.id}`}
                 className="credential-menu-input"
-                style={{ boxSizing: 'border-box', width: '100%', height: '34px', padding: '0 10px 0 32px', border: '1px solid #2b2b2b', borderRadius: '8px', background: '#1c1c1c', color: '#eeeeee', fontSize: '12px', outline: 'none' }}
+                style={{ boxSizing: 'border-box', width: '100%', height: '34px', padding: '0 32px 0 10px', border: 0, borderRadius: '8px', background: 'transparent', color: '#eeeeee', fontSize: '12px', outline: 'none' }}
               />
             </div>
           ) : commandKind === 'custom-config' ? (
             <div style={{ display: 'grid', gap: '8px' }}>
               <div style={{ position: 'relative', minHeight: '34px' }}>
-                <KeyRound size={15} strokeWidth={1.8} className="credential-key-icon" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-                <input type="password" value={customCredentialInput} onChange={(event) => setCustomCredentialInput(event.target.value)} placeholder="Escribí tu credencial (opcional)" style={{ boxSizing: 'border-box', width: '100%', height: '34px', padding: '0 10px 0 32px', border: '1px solid #2b2b2b', borderRadius: '8px', background: '#1c1c1c', color: '#eeeeee', fontSize: '12px', outline: 'none' }} />
+                {customUrl.trim() ? <button type="button" onClick={saveCustomProviderConfig} aria-label="Guardar URL" style={{ position: 'absolute', right: '4px', top: '50%', width: '26px', height: '26px', display: 'grid', placeItems: 'center', transform: 'translateY(-50%)', border: 0, borderRadius: '6px', background: 'transparent', color: '#d6d6d6', cursor: 'pointer' }}><Check size={15} strokeWidth={1.8} /></button> : <Globe size={15} strokeWidth={1.8} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: '#d6d6d6', pointerEvents: 'none' }} />}
+                <input ref={customUrlRef} value={customUrl} onChange={(event) => { setCustomUrl(event.target.value); setCustomConfigError(''); }} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); saveCustomProviderConfig(); } }} placeholder="URL del proveedor" style={{ boxSizing: 'border-box', width: '100%', height: '34px', padding: '0 32px 0 10px', border: 0, borderRadius: '8px', background: 'transparent', color: '#eeeeee', fontSize: '12px', outline: 'none' }} />
               </div>
-              <input value={customUrl} onChange={(event) => { setCustomUrl(event.target.value); setCustomConfigError(''); }} placeholder="URL del proveedor (obligatoria)" style={{ height: '32px', padding: '0 9px', border: '1px solid #2b2b2b', borderRadius: '7px', background: '#1c1c1c', color: '#eeeeee', fontSize: '12px', outline: 'none' }} />
-              <label style={{ display: 'grid', gap: '5px', color: '#999999', fontSize: '11px' }}>
-                Header (opcional)
-                <input ref={customHeaderRef} value={customHeader} onChange={(event) => setCustomHeader(event.target.value)} placeholder="Authorization: Bearer ..." style={{ height: '32px', padding: '0 9px', border: '1px solid #2b2b2b', borderRadius: '7px', background: '#1c1c1c', color: '#eeeeee', fontSize: '12px', outline: 'none' }} />
-              </label>
-              <label style={{ display: 'grid', gap: '5px', color: '#999999', fontSize: '11px' }}>
-                Body (opcional)
-                <textarea className="custom-body-input" value={customBody} onChange={(event) => setCustomBody(event.target.value)} placeholder="Body adicional de la petición" rows={8} style={{ boxSizing: 'border-box', minHeight: '128px', maxHeight: '128px', resize: 'none', overflowY: 'auto', padding: '8px 9px', border: '1px solid #2b2b2b', borderRadius: '7px', background: '#1c1c1c', color: '#eeeeee', fontSize: '12px', lineHeight: 1.4, outline: 'none' }} />
-              </label>
               <div style={{ display: 'grid', gap: '5px', color: '#999999', fontSize: '11px' }}>
                 Formato de tools
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px' }}>
@@ -2364,28 +2363,29 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 </div>
               </div>
               {customConfigError && <span style={{ color: '#f28b82', fontSize: '11px' }}>{customConfigError}</span>}
-              <button type="button" onClick={saveCustomProviderConfig} style={{ height: '32px', border: 0, borderRadius: '7px', background: '#1E1E1E', color: '#eeeeee', fontSize: '12px' }}>Guardar configuración</button>
             </div>
           ) : <div className="command-list" style={{ display: 'grid', gap: '4px', maxHeight: '300px', overflow: 'auto', scrollbarWidth: 'none', paddingBottom: '12px', maskImage: 'linear-gradient(to bottom, black 92%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to bottom, black 92%, transparent 100%)' }}>
             {activeSelection && (
-              <div aria-current="true" style={{ minHeight: '30px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', borderRadius: '7px', background: '#30333b', color: '#eeeeee', fontSize: '11px', padding: '0 9px' }}>
+              <div aria-current="true" style={{ minHeight: '30px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', borderRadius: '7px', background: '#1C1C1C', color: '#eeeeee', fontSize: '11px', padding: '0 9px' }}>
                 <span>{activeSelection.label || activeSelection.id}</span>
-                <small style={{ color: 'rgba(216, 216, 216, 0.5)', fontSize: '11px' }}>Seleccionado</small>
+                <small style={{ color: 'rgba(216, 216, 216, 0.5)', fontSize: '11px' }}>{chatText.selected}</small>
               </div>
             )}
-            {(commandKind === 'command' ? slashCommands : filteredCatalog.filter((item) => item.id !== activeSelection?.id)).map((item, index) => (
+            {commandMenuItems.map((item, index) => (
               <button
                 key={item.id}
+                className={`command-menu-item ${index === activeCommandIndex ? 'is-active' : ''}`}
                 type="button"
                 data-command-index={index}
                 onClick={() => handleItemClick(item)}
                 onFocus={() => setActiveCommandIndex(index)}
                 onMouseEnter={() => setActiveCommandIndex(index)}
+                onMouseLeave={() => setActiveCommandIndex(-1)}
                 style={{ minHeight: '32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', border: 0, borderRadius: '7px', background: index === activeCommandIndex ? 'var(--color-surface-7, #2c2c2c)' : 'transparent', color: index === activeCommandIndex ? '#ffffff' : 'rgba(238, 238, 238, 0.78)', fontSize: '12px', padding: '0 9px', textAlign: 'left', cursor: 'pointer' }}
               >
                 <span className="flex min-w-0 items-center gap-2">{item.icon && React.createElement(item.icon, { size: 14, strokeWidth: 1.8 })}<span className="truncate">{item.label}</span></span>
                 <small style={{ color: 'rgba(216, 216, 216, 0.36)', fontSize: '11px' }}>
-                  {item.type === 'command' ? item.description : item.type === 'provider' ? 'proveedor' : item.type === 'project' ? 'proyecto' : item.type === 'skill' ? item.source : item.type === 'extension' ? 'complemento' : 'modelo'}
+                  {item.type === 'command' ? item.description : item.type === 'provider' ? chatText.provider : item.type === 'project' ? chatText.project : item.type === 'skill' ? item.source : item.type === 'extension' ? chatText.extension : chatText.model}
                 </small>
               </button>
             ))}

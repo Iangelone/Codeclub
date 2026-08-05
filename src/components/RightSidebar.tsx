@@ -9,6 +9,7 @@ import hljs from 'highlight.js/lib/common';
 import { whatsappContextStore } from '../lib/store';
 import TerminalDock from './TerminalDock';
 import { readAgentState, writeAgentState, type AgentState, type TaskStatus } from '../lib/engine/planning';
+import { LANGUAGE_STORAGE_KEY, browserUiTranslations, rightSidebarTranslations, type AppLanguage } from '../lib/i18n';
 
 type FileEntry = { path: string; kind: 'file' | 'directory' };
 type FileNode = FileEntry & { name: string; children: FileNode[] };
@@ -344,6 +345,8 @@ const iconForFile = (name: string) => {
 };
 
 function FilesView({ projectPath }: { projectPath: string }) {
+  const [language, setLanguage] = useState<AppLanguage>('es');
+  const text = rightSidebarTranslations[language];
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState('');
@@ -357,6 +360,16 @@ function FilesView({ projectPath }: { projectPath: string }) {
   const treeScrollTopRef = useRef(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (window.localStorage.getItem(LANGUAGE_STORAGE_KEY) === 'en') setLanguage('en');
+    const handleLanguageChange = (event: Event) => {
+      const nextLanguage = (event as CustomEvent<{ language?: AppLanguage }>).detail?.language;
+      if (nextLanguage === 'es' || nextLanguage === 'en') setLanguage(nextLanguage);
+    };
+    window.addEventListener('codeclub:language-change', handleLanguageChange);
+    return () => window.removeEventListener('codeclub:language-change', handleLanguageChange);
+  }, []);
 
   useEffect(() => () => {
     if (topbarCooldownRef.current !== null) window.clearTimeout(topbarCooldownRef.current);
@@ -441,17 +454,17 @@ function FilesView({ projectPath }: { projectPath: string }) {
   return <div className="flex h-full max-h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#1A1A1A]">
     <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-[#2b2b2b] bg-[#1A1A1A] px-2">
       <span className="min-w-0 truncate text-[12px] leading-none text-[#eeeeee]">{selectedPath ? `/${selectedPath.replace(/\\/g, '/')}` : '/'}</span>
-      <button type="button" onClick={toggleTree} disabled={topbarCoolingDown} className={`grid h-7 w-7 place-items-center rounded-[7px] border-0 transition-[background-color,color,transform] duration-700 ease-out active:scale-95 disabled:cursor-wait disabled:opacity-60 ${showTree ? 'bg-[#2B2B2B] text-[#eeeeee]' : 'bg-[#202020] text-[#777777]'} hover:bg-[#2B2B2B] hover:text-[#eeeeee]`} title="Mostrar u ocultar árbol del workspace" aria-label="Mostrar u ocultar árbol del workspace" aria-pressed={showTree}><FolderOpen size={15} /></button>
+      <button type="button" onClick={toggleTree} disabled={topbarCoolingDown} className={`grid h-7 w-7 place-items-center rounded-[7px] border-0 transition-[background-color,color,transform] duration-700 ease-out active:scale-95 disabled:cursor-wait disabled:opacity-60 ${showTree ? 'bg-[#2B2B2B] text-[#eeeeee]' : 'bg-[#202020] text-[#777777]'} hover:bg-[#2B2B2B] hover:text-[#eeeeee]`} title={text.toggleTree} aria-label={text.toggleTree} aria-pressed={showTree}><FolderOpen size={15} /></button>
     </div>
     <div className="flex h-0 min-h-0 max-h-full flex-1 overflow-hidden">
       <main className="flex h-full min-w-0 min-h-0 flex-1 flex-col bg-[#1A1A1A]">
-        {selectedPath ? <div className="flex min-h-0 flex-1 flex-col">{fileLoading ? <div className="flex flex-1 items-center justify-center text-xs text-[#777777]">Cargando archivo...</div> : <pre className="file-preview-scrollbar m-0 min-h-0 flex-1 overflow-auto whitespace-pre p-4 font-mono text-[12px] leading-5 text-[#d8d8d8]"><code className="codeclub-file-code">{highlightedFileLines.map((line, index) => <span key={index} className="codeclub-file-line flex min-w-max"><span className="mr-4 w-10 shrink-0 select-none text-right text-[#555555]">{index + 1}</span><span className="whitespace-pre" dangerouslySetInnerHTML={{ __html: line }} /></span>)}</code></pre>}</div> : <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center"><Folders size={42} strokeWidth={1.5} className="text-[#a7a7a7]" /><div className="max-w-[300px]"><p className="m-0 text-[18px] font-semibold text-[#eeeeee]">Abrir archivo</p><p className="m-0 mt-2 text-[14px] leading-5 text-[#a7a7a7]">Selecciona un archivo del árbol del espacio de trabajo</p></div></div>}
+        {selectedPath ? <div className="flex min-h-0 flex-1 flex-col">{fileLoading ? <div className="flex flex-1 items-center justify-center text-xs text-[#777777]">{text.loadingFile}</div> : <pre className="file-preview-scrollbar m-0 min-h-0 flex-1 overflow-auto whitespace-pre p-4 font-mono text-[12px] leading-5 text-[#d8d8d8]"><code className="codeclub-file-code">{highlightedFileLines.map((line, index) => <span key={index} className="codeclub-file-line flex min-w-max"><span className="mr-4 w-10 shrink-0 select-none text-right text-[#555555]">{index + 1}</span><span className="whitespace-pre" dangerouslySetInnerHTML={{ __html: line }} /></span>)}</code></pre>}</div> : <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center"><Folders size={42} strokeWidth={1.5} className="text-[#a7a7a7]" /><div className="max-w-[300px]"><p className="m-0 text-[18px] font-semibold text-[#eeeeee]">{text.openFile}</p><p className="m-0 mt-2 text-[14px] leading-5 text-[#a7a7a7]">{text.selectFile}</p></div></div>}
       </main>
       <aside className={`h-full max-h-full min-h-0 self-stretch flex shrink-0 flex-col border-l border-[#2b2b2b] bg-[#1A1A1A] transition-[width,transform,opacity] duration-200 ease-out ${showTree ? 'w-[35%]' : 'w-0 translate-x-full opacity-0 pointer-events-none'}`}>
         <div className="mt-0 flex h-0 min-h-0 flex-1 flex-col px-3 py-3">
-          <label className="mb-2 flex h-8 shrink-0 items-center gap-2 rounded-[10px] border border-[#353535] bg-[#1d1d1d] px-2.5 text-[#9a9a9a] focus-within:border-[#555555]"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} className="min-w-0 flex-1 bg-transparent text-[12px] text-[#eeeeee] outline-none placeholder:text-[#929292]" placeholder="Filtrar archivos..." aria-label="Filtrar archivos" /></label>
+          <label className="mb-2 flex h-8 shrink-0 items-center gap-2 rounded-[10px] border border-[#353535] bg-[#1d1d1d] px-2.5 text-[#9a9a9a] focus-within:border-[#555555]"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} className="min-w-0 flex-1 bg-transparent text-[12px] text-[#eeeeee] outline-none placeholder:text-[#929292]" placeholder={text.filterFiles} aria-label={text.filterFiles} /></label>
           <div ref={treeScrollRef} onScroll={(event) => { treeScrollTopRef.current = event.currentTarget.scrollTop; }} style={{ overscrollBehavior: 'none', overflowAnchor: 'none' }} className="h-0 min-h-0 flex-1 overflow-x-auto overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {loading ? <div className="p-3 text-sm text-[#777777]">Cargando archivos...</div> : error ? <div className="p-3 text-sm text-[#c28d8d]">{error}</div> : tree.length ? renderTree(tree) : <div className="p-3 text-sm text-[#777777]">No se encontraron archivos.</div>}
+            {loading ? <div className="p-3 text-sm text-[#777777]">{text.loadingFiles}</div> : error ? <div className="p-3 text-sm text-[#c28d8d]">{error}</div> : tree.length ? renderTree(tree) : <div className="p-3 text-sm text-[#777777]">{text.noFiles}</div>}
           </div>
         </div>
       </aside>
@@ -470,12 +483,12 @@ type ReviewFile = {
 
 type CommandResult = { code?: number | null; stdout: string; stderr: string };
 
-const reviewStatusLabel = (status: string) => {
-  if (status.includes('?')) return { label: 'U', title: 'Sin seguimiento', color: '#c8a96b' };
-  if (status.includes('D')) return { label: 'D', title: 'Eliminado', color: '#d77878' };
-  if (status.includes('R')) return { label: 'R', title: 'Renombrado', color: '#c084fc' };
-  if (status.includes('A')) return { label: 'A', title: 'Añadido', color: '#76c893' };
-  return { label: 'M', title: 'Modificado', color: '#7ab7e8' };
+const reviewStatusLabel = (status: string, text: typeof rightSidebarTranslations.es = rightSidebarTranslations.es) => {
+  if (status.includes('?')) return { label: 'U', title: text.untracked, color: '#c8a96b' };
+  if (status.includes('D')) return { label: 'D', title: text.deleted, color: '#d77878' };
+  if (status.includes('R')) return { label: 'R', title: text.renamed, color: '#c084fc' };
+  if (status.includes('A')) return { label: 'A', title: text.added, color: '#76c893' };
+  return { label: 'M', title: text.modified, color: '#7ab7e8' };
 };
 
 const parseReviewStatus = (output: string) => output.split(/\r?\n/).map((line) => line.trimEnd()).filter(Boolean).map((line) => {
@@ -504,6 +517,8 @@ const parseReviewDiff = (output: string) => {
 };
 
 function ReviewView({ projectPath }: { projectPath: string }) {
+  const [language, setLanguage] = useState<AppLanguage>('es');
+  const text = rightSidebarTranslations[language];
   const [files, setFiles] = useState<ReviewFile[]>([]);
   const [selectedPath, setSelectedPath] = useState('');
   const [showFiles, setShowFiles] = useState(false);
@@ -511,6 +526,16 @@ function ReviewView({ projectPath }: { projectPath: string }) {
   const topbarCooldownRef = useRef<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (window.localStorage.getItem(LANGUAGE_STORAGE_KEY) === 'en') setLanguage('en');
+    const handleLanguageChange = (event: Event) => {
+      const nextLanguage = (event as CustomEvent<{ language?: AppLanguage }>).detail?.language;
+      if (nextLanguage === 'es' || nextLanguage === 'en') setLanguage(nextLanguage);
+    };
+    window.addEventListener('codeclub:language-change', handleLanguageChange);
+    return () => window.removeEventListener('codeclub:language-change', handleLanguageChange);
+  }, []);
 
   useEffect(() => () => {
     if (topbarCooldownRef.current !== null) window.clearTimeout(topbarCooldownRef.current);
@@ -588,23 +613,23 @@ function ReviewView({ projectPath }: { projectPath: string }) {
   const additions = files.reduce((total, file) => total + file.additions, 0);
   const deletions = files.reduce((total, file) => total + file.deletions, 0);
 
-  if (!projectPath) return <div className="flex flex-1 items-center justify-center p-5 text-center text-[11px] text-[#777]">Seleccioná un proyecto para revisar sus cambios.</div>;
+  if (!projectPath) return <div className="flex flex-1 items-center justify-center p-5 text-center text-[11px] text-[#777]">{text.selectProjectReview}</div>;
   return <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#1A1A1A]">
     <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-[#2b2b2b] px-2 [&>div:first-child]:hidden">
-      <div className="flex min-w-0 items-center gap-2"><GitCompare size={14} className="shrink-0 text-[#a7a7a7]" /><div className="min-w-0"><div className="truncate text-[12px] text-[#eeeeee]">Cambios</div><div className="text-[10px] text-[#666]">{files.length} {files.length === 1 ? 'archivo' : 'archivos'} · <span className="text-[#76c893]">+{additions}</span> <span className="text-[#d77878]">-{deletions}</span></div></div></div>
+      <div className="flex min-w-0 items-center gap-2"><GitCompare size={14} className="shrink-0 text-[#a7a7a7]" /><div className="min-w-0"><div className="truncate text-[12px] text-[#eeeeee]">{text.changes}</div><div className="text-[10px] text-[#666]">{files.length} {files.length === 1 ? text.file : text.filesCount} · <span className="text-[#76c893]">+{additions}</span> <span className="text-[#d77878]">-{deletions}</span></div></div></div>
       <span className="min-w-0 truncate text-[12px] leading-none text-[#eeeeee]">{files.length} {files.length === 1 ? 'archivo' : 'archivos'} · <span className="text-[#76c893]">+{additions}</span> <span className="text-[#d77878]">-{deletions}</span></span>
       <div className="flex shrink-0 items-center gap-1">
-        <button type="button" onClick={() => runTopbarAction(() => setShowFiles((visible) => !visible))} disabled={topbarCoolingDown} className={`grid h-7 w-7 place-items-center rounded-[7px] border-0 transition-[background-color,color,transform] duration-700 ease-out active:scale-95 disabled:cursor-wait disabled:opacity-60 ${showFiles ? 'bg-[#2B2B2B] text-[#eeeeee]' : 'bg-[#202020] text-[#777777]'} hover:bg-[#2B2B2B] hover:text-[#eeeeee]`} title="Mostrar u ocultar archivos" aria-label="Mostrar u ocultar archivos" aria-pressed={showFiles}><FileText size={13} /></button>
-        <button type="button" onClick={() => runTopbarAction(() => loadReview())} disabled={loading || topbarCoolingDown} className={`grid h-7 w-7 shrink-0 place-items-center rounded-[7px] border-0 transition-[background-color,color,transform] duration-700 ease-out active:scale-95 disabled:cursor-wait disabled:opacity-60 ${loading || topbarCoolingDown ? 'bg-[#2B2B2B] text-[#eeeeee]' : 'bg-[#202020] text-[#777777]'} hover:bg-[#2B2B2B] hover:text-[#eeeeee]`} title="Actualizar cambios" aria-label="Actualizar cambios"><RefreshCw size={13} className={loading ? 'animate-spin' : ''} /></button>
+        <button type="button" onClick={() => runTopbarAction(() => setShowFiles((visible) => !visible))} disabled={topbarCoolingDown} className={`grid h-7 w-7 place-items-center rounded-[7px] border-0 transition-[background-color,color,transform] duration-700 ease-out active:scale-95 disabled:cursor-wait disabled:opacity-60 ${showFiles ? 'bg-[#2B2B2B] text-[#eeeeee]' : 'bg-[#202020] text-[#777777]'} hover:bg-[#2B2B2B] hover:text-[#eeeeee]`} title={text.toggleFiles} aria-label={text.toggleFiles} aria-pressed={showFiles}><FileText size={13} /></button>
+        <button type="button" onClick={() => runTopbarAction(() => loadReview())} disabled={loading || topbarCoolingDown} className={`grid h-7 w-7 shrink-0 place-items-center rounded-[7px] border-0 transition-[background-color,color,transform] duration-700 ease-out active:scale-95 disabled:cursor-wait disabled:opacity-60 ${loading || topbarCoolingDown ? 'bg-[#2B2B2B] text-[#eeeeee]' : 'bg-[#202020] text-[#777777]'} hover:bg-[#2B2B2B] hover:text-[#eeeeee]`} title={text.refreshChanges} aria-label={text.refreshChanges}><RefreshCw size={13} className={loading ? 'animate-spin' : ''} /></button>
       </div>
     </div>
-    {loading ? <div className="flex flex-1 items-center justify-center text-[11px] text-[#777]">Revisando cambios...</div> : error ? <div className="p-3 text-[11px] leading-5 text-[#c28d8d]">{error}</div> : !files.length ? <div className="flex flex-1 flex-col items-center justify-center gap-2 p-5 text-center text-[11px] text-[#777]"><GitCompare size={28} strokeWidth={1.5} /><span>Sin cambios pendientes.</span></div> : <div className="flex min-h-0 flex-1 flex-row-reverse overflow-hidden">
+    {loading ? <div className="flex flex-1 items-center justify-center text-[11px] text-[#777]">{text.reviewing}</div> : error ? <div className="p-3 text-[11px] leading-5 text-[#c28d8d]">{error}</div> : !files.length ? <div className="flex flex-1 flex-col items-center justify-center gap-2 p-5 text-center text-[11px] text-[#777]"><GitCompare size={28} strokeWidth={1.5} /><span>{text.noPendingChanges}</span></div> : <div className="flex min-h-0 flex-1 flex-row-reverse overflow-hidden">
       <div className={`file-preview-scrollbar h-full w-[38%] min-w-[112px] shrink-0 overflow-y-auto border-l border-[#2b2b2b] p-1.5 ${showFiles ? '' : 'hidden'}`}>
         {files.map((file) => { const status = reviewStatusLabel(file.status); return <button key={file.path} type="button" onClick={() => setSelectedPath(file.path)} className={`flex w-full min-w-0 flex-col gap-1 rounded-md px-2 py-2 text-left hover:bg-[#1c1c1c] ${selected?.path === file.path ? 'bg-[#1e1e1e]' : ''}`} title={file.path}><div className="flex min-w-0 items-center gap-1.5"><span className="shrink-0 text-[10px] font-semibold" style={{ color: status.color }}>{status.label}</span><span className="truncate text-[10px] text-[#d8d8d8]">{file.path.split(/[\\/]/).pop()}</span></div><div className="truncate pl-[17px] text-[9px] text-[#666]">{/[/\\]/.test(file.path) ? file.path : status.title} <span className="text-[#76c893]">+{file.additions}</span> <span className="text-[#d77878]">-{file.deletions}</span></div></button>; })}
       </div>
       <div className="file-preview-scrollbar min-w-0 flex-1 overflow-auto bg-[#101010] p-2">
         <div className="mb-2 truncate px-1 text-[10px] text-[#999]" title={selected?.path}>{selected?.path}</div>
-        {selected?.diff ? <pre className="m-0 whitespace-pre-wrap break-words font-mono text-[10px] leading-[1.55]">{selected.diff.split('\n').map((line, index) => <span key={`${index}-${line}`} className={`block -mx-2 px-2 ${line.startsWith('+') && !line.startsWith('+++') ? 'bg-[#16351f] text-[#a6e3b4]' : line.startsWith('-') && !line.startsWith('---') ? 'bg-[#3b1d22] text-[#f0a8ae]' : line.startsWith('@@') ? 'text-[#8fb9d8]' : 'text-[#b9b9b9]'}`}>{line || ' '}</span>)}</pre> : <div className="p-1 text-[10px] text-[#777]">No hay diff disponible para este archivo.</div>}
+        {selected?.diff ? <pre className="m-0 whitespace-pre-wrap break-words font-mono text-[10px] leading-[1.55]">{selected.diff.split('\n').map((line, index) => <span key={`${index}-${line}`} className={`block -mx-2 px-2 ${line.startsWith('+') && !line.startsWith('+++') ? 'bg-[#16351f] text-[#a6e3b4]' : line.startsWith('-') && !line.startsWith('---') ? 'bg-[#3b1d22] text-[#f0a8ae]' : line.startsWith('@@') ? 'text-[#8fb9d8]' : 'text-[#b9b9b9]'}`}>{line || ' '}</span>)}</pre> : <div className="p-1 text-[10px] text-[#777]">{text.noDiff}</div>}
       </div>
     </div>}
   </div>;
@@ -635,9 +660,21 @@ function BrowserToolbar({
   onReference: () => void;
   inspectMode: boolean;
 }) {
+  const [language, setLanguage] = useState<AppLanguage>('es');
+  const text = rightSidebarTranslations[language];
   const inputRef = useRef<HTMLInputElement>(null);
   const [focused, setFocused] = useState(false);
   const host = address.replace(/^https?:\/\//i, '').split('/')[0] || address;
+
+  useEffect(() => {
+    if (window.localStorage.getItem(LANGUAGE_STORAGE_KEY) === 'en') setLanguage('en');
+    const handleLanguageChange = (event: Event) => {
+      const nextLanguage = (event as CustomEvent<{ language?: AppLanguage }>).detail?.language;
+      if (nextLanguage === 'es' || nextLanguage === 'en') setLanguage(nextLanguage);
+    };
+    window.addEventListener('codeclub:language-change', handleLanguageChange);
+    return () => window.removeEventListener('codeclub:language-change', handleLanguageChange);
+  }, []);
 
   const focusAddress = () => {
     inputRef.current?.focus();
@@ -645,22 +682,24 @@ function BrowserToolbar({
   };
 
   return <div className="flex h-9 shrink-0 items-center gap-1.5 border-b border-[#242424] bg-[#1A1A1A] px-2">
-    <button type="button" onClick={onBack} disabled={!canGoBack} className="grid h-7 w-7 shrink-0 place-items-center rounded-md border-0 bg-transparent text-[#777] transition-colors hover:bg-[#242424] hover:text-[#ddd] disabled:opacity-30" title="Atrás"><ArrowLeft size={16} strokeWidth={1.7} /></button>
-    <button type="button" onClick={onForward} disabled={!canGoForward} className="grid h-7 w-7 shrink-0 place-items-center rounded-md border-0 bg-transparent text-[#777] transition-colors hover:bg-[#242424] hover:text-[#ddd] disabled:opacity-30" title="Adelante"><ArrowRight size={16} strokeWidth={1.7} /></button>
-    <button type="button" onClick={onReload} className="grid h-7 w-7 shrink-0 place-items-center rounded-md border-0 bg-transparent text-[#888] transition-colors hover:bg-[#242424] hover:text-[#ddd]" title="Recargar"><RefreshCw size={16} strokeWidth={1.7} /></button>
+    <button type="button" onClick={onBack} disabled={!canGoBack} className="grid h-7 w-7 shrink-0 place-items-center rounded-md border-0 bg-transparent text-[#777] transition-colors hover:bg-[#242424] hover:text-[#ddd] disabled:opacity-30" title={text.back}><ArrowLeft size={16} strokeWidth={1.7} /></button>
+    <button type="button" onClick={onForward} disabled={!canGoForward} className="grid h-7 w-7 shrink-0 place-items-center rounded-md border-0 bg-transparent text-[#777] transition-colors hover:bg-[#242424] hover:text-[#ddd] disabled:opacity-30" title={text.forward}><ArrowRight size={16} strokeWidth={1.7} /></button>
+    <button type="button" onClick={onReload} className="grid h-7 w-7 shrink-0 place-items-center rounded-md border-0 bg-transparent text-[#888] transition-colors hover:bg-[#242424] hover:text-[#ddd]" title={text.reload}><RefreshCw size={16} strokeWidth={1.7} /></button>
     <div onClick={focusAddress} className={`group/address relative flex h-8 min-w-0 flex-1 items-center justify-center rounded-[11px] border px-2.5 transition-colors ${focused ? 'border-[#343434] bg-[#242424]' : 'border-transparent hover:border-[#303030] hover:bg-[#292929]'}`}>
-      <SlidersHorizontal size={14} strokeWidth={1.6} onClick={(event) => { event.stopPropagation(); onInspect(); }} className={`absolute left-2.5 z-10 cursor-pointer text-[#8a8a8a] transition-colors hover:text-[#d6d6d6] ${inspectMode ? 'text-[#d6d6d6]' : ''}`} title="Seleccionar elemento" />
+      <SlidersHorizontal size={14} strokeWidth={1.6} onClick={(event) => { event.stopPropagation(); onInspect(); }} className={`absolute left-2.5 z-10 cursor-pointer text-[#8a8a8a] transition-colors hover:text-[#d6d6d6] ${inspectMode ? 'text-[#d6d6d6]' : ''}`} title={text.selectElement} />
       <span className={`pointer-events-none truncate text-[13px] text-[#e4e4e4] transition-opacity ${focused ? 'opacity-0' : 'opacity-100'}`}>{host}</span>
       <form className="absolute inset-0 flex items-center px-8" onSubmit={(event) => { event.preventDefault(); onSubmit(); }}>
-        <input ref={inputRef} value={address} onChange={(event) => onAddressChange(event.target.value)} onFocus={(event) => { setFocused(true); event.currentTarget.select(); }} onBlur={() => setFocused(false)} className={`min-w-0 flex-1 bg-transparent text-center text-[13px] text-[#eeeeee] outline-none transition-opacity ${focused ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`} aria-label="Dirección web" />
+        <input ref={inputRef} value={address} onChange={(event) => onAddressChange(event.target.value)} onFocus={(event) => { setFocused(true); event.currentTarget.select(); }} onBlur={() => setFocused(false)} className={`min-w-0 flex-1 bg-transparent text-center text-[13px] text-[#eeeeee] outline-none transition-opacity ${focused ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`} aria-label={text.webAddress} />
       </form>
-      <button type="button" onClick={(event) => { event.stopPropagation(); onReference(); }} className={`absolute right-2 grid h-6 w-6 place-items-center rounded-md border-0 bg-transparent text-[#999] transition-colors hover:bg-[#333] hover:text-[#eee] ${focused ? 'opacity-100' : 'opacity-0 group-hover/address:opacity-100'}`} title="Referenciar página"><ArrowUpRight size={15} strokeWidth={1.7} /></button>
+      <button type="button" onClick={(event) => { event.stopPropagation(); onReference(); }} className={`absolute right-2 grid h-6 w-6 place-items-center rounded-md border-0 bg-transparent text-[#999] transition-colors hover:bg-[#333] hover:text-[#eee] ${focused ? 'opacity-100' : 'opacity-0 group-hover/address:opacity-100'}`} title={text.referencePage}><ArrowUpRight size={15} strokeWidth={1.7} /></button>
     </div>
-    <button type="button" className="grid h-7 w-7 shrink-0 place-items-center rounded-md border-0 bg-transparent text-[#888] transition-colors hover:bg-[#242424] hover:text-[#ddd]" title="Más opciones"><EllipsisVertical size={16} strokeWidth={1.7} /></button>
+    <button type="button" className="grid h-7 w-7 shrink-0 place-items-center rounded-md border-0 bg-transparent text-[#888] transition-colors hover:bg-[#242424] hover:text-[#ddd]" title={text.moreOptions}><EllipsisVertical size={16} strokeWidth={1.7} /></button>
   </div>;
 }
 
 function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialUrl?: string }) {
+  const [language, setLanguage] = useState<AppLanguage>('es');
+  const text = rightSidebarTranslations[language];
   const [address, setAddress] = useState(initialUrl);
   const [history, setHistory] = useState([initialUrl]);
   const [historyIndex, setHistoryIndex] = useState(0);
@@ -674,7 +713,25 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
   const addressRef = useRef(initialUrl);
   const historyIndexRef = useRef(0);
   const selectionKeyRef = useRef('');
+  useEffect(() => {
+    if (window.localStorage.getItem(LANGUAGE_STORAGE_KEY) === 'en') setLanguage('en');
+    const handleLanguageChange = (event: Event) => {
+      const nextLanguage = (event as CustomEvent<{ language?: AppLanguage }>).detail?.language;
+      if (nextLanguage === 'es' || nextLanguage === 'en') setLanguage(nextLanguage);
+    };
+    window.addEventListener('codeclub:language-change', handleLanguageChange);
+    return () => window.removeEventListener('codeclub:language-change', handleLanguageChange);
+  }, []);
   useEffect(() => { inspectModeRef.current = inspectMode; }, [inspectMode]);
+  useEffect(() => {
+    if (window.localStorage.getItem(LANGUAGE_STORAGE_KEY) === 'en') setLanguage('en');
+    const handleLanguageChange = (event: Event) => {
+      const nextLanguage = (event as CustomEvent<{ language?: AppLanguage }>).detail?.language;
+      if (nextLanguage === 'es' || nextLanguage === 'en') setLanguage(nextLanguage);
+    };
+    window.addEventListener('codeclub:language-change', handleLanguageChange);
+    return () => window.removeEventListener('codeclub:language-change', handleLanguageChange);
+  }, []);
 
   const installInspector = async (active: boolean, view = webviewRef.current) => {
     if (!view) return;
@@ -705,7 +762,7 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
     setSelection(safe);
     window.dispatchEvent(new CustomEvent('codeclub:browser-reference', {
       detail: {
-        title: safe.title || safe.selector || 'Elemento seleccionado',
+        title: safe.title || safe.selector || text.selectedElement,
         text: JSON.stringify({
           source: 'browser-selection',
           trust: 'untrusted-data',
@@ -765,7 +822,7 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
       if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname) throw new Error('URL no permitida');
       url = parsed.toString();
     } catch {
-      setError('URL inválida. Revisá el dominio o el puerto.');
+      setError(text.invalidUrl);
       return;
     }
     const requestId = ++requestRef.current;
@@ -877,9 +934,9 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
   const goBack = () => { if (historyIndex > 0) void openPage(history[historyIndex - 1], false).then(() => setHistoryIndex((current) => { historyIndexRef.current = current - 1; return current - 1; })); };
   const goForward = () => { if (historyIndex < history.length - 1) void openPage(history[historyIndex + 1], false).then(() => setHistoryIndex((current) => { historyIndexRef.current = current + 1; return current + 1; })); };
   const referencePage = () => window.dispatchEvent(new CustomEvent('codeclub:browser-reference', { detail: selection ? {
-    title: selection.title || selection.selector || 'Elemento seleccionado',
+    title: selection.title || selection.selector || text.selectedElement,
     text: JSON.stringify({ url: selection.url, selector: selection.selector, tag: selection.tag, text: selection.text, html: selection.html }),
-  } : { title: address.replace(/^https?:\/\//, '').split('/')[0] || 'Página', text: `Página abierta: ${address}` } }));
+  } : { title: address.replace(/^https?:\/\//, '').split('/')[0] || text.page, text: `${text.openPage}: ${address}` } }));
 
   return <div className="flex h-full min-h-0 flex-col bg-[#1A1A1A] text-[#d8d8d8]">
     <BrowserToolbar address={address} onAddressChange={setAddress} onSubmit={() => void openPage(address)} onBack={goBack} onForward={goForward} canGoBack={historyIndex > 0} canGoForward={historyIndex < history.length - 1} onReload={() => void openPage(address, false)} onInspect={() => {
@@ -918,6 +975,8 @@ function BrowserView({ initialUrl = 'https://www.google.com' }: { initialUrl?: s
   const [title, setTitle] = useState('Navegador');
   const [selection, setSelection] = useState('');
   const [selectedBox, setSelectedBox] = useState('');
+  const [language, setLanguage] = useState<AppLanguage>('es');
+  const browserText = browserUiTranslations[language];
   const [inspectMode, setInspectMode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -1002,10 +1061,10 @@ function BrowserView({ initialUrl = 'https://www.google.com' }: { initialUrl?: s
       <button type="button" onClick={() => pushReference(selectedBox || selection || title, selectedBox ? 'Elemento seleccionado' : selection ? 'Selección' : title)} className="grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent text-[#777] hover:bg-[#1c1c1c] hover:text-[#eee]" title="Enviar referencia al chat"><ArrowUpRight size={13} /></button>
       <button type="button" onClick={() => setInspectMode((active) => !active)} className={`grid h-7 w-7 place-items-center rounded-md border-0 text-[#777] hover:bg-[#1c1c1c] hover:text-[#eee] ${inspectMode ? 'bg-[#242424] text-[#eee]' : 'bg-transparent'}`} title="Seleccionar elemento de la página"><Globe size={12} /></button>
     </div>
-    {(selection || selectedBox) && <div className="flex shrink-0 items-center gap-2 border-b border-[#202020] px-3 py-1.5 text-[10px] text-[#999]"><span className="min-w-0 flex-1 truncate">{selectedBox ? 'Elemento listo para referenciar' : 'Selección lista para referenciar'}</span><button type="button" onClick={() => pushReference(selectedBox || selection, selectedBox ? 'Elemento seleccionado' : 'Selección')} className="rounded-md border-0 bg-[#1c1c1c] px-2 py-1 text-[#ddd] hover:bg-[#242424]">Agregar</button><button type="button" onClick={() => { setSelection(''); setSelectedBox(''); }} className="text-[#666] hover:text-[#eee]" aria-label="Quitar selección"><X size={12} /></button></div>}
+    {(selection || selectedBox) && <div className="flex shrink-0 items-center gap-2 border-b border-[#202020] px-3 py-1.5 text-[10px] text-[#999]"><span className="min-w-0 flex-1 truncate">{selectedBox ? browserText.elementReady : browserText.selectionReady}</span><button type="button" onClick={() => pushReference(selectedBox || selection, selectedBox ? browserText.elementReady : browserText.selectionReady)} className="rounded-md border-0 bg-[#1c1c1c] px-2 py-1 text-[#ddd] hover:bg-[#242424]">{browserText.add}</button><button type="button" onClick={() => { setSelection(''); setSelectedBox(''); }} className="text-[#666] hover:text-[#eee]" aria-label={browserText.removeSelection}><X size={12} /></button></div>}
     <div className="relative min-h-0 flex-1 overflow-hidden bg-[#101010]">
-      {loading && <div className="absolute inset-0 z-10 grid place-items-center bg-[#101010]/80 text-[11px] text-[#777]">Cargando…</div>}
-      {error ? <div className="p-4 text-[11px] text-[#a87878]">{error}</div> : page ? <iframe ref={frameRef} title={title} srcDoc={`<base href="${url}"><meta name="color-scheme" content="dark"><style>html{color-scheme:dark!important;background:#202124!important}body{background:#202124!important;color:#e8eaed!important;font:13px system-ui;padding:18px;line-height:1.55}a{color:#8ab4f8}input,textarea,button{color-scheme:dark}</style>${page}`} sandbox="allow-same-origin" onLoad={bindFrame} className={`h-full w-full border-0 bg-[#101010] ${inspectMode ? 'cursor-crosshair' : ''}`} /> : <div className="grid h-full place-items-center text-[11px] text-[#666]">Escribí una dirección para navegar</div>}
+      {loading && <div className="absolute inset-0 z-10 grid place-items-center bg-[#101010]/80 text-[11px] text-[#777]">{browserText.loading}</div>}
+      {error ? <div className="p-4 text-[11px] text-[#a87878]">{error}</div> : page ? <iframe ref={frameRef} title={title} srcDoc={`<base href="${url}"><meta name="color-scheme" content="dark"><style>html{color-scheme:dark!important;background:#202124!important}body{background:#202124!important;color:#e8eaed!important;font:13px system-ui;padding:18px;line-height:1.55}a{color:#8ab4f8}input,textarea,button{color-scheme:dark}</style>${page}`} sandbox="allow-same-origin" onLoad={bindFrame} className={`h-full w-full border-0 bg-[#101010] ${inspectMode ? 'cursor-crosshair' : ''}`} /> : <div className="grid h-full place-items-center text-[11px] text-[#666]">{browserText.empty}</div>}
     </div>
   </div>;
 }
@@ -1169,17 +1228,66 @@ function LegacyWhatsAppView() {
 
 export default function RightSidebar() {
   type RightTab = 'files' | 'review' | 'browser' | 'artifacts' | 'terminals';
-  const labels: Record<RightTab, string> = { files: 'Archivos', review: 'Revisar', browser: 'Navegador', artifacts: 'Artifacts', terminals: 'Terminales' };
+  type TerminalSession = { id: string; name: string; lastCommand?: string; is_agent?: boolean };
+  const [language, setLanguage] = useState<AppLanguage>('es');
+  const text = rightSidebarTranslations[language];
+  const labels: Record<RightTab, string> = { files: text.files, review: text.review, browser: text.browser, artifacts: text.artifacts, terminals: text.terminals };
   const availableTabs: RightTab[] = ['files', 'review', 'browser', 'artifacts', 'terminals'];
+  const [terminalSessions, setTerminalSessions] = useState<TerminalSession[]>([]);
+  const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (window.localStorage.getItem(LANGUAGE_STORAGE_KEY) === 'en') setLanguage('en');
+    const handleLanguageChange = (event: Event) => {
+      const nextLanguage = (event as CustomEvent<{ language?: AppLanguage }>).detail?.language;
+      if (nextLanguage === 'es' || nextLanguage === 'en') setLanguage(nextLanguage);
+    };
+    window.addEventListener('codeclub:language-change', handleLanguageChange);
+    return () => window.removeEventListener('codeclub:language-change', handleLanguageChange);
+  }, []);
+
+  useEffect(() => {
+    const handleTerminalCommand = (event: Event) => {
+      const detail = (event as CustomEvent<{ terminalId?: string; command?: string }>).detail;
+      const command = detail?.command?.trim();
+      if (!command || !detail?.terminalId) return;
+      setTerminalSessions((current) => current.map((session) => session.id === detail.terminalId ? { ...session, lastCommand: command.length > 24 ? `${command.slice(0, 23)}…` : command } : session));
+    };
+    window.addEventListener('codeclub:terminal-command', handleTerminalCommand);
+    return () => window.removeEventListener('codeclub:terminal-command', handleTerminalCommand);
+  }, []);
+  useEffect(() => {
+    const handleTerminalList = (event: Event) => {
+      const sessions = ((event as CustomEvent<{ terminals?: TerminalSession[] }>).detail?.terminals || []).filter((terminal) => !terminal.is_agent);
+      setTerminalSessions(sessions);
+      setActiveTerminalId((current) => current || sessions[0]?.id || null);
+    };
+    const handleTerminalCreated = (event: Event) => {
+      const terminal = (event as CustomEvent<TerminalSession>).detail;
+      if (!terminal?.id) return;
+      setTerminalSessions((current) => current.some((session) => session.id === terminal.id) ? current : [...current, terminal]);
+      setActiveTerminalId(terminal.id);
+      setTabs((current) => current.includes('terminals') ? current : [...current, 'terminals']);
+      setActiveTab('terminals');
+    };
+    window.addEventListener('codeclub:terminal-list', handleTerminalList);
+    window.addEventListener('codeclub:terminal-created', handleTerminalCreated);
+    return () => {
+      window.removeEventListener('codeclub:terminal-list', handleTerminalList);
+      window.removeEventListener('codeclub:terminal-created', handleTerminalCreated);
+    };
+  }, []);
   const [tabs, setTabs] = React.useState<RightTab[]>([]);
   const [activeTab, setActiveTab] = React.useState<RightTab | null>(null);
   const [menuOpen, setMenuOpen] = React.useState(false);
+  const [menuPosition, setMenuPosition] = React.useState({ top: 0, left: 0 });
   const [activeProjectPath, setActiveProjectPath] = useState('');
   const [activeProjectName, setActiveProjectName] = useState('');
   const [artifactState, setArtifactState] = useState<AgentState>({ plan: null, plans: [], todos: [] });
   const [browserUrl, setBrowserUrl] = useState('https://www.google.com');
   const [browserFaviconFailed, setBrowserFaviconFailed] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const plusButtonRef = useRef<HTMLButtonElement>(null);
   const resizingRef = useRef(false);
 
   useEffect(() => {
@@ -1289,6 +1397,17 @@ export default function RightSidebar() {
   };
 
   const addTab = () => {
+    if (!menuOpen) {
+      const rect = plusButtonRef.current?.getBoundingClientRect();
+      const anchor = menuRef.current?.getBoundingClientRect();
+      if (rect && anchor) {
+        const menuWidth = 190;
+        setMenuPosition({
+          top: rect.bottom - anchor.top + 4,
+          left: Math.max(8, Math.min(rect.right - menuWidth - anchor.left, anchor.width - menuWidth - 8)),
+        });
+      }
+    }
     setMenuOpen((open) => !open);
   };
 
@@ -1297,6 +1416,20 @@ export default function RightSidebar() {
     setTabs((current) => current.includes(tab) ? current : [...current, tab]);
     setActiveTab(tab);
     setMenuOpen(false);
+    if (tab === 'terminals') window.setTimeout(() => window.dispatchEvent(new CustomEvent('codeclub:new-terminal')), 0);
+  };
+
+  const terminalDisplayTabs = tabs.flatMap((tab) => tab === 'terminals' && terminalSessions.length > 0
+    ? terminalSessions.map((session) => ({ tab, session }))
+    : [{ tab, session: null as TerminalSession | null }] );
+
+  const closeTerminalTab = (id: string) => {
+    window.dispatchEvent(new CustomEvent('codeclub:terminal-close', { detail: { id } }));
+    setTerminalSessions((current) => {
+      const next = current.filter((session) => session.id !== id);
+      setActiveTerminalId((active) => active === id ? next[0]?.id || null : active);
+      return next;
+    });
   };
 
   useEffect(() => {
@@ -1322,38 +1455,41 @@ export default function RightSidebar() {
   };
 
   const tabIcon = (tab: RightTab) => {
-    if (tab === 'files') return <FolderOpen size={18} strokeWidth={1.7} />;
-    if (tab === 'review') return <GitCompare size={18} strokeWidth={1.7} />;
-    if (tab === 'browser') return <Globe size={18} strokeWidth={1.7} />;
-    if (tab === 'artifacts') return <FileText size={18} strokeWidth={1.7} />;
-    return <SquareTerminal size={18} strokeWidth={1.7} />;
+    if (tab === 'files') return <FolderOpen size={14} strokeWidth={1.7} />;
+    if (tab === 'review') return <GitCompare size={14} strokeWidth={1.7} />;
+    if (tab === 'browser') return <Globe size={14} strokeWidth={1.7} />;
+    if (tab === 'artifacts') return <FileText size={14} strokeWidth={1.7} />;
+    return <SquareTerminal size={14} strokeWidth={1.7} />;
   };
 
   return (
-    <aside className="right-sidebar-shell right-sidebar relative z-40 row-start-2 col-start-3 h-full max-h-full min-w-0 min-h-0 border-0 bg-[#1A1A1A] text-[#d8d8d8] shadow-none" style={{ borderTop: '1px solid rgba(255, 255, 255, 0.22)', borderLeft: '1px solid rgba(255, 255, 255, 0.22)' }} aria-label="Panel lateral derecho">
-      <div onPointerDown={startResize} className="absolute -left-[3px] top-0 z-20 h-full w-[6px] cursor-col-resize bg-transparent transition-colors hover:bg-[#2f2f2f]" aria-label="Redimensionar panel derecho" role="separator" />
-      <div className="flex h-full min-w-[264px] flex-col overflow-hidden">
-        <div className="terminal-tabs h-[34px] shrink-0 border-b-0 px-1" style={{ overflow: 'visible' }}>
-          {tabs.map((tab) => (
-            <button key={tab} type="button" onDoubleClick={() => closeTab(tab)} onClick={() => setActiveTab(tab)} className={`terminal-tab h-[30px] min-w-0 flex-1 justify-center rounded-[6px] border-0 px-3 text-[10px] ${activeTab === tab ? 'is-active' : ''}`} style={{ backgroundColor: '#2B2B2B' }}>
-              {tab === 'browser' ? <span className="flex min-w-0 items-center justify-center gap-1.5"><span className="grid h-4 w-4 shrink-0 place-items-center">{browserFaviconFailed ? <Globe size={13} strokeWidth={1.7} /> : <img src={`${new URL(browserUrl).origin}/favicon.ico`} onError={() => setBrowserFaviconFailed(true)} alt="" className="h-3.5 w-3.5 rounded-sm" />}</span><span className="min-w-0 truncate">{browserHost(browserUrl)}</span></span> : labels[tab]}
+    <aside className="right-sidebar-shell right-sidebar relative z-40 row-start-2 col-start-3 h-full max-h-full min-w-0 min-h-0 border-0 bg-[#1A1A1A] text-[#d8d8d8] shadow-none" style={{ borderTop: '1px solid rgba(255, 255, 255, 0.22)', borderLeft: '1px solid rgba(255, 255, 255, 0.22)' }} aria-label={text.rightPanel}>
+      <div onPointerDown={startResize} className="absolute -left-[3px] top-0 z-20 h-full w-[6px] cursor-col-resize bg-transparent transition-colors hover:bg-[#2f2f2f]" aria-label={text.resizePanel} role="separator" />
+      <div className="flex h-full min-w-[264px] flex-col overflow-visible">
+        <div ref={menuRef} className="relative z-50 flex h-[40px] min-w-0 shrink-0 overflow-visible border-b-0">
+          <div className="file-preview-scrollbar terminal-tabs h-full min-w-0 flex-1 px-1" style={{ overflowX: 'scroll', overflowY: 'hidden' }}>
+          {terminalDisplayTabs.map(({ tab, session }) => (
+            <button key={session ? `terminal:${session.id}` : tab} type="button" onDoubleClick={() => session ? closeTerminalTab(session.id) : closeTab(tab)} onClick={() => { setActiveTab(tab); if (session) setActiveTerminalId(session.id); }} className={`terminal-tab h-[30px] min-w-0 ${session ? 'w-[160px] flex-none' : 'flex-1'} justify-between rounded-[6px] border-0 px-3 text-[10px] ${activeTab === tab && (!session || activeTerminalId === session.id) ? 'is-active bg-[#2B2B2B] text-[#eeeeee]' : 'bg-transparent text-[#888888]'}`}>
+              {tab === 'browser' ? <span className="flex min-w-0 flex-1 items-center justify-center gap-1.5"><span className="grid h-4 w-4 shrink-0 place-items-center">{browserFaviconFailed ? <Globe size={13} strokeWidth={1.7} /> : <img src={`${new URL(browserUrl).origin}/favicon.ico`} onError={() => setBrowserFaviconFailed(true)} alt="" className="h-3.5 w-3.5 rounded-sm" />}</span><span className="min-w-0 truncate">{browserHost(browserUrl)}</span></span> : <span className="flex min-w-0 flex-1 items-center justify-start gap-1.5"><span className="shrink-0">{tabIcon(tab)}</span><span className="min-w-0 truncate">{session?.lastCommand || session?.name || labels[tab]}</span></span>}
+              {activeTab === tab && (!session || activeTerminalId === session.id) && <span role="button" tabIndex={0} aria-label={session ? text.closeTerminal : text.closeTab} className="ml-2 grid h-5 w-5 shrink-0 place-items-center rounded text-[#777] transition-colors hover:bg-[#3a3a3a] hover:text-[#eeeeee]" onClick={(event) => { event.stopPropagation(); session ? closeTerminalTab(session.id) : closeTab(tab); }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); session ? closeTerminalTab(session.id) : closeTab(tab); } }}><X size={11} strokeWidth={1.8} /></span>}
             </button>
           ))}
-          <div ref={menuRef} className="terminal-new relative">
-          <button type="button" onClick={addTab} className="terminal-new-tab h-[30px] w-7 rounded-[6px]" aria-label="Nueva tab" title="Nueva tab">
+          <div className="terminal-new relative shrink-0 px-1">
+          <button ref={plusButtonRef} type="button" onClick={addTab} className="terminal-new-tab h-[30px] w-7 rounded-[6px]" aria-label={text.newTab} title={text.newTab}>
             <Plus size={13} strokeWidth={1.8} />
           </button>
-          {menuOpen && <div className="terminal-shell-menu left-[calc(100%+4px)] right-auto top-[34px] z-[100]" role="menu">
-            {availableTabs.map((tab) => <button key={tab} type="button" onClick={() => createTab(tab)} disabled={tabs.includes(tab)} className="disabled:cursor-default disabled:opacity-35" role="menuitem">{labels[tab]}</button>)}
-          </div>}
           </div>
         </div>
-        <div className="flex h-0 min-h-0 flex-1 flex-col overflow-hidden">
+        {menuOpen && <div className="terminal-shell-menu absolute z-[100] min-w-[190px]" style={{ position: 'absolute', top: menuPosition.top, left: menuPosition.left }} role="menu">
+          {availableTabs.map((tab) => <button key={tab} type="button" onClick={() => createTab(tab)} disabled={tabs.includes(tab) && tab !== 'terminals'} className="flex items-center gap-2 disabled:cursor-default disabled:opacity-35" role="menuitem"><span className="shrink-0">{tabIcon(tab)}</span><span className="truncate">{labels[tab]}</span></button>)}
+        </div>}
+        </div>
+        <div className="relative z-0 flex h-0 min-h-0 flex-1 flex-col overflow-hidden">
            {activeTab === 'files' && <FilesView projectPath={activeProjectPath} />}
            {activeTab === 'review' && <ReviewView projectPath={activeProjectPath} />}
            {activeTab === 'browser' && <NativeBrowserView initialUrl={browserUrl} />}
            {activeTab === 'artifacts' && <ArtifactsView state={artifactState} projectPath={activeProjectPath} projectName={activeProjectName} hasProject={Boolean(activeProjectPath)} />}
-           <div className={`h-full min-h-0 w-full min-w-0 ${activeTab === 'terminals' ? 'flex' : 'hidden'}`}><TerminalDock embedded /></div>
+           {activeTab === 'terminals' && <div className="flex h-full min-h-0 w-full min-w-0"><TerminalDock embedded terminalId={activeTerminalId || undefined} /></div>}
           {tabs.length === 0 && <div className="flex flex-1 items-center justify-center px-6">
             <div className="flex w-full max-w-[420px] flex-col gap-2">
               {availableTabs.map((tab) => <button key={tab} type="button" onClick={() => createTab(tab)} className="flex min-h-[48px] items-center gap-3 rounded-xl border-0 bg-[#2B2B2B] px-4 text-left text-[14px] text-[#eeeeee] transition-colors hover:bg-[#303030]">
@@ -1369,9 +1505,20 @@ export default function RightSidebar() {
 }
 
 function ArtifactsView({ state, projectPath, projectName, hasProject }: { state: AgentState; projectPath: string; projectName: string; hasProject: boolean }) {
+  const [language, setLanguage] = useState<AppLanguage>('es');
+  const text = rightSidebarTranslations[language];
   const [selectedArtifact, setSelectedArtifact] = useState<{ kind: 'plan' | 'todo'; id: string } | null>(null);
   const selectionColor = '#3a3a3a';
   useEffect(() => setSelectedArtifact(null), [projectPath]);
+  useEffect(() => {
+    if (window.localStorage.getItem(LANGUAGE_STORAGE_KEY) === 'en') setLanguage('en');
+    const handleLanguageChange = (event: Event) => {
+      const nextLanguage = (event as CustomEvent<{ language?: AppLanguage }>).detail?.language;
+      if (nextLanguage === 'es' || nextLanguage === 'en') setLanguage(nextLanguage);
+    };
+    window.addEventListener('codeclub:language-change', handleLanguageChange);
+    return () => window.removeEventListener('codeclub:language-change', handleLanguageChange);
+  }, []);
   useEffect(() => {
     const clearSelectionOutsideArtifacts = (event: MouseEvent) => {
       if (!(event.target as HTMLElement).closest('section')) setSelectedArtifact(null);
@@ -1546,17 +1693,17 @@ function ArtifactsView({ state, projectPath, projectName, hasProject }: { state:
       console.error('No se pudo copiar el artifact:', error);
     }
   };
-  if (!hasProject) return <div className="flex flex-1 items-center justify-center p-5 text-center text-[11px] text-[#777]">Seleccioná un proyecto para ver sus artifacts.</div>;
-  return <div className="h-full max-h-full min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 [scrollbar-width:thin] [scrollbar-color:#2b2b2b_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#2b2b2b] [&_section+section]:mt-4">
+  if (!hasProject) return <div className="flex flex-1 items-center justify-center p-5 text-center text-[11px] text-[#777]">{text.selectProjectArtifacts}</div>;
+  return <div className="file-preview-scrollbar h-full max-h-full min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 [&_section+section]:mt-4">
     <div className="mb-4 flex items-center justify-between">
-      <div><div className="text-[12px] font-medium text-[#eee]">Artifacts</div><div className="mt-0.5 text-[10px] text-[#666]">Elementos generados y utilizados por la IA.</div></div>
+      <div><div className="text-[12px] font-medium text-[#eee]">{text.artifacts}</div><div className="mt-0.5 text-[10px] text-[#666]">{text.artifactsDescription}</div></div>
       <span className="max-w-[120px] truncate text-right text-[10px] text-[#555]" title={projectName}>{projectName}</span>
     </div>
-    {plans.length > 0 && <section className="mb-4"><div className="mb-2 text-[10px] font-medium uppercase tracking-[0.08em] text-[#666]">PLAN</div><div className="grid gap-3">{plans.map((plan) => <div key={plan.id} onClick={() => setSelectedArtifact({ kind: 'plan', id: plan.id })} onDoubleClick={() => pushReference('plan', plan.id, plan.title)} onContextMenu={(event) => { event.preventDefault(); void copyArtifact('plan', plan); }} className="cursor-pointer rounded-lg border bg-[#151515] p-2.5" style={{ borderColor: isSelected('plan', plan.id) ? selectionColor : '#202020' }}>
-      <div className="mb-2 flex items-center justify-between gap-2"><span className="min-w-0 truncate text-[11px] font-medium text-[#ddd]">{plan.title}</span><div className="flex shrink-0 items-center gap-1"><ArtifactStatus status={plan.status} />{isSelected('plan', plan.id) && <button type="button" onClick={(event) => { event.stopPropagation(); void removePlan(plan.id); }} className="grid h-5 w-5 place-items-center rounded text-[#777] hover:bg-[#2a1b1b] hover:text-[#e58c8c]" title="Eliminar plan" aria-label="Eliminar plan"><Trash2 size={12} /></button>}</div></div>
-      <div className="grid gap-1.5">{plan.steps.map((step) => <div key={step.id} className="flex min-w-0 items-center gap-2 text-[10px]"><ArtifactStatus status={step.status} /><span title={step.title} className="min-w-0 truncate text-[#999]">{step.title}</span></div>)}</div>
+    {plans.length > 0 && <section className="mb-4"><div className="mb-2 text-[10px] font-medium uppercase tracking-[0.08em] text-[#666]">{text.plan}</div><div className="grid gap-3">{plans.map((plan) => <div key={plan.id} onClick={() => setSelectedArtifact({ kind: 'plan', id: plan.id })} onDoubleClick={() => pushReference('plan', plan.id, plan.title)} onContextMenu={(event) => { event.preventDefault(); void copyArtifact('plan', plan); }} className="cursor-pointer rounded-lg border bg-[#151515] p-2.5" style={{ borderColor: isSelected('plan', plan.id) ? selectionColor : '#202020' }}>
+      <div className="mb-2 flex items-center justify-between gap-2"><span className="min-w-0 truncate text-[11px] font-medium text-[#ddd]">{plan.title}</span><div className="flex shrink-0 items-center gap-1"><ArtifactStatus status={plan.status} language={language} />{isSelected('plan', plan.id) && <button type="button" onClick={(event) => { event.stopPropagation(); void removePlan(plan.id); }} className="grid h-5 w-5 place-items-center rounded text-[#777] hover:bg-[#2a1b1b] hover:text-[#e58c8c]" title={text.deletePlan} aria-label={text.deletePlan}><Trash2 size={12} /></button>}</div></div>
+      <div className="grid gap-1.5">{plan.steps.map((step) => <div key={step.id} className="flex min-w-0 items-center gap-2 text-[10px]"><ArtifactStatus status={step.status} language={language} /><span title={step.title} className="min-w-0 truncate text-[#999]">{step.title}</span></div>)}</div>
     </div>)}</div><div className="mt-4 h-px bg-[#202020]" /></section>}
-    {state.todos.length > 0 ? <section className="grid gap-1.5"><div className="mb-1 text-[10px] font-medium uppercase tracking-[0.08em] text-[#666]">TODO</div>{state.todos.map((todo) => <div key={todo.id} onClick={() => setSelectedArtifact({ kind: 'todo', id: todo.id })} onDoubleClick={() => pushReference('todo', todo.id, todo.title)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); void copyArtifact('todo', todo); }} className="flex min-w-0 cursor-pointer items-center gap-2 rounded-md border bg-[#151515] px-2 py-1.5" style={{ borderColor: isSelected('todo', todo.id) ? selectionColor : '#202020' }}><ArtifactStatus status={todo.status} /><span title={todo.title} className="min-w-0 flex-1 truncate text-[11px] text-[#bbb]">{todo.title}</span>{isSelected('todo', todo.id) && <button type="button" onClick={(event) => { event.stopPropagation(); void removeTodo(todo.id); }} className="grid h-5 w-5 shrink-0 place-items-center rounded text-[#777] hover:bg-[#2a1b1b] hover:text-[#e58c8c]" title="Eliminar TODO" aria-label="Eliminar TODO"><Trash2 size={12} /></button>}</div>)}</section> : !state.plan && <div className="rounded-lg border border-dashed border-[#252525] px-3 py-5 text-center text-[11px] text-[#666]">Todavía no hay TODOs ni planes.</div>}
+    {state.todos.length > 0 ? <section className="grid gap-1.5"><div className="mb-1 text-[10px] font-medium uppercase tracking-[0.08em] text-[#666]">{text.todo}</div>{state.todos.map((todo) => <div key={todo.id} onClick={() => setSelectedArtifact({ kind: 'todo', id: todo.id })} onDoubleClick={() => pushReference('todo', todo.id, todo.title)} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); void copyArtifact('todo', todo); }} className="flex min-w-0 cursor-pointer items-center gap-2 rounded-md border bg-[#151515] px-2 py-1.5" style={{ borderColor: isSelected('todo', todo.id) ? selectionColor : '#202020' }}><ArtifactStatus status={todo.status} language={language} /><span title={todo.title} className="min-w-0 flex-1 truncate text-[11px] text-[#bbb]">{todo.title}</span>{isSelected('todo', todo.id) && <button type="button" onClick={(event) => { event.stopPropagation(); void removeTodo(todo.id); }} className="grid h-5 w-5 shrink-0 place-items-center rounded text-[#777] hover:bg-[#2a1b1b] hover:text-[#e58c8c]" title={text.deleteTodo} aria-label={text.deleteTodo}><Trash2 size={12} /></button>}</div>)}</section> : !state.plan && <div className="rounded-lg border border-dashed border-[#252525] px-3 py-5 text-center text-[11px] text-[#666]">{text.noTodosPlans}</div>}
   </div>;
 }
 
@@ -1568,8 +1715,9 @@ function QuoteArtifact({ quote, selected, selectionColor, onSelect, onCopy, onRe
   </section>;
 }
 
-function ArtifactStatus({ status }: { status: TaskStatus }) {
-  const values: Record<TaskStatus, [React.ElementType, string, string]> = { pending: [Circle, '#999', 'Pendiente'], in_progress: [CircleDot, '#999', 'En curso'], completed: [CheckCircle2, '#999', 'Completado'], cancelled: [Ban, '#999', 'Cancelado'], blocked: [CircleX, '#999', 'Bloqueado'] };
+function ArtifactStatus({ status, language = 'es' }: { status: TaskStatus; language?: AppLanguage }) {
+  const text = rightSidebarTranslations[language];
+  const values: Record<TaskStatus, [React.ElementType, string, string]> = { pending: [Circle, '#999', text.pending], in_progress: [CircleDot, '#999', text.inProgress], completed: [CheckCircle2, '#999', text.completed], cancelled: [Ban, '#999', text.cancelled], blocked: [CircleX, '#999', text.blocked] };
   const [Icon, color, label] = values[status] || values.pending;
   return <span title={label} style={{ color }} className="flex shrink-0 items-center gap-1 text-[10px]"><Icon size={13} strokeWidth={1.8} /><span>{label}</span></span>;
 }
