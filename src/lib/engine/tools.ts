@@ -1321,11 +1321,12 @@ export function createTools(ctx: ToolContext) {
           confidence: { type: 'number', minimum: 0, maximum: 1, description: 'Confidence from 0 to 1 based on evidence.' },
           scope: { type: 'string', enum: ['personal', 'project'], description: 'Whether it applies to the user or this project.' },
           supersedes: { type: 'string', description: 'Key of an older memory this one replaces, if applicable.' },
+          expiresAt: { type: 'string', description: 'Optional ISO timestamp after which the memory should be treated as stale.' },
         },
         required: ['key', 'content'],
         additionalProperties: false,
       }),
-      execute: async ({ key, content, tags, status, confidence, scope, supersedes }) => {
+      execute: async ({ key, content, tags, status, confidence, scope, supersedes, expiresAt }) => {
         setAgentState('tool_call');
         const memory = await saveMemory(memoryProjectPath, key, content, tags || [], {
           source: 'tool',
@@ -1333,9 +1334,11 @@ export function createTools(ctx: ToolContext) {
           ...(typeof confidence === 'number' ? { confidence: Math.max(0, Math.min(1, confidence)) } : {}),
           ...(scope ? { scope } : {}),
           ...(supersedes ? { supersedes } : {}),
+          ...(expiresAt ? { expires_at: expiresAt } : {}),
         });
-        recordToolEvent('remember', { key, tags, status, confidence, scope, supersedes }, { ok: true, memory });
-        return { ok: true };
+        const duplicate = memory.duplicateOf ? { duplicateOf: memory.duplicateOf } : {};
+        recordToolEvent('remember', { key, tags, status, confidence, scope, supersedes, expiresAt }, { ok: true, memory, ...duplicate });
+        return { ok: true, memory, ...duplicate };
       },
     }),
     recall: tool({

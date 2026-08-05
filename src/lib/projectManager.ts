@@ -39,6 +39,7 @@ export interface GlobalChatEntry {
 
 const GLOBAL_CHATS_SETTING = "codeclub_global_chats";
 const GLOBAL_CHAT_HISTORIES_SETTING = "codeclub_global_chat_histories";
+const GLOBAL_CHAT_TRANSCRIPTS_SETTING = "codeclub_global_chat_transcripts";
 export const readGlobalChats = async (): Promise<GlobalChatEntry[]> => {
   const chats = await getSetting<GlobalChatEntry[]>(GLOBAL_CHATS_SETTING, []);
   return Array.isArray(chats) ? chats : [];
@@ -53,9 +54,15 @@ export const writeGlobalChatHistory = async (chatId: string, messages: any[]) =>
   histories[chatId] = messages;
   await setSetting(GLOBAL_CHAT_HISTORIES_SETTING, histories);
 };
+export const appendGlobalChatTranscript = async (chatId: string, markdown: string) => {
+  const transcripts = await getSetting<Record<string, string>>(GLOBAL_CHAT_TRANSCRIPTS_SETTING, {});
+  transcripts[chatId] = `${transcripts[chatId] || ''}${markdown}`;
+  await setSetting(GLOBAL_CHAT_TRANSCRIPTS_SETTING, transcripts);
+};
 
 export const getProjectMetaPath = (projectPath: string) => getProjectFilePath(projectPath, "meta.json");
 export const getProjectChatPath = (projectPath: string, chatId: string) => getProjectFilePath(projectPath, "chats", `${chatId}.jsonl`);
+export const getProjectTranscriptPath = (projectPath: string, chatId: string) => getProjectFilePath(projectPath, "chats", `${chatId}.md`);
 
 export const readProjectMeta = async (projectPath: string): Promise<ProjectMeta | null> => {
   await migrateLegacyProjectData(projectPath);
