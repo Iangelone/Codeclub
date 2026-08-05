@@ -4,7 +4,6 @@ import { exists, remove, readDir, rename } from "@tauri-apps/plugin-fs";
 import { invoke } from "@tauri-apps/api/core";
 import { confirm as confirmDialog, open } from "@tauri-apps/plugin-dialog";
 import { logPersistence } from "../lib/persistence";
-import SettingsModal from "./SettingsModal";
 import {
   readProjectIndex,
   writeProjectIndex,
@@ -64,8 +63,7 @@ export default function Sidebar() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [activeArtifactId, setActiveArtifactId] = useState<string | null>(null);
   const [agentActivities, setAgentActivities] = useState<Record<string, { state: string; tool?: string; agent?: string; ready?: boolean }>>({});
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [activeSection, setActiveSection] = useState<"chat" | "projects" | "businesses" | "extensions">("projects");
+  const [activeSection, setActiveSection] = useState<"chat" | "projects" | "businesses" | "extensions" | "settings">("projects");
 
   useEffect(() => {
     const handleAgentActivity = (event: Event) => {
@@ -183,7 +181,7 @@ export default function Sidebar() {
     const handleOpenProjects = () => setActiveSection("projects");
     const handleOpenBusinesses = () => setActiveSection("businesses");
     const handleOpenExtensions = () => setActiveSection("extensions");
-    const handleOpenSettings = () => setSettingsOpen(true);
+    const handleOpenSettings = () => setActiveSection("settings");
     const handleProjectContextMenu = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
       if (!detail.path || !detail.name) return;
@@ -1025,11 +1023,10 @@ export default function Sidebar() {
       )}
 
       <section className="shrink-0 flex flex-col gap-1 p-[10px] bg-transparent relative z-[2]">
-        <button className="min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer bg-transparent border-0 text-[#d8d8d8] hover:bg-white/2 appearance-none" type="button" onClick={() => setSettingsOpen(true)}>
+        <button className={`codeclub-motion-control min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer border-0 appearance-none ${activeSection === "settings" ? "bg-[#30333b] text-[#f3f4f6] shadow-[inset_0_1px_rgba(255,255,255,0.06)]" : "bg-transparent text-[#d8d8d8] hover:bg-[#252525]"}`} type="button" onClick={() => { setActiveSection("settings"); window.dispatchEvent(new CustomEvent("codeclub:open-settings")); }}>
           <Settings size={15} /> Ajustes
         </button>
       </section>
-      <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );
 }

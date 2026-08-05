@@ -4,6 +4,7 @@ import { activeChatStore, chatsStore, type GlobalChat } from '../lib/store';
 import ChatInterface from './ChatInterface.tsx';
 import ProjectsPanel from './ProjectsPanel.tsx';
 import ExtensionsPanel from './ExtensionsPanel.tsx';
+import SettingsPanel from './SettingsPanel.tsx';
 import { readProjectIndex, type ProjectEntry } from '../lib/projectManager';
 
 type SelectedProject = { projectPath: string; projectName?: string };
@@ -14,6 +15,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
   const [showProjects, setShowProjects] = useState(true);
   const [showBusinesses, setShowBusinesses] = useState(false);
   const [showExtensions, setShowExtensions] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [dockVisible, setDockVisible] = useState(false);
   const [commandMenuKind, setCommandMenuKind] = useState('');
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
@@ -111,39 +113,46 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
     const handleOpenProjects = () => {
       setShowProjects(true);
       setShowBusinesses(false);
+      setShowExtensions(false);
+      setShowSettings(false);
       setSelectedProject(null);
     };
     const handleOpenBusinesses = () => {
       setShowBusinesses(true);
       setShowProjects(false);
       setShowExtensions(false);
+      setShowSettings(false);
       setSelectedProject(null);
     };
     const handleOpenExtensions = () => {
       setShowExtensions(true);
       setShowBusinesses(false);
       setShowProjects(false);
+      setShowSettings(false);
       setSelectedProject(null);
     };
-    const handleOpenChat = () => { setShowProjects(false); setShowBusinesses(false); setShowExtensions(false); };
-    const handleOpenEmptyChat = () => { setShowProjects(false); setShowBusinesses(false); setShowExtensions(false); };
+    const handleOpenSettings = () => { setShowProjects(false); setShowBusinesses(false); setShowExtensions(false); setShowSettings(true); setSelectedProject(null); };
+    const handleOpenChat = () => { setShowProjects(false); setShowBusinesses(false); setShowExtensions(false); setShowSettings(false); };
+    const handleOpenEmptyChat = () => { setShowProjects(false); setShowBusinesses(false); setShowExtensions(false); setShowSettings(false); };
     window.addEventListener('codeclub:open-chat', handleOpenChat);
     window.addEventListener('codeclub:open-projects', handleOpenProjects);
     window.addEventListener('codeclub:open-businesses', handleOpenBusinesses);
     window.addEventListener('codeclub:open-extensions', handleOpenExtensions);
+    window.addEventListener('codeclub:open-settings', handleOpenSettings);
     window.addEventListener('codeclub:open-empty-chat', handleOpenEmptyChat);
     return () => {
       window.removeEventListener('codeclub:open-projects', handleOpenProjects);
       window.removeEventListener('codeclub:open-businesses', handleOpenBusinesses);
       window.removeEventListener('codeclub:open-extensions', handleOpenExtensions);
+      window.removeEventListener('codeclub:open-settings', handleOpenSettings);
       window.removeEventListener('codeclub:open-empty-chat', handleOpenEmptyChat);
       window.removeEventListener('codeclub:open-chat', handleOpenChat);
     };
   }, []);
 
   useEffect(() => {
-    if (!showProjects && !showBusinesses && !showExtensions && !activeChatStore.get().id) window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
-  }, [showProjects, showBusinesses, showExtensions]);
+    if (!showProjects && !showBusinesses && !showExtensions && !showSettings && !activeChatStore.get().id) window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
+  }, [showProjects, showBusinesses, showExtensions, showSettings]);
 
   useEffect(() => {
     if (showBusinesses) window.dispatchEvent(new CustomEvent('codeclub:open-businesses'));
@@ -205,8 +214,8 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
         </div>}
       </div>
       <div className="workspace-pane acrylic-panel min-h-0 min-w-0 flex-1 overflow-hidden">
-        <div key={showProjects ? 'projects' : showBusinesses ? 'businesses' : showExtensions ? 'extensions' : 'chat'} className="workspace-panel-content h-full min-h-0 min-w-0">
-          {showProjects ? <ProjectsPanel /> : showBusinesses ? <div className="h-full min-h-0 bg-[#1A1A1A]" aria-label="Agentes" /> : showExtensions ? <ExtensionsPanel selectedProject={selectedProject} /> : <ChatInterface
+        <div key={showProjects ? 'projects' : showBusinesses ? 'businesses' : showExtensions ? 'extensions' : showSettings ? 'settings' : 'chat'} className="workspace-panel-content h-full min-h-0 min-w-0">
+          {showProjects ? <ProjectsPanel /> : showBusinesses ? <div className="h-full min-h-0 bg-[#1A1A1A]" aria-label="Agentes" /> : showExtensions ? <ExtensionsPanel selectedProject={selectedProject} /> : showSettings ? <SettingsPanel /> : <ChatInterface
             catalog={catalog}
             defaultProvider={defaultProvider}
             defaultModel={defaultModel}
