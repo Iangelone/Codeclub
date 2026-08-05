@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUpRight, Box, Bug, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, LayoutTemplate, ListChecks, ListTodo, MessageSquare, MousePointer2, Orbit, Paperclip, Pencil, Presentation, RotateCcw, Search, ScrollText, Sparkles, Square, Table2, Terminal, Folder, FolderTree, RefreshCw, X } from 'lucide-react';
+import { ArrowUpRight, Box, Bug, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, LayoutTemplate, ListChecks, ListTodo, MessageSquare, MousePointer2, Orbit, Paperclip, Pencil, Presentation, RotateCcw, Search, ScrollText, Square, Table2, Terminal, Folder, FolderTree, RefreshCw, WandSparkles, X } from 'lucide-react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -29,7 +29,6 @@ import { runStream } from '../lib/engine/run';
 import { getProjectFilePath, getSetting, logPersistence, setSetting } from '../lib/persistence';
 import { appendGenerationUsage, type GenerationUsageRecord } from '../lib/usage';
 import { appendExecutionLog } from '../lib/execution-log';
-import { saveMemory, searchMemory } from '../lib/engine/memory';
 import { getProjectChatPath, readGlobalChatHistory, readGlobalChats, readProjectIndex, readProjectMeta, writeGlobalChatHistory, writeGlobalChats, writeProjectMeta } from '../lib/projectManager';
 import { codeclubExtensions, type CodeclubExtension } from '../lib/extensions';
 import { LANGUAGE_STORAGE_KEY, type AppLanguage } from '../lib/i18n';
@@ -723,7 +722,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     { id: 'proveedor', label: chatText.slash.provider, description: chatText.slash.providerDescription, type: 'command', icon: Globe },
     { id: 'modelo', label: chatText.slash.model, description: chatText.slash.modelDescription, type: 'command', icon: Box },
     { id: 'proyecto', label: chatText.slash.project, description: chatText.slash.projectDescription, type: 'command', icon: FolderTree },
-    { id: 'habilidad', label: chatText.slash.skill, description: chatText.slash.skillDescription, type: 'command', icon: Sparkles },
+    { id: 'habilidad', label: chatText.slash.skill, description: chatText.slash.skillDescription, type: 'command', icon: WandSparkles },
     ...availableExtensions.filter((extension) => enabledExtensions[extension.id]).map((extension) => ({ id: extension.id, label: extension.name, description: extension.description, type: 'extension' as const, icon: extensionIcons[extension.id] || Box, extension })),
   ].filter((command) => command.label.toLowerCase().includes(searchQuery.toLowerCase()));
   const commandMenuItems = commandKind === 'command'
@@ -1354,6 +1353,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       const indexedProjects = await readProjectIndex();
       const developmentTools = createTools({
         projectPath: toolProjectPath,
+        memoryProjectPath: contextProjectPath,
         projectScoped: Boolean(contextProjectPath),
         recordToolEvent,
         setAgentState: guardedSetAgentState,
@@ -1421,11 +1421,26 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             });
           },
         });
-        tools = { ...routing.tools, searchTools: dynamicToolAccess.searchTools, executeTool: dynamicToolAccess.executeTool };
+        tools = {
+          ...routing.tools,
+          remember: selectedToolset.remember,
+          recall: selectedToolset.recall,
+          forget: selectedToolset.forget,
+          searchTools: dynamicToolAccess.searchTools,
+          executeTool: dynamicToolAccess.executeTool,
+        };
         toolRoutingContext = `La IA de intención resolvió: ${routing.reason || 'intención detectada'} (confianza ${routing.confidence}). Tools habilitadas: ${Object.keys(tools).join(', ')}.`;
         void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'tool-router', input: { mode: runMode, specialist: routeSpecialist, prompt: content }, output: { confidence: routing.confidence, reason: routing.reason, requiresAction: routing.requiresAction, tools: Object.keys(tools) } });
       } catch (error) {
-        tools = { ...selectToolsForPrompt(routedToolset, runMode, content), searchTools: dynamicToolAccess.searchTools, executeTool: dynamicToolAccess.executeTool };
+        const fallbackTools = selectToolsForPrompt(routedToolset, runMode, content);
+        tools = {
+          ...fallbackTools,
+          remember: selectedToolset.remember,
+          recall: selectedToolset.recall,
+          forget: selectedToolset.forget,
+          searchTools: dynamicToolAccess.searchTools,
+          executeTool: dynamicToolAccess.executeTool,
+        };
         routingUsedFallback = true;
         toolRoutingContext = `La IA de intención falló; se habilitó una selección determinista y acotada. Error: ${String(error)}`;
         void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'tool-router', input: { mode: runMode, specialist: routeSpecialist, prompt: content }, output: { status: 'fallback-deterministic', error: String(error), tools: Object.keys(tools) } });
@@ -1474,15 +1489,13 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       const activeExtensionsContext = activeExtensions.length > 0
         ? `Complementos activados explícitamente para esta sesión:\n${activeExtensions.map((extension) => `## ${extension.name}\n${extension.instruction}`).join('\n\n')}`
         : '';
-      const recalledMemories = contextProjectPath ? await searchMemory(contextProjectPath, content) : [];
-      const memoryContext = recalledMemories.slice(0, 5).map((memory) => `- ${memory.content} [${memory.status || 'new'} · ${Math.round((memory.confidence || 0.5) * 100)}%]`).join('\n');
       const system = [
         projectChangeNotice,
         activeSkillsContext,
         activeExtensionsContext,
-        `Sos el Padre de Codeclub en modo ${runMode === 'business' ? 'Economía' : 'Desarrollo'}. Tu trabajo es entender el objetivo, coordinar una colmena de hijos y entregar un resultado comprobable.`,
+        `Sos el Padre de Codeclub en modo ${runMode === 'business' ? 'Economía' : 'Desarrollo'}. Tu trabajo es entender el objetivo, coordinar una colmena de hijos y entregar un resultado comprobable. Reportá siempre los errores reales de las tools, incluso si luego te recuperás; nunca describas una ejecución como "sin errores" si hubo una llamada fallida.`,
         `Contexto: proyecto ${contextProjectPath || 'sin proyecto'}; proyectos indexados: ${indexedProjects.map((project) => `${project.name} (${project.path})`).join(', ') || 'ninguno'}.`,
-        memoryContext ? `Memorias relevantes del proyecto actual. Usalas como contexto y respetá su estado y confianza:\n${memoryContext}` : '',
+        'Memoria: administrá la memoria exclusivamente con las tools remember, recall y forget. Antes de responder sobre decisiones, preferencias o contexto previo, usá recall. Después de cada mensaje evaluá si existe un dato durable y útil; solo si la evidencia es suficiente, guardá una memoria atómica con remember. No guardes solicitudes, texto arbitrario ni datos temporales por defecto; si no hay una memoria clara, no llames ninguna tool de memoria.',
         'Para capacidades operativas, consultá searchTools con palabras clave, leé el schema exacto y ejecutá la elegida mediante executeTool. No inventes nombres ni parámetros.',
         'Podés ejecutar directamente las tools de artifacts necesarias y verificá cada resultado antes de responder.',
         'La única IA es responsable de ejecutar acciones y persistir planes, TODOs y artifacts.',
@@ -1683,9 +1696,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       if (!isCurrentGeneration() || abortController.signal.aborted) return;
       const changes = contextProjectPath ? summarizeWorkspaceDelta(beforeWorkspaceSnapshot, await readWorkspaceSnapshot(toolProjectPath)) : null;
       const assistantMessage = { role: 'assistant', content: assistantContent || 'La ejecución terminó sin texto final, pero las evidencias quedaron registradas.', timeline: assistantTimeline, tools: assistantTools, agentName: 'Desarrollo', meta: { provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt, status: 'completed', changes, usage: latestUsage ? { inputTokens: latestUsage.inputTokens, outputTokens: latestUsage.outputTokens, totalTokens: latestUsage.totalTokens, reasoningTokens: latestUsage.reasoningTokens } : null } };
-      if (contextProjectPath && /\b(recordá|recorda|acordate|prefiero|preferimos|decidimos|pendiente|importante)\b/i.test(content)) {
-        void saveMemory(contextProjectPath, `auto-${Date.now()}`, content.trim(), ['chat', 'auto'], { scope: 'project', status: 'new', confidence: 0.55, source: 'chat', projectPath: contextProjectPath });
-      }
       // La respuesta ya se muestra progresivamente durante el stream. Al finalizar
       // conservamos el contenido completo para evitar una burbuja vacía si la
       // animación visual se interrumpe al cambiar de estado.
@@ -1850,11 +1860,11 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       };
       Object.assign(prompts, {
         'dev-inspect': 'Inspeccioná el workspace actual. Listá archivos, buscá algunos TODO y leé un archivo pequeño. Resumí qué herramientas usaste, cuánto tardó cada paso y qué evidencia encontraste. No modifiques nada.',
-        'dev-memory': 'Guardá en la memoria de la aplicación una nota temporal sobre esta prueba, recuperala y luego eliminála. Mostrá el resultado real de cada operación y medí la secuencia completa.',
+        'dev-memory': 'Creá tres memorias persistentes de prueba en el proyecto actual usando remember y no las elimines: una con key "debug-confirmed" y status "confirmed", otra con key "debug-new" y status "new", y otra con key "debug-conflict" y status "conflict". Usá contenido distinto, tags ["debug", "filters"] y una confianza realista para cada una. Mostrá el resultado real de cada llamada y confirmá que quedaron guardadas.',
         'dev-plan': 'Creá un plan breve para verificar el workspace con tres pasos, actualizá el primer paso y consultá el estado final. Usá las tools directamente y devolvé los IDs y estados reales.',
         'dev-edit': 'Creá un archivo temporal dentro del workspace con una línea de texto, leelo para comprobarlo y después eliminálo. Verificá cada resultado y no toques archivos existentes.',
         'dev-browser': 'Abrí https://example.com, observá el estado del navegador y verificá que el título o contenido principal esté disponible. No hagas acciones destructivas ni inventes resultados.',
-        'dev-diagnostics': 'Hacé un diagnóstico completo y seguro del workspace: inspeccioná archivos, buscá TODOs, consultá el log de ejecución, verificá el estado de las tareas y medí cuánto tarda cada tool. No modifiques nada.',
+        'dev-diagnostics': 'Hacé un diagnóstico completo y seguro del workspace: inspeccioná archivos, buscá TODOs, consultá el log de ejecución, verificá el estado de las tareas y medí cuánto tarda cada tool. No modifiques nada. Si encontrás un plan previo pendiente, reportalo como estado histórico y no lo presentes como parte de este diagnóstico. Si una tool falla y luego se corrige, informá ambos hechos.',
         'dev-recovery': 'Provocá un error controlado leyendo una ruta inexistente, registrá la evidencia y recuperate buscando un archivo real para leerlo. Informá claramente el fallo, la recuperación y los tiempos.',
         'web-folder': 'Usá la carpeta nueva que acabo de crear para este sitio web. Inspeccioná el workspace, identificá esa carpeta, verificá su ruta y devolveme evidencia real. No crees todavía la página ni otra carpeta.',
         'web-page': 'Usá la carpeta del sitio que acabamos de crear. Armá allí una página web simple y presentable, con sus archivos necesarios. Verificá la estructura y explicame qué quedó listo.',
@@ -2161,7 +2171,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               const i = turnIndex + turnOffset;
               return <React.Fragment key={m.role === 'assistant' && isStreaming && i === messages.length - 1 ? `${i}-${m.content.length}` : i}>
             {m.role === 'user' && isStreaming && messages[i + 1]?.role === 'assistant' && i + 1 === messages.length - 1 && <ProcessingStatus startedAt={agentStartedAtRef.current || Date.now()} provider={currentProvider?.label || currentProvider?.id || 'Proveedor'} model={currentModel?.label || currentModel?.id || 'Modelo'} />}
-            {m.role === 'user' && messages[i + 1]?.role === 'assistant' && messages[i + 1]?.meta && !(isStreaming && i + 1 === messages.length - 1) && <CompletedStatus provider={messages[i + 1].meta.provider} model={messages[i + 1].meta.model} durationMs={messages[i + 1].meta.durationMs} />}
+            {m.role === 'user' && messages[i + 1]?.role === 'assistant' && messages[i + 1]?.meta && !(isStreaming && i + 1 === messages.length - 1) && <CompletedStatus language={language} provider={messages[i + 1].meta.provider} model={messages[i + 1].meta.model} durationMs={messages[i + 1].meta.durationMs} />}
             {m.role === 'user' && (
               <div aria-hidden="true" style={{ alignSelf: 'stretch', borderTop: '1px solid rgba(255, 255, 255, 0.08)', margin: '4px 0 38px' }} />
             )}
@@ -2525,8 +2535,8 @@ function ProcessingStatus({ startedAt, provider, model }: { startedAt: number; p
   return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', padding: '0 0 12px', color: '#999', fontSize: '12px' }}><span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#777' }}>{provider} · {model}</span><span style={{ flexShrink: 0 }}>Procesando desde hace {formatProcessingDuration(elapsed)}</span></div>;
 }
 
-function CompletedStatus({ provider, model, durationMs }: { provider: string; model: string; durationMs: number }) {
-  return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', alignSelf: 'stretch', margin: '20px 0 -6px', color: 'rgba(216, 216, 216, 0.52)', fontSize: '12px', letterSpacing: '0.01em' }}><span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{provider} · {model}</span><span style={{ flexShrink: 0 }}>Procesando desde hace {formatProcessingDuration(durationMs)}</span></div>;
+function CompletedStatus({ language, provider, model, durationMs }: { language: AppLanguage; provider: string; model: string; durationMs: number }) {
+  return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', alignSelf: 'stretch', margin: '20px 0 -6px', color: 'rgba(216, 216, 216, 0.52)', fontSize: '12px', letterSpacing: '0.01em' }}><span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{provider} · {model}</span><span style={{ flexShrink: 0 }}>{language === 'en' ? 'Completed in' : 'Completado en'} {formatProcessingDuration(durationMs)}</span></div>;
 }
 
 function ExecutionTimeline({ timeline = [], active }: { timeline?: any[]; active: boolean }) {

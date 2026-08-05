@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Box, FileText, FileType2, LayoutTemplate, Network, PlugZap, Plus, Presentation, Search, Table2, Trash2 } from 'lucide-react';
+import { Blocks, Box, FileText, FileType2, LayoutTemplate, Network, PlugZap, Plus, Presentation, Search, Table2, Trash2, WandSparkles } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { getSetting, setSetting } from '../lib/persistence';
 import { protectedExtensionIds, type CodeclubExtension } from '../lib/extensions';
@@ -71,7 +71,7 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
 
         <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
           <nav className="flex items-center gap-0.5 text-[13px] text-[#777777]" aria-label="Categorías de complementos">
-            {([['extensions', text.extensions, allExtensions.length], ['skills', text.skills, skills.length], ['mcp', 'MCP', mcpServers.length]] as const).map(([id, label, count]) => <button key={id} type="button" onClick={() => setTab(id)} className={`rounded-[8px] border-0 px-3 py-1.5 ${tab === id ? 'bg-[#2b2b2b] text-[#eeeeee]' : 'bg-transparent text-[#777777] hover:bg-[#202020]'}`}>{label} <span className="text-[#999999]">{count}</span></button>)}
+            {([{ id: 'extensions', label: text.extensions, count: allExtensions.length, icon: Blocks }, { id: 'skills', label: text.skills, count: skills.length, icon: WandSparkles }, { id: 'mcp', label: 'MCP', count: mcpServers.length, icon: PlugZap }] as const).map(({ id, label, count, icon: Icon }) => <button key={id} type="button" onClick={() => setTab(id)} aria-label={`${label} ${count}`} className={`inline-flex items-center gap-1.5 rounded-[8px] border-0 px-3 py-1.5 ${tab === id ? 'bg-[#2b2b2b] text-[#eeeeee]' : 'bg-transparent text-[#777777] hover:bg-[#202020]'}`}><Icon size={14} strokeWidth={1.8} className="shrink-0 text-[#eeeeee]" aria-hidden="true" />{label} <span className="text-[#999999]">{count}</span></button>)}
           </nav>
           <label className="flex h-9 w-full max-w-[280px] items-center gap-2 rounded-[9px] border border-[#3a3a3a] bg-[#202020] px-3 text-[#999999] focus-within:border-[#555555]">
             <Search size={16} strokeWidth={1.7} />

@@ -743,7 +743,7 @@ export async function verifyToolExecutionWithAI({ model, prompt, goal, verificat
 }
 
 export function createTools(ctx: ToolContext) {
-  const { projectPath, projectScoped = false, recordToolEvent, setAgentState, requestToolApproval, provider, modelId } = ctx;
+  const { projectPath, memoryProjectPath = projectPath, projectScoped = false, recordToolEvent, setAgentState, requestToolApproval, provider, modelId } = ctx;
 
   return {
     ...createSwarmTool({ projectPath, recordToolEvent, setAgentState, requestToolApproval, provider, modelId }),
@@ -1266,21 +1266,31 @@ export function createTools(ctx: ToolContext) {
       },
     }),
     remember: tool({
-      description: 'Save information to memory. Tags link memories to items (chat:abc, note:xyz, table:xyz). Duplicate keys update existing.',
+      description: 'Save a durable, atomic fact, preference, decision or pending item to project memory. Use only when the conversation provides enough evidence; do not save arbitrary requests or temporary text. Tags link memories to items. Duplicate keys update existing.',
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
           key: { type: 'string', description: 'Unique memory key.' },
           content: { type: 'string', description: 'Content to remember.' },
           tags: { type: 'array', items: { type: 'string' }, description: 'Optional tags like ["chat:id", "preference"].' },
+          status: { type: 'string', enum: ['new', 'confirmed', 'stale', 'conflict'], description: 'Memory lifecycle status.' },
+          confidence: { type: 'number', minimum: 0, maximum: 1, description: 'Confidence from 0 to 1 based on evidence.' },
+          scope: { type: 'string', enum: ['personal', 'project'], description: 'Whether it applies to the user or this project.' },
+          supersedes: { type: 'string', description: 'Key of an older memory this one replaces, if applicable.' },
         },
         required: ['key', 'content'],
         additionalProperties: false,
       }),
-      execute: async ({ key, content, tags }) => {
+      execute: async ({ key, content, tags, status, confidence, scope, supersedes }) => {
         setAgentState('tool_call');
-        await saveMemory(projectPath, key, content, tags || []);
-        recordToolEvent('remember', { key, tags }, { ok: true });
+        const memory = await saveMemory(memoryProjectPath, key, content, tags || [], {
+          source: 'tool',
+          ...(status ? { status } : {}),
+          ...(typeof confidence === 'number' ? { confidence: Math.max(0, Math.min(1, confidence)) } : {}),
+          ...(scope ? { scope } : {}),
+          ...(supersedes ? { supersedes } : {}),
+        });
+        recordToolEvent('remember', { key, tags, status, confidence, scope, supersedes }, { ok: true, memory });
         return { ok: true };
       },
     }),
@@ -1296,7 +1306,7 @@ export function createTools(ctx: ToolContext) {
       }),
       execute: async ({ query }) => {
         setAgentState('tool_call');
-        const results = await searchMemory(projectPath, query);
+        const results = await searchMemory(memoryProjectPath, query);
         recordToolEvent('recall', { query }, { count: results.length });
         return results;
       },
@@ -1313,7 +1323,7 @@ export function createTools(ctx: ToolContext) {
       }),
       execute: async ({ key }) => {
         setAgentState('tool_call');
-        const ok = await deleteMemory(projectPath, key);
+        const ok = await deleteMemory(memoryProjectPath, key);
         recordToolEvent('forget', { key }, { ok });
         return { ok };
       },

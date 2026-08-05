@@ -1,4 +1,4 @@
-import { smoothStream, streamText } from 'ai';
+import { smoothStream, stepCountIs, streamText } from 'ai';
 import type { EngineCallbacks } from './types';
 
 type RunStreamArgs = {
@@ -25,7 +25,7 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
     experimental_transform: smoothStream(),
     // Sin límite fijo: después de una tool el modelo puede continuar hasta
     // responder. La cancelación sigue bajo control del usuario/watchdog.
-    stopWhen: () => false,
+    stopWhen: stepCountIs(8),
     ...(structuredOutput ? { output: structuredOutput } : {}),
     abortSignal: signal,
     onAbort: async ({ steps }: any) => {
@@ -44,7 +44,7 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
       await callbacks.onToolExecutionEnd?.(info);
     },
     timeout: {
-      stepMs: 120_000,
+      stepMs: 60_000,
       chunkMs: 30_000,
       toolMs: 60_000,
     },

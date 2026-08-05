@@ -8,6 +8,7 @@ export interface ToolEvent {
 
 export interface ToolContext {
   projectPath: string;
+  memoryProjectPath?: string;
   projectScoped?: boolean;
   recordToolEvent: (name: string, input: any, output: any) => void;
   setAgentState: (state: string) => void;
