@@ -268,7 +268,15 @@ html.is-windows header.acrylic-panel a:hover {
 }
 
 html.is-windows header.acrylic-panel button.is-active {
-  background: #30333b !important;
+  background: #2f2f2f !important;
+}
+
+/* Hover más visible, sin competir con el estado activo. */
+header.acrylic-panel button:not(.close):not(.is-active):hover,
+header.acrylic-panel a:hover,
+html.is-windows header.acrylic-panel button:not(.close):not(.is-active):hover,
+html.is-windows header.acrylic-panel a:hover {
+  background: #252525 !important;
 }
 
 html.is-windows .workspace-shell {
@@ -455,6 +463,9 @@ html.is-windows #app-background {
 .chat-tool-thinking-label {
   animation-duration: 1.5s;
 }
+
+/* Los servidores MCP se gestionan desde la IA; el panel solo muestra los registrados. */
+.extensions-panel-scroll section[aria-label="Servidores MCP"] > div:first-child { display: none; }
 
 .chat-turn > .chat-assistant-message {
   animation: codeclub-stream-text 180ms ease-out both;
