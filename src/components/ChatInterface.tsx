@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUpRight, Box, Bug, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, LayoutTemplate, ListChecks, ListTodo, MessageSquare, MousePointer2, Orbit, Paperclip, Pencil, Presentation, RotateCcw, Search, ScrollText, Square, Table2, Terminal, Folder, FolderTree, RefreshCw, WandSparkles, X } from 'lucide-react';
+import { ArrowUp, ArrowUpRight, Box, Bug, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Layers, LayoutTemplate, ListChecks, ListTodo, MessageSquare, MousePointer2, Orbit, Paperclip, Pencil, Presentation, RotateCcw, Search, ScrollText, Square, Table2, Terminal, Folder, FolderTree, RefreshCw, WandSparkles, X } from 'lucide-react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -202,7 +202,7 @@ const formatToolExecutionFallback = (mode: AgentMode, specialist: AgentSpecialis
 
 export default function ChatInterface({ catalog, defaultProvider, defaultModel, panelId = 'left', eventPrefix = 'codeclub', selectedProject, blockedPanelState = 'blank', chatMode: workspaceChatMode = 'development', modeOverride = 'auto' }) {
   const [language, setLanguage] = useState<AppLanguage>('es');
-  const chatText = language === 'en' ? { greeting: 'What are we working on today', send: 'Send', cancel: 'Cancel generation', message: 'Message', attach: 'Add files', removeFiles: 'Remove added files', activeSkills: 'Active skills', activeExtensions: 'Active extensions', removeSkill: 'Remove skill from this session', removeExtension: 'Remove extension from this session', selected: 'Selected', provider: 'provider', model: 'model', project: 'project', skill: 'skill', extension: 'extension', command: 'command', searchProvider: 'Search provider', searchModel: 'Search active provider model', searchProject: 'Search project', searchSkill: 'Search skill', searchCommand: 'Search command', noProject: 'No project', slash: { provider: 'Provider', model: 'Model', project: 'Project', skill: 'Skill', providerDescription: 'Select provider', modelDescription: 'Select model', projectDescription: 'Select project', skillDescription: 'Load skill in this session' }, status: { idle: 'Ready when you are.', connecting: 'Connecting to provider...', streaming: 'Thinking...', tool_call: 'Using tool...', approval: 'Waiting for approval...', running: 'Running...', error: 'Something went wrong.' } } : { greeting: '¿Qué toca hoy', send: 'Enviar', cancel: 'Cancelar generación', message: 'Mensaje', attach: 'Añadir archivos', removeFiles: 'Quitar archivos añadidos', activeSkills: 'Habilidades activas', activeExtensions: 'Extensiones activas', removeSkill: 'Quitar habilidad de esta sesión', removeExtension: 'Quitar extensión de esta sesión', selected: 'Seleccionado', provider: 'proveedor', model: 'modelo', project: 'proyecto', skill: 'habilidad', extension: 'extensión', command: 'comando', searchProvider: 'Buscar proveedor', searchModel: 'Buscar modelo del proveedor activo', searchProject: 'Buscar proyecto', searchSkill: 'Buscar habilidad', searchCommand: 'Buscar comando', noProject: 'Sin proyecto', slash: { provider: 'Proveedor', model: 'Modelo', project: 'Proyecto', skill: 'Habilidad', providerDescription: 'Seleccionar proveedor', modelDescription: 'Seleccionar modelo', projectDescription: 'Seleccionar proyecto', skillDescription: 'Cargar habilidad en esta sesión' }, status: { idle: 'Listo cuando tú lo estés.', connecting: 'Conectando con el proveedor...', streaming: 'Pensando...', tool_call: 'Usando herramienta...', approval: 'Esperando aprobación...', running: 'Ejecutando...', error: 'Algo salió mal.' } };
+  const chatText = language === 'en' ? { greeting: 'What are we working on today', send: 'Send', cancel: 'Cancel generation', message: 'Message', attach: 'Attach', removeFiles: 'Remove added files', activeSkills: 'Active skills', activeExtensions: 'Active extensions', removeSkill: 'Remove skill from this session', removeExtension: 'Remove extension from this session', selected: 'Selected', provider: 'provider', model: 'model', project: 'project', skill: 'skill', extension: 'extension', command: 'command', searchProvider: 'Search provider', searchModel: 'Search active provider model', searchProject: 'Search project', searchSkill: 'Search skill', searchCommand: 'Search command', noProject: 'No project', slash: { provider: 'Provider', model: 'Model', project: 'Project', skill: 'Skill', providerDescription: 'Select provider', modelDescription: 'Select model', projectDescription: 'Select project', skillDescription: 'Load skill in this session' }, status: { idle: 'Ready when you are.', connecting: 'Connecting to provider...', streaming: 'Thinking...', tool_call: 'Using tool...', approval: 'Waiting for approval...', running: 'Running...', error: 'Something went wrong.' } } : { greeting: '¿Qué toca hoy', send: 'Enviar', cancel: 'Cancelar generación', message: 'Mensaje', attach: 'Adjuntar', removeFiles: 'Quitar archivos añadidos', activeSkills: 'Habilidades activas', activeExtensions: 'Extensiones activas', removeSkill: 'Quitar habilidad de esta sesión', removeExtension: 'Quitar extensión de esta sesión', selected: 'Seleccionado', provider: 'proveedor', model: 'modelo', project: 'proyecto', skill: 'habilidad', extension: 'extensión', command: 'comando', searchProvider: 'Buscar proveedor', searchModel: 'Buscar modelo del proveedor activo', searchProject: 'Buscar proyecto', searchSkill: 'Buscar habilidad', searchCommand: 'Buscar comando', noProject: 'Sin proyecto', slash: { provider: 'Proveedor', model: 'Modelo', project: 'Proyecto', skill: 'Habilidad', providerDescription: 'Seleccionar proveedor', modelDescription: 'Seleccionar modelo', projectDescription: 'Seleccionar proyecto', skillDescription: 'Cargar habilidad en esta sesión' }, status: { idle: 'Listo cuando tú lo estés.', connecting: 'Conectando con el proveedor...', streaming: 'Pensando...', tool_call: 'Usando herramienta...', approval: 'Esperando aprobación...', running: 'Ejecutando...', error: 'Algo salió mal.' } };
   const [messages, setMessages] = useState([]);
   const autonomousText = language === 'en'
     ? { label: 'Autonomous', description: 'Let the agent execute and verify the required tools', active: 'Active' }
@@ -678,6 +678,15 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     setTimeout(() => commandMenuRef.current?.focus(), 10);
   };
 
+  const toggleCommandMenu = (kind) => {
+    if (menuOpen && commandKind === kind) {
+      setMenuOpen(false);
+      setCommandKind('');
+      return;
+    }
+    openCommandMenu(kind);
+  };
+
   useEffect(() => {
     window.dispatchEvent(new CustomEvent('codeclub:command-menu-state', {
       detail: { open: menuOpen, kind: menuOpen ? commandKind : '' },
@@ -725,7 +734,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   });
   const activeSelection = commandKind === 'provider' ? currentProvider : commandKind === 'model' ? currentModel : commandKind === 'project' && activeProject ? { id: activeProject.projectPath, label: activeProject.name } : commandKind === 'command' && autonomousMode ? { id: 'autonomo', label: autonomousText.label } : null;
   const slashCommands = [
-    { id: 'proveedor', label: chatText.slash.provider, description: chatText.slash.providerDescription, aliases: ['proveedor', 'provider'], type: 'command', icon: Globe },
+    { id: 'proveedor', label: chatText.slash.provider, description: chatText.slash.providerDescription, aliases: ['proveedor', 'provider'], type: 'command', icon: Layers },
     { id: 'modelo', label: chatText.slash.model, description: chatText.slash.modelDescription, aliases: ['modelo', 'model'], type: 'command', icon: Box },
     { id: 'proyecto', label: projectsSlashLabel, description: chatText.slash.projectDescription, aliases: ['proyecto', 'proyectos', 'project', 'projects'], type: 'command', icon: Folder },
     { id: 'habilidad', label: chatText.slash.skill, description: chatText.slash.skillDescription, aliases: ['habilidad', 'skill'], type: 'command', icon: WandSparkles },
@@ -757,7 +766,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
 
     const handlePointerDown = (event) => {
       const button = (event.target as HTMLElement).closest('button') as HTMLButtonElement | null;
-      const isCommandDockButton = /^(Proveedor|Modelo|Proyecto):/.test(button?.getAttribute('aria-label') || '');
+      const isCommandDockButton = ['provider', 'model', 'project'].includes(button?.dataset.commandMenuKind || '') || /^(Proveedor|Modelo|Proyecto):/.test(button?.getAttribute('aria-label') || '');
       if (commandMenuRef.current?.contains(event.target) || button?.title === 'Proveedor, modelo y proyecto' || isCommandDockButton) return;
       setMenuOpen(false);
     };
@@ -2227,7 +2236,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
   }
 
   return (
-    <div ref={chatPanelRef} className="chat-interface-container" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleComposerDrop} style={{ width: 'min(680px, calc(100% - 64px))', height: '100%', justifySelf: 'center', display: 'grid', gridTemplateRows: 'minmax(0, 1fr) auto', placeItems: 'stretch', gap: '10px', overflow: 'visible', paddingBottom: '5vh' }}>
+    <div ref={chatPanelRef} className="chat-interface-container" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleComposerDrop} style={{ width: 'min(680px, calc(100% - 64px))', height: '100%', boxSizing: 'border-box', justifySelf: 'center', display: 'grid', gridTemplateRows: 'minmax(0, 1fr) auto', placeItems: 'stretch', gap: '10px', overflow: 'visible', paddingBottom: '5vh' }}>
       
       {/* Zona de mensajes */}
       <div className="messages-area" style={{ position: 'relative', minHeight: 0, height: '100%', overflowY: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none', display: composerDocked ? 'flex' : 'none', flexDirection: 'column', gap: '6px', paddingBottom: '10px', overscrollBehavior: 'contain' }}>
@@ -2277,10 +2286,10 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
 
       <div className="chat-composer" style={{ width: '100%', justifySelf: 'center', alignSelf: 'center', position: 'relative', display: 'grid', gap: '10px' }}>
         <div className="composer-row" style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }}>
-          <div className="composer-box [&>[aria-label='Referencia de artifact']]:relative [&>[aria-label='Referencia de artifact']]:z-50 [&>[aria-label='Referencia de artifact']>span]:hidden" style={{ minHeight: '40px', flex: '1 1 auto', minWidth: 0, padding: 0, borderRadius: '22px', background: '#2B2B2B', border: '1px solid rgba(255, 255, 255, 0.22)', boxShadow: 'none' } as React.CSSProperties}>
+          <div className="composer-box [&>[aria-label='Referencia de artifact']]:relative [&>[aria-label='Referencia de artifact']]:z-50 [&>[aria-label='Referencia de artifact']>span]:hidden" style={{ minHeight: '40px', flex: '1 1 auto', minWidth: 0, padding: 0, borderRadius: '22px', background: '#2F2F2F', border: '1px solid #3A3A3A', boxShadow: 'none' } as React.CSSProperties}>
           {artifactReference && <div className="flex min-h-[28px] items-center gap-2 px-4 py-1.5" aria-label="Referencia de artifact"><span className="shrink-0 text-[10px] uppercase tracking-[0.08em] text-[#666]">Referencia</span><button type="button" onClick={() => setArtifactReference(null)} className="min-w-0 max-w-[260px] truncate rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-left text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar referencia">@{artifactReference.kind} · {artifactReference.title}</button></div>}
           {browserReferences.length > 0 && (
-            <div ref={browserRefContainerRef} className="flex min-h-[28px] max-w-full items-center gap-1.5 overflow-hidden border-b border-[#202020] px-3 py-1.5" aria-label="Referencias de navegador">
+            <div ref={browserRefContainerRef} className="flex min-h-[28px] max-w-full items-center gap-1.5 overflow-hidden border-b border-[#d9d4ce] px-3 py-1.5" aria-label="Referencias de navegador">
               {browserReferences.slice(0, maxVisibleBrowserRefs).map((ref) => (
                 <button
                   key={ref.id}
@@ -2307,7 +2316,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               )}
             </div>
           )}
-           {attachedFiles.length > 0 && <div className="flex min-h-[28px] items-center gap-1.5 overflow-hidden border-b border-[#202020] px-3 py-1.5" aria-label="Archivos adjuntos">{attachedFiles.slice(0, 3).map((file, index) => <button key={file.path} type="button" onClick={() => setAttachedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} className="flex max-w-[180px] min-w-0 shrink items-center gap-1.5 truncate rounded-full border border-[#2b2b2b] bg-[#161616] px-2.5 py-1 text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar archivo">{file.mediaType.startsWith('image/') ? <img src={file.previewUrl || convertFileSrc(file.path)} alt={file.name} style={{ width: '18px', height: '18px', objectFit: 'cover', borderRadius: '4px' }} /> : <Paperclip size={11} strokeWidth={1.8} />}<span className="truncate">{file.name}</span></button>)}{attachedFiles.length > 3 && <span className="shrink-0 rounded-full border border-[#2b2b2b] bg-[#161616] px-2.5 py-1 text-[10px] text-[#999]">+{attachedFiles.length - 3} archivos</span>}</div>}
+           {attachedFiles.length > 0 && <div className="flex min-h-[28px] items-center gap-1.5 overflow-hidden border-b border-[#d9d4ce] px-3 py-1.5" aria-label="Archivos adjuntos">{attachedFiles.slice(0, 3).map((file, index) => <button key={file.path} type="button" onClick={() => setAttachedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} className="flex max-w-[180px] min-w-0 shrink items-center gap-1.5 truncate rounded-full border border-[#d2cdc6] bg-[#e8e3dc] px-2.5 py-1 text-[10px] text-[#353331] hover:bg-[#ddd7d0]" title="Quitar archivo">{file.mediaType.startsWith('image/') ? <img src={file.previewUrl || convertFileSrc(file.path)} alt={file.name} style={{ width: '18px', height: '18px', objectFit: 'cover', borderRadius: '4px' }} /> : <Paperclip size={11} strokeWidth={1.8} />}<span className="truncate">{file.name}</span></button>)}{attachedFiles.length > 3 && <span className="shrink-0 rounded-full border border-[#d2cdc6] bg-[#e8e3dc] px-2.5 py-1 text-[10px] text-[#66615c]">+{attachedFiles.length - 3} archivos</span>}</div>}
           {activeSkills.length > 0 && <div className="flex min-h-[28px] items-center gap-1.5 overflow-x-auto border-b border-[#202020] px-3 py-1.5" aria-label={chatText.activeSkills}>
             {activeSkills.map((skill) => <button key={skill.id} type="button" onClick={() => setActiveSkills((current) => current.filter((item) => item.id !== skill.id))} className="flex shrink-0 items-center gap-1 rounded-full border border-[#3d9bff]/50 bg-[#1687ff]/10 px-2.5 py-1 text-[10px] text-[#b9dcff] hover:bg-[#1687ff]/20" title="Quitar habilidad de esta sesión">
               <span className="max-w-[150px] truncate">{skill.name}</span><span className="text-[#8bc7ff]/70">×</span>
@@ -2317,7 +2326,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             {activeExtensions.map((extension) => { const Icon = extensionIcons[extension.id] || Box; return <button key={extension.id} type="button" onClick={() => setActiveExtensions((current) => current.filter((item) => item.id !== extension.id))} className="flex shrink-0 items-center gap-1 rounded-full border border-[#3d9bff]/50 bg-[#1687ff]/10 px-2.5 py-1 text-[10px] text-[#b9dcff] hover:bg-[#1687ff]/20" title="Quitar complemento de esta sesión"><Icon size={11} /><span>{extension.name}</span><span className="text-[#8bc7ff]/70">×</span></button>; })}
           </div>}
           <div ref={commandMenuHostRef} className="w-full" />
-          <form onSubmit={handleSubmit} className="composer-box-inner [&>button.absolute]:hidden" style={{ minHeight: '40px', width: '100%', minWidth: 0, display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 6px 5px 16px', border: 0, borderRadius: '21px', background: '#2B2B2B', position: 'relative' }}>
+          <form onSubmit={handleSubmit} className="composer-box-inner [&>button.absolute]:hidden" style={{ minHeight: '78px', width: '100%', minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '4px', padding: '8px 6px 7px 16px', border: 0, borderRadius: '21px', background: '#2F2F2F', position: 'relative' }}>
            {false && (
           <button type="button" onClick={handleAttachFiles} className="text-white/40 hover:text-white transition-colors" aria-label="Añadir archivos" style={{ flex: '0 0 28px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, background: 'transparent', cursor: 'pointer' }}>
             <Paperclip size={16} strokeWidth={1.8} />
@@ -2341,14 +2350,12 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             </button>
           )}
           {isAgentBusy && (
-            <div className="pointer-events-none absolute inset-y-0 left-[16px] right-[46px] flex items-center gap-2 text-[12px] text-[#d8d8d8]/70">
-              <span className="braille-spinner shrink-0" data-state={agentState} aria-hidden="true" />
+            <div className="pointer-events-none absolute top-[8px] right-[46px] bottom-[38px] left-[16px] flex items-center gap-2 text-[12px] text-[#d8d8d8]/70">
               <span className="truncate">{agentStatusText} <span className="tabular-nums text-[#d8d8d8]/45">{isAgentBusy ? formatDuration(agentElapsedMs) : ''}</span></span>
             </div>
           )}
-          {!input.trim() && !inputFocused && !isAgentBusy && (
-            <div className="pointer-events-none absolute inset-y-0 left-[16px] right-[46px] flex items-center gap-2 text-[12px] text-[#d8d8d8]/70">
-              <span className="braille-spinner shrink-0" data-state="idle" aria-hidden="true" />
+          {!input.trim() && !isAgentBusy && (
+            <div className="pointer-events-none absolute top-[8px] right-[46px] bottom-[38px] left-[16px] flex items-center gap-2 text-[12px] text-[#d8d8d8]/70">
               <span className="truncate">{agentStatusText} <span className="tabular-nums text-[#d8d8d8]/45">{isAgentBusy ? formatDuration(agentElapsedMs) : ''}</span></span>
             </div>
           )}
@@ -2396,12 +2403,18 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             onBlur={() => setInputFocused(false)}
             placeholder=""
             aria-label={chatText.message}
-            style={{ appearance: 'none', flex: '1 1 auto', minWidth: 0, width: '100%', height: '22px', maxHeight: '140px', alignSelf: 'center', resize: 'none', border: 0, outline: 'none', background: 'transparent', color: '#eeeeee', fontSize: '12px', lineHeight: 1.4, padding: '4px 10px 4px 0', fontFamily: 'inherit', overflowY: 'hidden', scrollbarWidth: 'none', opacity: isAgentBusy ? 0.55 : 1 }}
+            style={{ appearance: 'none', order: 1, flex: '1 1 auto', minWidth: 0, width: '100%', minHeight: '22px', height: '100%', maxHeight: '140px', alignSelf: 'stretch', resize: 'none', border: 0, outline: 'none', background: 'transparent', color: '#eeeeee', fontSize: '12px', lineHeight: 1.4, padding: '2px 10px 4px 0', fontFamily: 'inherit', overflowY: 'hidden', scrollbarWidth: 'none', opacity: isAgentBusy ? 0.55 : 1 }}
           />
           {artifactReference && <button type="button" onClick={() => setArtifactReference(null)} className="absolute left-[16px] top-1/2 z-10 max-w-[130px] -translate-y-1/2 truncate rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar referencia">@{artifactReference.kind} · {artifactReference.title}</button>}
-          <button type={isAgentBusy ? 'button' : 'submit'} onClick={isAgentBusy ? cancelGeneration : undefined} disabled={!isAgentBusy && !input.trim() && !credentialProvider} className="send-button transition-[background,box-shadow,opacity,transform] duration-200 hover:scale-[1.03] disabled:cursor-not-allowed disabled:opacity-45" aria-label={isAgentBusy ? "Cancelar generación" : credentialProvider ? "Guardar credencial" : "Enviar"} title={isAgentBusy ? "Cancelar generación" : credentialProvider ? "Guardar credencial" : "Enviar"} style={{ flex: '0 0 34px', width: '34px', height: '34px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(139, 199, 255, 0.82)', borderRadius: '50%', background: 'linear-gradient(145deg, #8BC7FF 0%, #3D9BFF 44%, #1687FF 100%)', color: '#ffffff', boxShadow: 'inset 0 1px 2px rgba(255, 255, 255, 0.5), 0 0 12px rgba(45, 145, 255, 0.42)', cursor: 'pointer' }}>
-            {isAgentBusy ? <Square size={14} strokeWidth={2.4} fill="currentColor" /> : <ArrowUpRight size={16} strokeWidth={2.2} />}
-          </button>
+          <div style={{ order: 2, display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '6px', minHeight: '30px' }}>
+            <button type="button" onClick={handleAttachFiles} aria-label={chatText.attach} title={chatText.attach} className="composer-action group" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, borderRadius: '8px', background: 'transparent', color: 'rgba(238, 238, 238, 0.62)' }}><Paperclip size={15} strokeWidth={1.8} /><span className="composer-action-label">{chatText.attach}</span></button>
+            <button type="button" data-command-menu-kind="provider" onClick={() => toggleCommandMenu('provider')} aria-label={chatText.slash.provider} title={chatText.slash.provider} className={`composer-action group ${menuOpen && commandKind === 'provider' ? 'is-active' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, borderRadius: '8px', background: menuOpen && commandKind === 'provider' ? '#3A3A3A' : 'transparent', color: 'rgba(238, 238, 238, 0.62)' }}><Layers size={15} strokeWidth={1.8} /><span className="composer-action-label">{chatText.slash.provider}</span></button>
+            <button type="button" data-command-menu-kind="model" onClick={() => toggleCommandMenu('model')} aria-label={chatText.slash.model} title={chatText.slash.model} className={`composer-action group ${menuOpen && commandKind === 'model' ? 'is-active' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, borderRadius: '8px', background: menuOpen && commandKind === 'model' ? '#3A3A3A' : 'transparent', color: 'rgba(238, 238, 238, 0.62)' }}><Box size={15} strokeWidth={1.8} /><span className="composer-action-label">{chatText.slash.model}</span></button>
+            <button type="button" data-command-menu-kind="project" onClick={() => toggleCommandMenu('project')} aria-label={chatText.slash.project} title={chatText.slash.project} className={`composer-action group ml-auto ${menuOpen && commandKind === 'project' ? 'is-active' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', border: 0, borderRadius: '8px', background: menuOpen && commandKind === 'project' ? '#3A3A3A' : 'transparent', color: 'rgba(238, 238, 238, 0.62)' }}><Folder size={15} strokeWidth={1.8} /><span className="composer-action-label">{activeProject?.name || chatText.slash.project}</span><ChevronDown size={12} strokeWidth={1.8} /></button>
+            <button type={isAgentBusy ? 'button' : 'submit'} onClick={isAgentBusy ? cancelGeneration : undefined} disabled={!isAgentBusy && !input.trim() && !credentialProvider} className="send-button transition-[background,opacity] duration-200 hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-45" aria-label={isAgentBusy ? "Cancelar generación" : credentialProvider ? "Guardar credencial" : "Enviar"} title={isAgentBusy ? "Cancelar generación" : credentialProvider ? "Guardar credencial" : "Enviar"} style={{ flex: '0 0 30px', width: '30px', height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, borderRadius: '50%', background: '#3D9BFF', color: '#ffffff', boxShadow: 'none', cursor: 'pointer' }}>
+              {isAgentBusy ? <Square size={13} strokeWidth={2.4} fill="currentColor" /> : <ArrowUp size={15} strokeWidth={2.2} />}
+            </button>
+          </div>
           </form>
           </div>
         </div>

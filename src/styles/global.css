@@ -139,6 +139,31 @@ button {
   padding: 4px 0 !important;
 }
 
+.composer-action {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0 7px;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 10px;
+  line-height: 1;
+  transition: background-color 180ms ease-out, color 180ms ease-out, max-width 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.composer-action-label {
+  display: inline-block;
+  max-width: 96px;
+  margin-left: 5px;
+  overflow: hidden;
+  opacity: 1;
+}
+
+.composer-action:hover,
+.composer-action:focus-visible {
+  background: #353535 !important;
+  color: #eeeeee !important;
+}
+
 .composer-box > [aria-label="Referencia de artifact"] > span {
   display: none;
 }
