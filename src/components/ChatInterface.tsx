@@ -29,6 +29,7 @@ import { runStream } from '../lib/engine/run';
 import { getProjectFilePath, getSetting, logPersistence, setSetting } from '../lib/persistence';
 import { appendGenerationUsage, type GenerationUsageRecord } from '../lib/usage';
 import { appendExecutionLog } from '../lib/execution-log';
+import { saveMemory, searchMemory } from '../lib/engine/memory';
 import { getProjectChatPath, readGlobalChatHistory, readGlobalChats, readProjectIndex, readProjectMeta, writeGlobalChatHistory, writeGlobalChats, writeProjectMeta } from '../lib/projectManager';
 import { codeclubExtensions, type CodeclubExtension } from '../lib/extensions';
 import { LANGUAGE_STORAGE_KEY, type AppLanguage } from '../lib/i18n';
@@ -1473,12 +1474,15 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       const activeExtensionsContext = activeExtensions.length > 0
         ? `Complementos activados explícitamente para esta sesión:\n${activeExtensions.map((extension) => `## ${extension.name}\n${extension.instruction}`).join('\n\n')}`
         : '';
+      const recalledMemories = contextProjectPath ? await searchMemory(contextProjectPath, content) : [];
+      const memoryContext = recalledMemories.slice(0, 5).map((memory) => `- ${memory.content} [${memory.status || 'new'} · ${Math.round((memory.confidence || 0.5) * 100)}%]`).join('\n');
       const system = [
         projectChangeNotice,
         activeSkillsContext,
         activeExtensionsContext,
         `Sos el Padre de Codeclub en modo ${runMode === 'business' ? 'Economía' : 'Desarrollo'}. Tu trabajo es entender el objetivo, coordinar una colmena de hijos y entregar un resultado comprobable.`,
         `Contexto: proyecto ${contextProjectPath || 'sin proyecto'}; proyectos indexados: ${indexedProjects.map((project) => `${project.name} (${project.path})`).join(', ') || 'ninguno'}.`,
+        memoryContext ? `Memorias relevantes del proyecto actual. Usalas como contexto y respetá su estado y confianza:\n${memoryContext}` : '',
         'Para capacidades operativas, consultá searchTools con palabras clave, leé el schema exacto y ejecutá la elegida mediante executeTool. No inventes nombres ni parámetros.',
         'Podés ejecutar directamente las tools de artifacts necesarias y verificá cada resultado antes de responder.',
         'La única IA es responsable de ejecutar acciones y persistir planes, TODOs y artifacts.',
@@ -1679,6 +1683,9 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       if (!isCurrentGeneration() || abortController.signal.aborted) return;
       const changes = contextProjectPath ? summarizeWorkspaceDelta(beforeWorkspaceSnapshot, await readWorkspaceSnapshot(toolProjectPath)) : null;
       const assistantMessage = { role: 'assistant', content: assistantContent || 'La ejecución terminó sin texto final, pero las evidencias quedaron registradas.', timeline: assistantTimeline, tools: assistantTools, agentName: 'Desarrollo', meta: { provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt, status: 'completed', changes, usage: latestUsage ? { inputTokens: latestUsage.inputTokens, outputTokens: latestUsage.outputTokens, totalTokens: latestUsage.totalTokens, reasoningTokens: latestUsage.reasoningTokens } : null } };
+      if (contextProjectPath && /\b(recordá|recorda|acordate|prefiero|preferimos|decidimos|pendiente|importante)\b/i.test(content)) {
+        void saveMemory(contextProjectPath, `auto-${Date.now()}`, content.trim(), ['chat', 'auto'], { scope: 'project', status: 'new', confidence: 0.55, source: 'chat', projectPath: contextProjectPath });
+      }
       // La respuesta ya se muestra progresivamente durante el stream. Al finalizar
       // conservamos el contenido completo para evitar una burbuja vacía si la
       // animación visual se interrumpe al cambiar de estado.

@@ -6,6 +6,12 @@ export interface MemoryEntry {
   tags: string[];
   created_at: string;
   updated_at: string;
+  scope?: 'personal' | 'project';
+  status?: 'new' | 'confirmed' | 'stale' | 'conflict';
+  confidence?: number;
+  source?: 'chat' | 'manual' | 'tool';
+  projectPath?: string;
+  supersedes?: string;
 }
 
 const dir = (projectPath: string) => getProjectFilePath(projectPath, 'memory');
@@ -16,6 +22,7 @@ export async function saveMemory(
   key: string,
   content: string,
   tags: string[] = [],
+  metadata: Partial<Omit<MemoryEntry, 'key' | 'content' | 'tags' | 'created_at' | 'updated_at'>> = {},
 ): Promise<MemoryEntry> {
   const { mkdir, writeTextFile, readTextFile, exists } = await import('@tauri-apps/plugin-fs');
   await migrateLegacyProjectData(projectPath);
@@ -25,12 +32,25 @@ export async function saveMemory(
   let entry: MemoryEntry;
   if (await exists(fp)) {
     const existing = JSON.parse(await readTextFile(fp));
-    entry = { ...existing, content, tags, updated_at: new Date().toISOString() };
+    entry = { ...existing, ...metadata, content, tags, updated_at: new Date().toISOString() };
   } else {
-    entry = { key, content, tags, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+    entry = { key, content, tags, scope: 'project', status: 'new', confidence: 0.5, source: 'manual', ...metadata, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
   }
   await writeTextFile(fp, JSON.stringify(entry));
   return entry;
+}
+
+export async function listMemories(projectPath: string): Promise<MemoryEntry[]> {
+  const { readDir, readTextFile } = await import('@tauri-apps/plugin-fs');
+  await migrateLegacyProjectData(projectPath);
+  const memoryDir = await dir(projectPath);
+  try {
+    const entries = await readDir(memoryDir);
+    return (await Promise.all(entries.filter((entry) => entry.name?.endsWith('.json')).map(async (entry) => JSON.parse(await readTextFile(`${memoryDir}/${entry.name}`)) as MemoryEntry)))
+      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+  } catch {
+    return [];
+  }
 }
 
 export async function loadMemory(projectPath: string, key: string): Promise<MemoryEntry | null> {
@@ -42,23 +62,10 @@ export async function loadMemory(projectPath: string, key: string): Promise<Memo
 }
 
 export async function searchMemory(projectPath: string, query: string): Promise<MemoryEntry[]> {
-  const { readDir, readTextFile } = await import('@tauri-apps/plugin-fs');
-  await migrateLegacyProjectData(projectPath);
-  const d = await dir(projectPath);
-  try {
-    const entries = await readDir(d);
-    const results: MemoryEntry[] = [];
-    for (const entry of entries) {
-      if (!entry.name?.endsWith('.json')) continue;
-      const mem: MemoryEntry = JSON.parse(await readTextFile(`${d}/${entry.name}`));
-      if (mem.key === query || mem.tags.some(t => t.includes(query))) {
-        results.push(mem);
-      }
-    }
-    return results;
-  } catch {
-    return [];
-  }
+  const normalized = query.trim().toLowerCase();
+  const memories = await listMemories(projectPath);
+  if (!normalized) return memories;
+  return memories.filter((memory) => [memory.key, memory.content, ...(memory.tags || [])].join(' ').toLowerCase().includes(normalized));
 }
 
 export async function deleteMemory(projectPath: string, key: string): Promise<boolean> {

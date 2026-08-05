@@ -21,7 +21,6 @@ import {
 } from "lucide-astro";
 import { topbarTranslations } from "../lib/i18n";
 
-const showDevelopmentControls = import.meta.env.DEV;
 const t = topbarTranslations.es;
 ---
 
@@ -73,7 +72,7 @@ const t = topbarTranslations.es;
       </div>
 
       <div class="relative h-full flex items-center group/menu">
-        <button class="h-[28px] px-[9px] text-xs border-0 rounded-md bg-[#2F2F2F] text-[#eeeeee]" type="button" data-i18n="developer">{t.developer}</button>
+        <button class="h-[28px] px-[9px] text-xs border-0 rounded-md bg-transparent text-[#eeeeee] hover:bg-[var(--color-surface-7)]" type="button" data-i18n="developer">{t.developer}</button>
         <div class="absolute top-[34px] left-0 min-w-[240px] flex flex-col gap-[3px] p-2 border border-[var(--color-surface-10)] rounded-lg bg-[rgba(18,18,18,0.96)] shadow-[0_18px_54px_rgba(0,0,0,0.38)] opacity-0 pointer-events-none -translate-y-1 transition-all duration-120 ease-out group-hover/menu:opacity-100 group-hover/menu:pointer-events-auto group-hover/menu:translate-y-0 z-20">
           <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="dev-inspect" data-i18n="inspectWorkspace">{t.inspectWorkspace}</button>
           <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="dev-memory" data-i18n="testMemory">{t.testMemory}</button>
@@ -84,9 +83,14 @@ const t = topbarTranslations.es;
           <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="dev-recovery" data-i18n="recoverError">{t.recoverError}</button>
         </div>
       </div>
-      {showDevelopmentControls && <div class="flex items-center gap-[2px] ml-1 h-full" aria-label="Development tools">
-        <button class="h-[28px] px-[9px] text-xs border-0 rounded-md bg-transparent text-[#777777]" type="button" aria-label={t.assistant} data-i18n-aria="assistant" data-i18n="assistant">{t.assistant}</button>
-      </div>}
+      <div class="relative h-full flex items-center group/menu ml-1">
+        <button class="h-[28px] px-[9px] text-xs border-0 rounded-md bg-transparent text-[#eeeeee] hover:bg-[var(--color-surface-7)]" type="button" aria-label={t.assistant} data-i18n-aria="assistant" data-i18n="assistant">{t.assistant}</button>
+        <div class="absolute top-[34px] left-0 min-w-[240px] flex flex-col gap-[3px] p-2 border border-[var(--color-surface-10)] rounded-lg bg-[rgba(18,18,18,0.96)] shadow-[0_18px_54px_rgba(0,0,0,0.38)] opacity-0 pointer-events-none -translate-y-1 transition-all duration-120 ease-out group-hover/menu:opacity-100 group-hover/menu:pointer-events-auto group-hover/menu:translate-y-0 z-20">
+          <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="dev-memory" data-i18n="testMemory">{t.testMemory}</button>
+          <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="dev-browser" data-i18n="testBrowser">{t.testBrowser}</button>
+          <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="dev-diagnostics" data-i18n="diagnostics">{t.diagnostics}</button>
+        </div>
+      </div>
     </nav>
   </div>
   
