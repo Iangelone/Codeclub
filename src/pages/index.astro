@@ -55,7 +55,6 @@ import ChatPanel from "../components/ChatPanel.astro";
         const menuActions = {
           'new-chat': 'codeclub:request-new-chat',
           'open-projects': 'codeclub:open-projects',
-          'open-businesses': 'codeclub:open-businesses',
           'open-extensions': 'codeclub:open-extensions',
         };
         Object.entries(menuActions).forEach(([action, eventName]) => {
@@ -64,9 +63,57 @@ import ChatPanel from "../components/ChatPanel.astro";
             window.dispatchEvent(new CustomEvent(eventName));
           }));
         });
+
+        const navigationEvents = {
+          'codeclub:open-empty-chat': 'chat',
+          'codeclub:open-chat': 'chat',
+          'codeclub:open-projects': 'projects',
+          'codeclub:open-extensions': 'extensions',
+          'codeclub:open-settings': 'settings',
+        };
+        const navigationHistory = ['chat'];
+        let navigationIndex = 0;
+        const backButton = document.querySelector('#navigate-back');
+        const forwardButton = document.querySelector('#navigate-forward');
+        const updateNavigationButtons = () => {
+          const canGoBack = navigationIndex > 0;
+          const canGoForward = navigationIndex < navigationHistory.length - 1;
+          backButton?.toggleAttribute('disabled', !canGoBack);
+          forwardButton?.toggleAttribute('disabled', !canGoForward);
+          backButton?.classList.toggle('opacity-35', !canGoBack);
+          forwardButton?.classList.toggle('opacity-35', !canGoForward);
+        };
+        const openNavigationRoute = (route, historyNavigation = false) => {
+          const eventName = Object.entries(navigationEvents).find(([, value]) => value === route)?.[0];
+          if (eventName) window.dispatchEvent(new CustomEvent(eventName, { detail: { historyNavigation } }));
+        };
+        Object.entries(navigationEvents).forEach(([eventName, route]) => {
+          window.addEventListener(eventName, (event) => {
+            if ((event as CustomEvent).detail?.historyNavigation) return;
+            if (navigationHistory[navigationIndex] === route) return;
+            navigationHistory.splice(navigationIndex + 1);
+            navigationHistory.push(route);
+            navigationIndex = navigationHistory.length - 1;
+            updateNavigationButtons();
+          });
+        });
+        backButton?.addEventListener('click', () => {
+          if (navigationIndex === 0) return;
+          navigationIndex -= 1;
+          updateNavigationButtons();
+          openNavigationRoute(navigationHistory[navigationIndex], true);
+        });
+        forwardButton?.addEventListener('click', () => {
+          if (navigationIndex >= navigationHistory.length - 1) return;
+          navigationIndex += 1;
+          updateNavigationButtons();
+          openNavigationRoute(navigationHistory[navigationIndex], true);
+        });
+        updateNavigationButtons();
+
         const recentChatsContainer = document.querySelector('[data-recent-chats]');
         const recentChatList = document.querySelector('[data-recent-chat-list]');
-        const recentChatGradient = 'linear-gradient(112deg, #1687FF 0%, #67BAFF 38%, #F8EAD8 68%, #FFF3DF 100%)';
+        const recentChatGradient = 'linear-gradient(145deg, #8BC7FF 0%, #3D9BFF 44%, #1687FF 100%)';
         let recentChats = [];
         const renderRecentChats = (chats = []) => {
           if (!recentChatsContainer || !recentChatList) return;
@@ -83,7 +130,7 @@ import ChatPanel from "../components/ChatPanel.astro";
             const avatar = document.createElement('span');
             avatar.className = 'grid h-5 w-5 shrink-0 place-items-center rounded-[6px] text-[8px] font-medium uppercase';
             avatar.style.background = recentChatGradient;
-            avatar.style.color = '#111111';
+            avatar.style.color = '#ffffff';
             avatar.textContent = (String(chat.name || 'Chat').trim().charAt(0) || 'C').toUpperCase();
             const label = document.createElement('span');
             label.className = 'min-w-0 truncate';
@@ -121,7 +168,6 @@ import ChatPanel from "../components/ChatPanel.astro";
         const setProjectsView = (enabled) => document.body.classList.toggle('projects-view', enabled);
         window.addEventListener('codeclub:open-projects', () => setProjectsView(true));
         window.addEventListener('codeclub:open-chat', () => setProjectsView(false));
-        window.addEventListener('codeclub:open-businesses', () => setProjectsView(false));
         window.addEventListener('codeclub:request-new-chat', () => setProjectsView(false));
 
         document.querySelectorAll('[data-action="toggle-sidebar"]').forEach((sidebarButton) => sidebarButton.addEventListener('click', (event) => {

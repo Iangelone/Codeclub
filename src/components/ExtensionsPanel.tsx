@@ -3,6 +3,7 @@ import { Box, FileText, FileType2, LayoutTemplate, Network, PlugZap, Plus, Prese
 import { invoke } from '@tauri-apps/api/core';
 import { getSetting, setSetting } from '../lib/persistence';
 import { protectedExtensionIds, type CodeclubExtension } from '../lib/extensions';
+import { LANGUAGE_STORAGE_KEY, type AppLanguage } from '../lib/i18n';
 
 const extensions = [
   { id: 'documents', name: 'Documents', description: 'Create and edit document artifacts', icon: FileText, color: '#1687FF' },
@@ -13,6 +14,8 @@ const extensions = [
 ];
 
 export default function ExtensionsPanel({ selectedProject }: { selectedProject?: { projectPath: string } | null }) {
+  const [language, setLanguage] = useState<AppLanguage>('es');
+  const text = language === 'en' ? { title: 'Extensions', description: 'Manage extensions, skills, and MCP', categories: 'Extension categories', extensions: 'Extensions', skills: 'Skills', search: 'Search extensions', list: 'Extension list', disable: 'Disable', enable: 'Enable', customDelete: 'Delete custom extension', empty: 'No extensions found.' } : { title: 'Extensiones', description: 'Administrá extensiones, skills y MCP', categories: 'Categorías de extensiones', extensions: 'Extensiones', skills: 'Habilidades', search: 'Buscar extensiones', list: 'Lista de extensiones', disable: 'Desactivar', enable: 'Activar', customDelete: 'Eliminar extensión personalizada', empty: 'No se encontraron extensiones.' };
   const [tab, setTab] = useState<'extensions' | 'skills' | 'mcp'>('extensions');
   const [query, setQuery] = useState('');
   const [enabled, setEnabled] = useState<Record<string, boolean>>(() => Object.fromEntries(extensions.map(({ name }) => [name, true])));
@@ -23,6 +26,16 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
   const [mcpError, setMcpError] = useState('');
   const allExtensions = useMemo(() => [...extensions.map((extension) => ({ ...extension, protected: true })), ...customExtensions], [customExtensions]);
   const filteredExtensions = useMemo(() => allExtensions.filter(({ name, description }) => `${name} ${description}`.toLowerCase().includes(query.toLowerCase())), [allExtensions, query]);
+
+  useEffect(() => {
+    if (window.localStorage.getItem(LANGUAGE_STORAGE_KEY) === 'en') setLanguage('en');
+    const handleLanguageChange = (event: Event) => {
+      const nextLanguage = (event as CustomEvent<{ language?: AppLanguage }>).detail?.language;
+      if (nextLanguage === 'es' || nextLanguage === 'en') setLanguage(nextLanguage);
+    };
+    window.addEventListener('codeclub:language-change', handleLanguageChange);
+    return () => window.removeEventListener('codeclub:language-change', handleLanguageChange);
+  }, []);
 
   useEffect(() => {
     void Promise.all(allExtensions.map(async (extension) => [extension.name, await getSetting(`codeclub_extension_enabled_${extension.id}`, 'true') !== 'false'] as const))
@@ -52,21 +65,21 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
     <main className="extensions-panel-scroll h-full min-h-0 overflow-x-hidden overflow-y-auto bg-[#1A1A1A]">
       <div className="mx-auto min-w-0 w-full max-w-[1040px] px-6 py-7 lg:px-8">
         <header>
-          <h1 className="m-0 text-[28px] font-normal tracking-[-0.04em] text-[#eeeeee]">Complementos</h1>
-          <p className="mt-1.5 text-[14px] text-[#999999]">Administrá complementos, skills y MCP</p>
+          <h1 className="m-0 text-[28px] font-normal tracking-[-0.04em] text-[#eeeeee]">{text.title}</h1>
+          <p className="mt-1.5 text-[14px] text-[#999999]">{text.description}</p>
         </header>
 
         <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
           <nav className="flex items-center gap-0.5 text-[13px] text-[#777777]" aria-label="Categorías de complementos">
-            {([['extensions', 'Complementos', allExtensions.length], ['skills', 'Habilidades', skills.length], ['mcp', 'MCP', mcpServers.length]] as const).map(([id, label, count]) => <button key={id} type="button" onClick={() => setTab(id)} className={`rounded-[8px] border-0 px-3 py-1.5 ${tab === id ? 'bg-[#2b2b2b] text-[#eeeeee]' : 'bg-transparent text-[#777777] hover:bg-[#202020]'}`}>{label} <span className="text-[#999999]">{count}</span></button>)}
+            {([['extensions', text.extensions, allExtensions.length], ['skills', text.skills, skills.length], ['mcp', 'MCP', mcpServers.length]] as const).map(([id, label, count]) => <button key={id} type="button" onClick={() => setTab(id)} className={`rounded-[8px] border-0 px-3 py-1.5 ${tab === id ? 'bg-[#2b2b2b] text-[#eeeeee]' : 'bg-transparent text-[#777777] hover:bg-[#202020]'}`}>{label} <span className="text-[#999999]">{count}</span></button>)}
           </nav>
           <label className="flex h-9 w-full max-w-[280px] items-center gap-2 rounded-[9px] border border-[#3a3a3a] bg-[#202020] px-3 text-[#999999] focus-within:border-[#555555]">
             <Search size={16} strokeWidth={1.7} />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar complementos" className="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[#eeeeee] outline-none placeholder:text-[#777777]" />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={text.search} className="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[#eeeeee] outline-none placeholder:text-[#777777]" />
           </label>
         </div>
 
-        {tab === 'extensions' && <section className="mt-9 grid min-w-0 gap-1.5" aria-label="Lista de complementos">
+        {tab === 'extensions' && <section className="mt-9 grid min-w-0 gap-1.5" aria-label={text.list}>
           {filteredExtensions.map(({ id, name, description, icon: Icon = Box, color = '#1687FF' }) => {
             const isEnabled = enabled[name];
             const isProtected = protectedExtensionIds.has(id);
@@ -86,7 +99,7 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
               </div>
             );
           })}
-          {filteredExtensions.length === 0 && <div className="py-12 text-center text-sm text-[#777777]">No se encontraron complementos.</div>}
+          {filteredExtensions.length === 0 && <div className="py-12 text-center text-sm text-[#777777]">{text.empty}</div>}
         </section>}
         {tab === 'skills' && <section className="mt-9 grid min-w-0 gap-1.5" aria-label="Habilidades disponibles">
           {skills.filter((skill) => `${skill.name} ${skill.description}`.toLowerCase().includes(query.toLowerCase())).map((skill) => <div key={`${skill.source}-${skill.id}`} className="flex min-h-[60px] min-w-0 items-center gap-3 overflow-hidden rounded-lg px-3 transition-colors hover:bg-[#202020]"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] border border-[#2d2d2d] bg-[#151515]"><Box size={19} strokeWidth={1.7} className="text-[#8bc7ff]" /></div><div className="min-w-0 w-0 flex-1"><h2 className="m-0 truncate text-[14px] font-semibold text-[#eeeeee]">{skill.name}</h2><p className="mt-0.5 truncate text-[13px] text-[#888888]">{skill.description}</p></div><span className="shrink-0 text-[11px] text-[#777777]">Codeclub</span></div>)}

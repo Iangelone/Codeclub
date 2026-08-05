@@ -160,9 +160,7 @@ button[title="Proveedor, modelo y proyecto"] {
 }
 
 .credential-key-icon {
-  color: var(--codeclub-accent);
-  animation: codeclub-spinner-pulse 1.8s ease-in-out infinite;
-  transition: color 700ms ease;
+  color: #d6d6d6;
 }
 
 .animate-spin {
@@ -264,7 +262,7 @@ html.is-windows .sidebar-shell.acrylic-panel {
 /* La topbar comparte las mismas superficies interactivas que la sidebar. */
 html.is-windows header.acrylic-panel button:not(.close):hover,
 html.is-windows header.acrylic-panel a:hover {
-  background: var(--color-surface-3) !important;
+  background: rgba(255, 255, 255, 0.06) !important;
 }
 
 html.is-windows header.acrylic-panel button.is-active {
@@ -276,7 +274,7 @@ header.acrylic-panel button:not(.close):not(.is-active):hover,
 header.acrylic-panel a:hover,
 html.is-windows header.acrylic-panel button:not(.close):not(.is-active):hover,
 html.is-windows header.acrylic-panel a:hover {
-  background: #252525 !important;
+  background: rgba(255, 255, 255, 0.06) !important;
 }
 
 html.is-windows .workspace-shell {
@@ -345,6 +343,58 @@ html.is-windows #app-background {
 }
 
 .file-preview-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #505050;
+  background-clip: padding-box;
+}
+
+.command-menu-item {
+  background: transparent !important;
+  color: rgba(238, 238, 238, 0.78) !important;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.command-menu-item.is-active {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #eeeeee !important;
+}
+
+.command-menu-item:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #eeeeee !important;
+}
+
+.sidebar-main-nav > *:not([class*="bg-[#30333b]"]):hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+.right-sidebar-shell .terminal-tabs {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: #3a3a3a transparent;
+}
+
+.right-sidebar-shell .terminal-tabs::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.right-sidebar-shell .terminal-tabs::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.right-sidebar-shell .terminal-tabs::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: #3a3a3a;
+  background-clip: padding-box;
+}
+
+.right-sidebar-shell .terminal-tabs::-webkit-scrollbar-thumb:hover {
   background: #505050;
   background-clip: padding-box;
 }

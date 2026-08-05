@@ -25,7 +25,6 @@ import {
   MessageSquare,
   MessageSquarePlus,
   Blocks,
-  Target,
   FileText,
   FileCode2,
   MousePointer2,
@@ -33,6 +32,7 @@ import {
   Eraser
 } from "lucide-react";
 import { activeChatStore, chatsStore, type GlobalChat } from "../lib/store";
+import { LANGUAGE_STORAGE_KEY, sidebarTranslations, type AppLanguage } from "../lib/i18n";
 
 const CHAT_AVATAR_GRADIENT = 'linear-gradient(145deg, #8BC7FF 0%, #3D9BFF 44%, #1687FF 100%)';
 const MiniCreature = ({ active = false, avatarRef }: { active?: boolean; avatarRef?: React.RefObject<HTMLSpanElement | null> }) => <span ref={avatarRef} aria-hidden="true" className={`relative grid h-5 w-5 shrink-0 rounded-[6px] transition ${active ? 'shadow-[0_0_7px_rgba(45,145,255,0.42)]' : ''}`} style={{ background: active ? CHAT_AVATAR_GRADIENT : '#343434' }}><span className="absolute inset-0 flex items-center justify-center gap-1"><span className={`h-[6px] w-[4px] flex-none translate-x-[var(--chat-eye-x)] translate-y-[var(--chat-eye-y)] rounded-full transition-transform ${active ? 'bg-white' : 'bg-[#666666]'}`} /><span className={`h-[6px] w-[4px] flex-none translate-x-[var(--chat-eye-x)] translate-y-[var(--chat-eye-y)] rounded-full transition-transform ${active ? 'bg-white' : 'bg-[#666666]'}`} /></span></span>;
@@ -48,6 +48,8 @@ type ProjectData = {
 };
 
 export default function Sidebar() {
+  const [language, setLanguage] = useState<AppLanguage>("es");
+  const text = sidebarTranslations[language];
   const [projects, setProjects] = useState<ProjectData[]>([]);
   const [globalChats, setGlobalChats] = useState<GlobalChat[]>([]);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
@@ -63,7 +65,17 @@ export default function Sidebar() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [activeArtifactId, setActiveArtifactId] = useState<string | null>(null);
   const [agentActivities, setAgentActivities] = useState<Record<string, { state: string; tool?: string; agent?: string; ready?: boolean }>>({});
-  const [activeSection, setActiveSection] = useState<"chat" | "projects" | "businesses" | "extensions" | "settings">("projects");
+  const [activeSection, setActiveSection] = useState<"chat" | "projects" | "extensions" | "settings">("projects");
+
+  useEffect(() => {
+    if (window.localStorage.getItem(LANGUAGE_STORAGE_KEY) === "en") setLanguage("en");
+    const handleLanguageChange = (event: Event) => {
+      const nextLanguage = (event as CustomEvent<{ language?: AppLanguage }>).detail?.language;
+      if (nextLanguage === "es" || nextLanguage === "en") setLanguage(nextLanguage);
+    };
+    window.addEventListener("codeclub:language-change", handleLanguageChange);
+    return () => window.removeEventListener("codeclub:language-change", handleLanguageChange);
+  }, []);
 
   useEffect(() => {
     const handleAgentActivity = (event: Event) => {
@@ -179,7 +191,6 @@ export default function Sidebar() {
       if (chat?.id) openGlobalChat(chat);
     };
     const handleOpenProjects = () => setActiveSection("projects");
-    const handleOpenBusinesses = () => setActiveSection("businesses");
     const handleOpenExtensions = () => setActiveSection("extensions");
     const handleOpenSettings = () => setActiveSection("settings");
     const handleProjectContextMenu = (event: Event) => {
@@ -232,7 +243,6 @@ export default function Sidebar() {
     window.addEventListener("codeclub:chat-created", handleChatCreated);
     window.addEventListener("codeclub:rename-chat", handleChatRename);
     window.addEventListener("codeclub:open-projects", handleOpenProjects);
-    window.addEventListener("codeclub:open-businesses", handleOpenBusinesses);
     window.addEventListener("codeclub:open-extensions", handleOpenExtensions);
     window.addEventListener("codeclub:open-settings", handleOpenSettings);
     window.addEventListener("codeclub:project-context-menu", handleProjectContextMenu);
@@ -249,7 +259,6 @@ export default function Sidebar() {
       window.removeEventListener("codeclub:chat-created", handleChatCreated);
       window.removeEventListener("codeclub:rename-chat", handleChatRename);
       window.removeEventListener("codeclub:open-projects", handleOpenProjects);
-      window.removeEventListener("codeclub:open-businesses", handleOpenBusinesses);
       window.removeEventListener("codeclub:open-extensions", handleOpenExtensions);
       window.removeEventListener("codeclub:open-settings", handleOpenSettings);
       window.removeEventListener("codeclub:project-context-menu", handleProjectContextMenu);
@@ -793,18 +802,15 @@ export default function Sidebar() {
         <div className="h-[28px] shrink-0 mb-1 flex items-center gap-[6px] px-[10px] text-[#b8bbc3] text-sm">
           Codeclub
         </div>
-        <div className="shrink-0 flex flex-col gap-1 pb-1">
+        <div className="sidebar-main-nav shrink-0 flex flex-col gap-1 pb-1">
           <div data-sidebar-item onClick={() => void openNewChat()} className={`codeclub-motion-control w-full min-h-[32px] flex cursor-pointer items-center gap-[8px] rounded-[7px] px-[8px] text-[12px] text-left transition-colors hover:translate-x-px ${activeSection === "chat" && !activeArtifactId ? "bg-[#30333b] text-[#f3f4f6] shadow-[inset_0_1px_rgba(255,255,255,0.06)]" : "text-[#b8bbc3] hover:bg-[#252525] hover:text-[#f3f4f6]"}`}>
-            <span className="flex h-4 w-4 shrink-0 items-center justify-center"><MessageSquarePlus size={16} strokeWidth={1.8} /></span> Nuevo chat
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center"><MessageSquarePlus size={16} strokeWidth={1.8} /></span> {text.newChat}
           </div>
           <div data-sidebar-item role="button" tabIndex={0} onClick={openProjectsPanel} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openProjectsPanel(); } }} className={`codeclub-motion-control w-full min-h-[32px] flex cursor-pointer items-center gap-[8px] rounded-[7px] px-[8px] text-[12px] text-left transition-colors hover:translate-x-px focus-visible:outline-none ${activeSection === "projects" ? "bg-[#30333b] text-[#f3f4f6] shadow-[inset_0_1px_rgba(255,255,255,0.06)]" : "text-[#b8bbc3] hover:bg-[#252525] hover:text-[#f3f4f6]"}`}>
-            <span className="flex h-4 w-4 shrink-0 items-center justify-center"><Folder size={16} strokeWidth={1.8} /></span> Proyectos
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center"><Folder size={16} strokeWidth={1.8} /></span> {text.projects}
           </div>
-          <button type="button" className={`codeclub-motion-control w-full min-h-[32px] flex items-center gap-[8px] rounded-[7px] px-[8px] text-[12px] text-left transition-colors hover:translate-x-px ${activeSection === "businesses" ? "bg-[#30333b] text-[#f3f4f6] shadow-[inset_0_1px_rgba(255,255,255,0.06)]" : "text-[#b8bbc3] hover:bg-[#252525] hover:text-[#f3f4f6]"} border-0 appearance-none`} onClick={() => { setActiveSection("businesses"); window.dispatchEvent(new CustomEvent("codeclub:open-businesses")); window.setTimeout(() => setActiveSection("businesses"), 80); }}>
-            <span className="flex h-4 w-4 shrink-0 items-center justify-center"><Target size={16} strokeWidth={1.8} /></span> Agentes
-          </button>
           <button type="button" className={`codeclub-motion-control w-full min-h-[32px] flex items-center gap-[8px] rounded-[7px] px-[8px] text-[12px] text-left transition-colors hover:translate-x-px ${activeSection === "extensions" ? "bg-[#30333b] text-[#f3f4f6] shadow-[inset_0_1px_rgba(255,255,255,0.06)]" : "text-[#b8bbc3] hover:bg-[#252525] hover:text-[#f3f4f6]"} border-0 appearance-none`} onClick={() => window.dispatchEvent(new CustomEvent("codeclub:open-extensions"))}>
-            <span className="flex h-4 w-4 shrink-0 items-center justify-center"><Blocks size={16} strokeWidth={1.8} /></span> Complementos
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center"><Blocks size={16} strokeWidth={1.8} /></span> {text.extensions}
           </button>
         </div>
         
@@ -816,7 +822,7 @@ export default function Sidebar() {
                 className="appearance-none min-w-0 w-full h-[22px] box-border border-0 bg-transparent text-[#d8d8d8] caret-[#d8d8d8] text-xs outline-none p-0 shadow-none placeholder:text-[#8f8f8f] focus:bg-transparent focus:shadow-none"
                 type="text"
                 autoFocus
-                placeholder="Nombre del proyecto"
+                placeholder={text.projectName}
                 value={newProjectName}
                 onChange={(e) => setNewProjectName(e.target.value)}
                 onKeyDown={(e) => {
@@ -872,8 +878,8 @@ export default function Sidebar() {
                     <span className="min-w-0 flex-1 truncate">{proj.name}</span>
                   )}
                   <span className="flex items-center gap-[2px] opacity-0 transition-opacity duration-120 group-hover/prow:opacity-100 group-focus-within/prow:opacity-100">
-                    <button className="w-[24px] h-[24px] flex items-center justify-center rounded-[4px] text-[#9f9f9f] transition-all duration-120 bg-transparent border-0 p-0 hover:bg-white/10 hover:text-[#eeeeee] opacity-100 appearance-none" title="Nuevo archivo" aria-label="Nuevo archivo" onClick={(e) => { e.stopPropagation(); startStructureCreation(proj.path, "", "file"); }}><FileCode2 size={13} /></button>
-                    <button className="w-[24px] h-[24px] flex items-center justify-center rounded-[4px] text-[#9f9f9f] transition-all duration-120 bg-transparent border-0 p-0 hover:bg-white/10 hover:text-[#eeeeee] opacity-100 appearance-none" title="Nueva carpeta" aria-label="Nueva carpeta" onClick={(e) => { e.stopPropagation(); startStructureCreation(proj.path, "", "folder"); }}><FolderPlus size={13} /></button>
+                    <button className="w-[24px] h-[24px] flex items-center justify-center rounded-[4px] text-[#9f9f9f] transition-all duration-120 bg-transparent border-0 p-0 hover:bg-white/10 hover:text-[#eeeeee] opacity-100 appearance-none" title={text.newFile} aria-label={text.newFile} onClick={(e) => { e.stopPropagation(); startStructureCreation(proj.path, "", "file"); }}><FileCode2 size={13} /></button>
+                    <button className="w-[24px] h-[24px] flex items-center justify-center rounded-[4px] text-[#9f9f9f] transition-all duration-120 bg-transparent border-0 p-0 hover:bg-white/10 hover:text-[#eeeeee] opacity-100 appearance-none" title={text.newFolder} aria-label={text.newFolder} onClick={(e) => { e.stopPropagation(); startStructureCreation(proj.path, "", "folder"); }}><FolderPlus size={13} /></button>
                     <button className="w-[24px] h-[24px] flex items-center justify-center rounded-[4px] text-[#9f9f9f] transition-all duration-120 bg-transparent border-0 p-0 hover:bg-white/10 hover:text-[#eeeeee] opacity-100 appearance-none" onClick={(e) => { e.stopPropagation(); startArtifactCreation(proj.path, proj.name); }}><MessageSquarePlus size={14} /></button>
                   </span>
                 </div>
@@ -916,7 +922,7 @@ export default function Sidebar() {
                     {creatingStructure?.projectPath === proj.path && <div className="ml-[24px] flex min-h-[34px] items-center gap-2 rounded-md px-[10px] text-xs text-[#d8d8d8]/70">
                       {creatingStructure.kind === "file" ? <FileCode2 size={14} /> : <Folder size={14} />}
                       <input autoFocus value={newStructureName} onChange={(e) => { setNewStructureName(e.target.value); setStructureError(""); }} placeholder={creatingStructure.kind === "file" ? "nombre.ext" : "Nombre de carpeta"} onBlur={finishStructureCreation} onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); void finishStructureCreation(); } if (e.key === "Escape") { setCreatingStructure(null); setNewStructureName(""); setStructureError(""); } }} onClick={(e) => e.stopPropagation()} className="min-w-0 flex-1 rounded-md border-0 bg-[var(--color-surface-9)] px-2 py-1 text-xs text-[#d8d8d8] outline-none placeholder:text-[#777]" />
-                      {structureError && <span className="text-[10px] text-[#f28b82]" title={structureError}>No se pudo crear</span>}
+                      {structureError && <span className="text-[10px] text-[#f28b82]" title={structureError}>{text.couldNotCreate}</span>}
                     </div>}
 
                     {expandedStructures.has(proj.path) && (structureFiles[proj.path] || []).filter((entry) => isStructureEntryVisible(proj.path, entry.path)).map((entry) => (
@@ -938,13 +944,13 @@ export default function Sidebar() {
           }))}
 
           <div className="mt-2">
-            <div className="h-[24px] shrink-0 mb-1 flex items-center gap-[6px] px-[10px] text-[#9f9f9f] text-xs">Chats</div>
+            <div className="h-[24px] shrink-0 mb-1 flex items-center gap-[6px] px-[10px] text-[#9f9f9f] text-xs">{text.chats}</div>
             <div className="flex flex-col gap-1">
               {[...globalChats].reverse().map((chat) => {
                 const isActiveChat = activeSection === "chat" && activeArtifactId === chat.id;
                 return <button key={`${chat.projectPath}:${chat.id}`} type="button" className={`codeclub-motion-control w-full min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left text-[#777777] hover:bg-[var(--color-surface-3)] hover:translate-x-px bg-transparent border-0 appearance-none ${isActiveChat ? "bg-white/5 text-[#eeeeee]" : ""}`} onClick={() => openGlobalChat(chat)} onContextMenu={(event) => { event.preventDefault(); openArtifactMenu(event, "chat", { id: chat.id, name: chat.name }, { name: chat.projectName, path: chat.projectPath, chats: [] }); }} title={chat.projectName}>
                   <MiniCreature active={isActiveChat} avatarRef={isActiveChat ? activeChatAvatarRef : undefined} />
-                  {renamingItemId === `chat-${chat.id}` ? <input autoFocus value={renameInput} onChange={(event) => setRenameInput(event.target.value)} onBlur={() => void handleRenameCommit("chat", chat.id, chat.projectPath, chat.name)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void handleRenameCommit("chat", chat.id, chat.projectPath, chat.name); } if (event.key === "Escape") { setRenamingItemId(null); setRenameInput(""); } }} onClick={(event) => event.stopPropagation()} className="min-w-0 flex-1 h-[22px] rounded-md border-0 bg-[#1c1c1c] px-1 text-xs text-[#eeeeee] outline-none" /> : <span className="min-w-0 flex-1 truncate">{activeSection === "chat" && activeArtifactId === chat.id ? chat.name : agentActivities[chat.id]?.ready ? 'Listo para revisión' : agentActivities[chat.id]?.state && agentActivities[chat.id].state !== 'idle' ? getAgentActivityLabel(agentActivities[chat.id]) : chat.name}</span>}
+                  {renamingItemId === `chat-${chat.id}` ? <input autoFocus value={renameInput} onChange={(event) => setRenameInput(event.target.value)} onBlur={() => void handleRenameCommit("chat", chat.id, chat.projectPath, chat.name)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void handleRenameCommit("chat", chat.id, chat.projectPath, chat.name); } if (event.key === "Escape") { setRenamingItemId(null); setRenameInput(""); } }} onClick={(event) => event.stopPropagation()} className="min-w-0 flex-1 h-[22px] rounded-md border-0 bg-[#1c1c1c] px-1 text-xs text-[#eeeeee] outline-none" /> : <span className="min-w-0 flex-1 truncate">{activeSection === "chat" && activeArtifactId === chat.id ? chat.name : agentActivities[chat.id]?.ready ? text.ready : agentActivities[chat.id]?.state && agentActivities[chat.id].state !== 'idle' ? getAgentActivityLabel(agentActivities[chat.id]) : chat.name}</span>}
                 </button>
               })}
             </div>
@@ -960,24 +966,24 @@ export default function Sidebar() {
           onClick={() => setProjectMenu(null)}
         >
           <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => { selectProject(projectMenu.path, projectMenu.name); if (projectMenu.source !== "panel") toggleProject(projectMenu.path); }}>
-            {expandedProjects.has(projectMenu.path) && projectMenu.source !== "panel" ? <Folder size={13} /> : <FolderOpen size={13} />}<span>{expandedProjects.has(projectMenu.path) && projectMenu.source !== "panel" ? "Cerrar" : "Abrir"}</span>
+            {expandedProjects.has(projectMenu.path) && projectMenu.source !== "panel" ? <Folder size={13} /> : <FolderOpen size={13} />}<span>{expandedProjects.has(projectMenu.path) && projectMenu.source !== "panel" ? text.close : text.open}</span>
           </button>
           <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => { window.dispatchEvent(new CustomEvent("codeclub:request-rename-project", { detail: { path: projectMenu.path, name: projectMenu.name } })); setProjectMenu(null); }}>
-            <FileText size={13} /><span>Renombrar</span>
+            <FileText size={13} /><span>{text.rename}</span>
           </button>
           <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => handleDelete("project", projectMenu.path, projectMenu.path)}>
-            <Trash2 size={13} /><span>Eliminar</span>
+            <Trash2 size={13} /><span>{text.delete}</span>
           </button>
           {projectMenu.source !== "panel" && <>
           <div className="my-1 border-t border-[var(--color-surface-8)]" />
           <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => handleClearChats(projectMenu.path)}>
-            <Eraser size={13} /><span>Borrar todo</span>
+            <Eraser size={13} /><span>{text.clearChats}</span>
           </button>
           <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => startStructureCreation(projectMenu.path, "", "file")}>
-            <FileCode2 size={13} /><span>Nuevo archivo</span>
+            <FileCode2 size={13} /><span>{text.newFile}</span>
           </button>
           <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => startStructureCreation(projectMenu.path, "", "folder")}>
-            <FolderPlus size={13} /><span>Nueva carpeta</span>
+            <FolderPlus size={13} /><span>{text.newFolder}</span>
           </button>
           </>}
         </div>,
@@ -986,14 +992,14 @@ export default function Sidebar() {
 
       {structureMenu && typeof document !== "undefined" && createPortal(
         <div ref={structureMenuRef} className="fixed z-[100] min-w-[180px] flex flex-col gap-[3px] p-2 border border-[var(--color-surface-10)] rounded-lg bg-[rgba(18,18,18,0.96)] shadow-[0_18px_54px_rgba(0,0,0,0.38)]" style={{ top: structureMenu.top, left: structureMenu.left }}>
-          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={openStructureEntry}>{structureMenu.isDirectory ? (openStructureDirectories.has(`${structureMenu.projectPath}:${structureMenu.path}`) ? <Folder size={13} /> : <FolderOpen size={13} />) : <FileCode2 size={13} />}<span>{structureMenu.isDirectory ? (openStructureDirectories.has(`${structureMenu.projectPath}:${structureMenu.path}`) ? "Cerrar" : "Abrir") : "Abrir"}</span></button>
+          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={openStructureEntry}>{structureMenu.isDirectory ? (openStructureDirectories.has(`${structureMenu.projectPath}:${structureMenu.path}`) ? <Folder size={13} /> : <FolderOpen size={13} />) : <FileCode2 size={13} />}<span>{structureMenu.isDirectory && openStructureDirectories.has(`${structureMenu.projectPath}:${structureMenu.path}`) ? text.close : text.open}</span></button>
           {structureMenu.isDirectory && <>
-            <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => startStructureCreation(structureMenu.projectPath, structureMenu.path, "file")}><FileCode2 size={13} /><span>Nuevo archivo</span></button>
-            <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => startStructureCreation(structureMenu.projectPath, structureMenu.path, "folder")}><FolderPlus size={13} /><span>Nueva carpeta</span></button>
+            <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => startStructureCreation(structureMenu.projectPath, structureMenu.path, "file")}><FileCode2 size={13} /><span>{text.newFile}</span></button>
+            <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={() => startStructureCreation(structureMenu.projectPath, structureMenu.path, "folder")}><FolderPlus size={13} /><span>{text.newFolder}</span></button>
             <div className="my-1 border-t border-[var(--color-surface-8)]" />
           </>}
-          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={renameStructureEntry}><FileText size={13} /><span>Renombrar</span></button>
-          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={deleteStructureEntry}><Trash2 size={13} /><span>Eliminar</span></button>
+          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={renameStructureEntry}><FileText size={13} /><span>{text.rename}</span></button>
+          <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={deleteStructureEntry}><Trash2 size={13} /><span>{text.delete}</span></button>
         </div>,
         document.body
       )}
@@ -1024,7 +1030,7 @@ export default function Sidebar() {
 
       <section className="shrink-0 flex flex-col gap-1 p-[10px] bg-transparent relative z-[2]">
         <button className={`codeclub-motion-control min-h-[34px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer border-0 appearance-none ${activeSection === "settings" ? "bg-[#30333b] text-[#f3f4f6] shadow-[inset_0_1px_rgba(255,255,255,0.06)]" : "bg-transparent text-[#d8d8d8] hover:bg-[#252525]"}`} type="button" onClick={() => { setActiveSection("settings"); window.dispatchEvent(new CustomEvent("codeclub:open-settings")); }}>
-          <Settings size={15} /> Ajustes
+          <Settings size={15} /> {text.settings}
         </button>
       </section>
     </div>
@@ -1116,7 +1122,7 @@ function CreateArtifactMenu({ projPath, projName, onCreate }: any) {
       onMouseLeave={handleLeave}
     >
       <button className="min-h-[28px] flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer hover:bg-white/10 text-[#d8d8d8] hover:text-[#eeeeee] transition-colors bg-transparent border-0 appearance-none" onClick={(e) => { e.stopPropagation(); handleClick("chat"); }}>
-        <MessageSquarePlus size={13} /><span>Nuevo chat</span>
+        <MessageSquarePlus size={13} /><span>{sidebarTranslations.es.newChat}</span>
       </button>
     </div>,
     document.body
@@ -1126,7 +1132,7 @@ function CreateArtifactMenu({ projPath, projName, onCreate }: any) {
     <div className="mt-2 mb-1 border-t border-white/5 pt-2 ml-[12px] group-[.is-expanded]/card:block hidden" onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
       <button ref={buttonRef} className="min-h-[28px] w-full flex items-center gap-[9px] rounded-md px-[10px] text-xs text-left cursor-pointer text-[#d8d8d8]/50 hover:text-[#d8d8d8] hover:bg-white/2 transition-colors bg-transparent border-0 appearance-none">
         <MousePointer2 size={13} />
-        <span>Crear nuevo...</span>
+        <span>{sidebarTranslations.es.createNew}</span>
       </button>
       {menu}
     </div>

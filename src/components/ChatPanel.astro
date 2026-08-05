@@ -150,13 +150,30 @@ const catalog = [
     align-items: center;
     gap: 2px;
     overflow-x: auto;
-    scrollbar-width: none;
-    height: 34px;
+    scrollbar-width: thin;
+    scrollbar-color: #3a3a3a transparent;
+    height: 40px;
   }
 
   .terminal-tabs::-webkit-scrollbar {
-    width: 0;
-    height: 0;
+    width: 7px;
+    height: 7px;
+  }
+
+  .terminal-tabs::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .terminal-tabs::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: #3a3a3a;
+    background-clip: padding-box;
+  }
+
+  .terminal-tabs::-webkit-scrollbar-thumb:hover {
+    background: #505050;
+    background-clip: padding-box;
   }
 
   .terminal-tab {
@@ -301,7 +318,7 @@ const catalog = [
   .terminal-stage {
     min-width: 0;
     min-height: 0;
-    background: #101010;
+    background: #1A1A1A;
     border-bottom-left-radius: 12px;
     border-bottom-right-radius: 12px;
     overflow: hidden;
