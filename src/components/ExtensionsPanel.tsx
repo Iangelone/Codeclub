@@ -38,8 +38,9 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
   }, [selectedProject?.projectPath, allExtensions.length]);
 
   const saveMcpServers = (next: typeof mcpServers) => { setMcpServers(next); void setSetting('codeclub_mcp_servers', JSON.stringify(next)); };
+  /* MCP servers are managed by the agent tools. */
   const addMcpServer = () => {
-    const url = mcpUrl.trim();
+    const url = '';
     if (!/^https?:\/\/\S+$/i.test(url)) { setMcpError('Usá una URL HTTP(S) válida.'); return; }
     if (mcpServers.some((server) => server.url === url)) { setMcpError('Ese servidor ya está agregado.'); return; }
     saveMcpServers([...mcpServers, { id: crypto.randomUUID(), name: new URL(url).hostname, url, enabled: true }]);

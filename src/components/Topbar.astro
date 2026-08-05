@@ -93,13 +93,13 @@ const showDevelopmentControls = import.meta.env.DEV;
   <div class="min-w-0 h-full drag-area" data-tauri-drag-region></div>
   
   <nav class="flex items-center gap-[1px] px-1" aria-label="Workspace controls">
-    <button id="panel-single" class="w-[30px] h-[28px] grid place-items-center border-0 rounded-md bg-transparent text-[#d8d8d8]/52 transition-colors duration-120 hover:bg-[var(--color-surface-7)] hover:text-[#d8d8d8] [&.is-active]:bg-[var(--color-surface-6)] [&.is-active]:text-[#eeeeee] cursor-pointer is-active" type="button" aria-label="Panel simple">
+    <button id="panel-single" class="w-[30px] h-[28px] grid place-items-center border-0 rounded-md bg-transparent text-[#d8d8d8]/52 transition-colors duration-120 hover:bg-[var(--color-surface-7)] hover:text-[#d8d8d8] [&.is-active]:bg-[#2F2F2F] [&.is-active]:text-[#eeeeee] cursor-pointer is-active" type="button" aria-label="Panel simple">
       <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
     </button>
-    <button id="panel-split" class="w-[30px] h-[28px] grid place-items-center border-0 rounded-md bg-transparent text-[#d8d8d8]/52 transition-colors duration-120 hover:bg-[var(--color-surface-7)] hover:text-[#d8d8d8] [&.is-active]:bg-[var(--color-surface-6)] [&.is-active]:text-[#eeeeee] cursor-pointer" type="button" aria-label="Panel doble">
+    <button id="panel-split" class="w-[30px] h-[28px] grid place-items-center border-0 rounded-md bg-transparent text-[#d8d8d8]/52 transition-colors duration-120 hover:bg-[var(--color-surface-7)] hover:text-[#d8d8d8] [&.is-active]:bg-[#2F2F2F] [&.is-active]:text-[#eeeeee] cursor-pointer" type="button" aria-label="Panel doble">
       <PanelRight size={14} strokeWidth={1.8} />
     </button>
-    <button id="panel-dock" class="w-[30px] h-[28px] grid place-items-center border-0 rounded-md bg-transparent text-[#d8d8d8]/52 transition-colors duration-120 hover:bg-[var(--color-surface-7)] hover:text-[#d8d8d8] [&.is-active]:bg-[var(--color-surface-6)] [&.is-active]:text-[#eeeeee] cursor-pointer" type="button" aria-label="Mostrar dock" title="Mostrar dock">
+    <button id="panel-dock" class="w-[30px] h-[28px] grid place-items-center border-0 rounded-md bg-transparent text-[#d8d8d8]/52 transition-colors duration-120 hover:bg-[var(--color-surface-7)] hover:text-[#d8d8d8] [&.is-active]:bg-[#2F2F2F] [&.is-active]:text-[#eeeeee] cursor-pointer" type="button" aria-label="Mostrar dock" title="Mostrar dock">
       <PanelTop size={14} strokeWidth={1.8} />
     </button>
   </nav>
