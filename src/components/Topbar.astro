@@ -154,22 +154,28 @@ const t = topbarTranslations.es;
   });
 
   const topbarMenus = Array.from(document.querySelectorAll('.group\\/menu'));
+  const publishNativeMenu = (menu, open) => window.dispatchEvent(new CustomEvent('codeclub:native-menu', { detail: { open: Boolean(open), element: menu.querySelector(':scope > div') } }));
+  const setMenuState = (menu, open) => {
+    menu.classList.toggle('menu-open', open);
+    publishNativeMenu(menu, open);
+  };
+  const nativeMenuIsOpen = () => Boolean((window as Window & { __codeclubNativeMenuOpen?: boolean }).__codeclubNativeMenuOpen);
   topbarMenus.forEach((menu) => {
     const trigger = menu.querySelector(':scope > button');
-    menu.addEventListener('pointerenter', () => menu.classList.add('menu-open'));
+    menu.addEventListener('pointerenter', () => setMenuState(menu, true));
     menu.addEventListener('pointerleave', () => {
-      if (!menu.matches(':focus-within')) menu.classList.remove('menu-open');
+      if (!menu.matches(':focus-within') && !nativeMenuIsOpen()) setMenuState(menu, false);
     });
     trigger?.addEventListener('click', (event) => {
       event.stopPropagation();
-      topbarMenus.forEach((item) => { if (item !== menu) item.classList.remove('menu-open'); });
-      menu.classList.toggle('menu-open');
+      topbarMenus.forEach((item) => { if (item !== menu) setMenuState(item, false); });
+      setMenuState(menu, !menu.classList.contains('menu-open'));
     });
     menu.addEventListener('click', (event) => {
-      if ((event.target as HTMLElement).closest('a, button, [data-testing-action]')) menu.classList.remove('menu-open');
+      if ((event.target as HTMLElement).closest('a, button, [data-testing-action]')) setMenuState(menu, false);
     });
   });
-  document.addEventListener('click', () => topbarMenus.forEach((menu) => menu.classList.remove('menu-open')));
+  document.addEventListener('click', () => topbarMenus.forEach((menu) => setMenuState(menu, false)));
   document.querySelectorAll('[data-testing-action]').forEach((button) => {
     button.addEventListener('click', () => window.dispatchEvent(new CustomEvent('codeclub:testing-action', { detail: { action: button.dataset.testingAction } })));
   });

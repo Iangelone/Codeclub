@@ -840,21 +840,31 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
     }));
   };
 
-  const syncWebview = async (view = webviewRef.current) => {
+  const getBrowserBounds = async () => {
     const host = hostRef.current;
-    const isPanelOpen = document.body.classList.contains('has-right-panel');
     const rect = host?.getBoundingClientRect();
-    const isValid = Boolean(
-      isPanelOpen &&
-      host &&
-      rect &&
-      rect.width > 0 &&
-      rect.height > 0 &&
-      rect.left < window.innerWidth &&
-      rect.top < window.innerHeight
-    );
+    if (!host || !rect || rect.width <= 0 || rect.height <= 0) return null;
+    try {
+      const appWindow = getCurrentWindow();
+      const [innerSize, scaleFactor] = await Promise.all([appWindow.innerSize(), appWindow.scaleFactor()]);
+      const logicalWidth = innerSize.width / scaleFactor;
+      const logicalHeight = innerSize.height / scaleFactor;
+      const left = Math.max(0, Math.min(rect.left, logicalWidth));
+      const top = Math.max(0, Math.min(rect.top, logicalHeight));
+      const width = Math.max(0, Math.min(rect.width, logicalWidth - left));
+      const height = Math.max(0, Math.min(rect.height, logicalHeight - top));
+      if (width <= 0 || height <= 0) return null;
+      return { left, top, width, height };
+    } catch {
+      return null;
+    }
+  };
 
-    if (!isValid) {
+  const syncWebview = async (view = webviewRef.current) => {
+    const isPanelOpen = document.body.classList.contains('has-right-panel');
+    const bounds = isPanelOpen ? await getBrowserBounds() : null;
+
+    if (!bounds) {
       if (webviewRef.current) {
         await webviewRef.current.close().catch(() => undefined);
         webviewRef.current = null;
@@ -872,8 +882,8 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
     if (!view) return;
 
     try {
-      await view.setPosition(new LogicalPosition(rect.left, rect.top));
-      await view.setSize(new LogicalSize(rect.width, rect.height));
+      await view.setPosition(new LogicalPosition(bounds.left, bounds.top));
+      await view.setSize(new LogicalSize(bounds.width, bounds.height));
     } catch {
       // El WebView puede no existir durante el cambio de página.
     }
@@ -898,18 +908,17 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
       await webviewRef.current?.close().catch(() => undefined);
       if (requestId !== requestRef.current) return;
       const isPanelOpen = document.body.classList.contains('has-right-panel');
-      const host = hostRef.current;
-      const rect = host?.getBoundingClientRect();
-      if (!isPanelOpen || !host || !rect || rect.width <= 0 || rect.height <= 0) {
+      const bounds = isPanelOpen ? await getBrowserBounds() : null;
+      if (!bounds) {
         webviewRef.current = null;
         return;
       }
       const view = new Webview(getCurrentWindow(), 'codeclub-browser', {
         url,
-        x: rect.left,
-        y: rect.top,
-        width: rect.width,
-        height: rect.height,
+        x: bounds.left,
+        y: bounds.top,
+        width: bounds.width,
+        height: bounds.height,
         focus: false,
         backgroundColor: '#202124',
         dragDropEnabled: false,
@@ -1039,7 +1048,7 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
       }} aria-pressed={inspectMode} className={`grid h-7 w-7 place-items-center rounded-md border-0 text-[#777] hover:bg-[#1c1c1c] hover:text-[#eee] ${inspectMode ? 'bg-[#242424] text-[#eee]' : 'bg-transparent'}`} title="Seleccionar elemento de la página"><ArrowUpRight size={13} /></button>
       <button type="button" onClick={referencePage} className="grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent text-[#777] hover:bg-[#1c1c1c] hover:text-[#eee]" title="Referenciar página"><Globe size={12} /></button>
     </div>
-    <div ref={hostRef} className="relative min-h-0 flex-1 overflow-hidden bg-[#202124]">
+    <div ref={hostRef} data-native-browser-host="true" className="relative ml-px min-h-0 flex-1 overflow-hidden bg-[#202124]">
       {error && <div className="absolute inset-x-0 top-0 z-10 bg-[#2b1e1e] p-2 text-[10px] text-[#d49a9a]">{error}</div>}
     </div>
   </div>;
@@ -1449,8 +1458,25 @@ export default function RightSidebar() {
   }, [menuOpen]);
 
   useEffect(() => {
-    void invoke('codeclub_browser_set_visible', { visible: !menuOpen }).catch(() => undefined);
+    const menu = menuOpen ? document.querySelector('.terminal-shell-menu') : null;
+    window.dispatchEvent(new CustomEvent('codeclub:native-menu', { detail: { open: Boolean(menu), element: menu } }));
   }, [menuOpen]);
+
+  useEffect(() => {
+    const handleNativeTab = (event: Event) => {
+      const tab = (event as CustomEvent<{ tab?: string }>).detail?.tab;
+      if (!tab || !['files', 'review', 'browser', 'artifacts', 'terminals'].includes(tab)) return;
+      createTab(tab as RightTab);
+    };
+    window.addEventListener('codeclub:right-panel-tab', handleNativeTab);
+    return () => window.removeEventListener('codeclub:right-panel-tab', handleNativeTab);
+  }, [tabs]);
+
+  useEffect(() => {
+    const closeNativeMenu = () => setMenuOpen(false);
+    window.addEventListener('codeclub:right-panel-menu-close', closeNativeMenu);
+    return () => window.removeEventListener('codeclub:right-panel-menu-close', closeNativeMenu);
+  }, []);
 
   useEffect(() => {
     const handleProject = (event: Event) => {
@@ -1558,7 +1584,7 @@ export default function RightSidebar() {
           </div>
         </div>
         {menuOpen && <div className="terminal-shell-menu absolute z-[100] min-w-[190px]" style={{ position: 'absolute', top: menuPosition.top, left: menuPosition.left }} role="menu">
-          {availableTabs.map((tab) => <button key={tab} type="button" onClick={() => createTab(tab)} disabled={tabs.includes(tab) && tab !== 'terminals'} className="flex items-center gap-2 disabled:cursor-default disabled:opacity-35" role="menuitem"><span className="shrink-0">{tabIcon(tab)}</span><span className="truncate">{labels[tab]}</span></button>)}
+          {availableTabs.map((tab) => <button key={tab} type="button" data-menu-tab={tab} onClick={() => createTab(tab)} disabled={tabs.includes(tab) && tab !== 'terminals'} className="flex items-center gap-2 disabled:cursor-default disabled:opacity-35" role="menuitem"><span className="shrink-0">{tabIcon(tab)}</span><span className="truncate">{labels[tab]}</span></button>)}
         </div>}
         </div>
         <div className="relative z-0 flex h-0 min-h-0 flex-1 flex-col overflow-hidden">

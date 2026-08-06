@@ -3,7 +3,8 @@
   "identifier": "default",
   "description": "Default desktop permissions.",
   "windows": [
-    "main"
+    "main",
+    "codeclub-menu-overlay"
   ],
   "permissions": [
     "core:default",

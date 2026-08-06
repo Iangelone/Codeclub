@@ -251,6 +251,81 @@ struct BrowserSelection {
     is_multi_select: Option<bool>,
 }
 
+#[derive(Clone, Deserialize, Serialize)]
+struct MenuOverlayPayload {
+    html: String,
+    width: f64,
+    height: f64,
+}
+
+#[derive(Default)]
+struct MenuOverlayState {
+    payload: Mutex<Option<MenuOverlayPayload>>,
+}
+
+#[tauri::command]
+fn codeclub_menu_overlay_content(state: State<'_, MenuOverlayState>) -> Result<Option<MenuOverlayPayload>, String> {
+    state.payload.lock().map(|payload| payload.clone()).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn codeclub_menu_overlay(
+    app: AppHandle,
+    state: State<'_, MenuOverlayState>,
+    open: bool,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    html: String,
+) -> Result<(), String> {
+    let overlay_label = "codeclub-menu-overlay";
+    if !open {
+        if let Ok(mut payload) = state.payload.lock() {
+            *payload = None;
+        }
+        if let Some(window) = app.get_webview_window(overlay_label) {
+            window.close().map_err(|error| error.to_string())?;
+        }
+        return Ok(());
+    }
+    let payload = MenuOverlayPayload { html, width, height };
+    *state.payload.lock().map_err(|error| error.to_string())? = Some(payload.clone());
+    let main = app.get_webview_window("main").ok_or_else(|| "No se encontró la ventana principal.".to_string())?;
+    let scale = main.scale_factor().map_err(|error| error.to_string())?;
+    let main_position = main.outer_position().map_err(|error| error.to_string())?;
+    let overlay_x = main_position.x as f64 / scale + x;
+    let overlay_y = main_position.y as f64 / scale + y;
+    if let Some(window) = app.get_webview_window(overlay_label) {
+        window.set_position(LogicalPosition::new(overlay_x, overlay_y)).map_err(|error| error.to_string())?;
+        window.set_size(LogicalSize::new(width, height)).map_err(|error| error.to_string())?;
+        window.show().map_err(|error| error.to_string())?;
+        window.emit("codeclub-menu-overlay-content", payload).map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+    let overlay_url = if cfg!(debug_assertions) {
+        WebviewUrl::External("http://127.0.0.1:4321/menu-overlay/".parse().map_err(|error| format!("URL inválida para el menú overlay: {error}"))?)
+    } else {
+        WebviewUrl::App("menu-overlay".into())
+    };
+    let window = WebviewWindowBuilder::new(&app, overlay_label, overlay_url)
+        .title("Codeclub menu")
+        .inner_size(width, height)
+        .position(overlay_x, overlay_y)
+        .decorations(false)
+        .transparent(true)
+        .shadow(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .resizable(false)
+        .focused(false)
+        .visible(true)
+        .build()
+        .map_err(|error| format!("No se pudo crear el menú overlay: {error}"))?;
+    window.emit("codeclub-menu-overlay-content", payload).map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 fn codeclub_browser_webview(app: &AppHandle) -> Result<tauri::Webview, String> {
     app.get_webview("codeclub-browser")
         .or_else(|| {
@@ -1607,10 +1682,13 @@ pub fn run() {
         })
         .manage(TerminalRegistry::default())
         .manage(WhatsAppRegistry::default())
+        .manage(MenuOverlayState::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
+            codeclub_menu_overlay,
+            codeclub_menu_overlay_content,
             codeclub_list_files,
             codeclub_index_project,
             codeclub_get_username,

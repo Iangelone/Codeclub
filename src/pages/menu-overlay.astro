@@ -1,0 +1,55 @@
+---
+import "../styles/global.css";
+---
+
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      :root, html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent !important; }
+      #menu-root { width: 100%; height: 100%; overflow: visible; }
+      #menu-root > * {
+        position: relative !important;
+        inset: auto !important;
+        width: 100% !important;
+        min-width: 0 !important;
+        height: 100% !important;
+        box-sizing: border-box !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+        transform: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="menu-root"></div>
+    <script>
+      const start = async () => {
+        const { emit, listen } = await import('@tauri-apps/api/event');
+        const { invoke } = await import('@tauri-apps/api/core');
+        const root = document.querySelector('#menu-root');
+        const render = (payload) => {
+          if (!root || !payload?.html) return;
+          root.innerHTML = payload.html;
+        };
+        const current = await invoke('codeclub_menu_overlay_content').catch(() => null);
+        render(current);
+        await listen('codeclub-menu-overlay-content', (event) => render(event.payload));
+        root?.addEventListener('click', (event) => {
+          const target = event.target instanceof Element ? event.target.closest('[data-action], [data-testing-action], [data-menu-tab]') : null;
+          if (!target) return;
+          event.preventDefault();
+          void emit('codeclub-menu-overlay-action', {
+            action: target.dataset.action || '',
+            testingAction: target.dataset.testingAction || '',
+            tab: target.dataset.menuTab || '',
+          });
+        });
+        root?.addEventListener('pointerleave', () => { void emit('codeclub-menu-overlay-close'); });
+      };
+      void start();
+    </script>
+  </body>
+</html>

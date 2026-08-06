@@ -39,6 +39,47 @@ import ChatPanel from "../components/ChatPanel.astro";
         const { getCurrentWindow } = await import('@tauri-apps/api/window');
         const appWindow = getCurrentWindow();
 
+        const closeNativeMenu = () => {
+          (window as Window & { __codeclubNativeMenuOpen?: boolean }).__codeclubNativeMenuOpen = false;
+          window.dispatchEvent(new CustomEvent('codeclub:right-panel-menu-close'));
+          void invoke('codeclub_menu_overlay', { open: false, x: 0, y: 0, width: 0, height: 0, html: '' }).catch(() => undefined);
+        };
+        const handleNativeMenu = (event) => {
+          const detail = event.detail || {};
+          if (!detail.open || !(detail.element instanceof HTMLElement)) {
+            closeNativeMenu();
+            return;
+          }
+          if (!document.querySelector('[data-native-browser-host]')) return;
+          const rect = detail.element.getBoundingClientRect();
+          if (rect.width <= 0 || rect.height <= 0) return;
+          (window as Window & { __codeclubNativeMenuOpen?: boolean }).__codeclubNativeMenuOpen = true;
+          void invoke('codeclub_menu_overlay', {
+            open: true,
+            x: rect.left,
+            y: rect.top,
+            width: rect.width,
+            height: rect.height,
+            html: detail.element.outerHTML,
+          }).catch(() => closeNativeMenu());
+        };
+        window.addEventListener('codeclub:native-menu', handleNativeMenu);
+        const stopNativeMenuAction = await listen('codeclub-menu-overlay-action', (event) => {
+          const detail = event.payload || {};
+          closeNativeMenu();
+          if (detail.action) {
+            Array.from(document.querySelectorAll('[data-action]')).find((element) => element.dataset.action === detail.action)?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+          }
+          if (detail.testingAction) {
+            Array.from(document.querySelectorAll('[data-testing-action]')).find((element) => element.dataset.testingAction === detail.testingAction)?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+          }
+          if (detail.tab) window.dispatchEvent(new CustomEvent('codeclub:right-panel-tab', { detail: { tab: detail.tab } }));
+        });
+        const stopNativeMenuClose = await listen('codeclub-menu-overlay-close', () => {
+          closeNativeMenu();
+          document.querySelectorAll('.group\\/menu.menu-open').forEach((menu) => menu.classList.remove('menu-open'));
+        });
+
         let computerOverlayActive = false;
         let computerOverlayProvider = 'Codeclub';
         const setComputerOverlay = async (active, provider) => {
