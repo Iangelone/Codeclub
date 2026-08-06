@@ -91,6 +91,7 @@ const t = topbarTranslations.es;
           <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="dev-browser" data-i18n="testBrowser">{t.testBrowser}</button>
           <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="dev-diagnostics" data-i18n="diagnostics">{t.diagnostics}</button>
           <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="assistant-computer" data-i18n="assistantComputerTest">{t.assistantComputerTest}</button>
+          <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-action="toggle-computer-overlay" data-i18n="assistantComputerOverlay" data-i18n-active="assistantComputerOverlayActive" data-overlay-active="false" aria-pressed="false">{t.assistantComputerOverlay}</button>
         </div>
       </div>
     </nav>
@@ -129,7 +130,9 @@ const t = topbarTranslations.es;
   const applyLanguage = (language: AppLanguage) => {
     const translations = topbarTranslations[language];
     document.querySelectorAll<HTMLElement>('[data-i18n]').forEach((element) => {
-      const key = element.dataset.i18n as keyof typeof translations;
+      const translationKey = element.dataset.overlayActive === 'true' && element.dataset.i18nActive ? element.dataset.i18nActive : element.dataset.i18n;
+      if (!translationKey) return;
+      const key = translationKey as keyof typeof translations;
       if (key in translations) element.textContent = translations[key];
     });
     document.querySelectorAll<HTMLElement>('[data-i18n-aria]').forEach((element) => {
@@ -168,6 +171,18 @@ const t = topbarTranslations.es;
   document.querySelectorAll('[data-testing-action]').forEach((button) => {
     button.addEventListener('click', () => window.dispatchEvent(new CustomEvent('codeclub:testing-action', { detail: { action: button.dataset.testingAction } })));
   });
+  const overlayButton = document.querySelector<HTMLElement>('[data-action="toggle-computer-overlay"]');
+  const updateOverlayButton = (active: boolean) => {
+    if (!overlayButton) return;
+    overlayButton.dataset.overlayActive = String(active);
+    overlayButton.setAttribute('aria-pressed', String(active));
+    overlayButton.classList.toggle('bg-[#2F2F2F]', active);
+    overlayButton.classList.toggle('text-[#eeeeee]', active);
+    const language = window.localStorage.getItem(LANGUAGE_STORAGE_KEY) === 'en' ? 'en' : 'es';
+    const key = (active ? overlayButton.dataset.i18nActive : overlayButton.dataset.i18n) as keyof typeof topbarTranslations[typeof language];
+    if (key && key in topbarTranslations[language]) overlayButton.textContent = topbarTranslations[language][key];
+  };
+  window.addEventListener('codeclub:computer-overlay-state', (event) => updateOverlayButton(Boolean((event as CustomEvent<{ active?: boolean }>).detail?.active)));
 </script>
 
 <style>

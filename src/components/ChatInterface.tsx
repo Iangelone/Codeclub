@@ -1917,8 +1917,13 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
   }, [computerUseActive]);
 
   useEffect(() => {
-    void invoke('codeclub_computer_overlay', { active: computerUseActive }).catch((error) => console.warn('No se pudo actualizar el overlay de Computer Use:', error));
-  }, [computerUseActive]);
+    window.dispatchEvent(new CustomEvent('codeclub:computer-overlay-set', {
+      detail: {
+        active: computerUseActive,
+        provider: currentProvider?.label || currentProvider?.id || defaultProvider?.label || defaultProvider?.id || 'Codeclub',
+      },
+    }));
+  }, [computerUseActive, currentProvider, defaultProvider]);
 
   useEffect(() => () => {
     if (visualAnimationRef.current) clearInterval(visualAnimationRef.current);
@@ -1964,6 +1969,10 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     if (panelId !== 'left') return undefined;
     const handleTestingAction = (event: Event) => {
       const action = (event as CustomEvent).detail?.action;
+      if (action === 'assistant-overlay') {
+        setComputerUseActive((active) => !active);
+        return;
+      }
       if (isAgentBusy) return;
       const prompts: Record<string, string> = {
         'test-swarm': '[TEST SWARM] El Padre debe usar solo swarm y listAvailableTools. Creá un swarm con un hijo read_only y otro developer; asignales tareas distintas, comunicate con ambos, esperá sus resultados y devolvé el estado y merge de evidencias. No modifiques archivos.',

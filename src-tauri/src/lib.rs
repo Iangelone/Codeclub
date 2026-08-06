@@ -1293,9 +1293,14 @@ fn codeclub_computer_action(request: ComputerActionRequest) -> Result<(), String
 }
 
 #[tauri::command]
-fn codeclub_computer_overlay(app: AppHandle, active: bool) -> Result<(), String> {
+fn codeclub_computer_overlay(app: AppHandle, active: bool, provider: Option<String>) -> Result<(), String> {
     #[cfg(windows)]
     COMPUTER_OVERLAY_ACTIVE.store(active, Ordering::Relaxed);
+    let provider_name = provider
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or_else(|| "Codeclub".to_string());
+    app.emit("codeclub-computer-provider", provider_name)
+        .map_err(|error| error.to_string())?;
     if let Some(window) = app.get_webview_window("computer-use-overlay") {
         if active { window.show().map_err(|error| error.to_string())?; }
         else { window.hide().map_err(|error| error.to_string())?; }
@@ -1511,14 +1516,24 @@ pub fn run() {
                 WebviewUrl::App("computer-overlay".into())
             };
             let monitor = app.get_webview_window("main").and_then(|window| window.primary_monitor().ok().flatten());
-            let (monitor_x, monitor_y, monitor_width, monitor_height) = monitor
-                .map(|monitor| (monitor.position().x, monitor.position().y, monitor.size().width as f64, monitor.size().height as f64))
-                .unwrap_or((0, 0, 1920.0, 1080.0));
+            let (monitor_x, monitor_y, monitor_width, monitor_height, monitor_scale) = monitor
+                .map(|monitor| {
+                    let size = monitor.size();
+                    (
+                        monitor.position().x,
+                        monitor.position().y,
+                        size.width as f64,
+                        size.height as f64,
+                        monitor.scale_factor(),
+                    )
+                })
+                .unwrap_or((0, 0, 1920.0, 1080.0, 1.0));
             let overlay = WebviewWindowBuilder::new(app, "computer-use-overlay", overlay_url)
-                .title("ChatGPT is using your computer")
-                .inner_size(monitor_width, monitor_height)
+                .title("Codeclub is using your computer")
+                .inner_size(monitor_width / monitor_scale, monitor_height / monitor_scale)
                 .decorations(false)
                 .transparent(true)
+                .shadow(false)
                 .always_on_top(true)
                 .skip_taskbar(true)
                 .resizable(false)

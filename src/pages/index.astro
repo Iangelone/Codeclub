@@ -34,8 +34,39 @@ import ChatPanel from "../components/ChatPanel.astro";
     <RightSidebar client:load />
     <script>
       const initCodeclubApp = async () => {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const { listen } = await import('@tauri-apps/api/event');
         const { getCurrentWindow } = await import('@tauri-apps/api/window');
         const appWindow = getCurrentWindow();
+
+        let computerOverlayActive = false;
+        let computerOverlayProvider = 'Codeclub';
+        const setComputerOverlay = async (active, provider) => {
+          computerOverlayActive = Boolean(active);
+          if (typeof provider === 'string' && provider.trim()) computerOverlayProvider = provider.trim();
+          window.dispatchEvent(new CustomEvent('codeclub:computer-overlay-state', { detail: { active: computerOverlayActive } }));
+          try {
+            await invoke('codeclub_computer_overlay', { active: computerOverlayActive, provider: computerOverlayProvider });
+          } catch (error) {
+            console.warn('No se pudo actualizar el overlay de Computer Use:', error);
+          }
+        };
+        window.addEventListener('codeclub:computer-overlay-set', (event) => {
+          const detail = (event as CustomEvent<{ active?: boolean; provider?: string }>).detail;
+          void setComputerOverlay(detail?.active === true, detail?.provider);
+        });
+        window.addEventListener('codeclub:computer-overlay-toggle', () => {
+          void setComputerOverlay(!computerOverlayActive);
+        });
+        window.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape' && computerOverlayActive) {
+            event.preventDefault();
+            void setComputerOverlay(false);
+          }
+        });
+        void listen('codeclub-computer-escape', () => {
+          if (computerOverlayActive) void setComputerOverlay(false);
+        });
         
         document.querySelector('#minimize')?.addEventListener('click', () => { appWindow.minimize(); });
         document.querySelector('#maximize')?.addEventListener('click', () => { appWindow.toggleMaximize(); });
@@ -51,6 +82,9 @@ import ChatPanel from "../components/ChatPanel.astro";
         document.querySelectorAll('[data-action="open-settings"]').forEach((element) => element.addEventListener('click', (event) => {
           event.preventDefault();
           window.dispatchEvent(new CustomEvent('codeclub:open-settings'));
+        }));
+        document.querySelectorAll('[data-action="toggle-computer-overlay"]').forEach((element) => element.addEventListener('click', () => {
+          window.dispatchEvent(new CustomEvent('codeclub:computer-overlay-toggle'));
         }));
         const menuActions = {
           'new-chat': 'codeclub:request-new-chat',
