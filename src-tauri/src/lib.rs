@@ -8,6 +8,8 @@ use std::{
     sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex, OnceLock},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+#[cfg(windows)]
+use std::os::windows::ffi::OsStrExt;
 use tauri::{webview::{PageLoadEvent, WebviewBuilder}, AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindowBuilder};
 
 #[cfg(windows)]
@@ -15,11 +17,11 @@ use base64::Engine as _;
 #[cfg(windows)]
 use uiautomation::{inputs::Mouse, patterns::{UIInvokePattern, UIValuePattern}, types::{ControlType, Point}, UIAutomation};
 #[cfg(windows)]
-use windows::Win32::Foundation::POINT;
-#[cfg(windows)]
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_ESCAPE};
 #[cfg(windows)]
-use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+use windows::Win32::UI::WindowsAndMessaging::{LoadCursorFromFileW, SetSystemCursor, SystemParametersInfoW, OCR_NORMAL, SPI_SETCURSORS, SPIF_SENDCHANGE};
+#[cfg(windows)]
+use windows::core::PCWSTR;
 
 #[cfg(windows)]
 fn computer_automation() -> Result<UIAutomation, String> {
@@ -48,18 +50,40 @@ fn start_computer_escape_monitor(app: AppHandle) {
         loop {
             let is_down = unsafe { ((GetAsyncKeyState(VK_ESCAPE.0 as i32) as u16) & 0x8000) != 0 };
             if is_down && !was_down {
-                let _ = app.emit("codeclub-computer-escape", ());
-            }
-            if COMPUTER_OVERLAY_ACTIVE.load(Ordering::Relaxed) {
-                let mut point = POINT::default();
-                if unsafe { GetCursorPos(&mut point).is_ok() } {
-                    let _ = app.emit("codeclub-computer-cursor", serde_json::json!({ "x": point.x, "y": point.y }));
+                if COMPUTER_OVERLAY_ACTIVE.load(Ordering::Relaxed) {
+                    let _ = app.emit("codeclub-computer-escape", ());
                 }
             }
             was_down = is_down;
             std::thread::sleep(Duration::from_millis(if COMPUTER_OVERLAY_ACTIVE.load(Ordering::Relaxed) { 16 } else { 50 }));
         }
     });
+}
+
+#[cfg(windows)]
+fn set_computer_cursor(app: &AppHandle, active: bool) -> Result<(), String> {
+    if !active {
+        unsafe { SystemParametersInfoW(SPI_SETCURSORS, 0, None, SPIF_SENDCHANGE) }
+            .map_err(|error| format!("No se pudo restaurar el cursor de Windows: {error}"))?;
+        return Ok(());
+    }
+
+    let dev_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/cursors/dark/arrow.cur");
+    let resource_dir = app.path().resource_dir().map_err(|error| error.to_string())?;
+    let path = [
+        dev_path,
+        resource_dir.join("resources/cursors/dark/arrow.cur"),
+        resource_dir.join("cursors/dark/arrow.cur"),
+    ]
+    .into_iter()
+    .find(|candidate| candidate.exists())
+    .ok_or_else(|| "No se encontró el cursor dark/arrow.cur en los recursos de Codeclub.".to_string())?;
+    let wide_path: Vec<u16> = path.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+    let cursor = unsafe { LoadCursorFromFileW(PCWSTR(wide_path.as_ptr())) }
+        .map_err(|error| format!("No se pudo cargar el cursor de Computer Use: {error}"))?;
+    unsafe { SetSystemCursor(cursor, OCR_NORMAL) }
+        .map_err(|error| format!("No se pudo activar el cursor de Computer Use: {error}"))?;
+    Ok(())
 }
 
 #[derive(Serialize)]
@@ -1295,7 +1319,10 @@ fn codeclub_computer_action(request: ComputerActionRequest) -> Result<(), String
 #[tauri::command]
 fn codeclub_computer_overlay(app: AppHandle, active: bool, provider: Option<String>) -> Result<(), String> {
     #[cfg(windows)]
-    COMPUTER_OVERLAY_ACTIVE.store(active, Ordering::Relaxed);
+    {
+        set_computer_cursor(&app, active)?;
+        COMPUTER_OVERLAY_ACTIVE.store(active, Ordering::Relaxed);
+    }
     let provider_name = provider
         .filter(|name| !name.trim().is_empty())
         .unwrap_or_else(|| "Codeclub".to_string());
