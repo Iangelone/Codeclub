@@ -17,9 +17,11 @@ use base64::Engine as _;
 #[cfg(windows)]
 use uiautomation::{inputs::Mouse, patterns::{UIInvokePattern, UIValuePattern}, types::{ControlType, Point}, UIAutomation};
 #[cfg(windows)]
+use windows::Win32::Foundation::POINT;
+#[cfg(windows)]
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_ESCAPE};
 #[cfg(windows)]
-use windows::Win32::UI::WindowsAndMessaging::{LoadCursorFromFileW, SetSystemCursor, SystemParametersInfoW, OCR_NORMAL, SPI_SETCURSORS, SPIF_SENDCHANGE};
+use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, LoadCursorFromFileW, SetSystemCursor, SystemParametersInfoW, OCR_NORMAL, SPI_SETCURSORS, SPIF_SENDCHANGE};
 #[cfg(windows)]
 use windows::core::PCWSTR;
 
@@ -83,6 +85,37 @@ fn set_computer_cursor(app: &AppHandle, active: bool) -> Result<(), String> {
         .map_err(|error| format!("No se pudo cargar el cursor de Computer Use: {error}"))?;
     unsafe { SetSystemCursor(cursor, OCR_NORMAL) }
         .map_err(|error| format!("No se pudo activar el cursor de Computer Use: {error}"))?;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn move_cursor_smoothly(target_x: i32, target_y: i32) -> Result<(), String> {
+    let mut current = POINT::default();
+    unsafe { GetCursorPos(&mut current) }
+        .map_err(|error| format!("No se pudo leer la posición actual del cursor: {error}"))?;
+
+    let delta_x = (target_x - current.x) as f64;
+    let delta_y = (target_y - current.y) as f64;
+    let distance = (delta_x * delta_x + delta_y * delta_y).sqrt();
+    if distance <= 1.0 {
+        return Mouse::new().move_to(&Point::new(target_x, target_y)).map_err(|error| error.to_string());
+    }
+
+    let steps = ((distance / 20.0).ceil() as u32).clamp(6, 48);
+    let duration_ms = ((distance * 0.32).round() as u64).clamp(180, 650);
+    let step_delay = Duration::from_millis((duration_ms / steps as u64).max(1));
+    let mouse = Mouse::new();
+
+    for step in 1..=steps {
+        let progress = step as f64 / steps as f64;
+        let eased = progress * progress * (3.0 - 2.0 * progress);
+        let x = current.x as f64 + delta_x * eased;
+        let y = current.y as f64 + delta_y * eased;
+        mouse.move_to(&Point::new(x.round() as i32, y.round() as i32)).map_err(|error| error.to_string())?;
+        if step < steps {
+            std::thread::sleep(step_delay);
+        }
+    }
     Ok(())
 }
 
@@ -1303,7 +1336,7 @@ fn codeclub_computer_action(request: ComputerActionRequest) -> Result<(), String
             }
         }
         match request.action.as_str() {
-            "move" => Mouse::new().move_to(&Point::new(request.x.ok_or("Falta x")?, request.y.ok_or("Falta y")?)).map_err(|error| error.to_string()),
+            "move" => move_cursor_smoothly(request.x.ok_or("Falta x")?, request.y.ok_or("Falta y")?),
             "click" => Mouse::new().click(&Point::new(request.x.ok_or("Falta x")?, request.y.ok_or("Falta y")?)).map_err(|error| error.to_string()),
             "doubleClick" => Mouse::new().double_click(&Point::new(request.x.ok_or("Falta x")?, request.y.ok_or("Falta y")?)).map_err(|error| error.to_string()),
             "rightClick" => Mouse::new().right_click(&Point::new(request.x.ok_or("Falta x")?, request.y.ok_or("Falta y")?)).map_err(|error| error.to_string()),

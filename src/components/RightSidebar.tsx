@@ -96,31 +96,36 @@ const browserStateScript = `(() => {
 const browserActionScript = (action: { type: string; selector?: string; text?: string; key?: string; amount?: number }) => `(() => {
   const selector = ${JSON.stringify(action.selector || '')};
   const element = selector ? document.querySelector(selector) : document.activeElement;
-  const finish = () => { document.getElementById('__codeclub-agent-overlay')?.style.setProperty('display', 'none'); document.getElementById('__codeclub-agent-banner')?.style.setProperty('display', 'none'); if (window.__codeclubAgentEscHandler) window.removeEventListener('keydown', window.__codeclubAgentEscHandler, true); };
+  const finish = () => { document.getElementById('__codeclub-agent-overlay')?.style.setProperty('display', 'none'); document.getElementById('__codeclub-agent-banner')?.style.setProperty('display', 'none'); document.documentElement.style.removeProperty('cursor'); if (window.__codeclubAgentEscHandler) window.removeEventListener('keydown', window.__codeclubAgentEscHandler, true); };
   const fail = (message) => { finish(); const invoke = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke; if (typeof invoke === 'function') invoke('codeclub_browser_selection', { selection: { title: message, text: message, html: '', url: location.href, selector: '__codeclub_action_result__', tag: 'action' } }); };
   if (window.__codeclubAgentStop) { fail('Control cancelado con Escape.'); return; }
   if (${JSON.stringify(action.type)} === 'scroll') { window.scrollBy(0, ${Number(action.amount || 600)}); const invoke = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke; if (typeof invoke === 'function') invoke('codeclub_browser_selection', { selection: { title: 'ok', text: 'Scroll ejecutado.', html: '', url: location.href, selector: '__codeclub_action_result__', tag: 'action' } }); return; }
   if (!element) { fail('No se encontró el elemento indicado.'); return; }
   if (element.disabled || element.getAttribute('aria-disabled') === 'true') { fail('El elemento está deshabilitado.'); return; }
+  if (${JSON.stringify(action.type)} === 'move') { finish(); const invoke = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke; if (typeof invoke === 'function') invoke('codeclub_browser_selection', { selection: { title: 'ok', text: 'Cursor movido al elemento.', html: '', url: location.href, selector: '__codeclub_action_result__', tag: 'action' } }); return; }
   if (${JSON.stringify(action.type)} === 'click') element.click();
   else if (${JSON.stringify(action.type)} === 'type') { element.focus(); const value = ${JSON.stringify(action.text || '')}; if ('value' in element) { const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(element), 'value')?.set; setter?.call(element, value); } else element.textContent = value; element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value })); element.dispatchEvent(new Event('change', { bubbles: true })); }
   else if (${JSON.stringify(action.type)} === 'key') { element.focus(); element.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(action.key || 'Enter')}, bubbles: true })); element.dispatchEvent(new KeyboardEvent('keyup', { key: ${JSON.stringify(action.key || 'Enter')}, bubbles: true })); }
   finish(); const invoke = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke; if (typeof invoke === 'function') invoke('codeclub_browser_selection', { selection: { title: 'ok', text: 'Acción ejecutada.', html: '', url: location.href, selector: '__codeclub_action_result__', tag: 'action' } });
 })()`;
 
-const browserAgentOverlayScript = (selector?: string, cursorDataUrl = '') => `(() => {
+const browserAgentOverlayScript = (selector?: string, cursorDataUrl = '', language: 'es' | 'en' = 'es') => `(() => {
   const overlayId = '__codeclub-agent-overlay';
   const bannerId = '__codeclub-agent-banner';
   const cursor = ${JSON.stringify(cursorDataUrl ? `url("${cursorDataUrl}") 4 4, crosshair` : 'crosshair')};
   const overlay = document.getElementById(overlayId) || Object.assign(document.body.appendChild(document.createElement('div')), { id: overlayId });
   const banner = document.getElementById(bannerId) || Object.assign(document.body.appendChild(document.createElement('div')), { id: bannerId });
   Object.assign(overlay.style, { position: 'fixed', zIndex: '2147483646', pointerEvents: 'none', border: '2px solid #1687FF', background: 'rgba(22,135,255,.12)', boxShadow: '0 0 0 1px rgba(255,255,255,.35), 0 0 18px rgba(22,135,255,.45)', display: 'none' });
-  Object.assign(banner.style, { position: 'fixed', zIndex: '2147483647', right: '16px', top: '16px', padding: '7px 10px', border: '1px solid #1687FF', borderRadius: '8px', background: '#101d2a', color: '#dceeff', font: '12px system-ui', boxShadow: '0 6px 20px rgba(0,0,0,.3)', display: 'block' });
-  banner.textContent = 'Agente controla · Esc para salir';
+  Object.assign(banner.style, { position: 'fixed', zIndex: '2147483647', top: '12px', left: '50%', transform: 'translateX(-50%)', width: 'min(520px, calc(100% - 32px))', height: '42px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '0 14px', boxSizing: 'border-box', border: '1px solid rgba(141, 214, 255, 0.72)', borderRadius: '999px', background: 'linear-gradient(105deg, rgba(72, 190, 255, 0.84), rgba(110, 202, 255, 0.76))', color: '#f7fcff', font: '600 13px/1.1 "Segoe UI", sans-serif', textShadow: '0 1px 2px rgba(0, 50, 90, 0.32)', whiteSpace: 'nowrap', boxShadow: '0 0 28px rgba(61, 155, 255, 0.9), 0 0 58px rgba(61, 155, 255, 0.32), 0 8px 26px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.42)' });
+  const dot = document.createElement('span'); Object.assign(dot.style, { width: '7px', height: '7px', flex: '0 0 auto', borderRadius: '50%', background: '#fff', boxShadow: '0 0 8px #fff' });
+  const label = document.createElement('span'); label.textContent = ${JSON.stringify(language === 'en' ? 'Codeclub is using your browser' : 'Codeclub está usando tu navegador')};
+  const separator = document.createElement('span'); separator.textContent = '·'; separator.style.opacity = '0.68';
+  const cancel = document.createElement('span'); cancel.textContent = ${JSON.stringify(language === 'en' ? 'Esc to cancel' : 'Esc para cancelar')}; cancel.style.fontWeight = '700';
+  banner.replaceChildren(dot, label, separator, cancel);
   document.documentElement.style.cursor = cursor;
   window.__codeclubAgentStop = false;
   const send = (title, text) => { const invoke = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke; if (typeof invoke === 'function') invoke('codeclub_browser_selection', { selection: { title, text, html: '', url: location.href, selector: '__codeclub_action_result__', tag: 'action' } }); };
-  window.__codeclubAgentEscHandler = (event) => { if (event.key !== 'Escape') return; event.preventDefault(); window.__codeclubAgentStop = true; overlay.style.display = 'none'; banner.textContent = 'Agente detenido'; send('cancelled', 'Control cancelado con Escape.'); };
+  window.__codeclubAgentEscHandler = (event) => { if (event.key !== 'Escape') return; event.preventDefault(); window.__codeclubAgentStop = true; finish(); send('cancelled', 'Control cancelado con Escape.'); };
   window.addEventListener('keydown', window.__codeclubAgentEscHandler, true);
   const element = ${JSON.stringify(selector || '')} ? document.querySelector(${JSON.stringify(selector || '')}) : null;
   if (element) { const rect = element.getBoundingClientRect(); Object.assign(overlay.style, { display: 'block', left: Math.max(0, rect.left) + 'px', top: Math.max(0, rect.top) + 'px', width: Math.max(0, rect.width) + 'px', height: Math.max(0, rect.height) + 'px' }); }
@@ -714,6 +719,7 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
   const historyIndexRef = useRef(0);
   const selectionKeyRef = useRef('');
   const browserCursorDataUrlRef = useRef('');
+  const browserStateRef = useRef<BrowserState | null>(null);
   useEffect(() => {
     if (window.localStorage.getItem(LANGUAGE_STORAGE_KEY) === 'en') setLanguage('en');
     const handleLanguageChange = (event: Event) => {
@@ -748,6 +754,45 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
       return browserCursorDataUrlRef.current;
     } catch {
       return '';
+    }
+  };
+
+  const requestBrowserState = () => new Promise<BrowserState | null>((resolve) => {
+    let timer: number | undefined;
+    const cleanup = () => {
+      if (timer) window.clearTimeout(timer);
+      window.removeEventListener('codeclub:browser-state', handleState);
+    };
+    const handleState = (event: Event) => {
+      cleanup();
+      const state = (event as CustomEvent<BrowserState>).detail || null;
+      if (state) browserStateRef.current = state;
+      resolve(state);
+    };
+    window.addEventListener('codeclub:browser-state', handleState, { once: true });
+    timer = window.setTimeout(() => { cleanup(); resolve(null); }, 5000);
+    window.dispatchEvent(new CustomEvent('codeclub:browser-state-request'));
+  });
+
+  const moveBrowserCursor = async (selector?: string) => {
+    const state = (await requestBrowserState()) || browserStateRef.current;
+    const target = state?.elements.find((element) => element.selector === selector);
+    let host = hostRef.current?.getBoundingClientRect();
+    for (let attempt = 0; attempt < 8 && (!host || host.width < 1 || host.height < 1); attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 80));
+      host = hostRef.current?.getBoundingClientRect();
+    }
+    if (!target) return { ok: false, error: 'No se pudo ubicar el elemento indicado en el estado actual del navegador.' };
+    if (!host || host.width < 1 || host.height < 1) return { ok: false, error: 'El panel del navegador todavía no tiene un área visible para mover el cursor.' };
+    try {
+      const appWindow = getCurrentWindow();
+      const [position, scaleFactor] = await Promise.all([appWindow.outerPosition(), appWindow.scaleFactor()]);
+      const x = Math.round(position.x + (host.left + target.rect.x + target.rect.width / 2) * scaleFactor);
+      const y = Math.round(position.y + (host.top + target.rect.y + target.rect.height / 2) * scaleFactor);
+      await invoke('codeclub_computer_action', { request: { action: 'move', x, y } });
+      return { ok: true, x, y };
+    } catch (error) {
+      return { ok: false, error: String(error) };
     }
   };
 
@@ -889,7 +934,19 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
     }).then((unlisten) => { stopListening = unlisten; });
     void listen<string>('codeclub-browser-page-loaded', () => { if (inspectModeRef.current) void installInspector(true); }).then((unlisten) => { stopPageListening = unlisten; });
     const handleStateRequest = () => { void invoke('codeclub_browser_eval', { script: browserStateScript }).catch(() => undefined); };
-    const handleAction = async (event: Event) => { const action = (event as CustomEvent).detail || {}; const cursorDataUrl = await getBrowserCursorDataUrl(); await invoke('codeclub_browser_eval', { script: browserAgentOverlayScript(action.selector, cursorDataUrl) }).catch(() => undefined); await invoke('codeclub_browser_eval', { script: browserActionScript(action) }).catch(() => undefined); };
+    const handleAction = async (event: Event) => {
+      const action = (event as CustomEvent).detail || {};
+      const cursorDataUrl = await getBrowserCursorDataUrl();
+      await invoke('codeclub_browser_eval', { script: browserAgentOverlayScript(action.selector, cursorDataUrl, language) }).catch(() => undefined);
+      if (action.type === 'move') {
+        const result = await moveBrowserCursor(action.selector);
+        if (!result.ok) {
+          window.dispatchEvent(new CustomEvent('codeclub:browser-action-result', { detail: result }));
+          return;
+        }
+      }
+      await invoke('codeclub_browser_eval', { script: browserActionScript(action) }).catch(() => undefined);
+    };
     window.addEventListener('codeclub:browser-state-request', handleStateRequest);
     window.addEventListener('codeclub:browser-action', handleAction);
     void openPage(initialUrl, false);

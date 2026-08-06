@@ -1218,11 +1218,11 @@ export function createTools(ctx: ToolContext) {
       },
     }),
     browserAction: tool({
-      description: 'Interact with the active browser using a selector from getBrowserState. Supports click, type, key and scroll; does not require model vision.',
+      description: 'Interact with the active browser using a selector from getBrowserState. Supports move, click, type, key and scroll; does not require model vision.',
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
-          type: { type: 'string', enum: ['click', 'type', 'key', 'scroll'] },
+          type: { type: 'string', enum: ['move', 'click', 'type', 'key', 'scroll'] },
           selector: { type: 'string', description: 'CSS selector returned by getBrowserState. Omit only for scroll.' },
           text: { type: 'string' },
           key: { type: 'string' },
