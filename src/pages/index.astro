@@ -115,7 +115,7 @@ import ChatPanel from "../components/ChatPanel.astro";
 
         const recentChatsContainer = document.querySelector('[data-recent-chats]');
         const recentChatList = document.querySelector('[data-recent-chat-list]');
-        const recentChatGradient = 'linear-gradient(145deg, #8BC7FF 0%, #3D9BFF 44%, #1687FF 100%)';
+        const recentChatGradient = '#3D9BFF';
         let recentChats = [];
         const renderRecentChats = (chats = []) => {
           if (!recentChatsContainer || !recentChatList) return;

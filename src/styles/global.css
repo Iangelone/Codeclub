@@ -164,6 +164,25 @@ button {
   color: #eeeeee !important;
 }
 
+.attachment-image-preview-image {
+  transition: filter 180ms ease-out;
+}
+
+.attachment-image-preview-close {
+  opacity: 0;
+  background: transparent;
+  transition: opacity 180ms ease-out, background-color 180ms ease-out;
+}
+
+.attachment-image-preview:hover .attachment-image-preview-image {
+  filter: brightness(0.42);
+}
+
+.attachment-image-preview:hover .attachment-image-preview-close {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.08);
+}
+
 .composer-box > [aria-label="Referencia de artifact"] > span {
   display: none;
 }

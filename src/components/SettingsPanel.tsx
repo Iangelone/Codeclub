@@ -41,7 +41,7 @@ export default function SettingsPanel() {
           {activeTab === 'general' && <>
             <div className="rounded-xl border border-[#2b2b2b] bg-[#202020] p-4">
               <div className="flex items-center gap-3">
-                <div className="grid h-10 w-10 place-items-center rounded-xl text-white" style={{ background: 'linear-gradient(145deg, #8BC7FF 0%, #3D9BFF 44%, #1687FF 100%)' }}><UserRound size={19} strokeWidth={0} fill="currentColor" /></div>
+                <div className="grid h-10 w-10 place-items-center rounded-xl text-white" style={{ background: '#3D9BFF' }}><UserRound size={19} strokeWidth={0} fill="currentColor" /></div>
                 <div className="min-w-0"><h2 className="m-0 text-[14px] font-medium text-[#eeeeee]">{text.localProfile}</h2><p className="mt-1 truncate text-[12px] text-[#888888]">{username} · {text.localUser}</p></div>
               </div>
               <div className="mt-5 flex items-center justify-between gap-4 border-t border-[#2b2b2b] pt-4">

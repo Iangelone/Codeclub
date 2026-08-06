@@ -684,6 +684,13 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       setCommandKind('');
       return;
     }
+    if (kind === 'project') {
+      void readProjectIndex().then((projects) => {
+        setProjectOptions([{ id: '__none__', label: chatText.noProject, type: 'project', projectPath: null, isNone: true }, ...projects.map((project) => ({ id: project.path, label: project.name, type: 'project', projectPath: project.path }))]);
+        openCommandMenu(kind);
+      });
+      return;
+    }
     openCommandMenu(kind);
   };
 
@@ -2236,7 +2243,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
   }
 
   return (
-    <div ref={chatPanelRef} className="chat-interface-container" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleComposerDrop} style={{ width: 'min(680px, calc(100% - 64px))', height: '100%', boxSizing: 'border-box', justifySelf: 'center', display: 'grid', gridTemplateRows: 'minmax(0, 1fr) auto', placeItems: 'stretch', gap: '10px', overflow: 'visible', paddingBottom: '5vh' }}>
+    <div ref={chatPanelRef} className="chat-interface-container" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleComposerDrop} style={{ width: 'min(680px, calc(100% - 64px))', minWidth: 0, height: '100%', boxSizing: 'border-box', justifySelf: 'center', display: 'grid', gridTemplateRows: 'minmax(0, 1fr) auto', placeItems: 'stretch', gap: '10px', overflow: 'visible', paddingBottom: '5vh' }}>
       
       {/* Zona de mensajes */}
       <div className="messages-area" style={{ position: 'relative', minHeight: 0, height: '100%', overflowY: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none', display: composerDocked ? 'flex' : 'none', flexDirection: 'column', gap: '6px', paddingBottom: '10px', overscrollBehavior: 'contain' }}>
@@ -2284,9 +2291,9 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         <div ref={messagesEndRef} aria-hidden="true" />
       </div>
 
-      <div className="chat-composer" style={{ width: '100%', justifySelf: 'center', alignSelf: 'center', position: 'relative', display: 'grid', gap: '10px' }}>
-        <div className="composer-row" style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }}>
-          <div className="composer-box [&>[aria-label='Referencia de artifact']]:relative [&>[aria-label='Referencia de artifact']]:z-50 [&>[aria-label='Referencia de artifact']>span]:hidden" style={{ minHeight: '40px', flex: '1 1 auto', minWidth: 0, padding: 0, borderRadius: '22px', background: '#2F2F2F', border: '1px solid #3A3A3A', boxShadow: 'none' } as React.CSSProperties}>
+      <div className="chat-composer" style={{ width: '100%', minWidth: 0, justifySelf: 'center', alignSelf: 'center', position: 'relative', display: 'grid', gap: '10px' }}>
+        <div className="composer-row" style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', minWidth: 0 }}>
+          <div className="composer-box [&>[aria-label='Referencia de artifact']]:relative [&>[aria-label='Referencia de artifact']]:z-50 [&>[aria-label='Referencia de artifact']>span]:hidden" style={{ minHeight: '40px', flex: '1 1 auto', minWidth: 0, padding: 0, borderRadius: '22px', background: '#2F2F2F', border: '1px solid #3A3A3A', boxShadow: 'none', overflow: 'hidden' } as React.CSSProperties}>
           {artifactReference && <div className="flex min-h-[28px] items-center gap-2 px-4 py-1.5" aria-label="Referencia de artifact"><span className="shrink-0 text-[10px] uppercase tracking-[0.08em] text-[#666]">Referencia</span><button type="button" onClick={() => setArtifactReference(null)} className="min-w-0 max-w-[260px] truncate rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-left text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar referencia">@{artifactReference.kind} · {artifactReference.title}</button></div>}
           {browserReferences.length > 0 && (
             <div ref={browserRefContainerRef} className="flex min-h-[28px] max-w-full items-center gap-1.5 overflow-hidden border-b border-[#d9d4ce] px-3 py-1.5" aria-label="Referencias de navegador">
@@ -2316,7 +2323,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               )}
             </div>
           )}
-           {attachedFiles.length > 0 && <div className="flex min-h-[28px] items-center gap-1.5 overflow-hidden border-b border-[#d9d4ce] px-3 py-1.5" aria-label="Archivos adjuntos">{attachedFiles.slice(0, 3).map((file, index) => <button key={file.path} type="button" onClick={() => setAttachedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} className="flex max-w-[180px] min-w-0 shrink items-center gap-1.5 truncate rounded-full border border-[#d2cdc6] bg-[#e8e3dc] px-2.5 py-1 text-[10px] text-[#353331] hover:bg-[#ddd7d0]" title="Quitar archivo">{file.mediaType.startsWith('image/') ? <img src={file.previewUrl || convertFileSrc(file.path)} alt={file.name} style={{ width: '18px', height: '18px', objectFit: 'cover', borderRadius: '4px' }} /> : <Paperclip size={11} strokeWidth={1.8} />}<span className="truncate">{file.name}</span></button>)}{attachedFiles.length > 3 && <span className="shrink-0 rounded-full border border-[#d2cdc6] bg-[#e8e3dc] px-2.5 py-1 text-[10px] text-[#66615c]">+{attachedFiles.length - 3} archivos</span>}</div>}
+           {attachedFiles.length > 0 && <div className="file-preview-scrollbar flex min-h-[76px] w-full min-w-0 max-w-full flex-nowrap items-center gap-2 overflow-x-auto overflow-y-hidden border-b-0 px-3 py-1.5" aria-label="Archivos adjuntos">{attachedFiles.map((file, index) => file.mediaType.startsWith('image/') ? <button key={file.path} type="button" onClick={() => setAttachedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} className="attachment-image-preview relative h-16 w-16 shrink-0 overflow-hidden rounded-[10px] border-0 bg-[#161616]" title="Quitar imagen"><img src={file.previewUrl || convertFileSrc(file.path)} alt={file.name} className="attachment-image-preview-image h-full w-full object-cover" /><span aria-hidden="true" className="attachment-image-preview-close pointer-events-none absolute inset-0 grid place-items-center text-white"><X size={18} strokeWidth={2.2} /></span></button> : <button key={file.path} type="button" onClick={() => setAttachedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} className="flex max-w-[260px] min-w-0 shrink items-center gap-2 truncate rounded-full border-0 bg-[#F3F0EB] px-1.5 py-1 text-left text-[10px] text-[#353331] transition-[filter] hover:brightness-95" title="Quitar archivo"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#ded9d2]"><Paperclip size={12} strokeWidth={1.8} /></span><span className="min-w-0 flex-1 truncate">{file.name}</span><span aria-hidden="true" className="pr-1 text-[14px] leading-none text-[#77706a]">×</span></button>)}</div>}
           {activeSkills.length > 0 && <div className="flex min-h-[28px] items-center gap-1.5 overflow-x-auto border-b border-[#202020] px-3 py-1.5" aria-label={chatText.activeSkills}>
             {activeSkills.map((skill) => <button key={skill.id} type="button" onClick={() => setActiveSkills((current) => current.filter((item) => item.id !== skill.id))} className="flex shrink-0 items-center gap-1 rounded-full border border-[#3d9bff]/50 bg-[#1687ff]/10 px-2.5 py-1 text-[10px] text-[#b9dcff] hover:bg-[#1687ff]/20" title="Quitar habilidad de esta sesión">
               <span className="max-w-[150px] truncate">{skill.name}</span><span className="text-[#8bc7ff]/70">×</span>
