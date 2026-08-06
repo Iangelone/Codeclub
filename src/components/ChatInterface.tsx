@@ -70,6 +70,16 @@ const AnimatedBraille = ({ kind }: { kind: keyof typeof SPINNER_FRAMES }) => {
 const formatDuration = (durationMs: number) => durationMs >= 60000 ? `${(durationMs / 60000).toFixed(1)} min` : `${Math.max(0.1, durationMs / 1000).toFixed(1)} s`;
 const formatProcessingDuration = (durationMs: number) => durationMs >= 60000 ? `${(durationMs / 60000).toFixed(1)}min` : `${Math.max(0, Math.round(durationMs / 1000))}s`;
 const escapeXml = (value: unknown) => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+const getBrowserReferenceFavicon = (reference: { title: string; url?: string }) => {
+  try {
+    if (!reference.url && reference.title.toLowerCase().includes('google')) return 'https://www.google.com/favicon.ico';
+    const source = reference.url || '';
+    if (!source) return '';
+    return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(new URL(source).hostname)}&sz=32`;
+  } catch {
+    return '';
+  }
+};
 
 type ChatAttachment = { path: string; name: string; mediaType: string; size?: number; previewUrl?: string; previewText?: string };
 type SessionSkill = { id: string; name: string; description: string; source: string; content: string };
@@ -213,7 +223,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [input, setInput] = useState('');
   const [artifactReference, setArtifactReference] = useState<{ kind: 'plan' | 'todo' | 'quote'; id: string; title: string } | null>(null);
-  const [browserReferences, setBrowserReferences] = useState<{ id: string; title: string; text: string }[]>([]);
+  const [browserReferences, setBrowserReferences] = useState<{ id: string; title: string; text: string; url?: string }[]>([]);
   const browserRefContainerRef = useRef<HTMLDivElement>(null);
   const [maxVisibleBrowserRefs, setMaxVisibleBrowserRefs] = useState(3);
   const [inputFocused, setInputFocused] = useState(false);
@@ -356,12 +366,13 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   }, [browserReferences.length]);
   useEffect(() => {
     const handleBrowserReference = (event: Event) => {
-      const detail = (event as CustomEvent<{ title?: string; text?: string }>).detail;
+      const detail = (event as CustomEvent<{ title?: string; text?: string; url?: string }>).detail;
       if (!detail?.text) return;
       const newItem = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         title: detail.title || 'Referencia',
         text: detail.text,
+        url: detail.url,
       };
       setBrowserReferences((current) => {
         if (current.some((item) => item.text === newItem.text)) return current;
@@ -2303,21 +2314,22 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           <div className="composer-box [&>[aria-label='Referencia de artifact']]:relative [&>[aria-label='Referencia de artifact']]:z-50 [&>[aria-label='Referencia de artifact']>span]:hidden" style={{ minHeight: '40px', flex: '1 1 auto', minWidth: 0, padding: 0, borderRadius: '22px', background: '#2F2F2F', border: '1px solid #3A3A3A', boxShadow: 'none', overflow: 'hidden' } as React.CSSProperties}>
           {artifactReference && <div className="flex min-h-[28px] items-center gap-2 px-4 py-1.5" aria-label="Referencia de artifact"><span className="shrink-0 text-[10px] uppercase tracking-[0.08em] text-[#666]">Referencia</span><button type="button" onClick={() => setArtifactReference(null)} className="min-w-0 max-w-[260px] truncate rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-left text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar referencia">@{artifactReference.kind} · {artifactReference.title}</button></div>}
           {browserReferences.length > 0 && (
-            <div ref={browserRefContainerRef} className="flex min-h-[28px] max-w-full items-center gap-1.5 overflow-hidden border-b border-[#d9d4ce] px-3 py-1.5" aria-label="Referencias de navegador">
-              {browserReferences.slice(0, maxVisibleBrowserRefs).map((ref) => (
+            <div ref={browserRefContainerRef} className="file-preview-scrollbar flex min-h-[76px] w-full min-w-0 max-w-full flex-nowrap items-center gap-2 overflow-x-auto overflow-y-hidden border-b-0 px-3 py-1.5" aria-label="Referencias de navegador">
+              {browserReferences.map((ref) => (
                 <button
                   key={ref.id}
                   type="button"
                   onClick={() => setBrowserReferences((current) => current.filter((item) => item.id !== ref.id))}
-                  className="flex max-w-[130px] min-w-0 shrink items-center gap-1.5 truncate rounded-full border px-2.5 py-1 text-left text-[10px] font-medium transition-[filter] hover:brightness-105"
-                  style={{ borderColor: '#F8EAD8', color: '#111111', background: 'linear-gradient(135deg, #1687FF 0%, #67BAFF 38%, #F8EAD8 72%, #FFF3DF 100%)' }}
+                  className="browser-reference-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] text-[#cfcfcf]"
                   title={`Quitar @${ref.title}`}
                 >
-                  <span className="truncate">@{ref.title}</span>
+                  <span className="browser-reference-preview-icon">
+                    {getBrowserReferenceFavicon(ref) ? <img src={getBrowserReferenceFavicon(ref)} alt="" onError={(event) => { event.currentTarget.style.display = 'none'; }} /> : <Globe size={18} strokeWidth={1.7} />}
+                  </span>
                   <span className="shrink-0 text-[#777] hover:text-[#eee]">×</span>
                 </button>
               ))}
-              {browserReferences.length > maxVisibleBrowserRefs && (
+              {false && browserReferences.length > maxVisibleBrowserRefs && (
                 <button
                   type="button"
                   onClick={() => setBrowserReferences([])}

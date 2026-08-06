@@ -935,6 +935,7 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
   const goForward = () => { if (historyIndex < history.length - 1) void openPage(history[historyIndex + 1], false).then(() => setHistoryIndex((current) => { historyIndexRef.current = current + 1; return current + 1; })); };
   const referencePage = () => window.dispatchEvent(new CustomEvent('codeclub:browser-reference', { detail: selection ? {
     title: selection.title || selection.selector || text.selectedElement,
+    url: selection.url || address,
     text: JSON.stringify({ url: selection.url, selector: selection.selector, tag: selection.tag, text: selection.text, html: selection.html }),
   } : { title: address.replace(/^https?:\/\//, '').split('/')[0] || text.page, text: `${text.openPage}: ${address}` } }));
 
@@ -1047,7 +1048,7 @@ function BrowserView({ initialUrl = 'https://www.google.com' }: { initialUrl?: s
   };
   const pushReference = (text: string, referenceTitle: string) => {
     if (!text.trim()) return;
-    window.dispatchEvent(new CustomEvent('codeclub:browser-reference', { detail: { title: referenceTitle, text: text.trim() } }));
+    window.dispatchEvent(new CustomEvent('codeclub:browser-reference', { detail: { title: referenceTitle, text: text.trim(), url: address } }));
     setInspectMode(false);
   };
 
