@@ -5,10 +5,50 @@ use std::{
     io::{BufRead, Read, Write},
     path::{Component, Path, PathBuf},
     process::{Child, ChildStdin, Command, Stdio},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tauri::{webview::{PageLoadEvent, WebviewBuilder}, AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, State, WebviewUrl};
+use tauri::{webview::{PageLoadEvent, WebviewBuilder}, AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindowBuilder};
+
+#[cfg(windows)]
+use base64::Engine as _;
+#[cfg(windows)]
+use uiautomation::{inputs::Mouse, patterns::{UIInvokePattern, UIValuePattern}, types::{ControlType, Point}, UIAutomation};
+#[cfg(windows)]
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_ESCAPE};
+
+#[cfg(windows)]
+fn computer_automation() -> Result<UIAutomation, String> {
+    UIAutomation::new_direct()
+        .or_else(|_| UIAutomation::new())
+        .map_err(|error| format!("No se pudo inicializar UI Automation: {error}"))
+}
+
+#[cfg(windows)]
+static COMPUTER_AUTOMATION_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+#[cfg(windows)]
+fn lock_computer_automation() -> Result<std::sync::MutexGuard<'static, ()>, String> {
+    COMPUTER_AUTOMATION_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .map_err(|_| "Computer Use está ocupado.".to_string())
+}
+
+#[cfg(windows)]
+fn start_computer_escape_monitor(app: AppHandle) {
+    std::thread::spawn(move || {
+        let mut was_down = false;
+        loop {
+            let is_down = unsafe { ((GetAsyncKeyState(VK_ESCAPE.0 as i32) as u16) & 0x8000) != 0 };
+            if is_down && !was_down {
+                let _ = app.emit("codeclub-computer-escape", ());
+            }
+            was_down = is_down;
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    });
+}
 
 #[derive(Serialize)]
 struct FileEntry {
@@ -78,6 +118,56 @@ struct HttpFetchResponse {
     status_text: String,
     headers: Vec<HttpHeader>,
     body: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ComputerActionRequest {
+    action: String,
+    x: Option<i32>,
+    y: Option<i32>,
+    text: Option<String>,
+    key: Option<String>,
+    target_name: Option<String>,
+    automation_id: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ComputerWindow {
+    title: String,
+    class_name: String,
+    handle: isize,
+    bounds: [i32; 4],
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ComputerScreenshot {
+    mime_type: String,
+    data: String,
+    width: u32,
+    height: u32,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ComputerElement {
+    id: String,
+    name: String,
+    role: String,
+    automation_id: String,
+    enabled: bool,
+    focused: bool,
+    bounds: [i32; 4],
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ComputerState {
+    focused_window: Option<ComputerWindow>,
+    focused_element: Option<ComputerElement>,
+    elements: Vec<ComputerElement>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -1021,6 +1111,185 @@ fn codeclub_terminal_delete(
 }
 
 #[tauri::command]
+fn codeclub_computer_get_state() -> Result<ComputerState, String> {
+    #[cfg(windows)]
+    {
+        let _automation_guard = lock_computer_automation()?;
+        fn element_id(element: &uiautomation::UIElement) -> String {
+            element.get_runtime_id().map(|id| id.iter().map(ToString::to_string).collect::<Vec<_>>().join("-")).unwrap_or_default()
+        }
+        fn describe(element: &uiautomation::UIElement, focused_id: &str) -> Option<ComputerElement> {
+            let rect = element.get_bounding_rectangle().ok()?;
+            let role = element.get_control_type().map(|value| format!("{value:?}")).unwrap_or_else(|_| "Unknown".to_string());
+            let id = element_id(element);
+            Some(ComputerElement {
+                id,
+                name: element.get_name().unwrap_or_default(),
+                role,
+                automation_id: element.get_automation_id().unwrap_or_default(),
+                enabled: element.is_enabled().unwrap_or(false),
+                focused: element.has_keyboard_focus().unwrap_or(false) || element_id(element) == focused_id,
+                bounds: [rect.get_left(), rect.get_top(), rect.get_right(), rect.get_bottom()],
+            })
+        }
+        fn walk(element: &uiautomation::UIElement, walker: &uiautomation::UITreeWalker, focused_id: &str, elements: &mut Vec<ComputerElement>, depth: usize) {
+            if depth > 5 || elements.len() >= 80 { return; }
+            if let Some(item) = describe(element, focused_id) {
+                if item.role != "Window" && (!item.name.is_empty() || !item.automation_id.is_empty()) { elements.push(item); }
+            }
+            let mut child = walker.get_first_child(element).ok();
+            while let Some(item) = child {
+                walk(&item, walker, focused_id, elements, depth + 1);
+                child = walker.get_next_sibling(&item).ok();
+                if elements.len() >= 80 { break; }
+            }
+        }
+
+        let automation = computer_automation()?;
+        let focused = automation.get_focused_element().ok();
+        let focused_id = focused.as_ref().map(element_id).unwrap_or_default();
+        let walker = automation.get_control_view_walker().map_err(|error| error.to_string())?;
+        let mut focused_window = None;
+        let mut window = focused.clone();
+        for _ in 0..10 {
+            let Some(element) = window else { break; };
+            if element.get_control_type().ok() == Some(ControlType::Window) {
+                let rect = element.get_bounding_rectangle().map_err(|error| error.to_string())?;
+                focused_window = Some(ComputerWindow {
+                    title: element.get_name().unwrap_or_default(),
+                    class_name: element.get_classname().unwrap_or_default(),
+                    handle: element.get_native_window_handle().map(|handle| handle.into()).unwrap_or_default(),
+                    bounds: [rect.get_left(), rect.get_top(), rect.get_right(), rect.get_bottom()],
+                });
+                let mut elements = Vec::new();
+                walk(&element, &walker, &focused_id, &mut elements, 0);
+                return Ok(ComputerState { focused_window, focused_element: focused.as_ref().and_then(|item| describe(item, &focused_id)), elements });
+            }
+            window = walker.get_parent(&element).ok();
+        }
+        Ok(ComputerState { focused_window, focused_element: focused.as_ref().and_then(|item| describe(item, &focused_id)), elements: Vec::new() })
+    }
+    #[cfg(not(windows))]
+    { Err("Computer Use solo está disponible en Windows.".to_string()) }
+}
+
+#[tauri::command]
+fn codeclub_computer_list_windows() -> Result<Vec<ComputerWindow>, String> {
+    #[cfg(windows)]
+    {
+        let _automation_guard = lock_computer_automation()?;
+        let automation = computer_automation()?;
+        let root = automation.get_root_element().map_err(|error| error.to_string())?;
+        let walker = automation.get_control_view_walker().map_err(|error| error.to_string())?;
+        let mut windows = Vec::new();
+        let mut current = walker.get_first_child(&root).ok();
+        let mut inspected = 0;
+        while let Some(element) = current {
+            inspected += 1;
+            if inspected > 80 { break; }
+            if element.get_control_type().ok() == Some(ControlType::Window) {
+                let rect = element.get_bounding_rectangle().map_err(|error| error.to_string())?;
+                windows.push(ComputerWindow {
+                    title: element.get_name().unwrap_or_default(),
+                    class_name: element.get_classname().unwrap_or_default(),
+                    handle: element.get_native_window_handle().map(|handle| handle.into()).unwrap_or_default(),
+                    bounds: [rect.get_left(), rect.get_top(), rect.get_right(), rect.get_bottom()],
+                });
+            }
+            current = walker.get_next_sibling(&element).ok();
+        }
+        return Ok(windows);
+    }
+    #[cfg(not(windows))]
+    { Err("Computer Use solo está disponible en Windows.".to_string()) }
+}
+
+#[tauri::command]
+fn codeclub_computer_screenshot() -> Result<ComputerScreenshot, String> {
+    #[cfg(windows)]
+    {
+        let _automation_guard = lock_computer_automation()?;
+        let screenshot = uiautomation::screenshots::Screenshot::capture_desktop().map_err(|error| error.to_string())?;
+        let path = std::env::temp_dir().join(format!("codeclub-computer-{}.png", std::process::id()));
+        screenshot.save_png(&path).map_err(|error| error.to_string())?;
+        let bytes = fs::read(&path).map_err(|error| error.to_string());
+        let _ = fs::remove_file(&path);
+        let bytes = bytes?;
+        return Ok(ComputerScreenshot {
+            mime_type: "image/png".to_string(),
+            data: base64::engine::general_purpose::STANDARD.encode(bytes),
+            width: screenshot.width(),
+            height: screenshot.height(),
+        });
+    }
+    #[cfg(not(windows))]
+    { Err("Computer Use solo está disponible en Windows.".to_string()) }
+}
+
+#[tauri::command]
+fn codeclub_computer_action(request: ComputerActionRequest) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        let _automation_guard = lock_computer_automation()?;
+        let automation = computer_automation()?;
+        let target = if request.target_name.is_some() || request.automation_id.is_some() {
+            let root = automation.get_root_element().map_err(|error| error.to_string())?;
+            let mut matcher = automation.create_matcher().from(root).timeout(1500);
+            if let Some(name) = request.target_name.as_deref() { matcher = matcher.match_name(name); }
+            if let Some(automation_id) = request.automation_id.as_deref() {
+                matcher = matcher.filter_fn(Box::new({ let expected = automation_id.to_string(); move |element: &uiautomation::UIElement| Ok(element.get_automation_id().unwrap_or_default() == expected) }));
+            }
+            matcher.find_first().ok()
+        } else { None };
+        if let Some(element) = target {
+            match request.action.as_str() {
+                "focus" => return element.set_focus().map_err(|error| error.to_string()),
+                "click" | "doubleClick" | "rightClick" => {
+                    if request.action == "click" {
+                        if let Ok(pattern) = element.get_pattern::<UIInvokePattern>() { return pattern.invoke().map_err(|error| error.to_string()); }
+                    }
+                    let rect = element.get_bounding_rectangle().map_err(|error| error.to_string())?;
+                    let point = Point::new((rect.get_left() + rect.get_right()) / 2, (rect.get_top() + rect.get_bottom()) / 2);
+                    return match request.action.as_str() {
+                        "doubleClick" => Mouse::new().double_click(&point).map_err(|error| error.to_string()),
+                        "rightClick" => Mouse::new().right_click(&point).map_err(|error| error.to_string()),
+                        _ => Mouse::new().click(&point).map_err(|error| error.to_string()),
+                    };
+                }
+                "type" => {
+                    element.set_focus().map_err(|error| error.to_string())?;
+                    if let Ok(pattern) = element.get_pattern::<UIValuePattern>() {
+                        if let Some(text) = request.text.as_deref() { return pattern.set_value(text).map_err(|error| error.to_string()); }
+                    }
+                    return automation.get_root_element().map_err(|error| error.to_string())?.send_text_by_clipboard(&request.text.unwrap_or_default()).map_err(|error| error.to_string());
+                }
+                _ => {}
+            }
+        }
+        match request.action.as_str() {
+            "move" => Mouse::new().move_to(&Point::new(request.x.ok_or("Falta x")?, request.y.ok_or("Falta y")?)).map_err(|error| error.to_string()),
+            "click" => Mouse::new().click(&Point::new(request.x.ok_or("Falta x")?, request.y.ok_or("Falta y")?)).map_err(|error| error.to_string()),
+            "doubleClick" => Mouse::new().double_click(&Point::new(request.x.ok_or("Falta x")?, request.y.ok_or("Falta y")?)).map_err(|error| error.to_string()),
+            "rightClick" => Mouse::new().right_click(&Point::new(request.x.ok_or("Falta x")?, request.y.ok_or("Falta y")?)).map_err(|error| error.to_string()),
+            "type" => automation.get_root_element().map_err(|error| error.to_string())?.send_text_by_clipboard(&request.text.unwrap_or_default()).map_err(|error| error.to_string()),
+            "key" => automation.get_root_element().map_err(|error| error.to_string())?.send_keys(&request.key.unwrap_or_default(), 10).map_err(|error| error.to_string()),
+            _ => Err("Acción de Computer Use no reconocida.".to_string()),
+        }
+    }
+    #[cfg(not(windows))]
+    { let _ = request; Err("Computer Use solo está disponible en Windows.".to_string()) }
+}
+
+#[tauri::command]
+fn codeclub_computer_overlay(app: AppHandle, active: bool) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("computer-use-overlay") {
+        if active { window.show().map_err(|error| error.to_string())?; }
+        else { window.hide().map_err(|error| error.to_string())?; }
+    }
+    Ok(())
+}
+
+#[tauri::command]
 async fn codeclub_http_fetch(request: HttpFetchRequest) -> Result<HttpFetchResponse, String> {
     if !request.url.starts_with("https://") && !request.url.starts_with("http://") {
         return Err("URL HTTP invalida para el fetch del modelo.".into());
@@ -1219,6 +1488,35 @@ fn codeclub_whatsapp_stop(state: State<'_, WhatsAppRegistry>) -> Result<(), Stri
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .setup(|app| {
+            #[cfg(windows)]
+            start_computer_escape_monitor(app.handle().clone());
+            let overlay_url = if cfg!(debug_assertions) {
+                WebviewUrl::External("http://127.0.0.1:4321/computer-overlay/".parse().map_err(|error| format!("URL invalida para el overlay: {error}"))?)
+            } else {
+                WebviewUrl::App("computer-overlay".into())
+            };
+            let overlay = WebviewWindowBuilder::new(app, "computer-use-overlay", overlay_url)
+                .title("ChatGPT is using your computer")
+                .inner_size(430.0, 54.0)
+                .decorations(false)
+                .transparent(true)
+                .always_on_top(true)
+                .skip_taskbar(true)
+                .resizable(false)
+                .focusable(false)
+                .visible(false)
+                .build()
+                .map_err(|error| format!("No se pudo crear el overlay de Computer Use: {error}"))?;
+            overlay.set_ignore_cursor_events(true).map_err(|error| format!("No se pudo hacer click-through el overlay: {error}"))?;
+            if let Ok(Some(monitor)) = overlay.primary_monitor() {
+                let size = monitor.size();
+                let position = monitor.position();
+                let x = position.x + ((size.width as f64 - 430.0) / 2.0).max(0.0) as i32;
+                overlay.set_position(PhysicalPosition::new(x, position.y + 12)).map_err(|error| error.to_string())?;
+            }
+            Ok(())
+        })
         .manage(TerminalRegistry::default())
         .manage(WhatsAppRegistry::default())
         .plugin(tauri_plugin_dialog::init())
@@ -1243,6 +1541,11 @@ pub fn run() {
             codeclub_terminal_stop,
             codeclub_terminal_delete,
             codeclub_http_fetch,
+            codeclub_computer_get_state,
+            codeclub_computer_list_windows,
+            codeclub_computer_screenshot,
+            codeclub_computer_action,
+            codeclub_computer_overlay,
             codeclub_browser_create,
             codeclub_browser_close,
             codeclub_browser_set_visible,

@@ -56,7 +56,8 @@
     "recharts": "^3.10.0",
     "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.1",
-    "tailwindcss": "^4.3.2"
+    "tailwindcss": "^4.3.2",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",

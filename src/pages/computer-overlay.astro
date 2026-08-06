@@ -1,0 +1,44 @@
+---
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Computer Use</title>
+    <style>
+      :root { background: transparent; }
+      * { box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; margin: 0; background: transparent; overflow: hidden; }
+      .pill {
+        width: 100%;
+        height: 42px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        padding: 0 18px;
+        border: 1px solid rgba(141, 214, 255, 0.72);
+        border-radius: 999px;
+        background: linear-gradient(105deg, rgba(72, 190, 255, 0.94), rgba(110, 202, 255, 0.86));
+        box-shadow: 0 0 18px rgba(61, 155, 255, 0.78), 0 8px 26px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.42);
+        color: #f7fcff;
+        font: 600 13px/1.1 "Segoe UI", sans-serif;
+        text-shadow: 0 1px 2px rgba(0, 50, 90, 0.32);
+        white-space: nowrap;
+      }
+      .dot { width: 7px; height: 7px; border-radius: 50%; background: #fff; box-shadow: 0 0 8px #fff; }
+      .separator { opacity: 0.68; }
+      .cancel { font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <div class="pill" role="status" aria-label="ChatGPT is using your computer. Press Escape to cancel.">
+      <span class="dot" aria-hidden="true"></span>
+      <span>ChatGPT is using your computer</span>
+      <span class="separator">·</span>
+      <span class="cancel">Esc to cancel</span>
+    </div>
+  </body>
+</html>

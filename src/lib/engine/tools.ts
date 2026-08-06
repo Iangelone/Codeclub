@@ -13,6 +13,9 @@ import { protectedExtensionIds } from '../extensions';
 const specialistHandoff = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, 500);
 
 const TOOL_GUIDANCE: Record<string, string> = {
+  computerGetState: 'Si la app solo expone un Pane o no devuelve un TextBox/Input, no esperes otro control: ejecuta computerScreenshot y usa la imagen para ubicar el input. Para interactuar por coordenadas, hace computerAction click con x/y y luego computerAction type o key.',
+  computerScreenshot: 'Usa la imagen para ubicar visualmente el control cuando UI Automation no exponga elementos. Despues hace click con x/y, escribi y verifica con otra captura.',
+  computerOcr: 'Usa el texto y las cajas devueltas por OCR para convertir una etiqueta visible en coordenadas. La confianza es orientativa, no garantiza reconocimiento perfecto.',
   listFiles: 'Usá la lista como evidencia del workspace y, si necesitás detalles, leé los archivos relevantes.',
   readFile: 'Basate únicamente en el contenido leído; no afirmes cambios sin una tool de escritura o verificación.',
   searchText: 'Si hay coincidencias, citá rutas y líneas; si está vacío, informá que no hubo resultados.',
@@ -512,6 +515,7 @@ export function selectToolsForPrompt(toolset: Record<string, any>, _mode: 'devel
 
   const add = (...names: string[]) => names.forEach((name) => keys.add(name));
   const has = (...terms: string[]) => terms.some((term) => text.includes(term));
+  if (has('controlar la pc', 'control de pc', 'computadora', 'mouse', 'teclado', 'windows', 'notepad', 'bloc de notas', 'chatgpt', 'app de escritorio', 'aplicación de escritorio', 'aplicacion de escritorio')) add('computerListWindows', 'computerGetState', 'computerScreenshot', 'computerOcr', 'computerAction');
 
   if (false) {
     if (has('cotiz', 'presupuesto', 'propuesta', 'precio', 'tarifa', 'estim')) add('createQuote', 'createBudget', 'updateBusinessWorkspace');
@@ -533,7 +537,7 @@ export function selectToolsForPrompt(toolset: Record<string, any>, _mode: 'devel
     if (has('log', 'auditar', 'ejecución', 'ejecucion', 'herramientas', 'debug')) add('getExecutionLog');
   }
 
-  if (_mode === 'development' && has('control de pc', 'computadora', 'mouse', 'teclado', 'navegador', 'edge', 'notepad', 'bloc de notas')) add('subagent', 'runCommand', 'openBrowser', 'getBrowserState', 'browserAction');
+  if (_mode === 'development' && has('control de pc', 'computadora', 'mouse', 'teclado', 'navegador', 'edge', 'notepad', 'bloc de notas', 'chatgpt', 'app de escritorio', 'aplicación de escritorio', 'aplicacion de escritorio')) add('subagent', 'runCommand', 'openBrowser', 'getBrowserState', 'browserAction');
 
   return Object.fromEntries([...keys].filter((name) => toolset[name]).map((name) => [name, toolset[name]]));
 }
@@ -554,6 +558,11 @@ export function createDynamicToolAccess(availableTools: Record<string, any>, rec
     openBrowser: ['navegador', 'browser', 'web', 'url', 'abrir'],
     getBrowserState: ['navegador', 'browser', 'estado', 'observar', 'dom'],
     browserAction: ['click', 'escribir', 'scroll', 'navegador', 'browser', 'accion'],
+    computerListWindows: ['windows', 'ventanas', 'aplicaciones', 'pc', 'computadora', 'desktop'],
+    computerGetState: ['estado', 'ventana', 'controles', 'accesibilidad', 'ui automation', 'pc', 'windows'],
+    computerScreenshot: ['captura', 'pantalla', 'desktop', 'pc', 'computadora', 'windows'],
+    computerOcr: ['ocr', 'texto visible', 'leer pantalla', 'leer texto', 'reconocer texto', 'coordenadas'],
+    computerAction: ['mouse', 'teclado', 'click', 'clic', 'escribir', 'enfocar', 'activar ventana', 'controlar', 'windows', 'pc'],
     switchProject: ['proyecto', 'proyectos', 'cambiar', 'seleccionar', 'workspace', 'sin proyecto'],
     remember: ['memoria', 'guardar', 'recordar', 'nota', 'remember'],
     recall: ['memoria', 'recuperar', 'recordar', 'buscar memoria'],
@@ -620,7 +629,10 @@ export function createDynamicToolAccess(availableTools: Record<string, any>, rec
         const startedAt = performance.now();
         try {
           const result = await definition.execute(input || {});
-          const output = { ok: true, tool: name, durationMs: Math.round(performance.now() - startedAt), result };
+          const nextStep = name === 'computerAction' && input?.action === 'focus'
+            ? 'Continuá inmediatamente con computerGetState. Si no devuelve TextBox/Input, ejecutá computerScreenshot o computerOcr; después hacé click con x/y, type y key {ENTER}.'
+            : undefined;
+          const output = { ok: true, tool: name, durationMs: Math.round(performance.now() - startedAt), result, ...(nextStep ? { nextStep } : {}) };
           recordToolEvent?.('executeTool', { name, input: input || {} }, output);
           return output;
         } catch (error) {
@@ -1233,6 +1245,82 @@ export function createTools(ctx: ToolContext) {
         return output;
       },
     }),
+    computerListWindows: tool({
+      description: 'List visible top-level Windows applications with title, class and screen bounds. Read-only; use it before controlling another app.',
+      inputSchema: jsonSchema({ type: 'object', properties: {}, additionalProperties: false }),
+      execute: async () => {
+        const output = await invoke('codeclub_computer_list_windows');
+        recordToolEvent('computerListWindows', {}, output);
+        return output;
+      },
+    }),
+    computerGetState: tool({
+      description: 'Inspect the focused Windows app through UI Automation. If it only exposes a Pane or no TextBox/Input, immediately use computerScreenshot and continue with coordinates; do not wait for inaccessible controls.',
+      inputSchema: jsonSchema({ type: 'object', properties: {}, additionalProperties: false }),
+      execute: async () => {
+        const output = await invoke('codeclub_computer_get_state');
+        recordToolEvent('computerGetState', {}, output);
+        return output;
+      },
+    }),
+    computerScreenshot: tool({
+      description: 'Capture the current Windows desktop as PNG evidence. Read-only; use it before and after computer actions.',
+      inputSchema: jsonSchema({ type: 'object', properties: {}, additionalProperties: false }),
+      execute: async () => {
+        const output = await invoke('codeclub_computer_screenshot');
+        recordToolEvent('computerScreenshot', {}, { ok: true, width: (output as any).width, height: (output as any).height });
+        return output;
+      },
+    }),
+    computerOcr: tool({
+      description: 'Run local OCR over the current Windows desktop screenshot. Returns recognized text, confidence and word bounding boxes in screen coordinates for models without vision.',
+      inputSchema: jsonSchema({ type: 'object', properties: {}, additionalProperties: false }),
+      execute: async () => {
+        const screenshot = await invoke<any>('codeclub_computer_screenshot');
+        const { createWorker } = await import('tesseract.js');
+        const worker = await createWorker('eng+spa');
+        try {
+          const image = `data:${screenshot.mimeType};base64,${screenshot.data}`;
+          const result = await worker.recognize(image);
+          const words = (result.data.words || []).map((word: any) => ({
+            text: word.text,
+            confidence: word.confidence,
+            bounds: { x: word.bbox.x0, y: word.bbox.y0, width: word.bbox.x1 - word.bbox.x0, height: word.bbox.y1 - word.bbox.y0 },
+          }));
+          const output = { ok: true, text: result.data.text, confidence: result.data.confidence, words, width: screenshot.width, height: screenshot.height };
+          recordToolEvent('computerOcr', {}, { ok: true, confidence: output.confidence, words: words.length, width: output.width, height: output.height });
+          return output;
+        } finally {
+          await worker.terminate();
+        }
+      },
+    }),
+    computerAction: tool({
+      description: 'Control a visible Windows app with the mouse or keyboard. For a desktop app, first use focus with targetName (for example ChatGPT), then inspect its state. If no input is accessible, use screenshot coordinates: click x/y, then type text, then key {ENTER}. Do not use openBrowser for desktop apps. Actions: focus, move, click, doubleClick, rightClick, type, key.',
+      inputSchema: jsonSchema({
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['focus', 'move', 'click', 'doubleClick', 'rightClick', 'type', 'key'] },
+          x: { type: 'number' },
+          y: { type: 'number' },
+          text: { type: 'string' },
+          key: { type: 'string', description: 'Key expression, e.g. {CTRL}L or {ENTER}.' },
+          targetName: { type: 'string', description: 'Accessible control name from computerGetState.' },
+          automationId: { type: 'string', description: 'Automation id from computerGetState.' },
+        },
+        required: ['action'],
+        additionalProperties: false,
+      }),
+      execute: async (request) => {
+        if (false) {
+          const approved = await requestToolApproval({ toolName: 'computerAction', input: request, summary: `Controlar Windows: ${request.action}` });
+          if (!approved) return { ok: false, error: 'Acción cancelada por el usuario.' };
+        }
+        const output = await invoke('codeclub_computer_action', { request });
+        recordToolEvent('computerAction', request, output);
+        return { ok: true, action: request.action, result: output };
+      },
+    }),
     switchProject: tool({
       description: 'Switch the active workspace project, or select no project. Accepts an indexed project name or full path.',
       inputSchema: jsonSchema({
@@ -1286,7 +1374,7 @@ export function createTools(ctx: ToolContext) {
         const subTools = specialist === 'developer'
           ? Object.fromEntries(['listFiles', 'readFile', 'searchText', 'writeFile', 'runCommand', 'terminal'].map((name) => [name, developmentTools[name]]).filter(([, toolDefinition]) => toolDefinition))
           : specialist === 'computer_use'
-            ? Object.fromEntries(['openBrowser', 'getBrowserState', 'browserAction', 'runCommand'].map((name) => [name, developmentTools[name]]).filter(([, toolDefinition]) => toolDefinition))
+            ? Object.fromEntries(['computerListWindows', 'computerGetState', 'computerScreenshot', 'computerOcr', 'computerAction', 'openBrowser', 'getBrowserState', 'browserAction', 'runCommand'].map((name) => [name, developmentTools[name]]).filter(([, toolDefinition]) => toolDefinition))
             : createSubagentTools({ projectPath, recordToolEvent, setAgentState });
 
         const specialistSystem = specialist === 'computer_use'

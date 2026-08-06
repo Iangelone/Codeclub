@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUp, ArrowUpRight, Box, Bug, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Layers, LayoutTemplate, ListChecks, ListTodo, MessageSquare, MousePointer2, Orbit, Paperclip, Pencil, Presentation, RotateCcw, Search, ScrollText, Square, Table2, Terminal, Folder, FolderTree, RefreshCw, WandSparkles, X } from 'lucide-react';
+import { ArrowUp, ArrowUpRight, Box, Bug, Camera, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Layers, LayoutTemplate, ListChecks, ListTodo, MessageSquare, Monitor, MousePointer2, Orbit, Paperclip, Pencil, Presentation, RotateCcw, Search, ScrollText, Square, Table2, Terminal, Folder, FolderTree, RefreshCw, WandSparkles, X } from 'lucide-react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -234,6 +234,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [agentElapsedMs, setAgentElapsedMs] = useState(0);
   const agentStartedAtRef = useRef(0);
   const [activeToolName, setActiveToolName] = useState('');
+  const [computerUseActive, setComputerUseActive] = useState(false);
   const [pendingApprovals, setPendingApprovals] = useState([]);
   const toolStateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const visualAnimationRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -1661,6 +1662,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             onToolExecutionStart: ({ callId, toolCall }) => {
               if (!isCurrentGeneration()) return;
               const name = toolCall?.toolName || 'tool';
+              const innerToolName = name === 'executeTool' ? toolCall?.input?.name : name;
+              if (String(innerToolName || '').startsWith('computer')) setComputerUseActive(true);
               const eventKey = callId || toolCall?.toolCallId || '';
               const existingIndex = eventKey ? assistantTools.findIndex((event) => event.callId === eventKey) : -1;
               const nextEvent = { id: existingIndex >= 0 ? assistantTools[existingIndex].id : (eventKey || crypto.randomUUID?.() || `${Date.now()}-${assistantTools.length}`), callId: eventKey, name, input: toolCall?.input || {}, output: { status: 'running' }, startedAt: Date.now(), durationMs: null, at: new Date().toISOString() };
@@ -1862,6 +1865,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       if (isVisibleGeneration()) {
         setIsStreaming(false);
         setActiveToolName('');
+        setComputerUseActive(false);
         setAgentState((state) => state === 'error' && !abortController.signal.aborted ? 'error' : 'idle');
       }
       if (chatRuntimesRef.current.get(chatId)?.controller === abortController) chatRuntimesRef.current.delete(chatId);
@@ -1891,8 +1895,30 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     setPendingApprovals([]);
     setIsStreaming(false);
     setActiveToolName('');
+    setComputerUseActive(false);
     setAgentState('idle');
   };
+
+  useEffect(() => {
+    const handleComputerEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !computerUseActive) return;
+      event.preventDefault();
+      cancelGeneration();
+    };
+    let unlisten: (() => void) | undefined;
+    void listen('codeclub-computer-escape', () => {
+      if (computerUseActive) cancelGeneration();
+    }).then((dispose) => { unlisten = dispose; });
+    window.addEventListener('keydown', handleComputerEscape);
+    return () => {
+      window.removeEventListener('keydown', handleComputerEscape);
+      unlisten?.();
+    };
+  }, [computerUseActive]);
+
+  useEffect(() => {
+    void invoke('codeclub_computer_overlay', { active: computerUseActive }).catch((error) => console.warn('No se pudo actualizar el overlay de Computer Use:', error));
+  }, [computerUseActive]);
 
   useEffect(() => () => {
     if (visualAnimationRef.current) clearInterval(visualAnimationRef.current);
@@ -1958,6 +1984,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         'markdown-rendering': '[TESTING MARKDOWN] Respondé únicamente con una demostración completa en Markdown, sin tools: encabezados H1/H2/H3, texto en **negrita**, *cursiva*, ~~tachado~~, enlace, cita, listas numeradas y con viñetas, código inline, bloque de código con lenguaje, regla horizontal y una tabla con encabezados, tres filas y alineación. Incluí emojis y caracteres especiales. No describas la prueba: renderizá directamente todos los elementos.',
       };
       Object.assign(prompts, {
+        'assistant-computer': 'Usa Computer Use sobre la aplicacion de escritorio de ChatGPT, no el navegador embebido y no openBrowser. Ejecuta las tools una por vez: primero computerListWindows; luego enfoca ChatGPT con computerAction focus y targetName; consulta computerGetState. Si solo devuelve Pane o no muestra TextBox/Input, ejecuta computerScreenshot, ubica visualmente el campo, haz computerAction click con x/y, luego computerAction type con "Hola GPT, te saluda Codeclub." y computerAction key con {ENTER}. Verifica el resultado real y no inventes que se envio si una tool falla.',
+        'dev-computer': 'Hacé una verificación segura de Computer Use de forma secuencial, una tool por vez: primero computerListWindows, después computerGetState y al final computerScreenshot. No paralelices las tools. No hagas clicks, no escribas y no modifiques nada. Mostrá la evidencia real de cada tool.',
         'dev-inspect': 'Inspeccioná el workspace actual. Listá archivos, buscá algunos TODO y leé un archivo pequeño. Resumí qué herramientas usaste, cuánto tardó cada paso y qué evidencia encontraste. No modifiques nada.',
         'dev-memory': 'Creá tres memorias persistentes de prueba en el proyecto actual usando remember y no las elimines: una con key "debug-confirmed" y status "confirmed", otra con key "debug-new" y status "new", y otra con key "debug-conflict" y status "conflict". Usá contenido distinto, tags ["debug", "filters"] y una confianza realista para cada una. Mostrá el resultado real de cada llamada y confirmá que quedaron guardadas.',
         'dev-plan': 'Creá un plan breve para verificar el workspace con tres pasos, actualizá el primer paso y consultá el estado final. Usá las tools directamente y devolvé los IDs y estados reales.',
@@ -2262,7 +2290,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
 
   return (
     <div ref={chatPanelRef} className="chat-interface-container" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleComposerDrop} style={{ width: 'min(680px, calc(100% - 64px))', minWidth: 0, height: '100%', boxSizing: 'border-box', justifySelf: 'center', display: 'grid', gridTemplateRows: 'minmax(0, 1fr) auto', placeItems: 'stretch', gap: '10px', overflow: 'visible', paddingBottom: '5vh' }}>
-      
       {/* Zona de mensajes */}
       <div className="messages-area" style={{ position: 'relative', minHeight: 0, height: '100%', overflowY: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none', display: composerDocked ? 'flex' : 'none', flexDirection: 'column', gap: '6px', paddingBottom: '10px', overscrollBehavior: 'contain' }}>
         <div aria-hidden="true" style={{ flex: '1 1 auto', minHeight: 0 }} />
@@ -2627,7 +2654,7 @@ function BrailleToolMark({ name, specialist, state }: { name: string; specialist
 
 const TOOL_ICONS: Record<string, any> = {
   listFiles: FolderTree, readFile: FileCode2, searchText: Search, writeFile: Pencil, runCommand: Terminal, terminal: Terminal,
-  openBrowser: Globe, getBrowserState: Eye, browserAction: MousePointer2, swarm: Orbit, subagent: Orbit, listAvailableTools: FolderOpen,
+  openBrowser: Globe, getBrowserState: Eye, browserAction: MousePointer2, computerGetState: Monitor, computerListWindows: Monitor, computerScreenshot: Camera, computerOcr: Camera, computerAction: MousePointer2, swarm: Orbit, subagent: Orbit, listAvailableTools: FolderOpen,
   createPlan: ListChecks, updatePlan: ListChecks, todo: ListTodo, getTaskStatus: ListTodo,
   createExecutionPlan: ListChecks, getExecutionLog: ScrollText, askUser: MessageSquare,
 };
@@ -2660,6 +2687,22 @@ function ExecutionTimeline({ timeline = [], active }: { timeline?: any[]; active
   const label = detail ? `${event.name} ${detail}` : event.name;
   const failed = event.status === 'error' || event.output?.error;
   return <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '10px 0 3px', color: failed ? '#d98b8b' : '#999', fontSize: '13px' }}><ToolIcon name={event.name} /><span className={event.status === 'running' && !failed ? 'chat-thinking-label chat-tool-thinking-label' : undefined}>{failed ? `Falló ${label}` : `${event.status === 'running' ? 'Ejecutando' : 'Ejecutado'} ${label}`}</span></div>;
+}
+
+function ComputerEvidence({ tools = [] }: { tools?: any[] }) {
+  const events = tools.filter((event) => ['computerGetState', 'computerListWindows', 'computerScreenshot', 'computerAction'].includes(event.name) && event.output?.status !== 'running');
+  const latest = events[events.length - 1];
+  if (!latest) return null;
+  const payload = latest.output?.output ?? latest.output?.result ?? latest.output;
+  const screenshot = tools.slice().reverse().find((event) => event.name === 'computerScreenshot' && event.output?.status !== 'running');
+  const screenshotPayload = screenshot?.output?.output ?? screenshot?.output?.result ?? screenshot?.output;
+  const imageSrc = screenshotPayload?.data && screenshotPayload?.mimeType ? `data:${screenshotPayload.mimeType};base64,${screenshotPayload.data}` : '';
+  const state = latest.name === 'computerGetState' ? payload : null;
+  const controls = Array.isArray(state?.elements) ? state.elements.filter((element: any) => element.name).slice(0, 8) : [];
+  return <div style={{ display: 'grid', gap: '7px', width: 'min(520px, 100%)', margin: '8px 0 2px', padding: '8px 10px', border: '1px solid #252525', borderRadius: '9px', background: '#151515', color: '#bdbdbd', fontSize: '11px' }}>
+    {controls.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>{controls.map((element: any) => <span key={element.id} style={{ border: '1px solid #2b2b2b', borderRadius: '5px', padding: '3px 5px', color: element.focused ? '#b9dcff' : '#999' }}>{element.role}: {element.name}</span>)}</div>}
+    {imageSrc && <img src={imageSrc} alt="Captura de Computer Use" style={{ display: 'block', width: '100%', maxHeight: '220px', objectFit: 'contain', objectPosition: 'left center', borderRadius: '6px', background: '#101010' }} />}
+  </div>;
 }
 
 function ToolExecutionCards({ tools = [] }: { tools?: any[] }) {
