@@ -5,7 +5,7 @@ use std::{
     io::{BufRead, Read, Write},
     path::{Component, Path, PathBuf},
     process::{Child, ChildStdin, Command, Stdio},
-    sync::{Arc, Mutex, OnceLock},
+    sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex, OnceLock},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{webview::{PageLoadEvent, WebviewBuilder}, AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindowBuilder};
@@ -15,7 +15,11 @@ use base64::Engine as _;
 #[cfg(windows)]
 use uiautomation::{inputs::Mouse, patterns::{UIInvokePattern, UIValuePattern}, types::{ControlType, Point}, UIAutomation};
 #[cfg(windows)]
+use windows::Win32::Foundation::POINT;
+#[cfg(windows)]
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_ESCAPE};
+#[cfg(windows)]
+use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
 #[cfg(windows)]
 fn computer_automation() -> Result<UIAutomation, String> {
@@ -26,6 +30,8 @@ fn computer_automation() -> Result<UIAutomation, String> {
 
 #[cfg(windows)]
 static COMPUTER_AUTOMATION_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+#[cfg(windows)]
+static COMPUTER_OVERLAY_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 #[cfg(windows)]
 fn lock_computer_automation() -> Result<std::sync::MutexGuard<'static, ()>, String> {
@@ -44,8 +50,14 @@ fn start_computer_escape_monitor(app: AppHandle) {
             if is_down && !was_down {
                 let _ = app.emit("codeclub-computer-escape", ());
             }
+            if COMPUTER_OVERLAY_ACTIVE.load(Ordering::Relaxed) {
+                let mut point = POINT::default();
+                if unsafe { GetCursorPos(&mut point).is_ok() } {
+                    let _ = app.emit("codeclub-computer-cursor", serde_json::json!({ "x": point.x, "y": point.y }));
+                }
+            }
             was_down = is_down;
-            std::thread::sleep(Duration::from_millis(50));
+            std::thread::sleep(Duration::from_millis(if COMPUTER_OVERLAY_ACTIVE.load(Ordering::Relaxed) { 16 } else { 50 }));
         }
     });
 }
@@ -1282,6 +1294,8 @@ fn codeclub_computer_action(request: ComputerActionRequest) -> Result<(), String
 
 #[tauri::command]
 fn codeclub_computer_overlay(app: AppHandle, active: bool) -> Result<(), String> {
+    #[cfg(windows)]
+    COMPUTER_OVERLAY_ACTIVE.store(active, Ordering::Relaxed);
     if let Some(window) = app.get_webview_window("computer-use-overlay") {
         if active { window.show().map_err(|error| error.to_string())?; }
         else { window.hide().map_err(|error| error.to_string())?; }
@@ -1496,9 +1510,13 @@ pub fn run() {
             } else {
                 WebviewUrl::App("computer-overlay".into())
             };
+            let monitor = app.get_webview_window("main").and_then(|window| window.primary_monitor().ok().flatten());
+            let (monitor_x, monitor_y, monitor_width, monitor_height) = monitor
+                .map(|monitor| (monitor.position().x, monitor.position().y, monitor.size().width as f64, monitor.size().height as f64))
+                .unwrap_or((0, 0, 1920.0, 1080.0));
             let overlay = WebviewWindowBuilder::new(app, "computer-use-overlay", overlay_url)
                 .title("ChatGPT is using your computer")
-                .inner_size(430.0, 54.0)
+                .inner_size(monitor_width, monitor_height)
                 .decorations(false)
                 .transparent(true)
                 .always_on_top(true)
@@ -1509,12 +1527,7 @@ pub fn run() {
                 .build()
                 .map_err(|error| format!("No se pudo crear el overlay de Computer Use: {error}"))?;
             overlay.set_ignore_cursor_events(true).map_err(|error| format!("No se pudo hacer click-through el overlay: {error}"))?;
-            if let Ok(Some(monitor)) = overlay.primary_monitor() {
-                let size = monitor.size();
-                let position = monitor.position();
-                let x = position.x + ((size.width as f64 - 430.0) / 2.0).max(0.0) as i32;
-                overlay.set_position(PhysicalPosition::new(x, position.y + 12)).map_err(|error| error.to_string())?;
-            }
+            overlay.set_position(PhysicalPosition::new(monitor_x, monitor_y)).map_err(|error| error.to_string())?;
             Ok(())
         })
         .manage(TerminalRegistry::default())

@@ -19,7 +19,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"
 uiautomation = { version = "0.25", features = ["all"] }
-windows = { version = "0.61", features = ["Win32_UI_Input_KeyboardAndMouse"] }
+windows = { version = "0.61", features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
 tauri-plugin-fs = "2"
 tauri-plugin-dialog = "2"
 reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "charset", "http2", "gzip", "brotli", "deflate", "json"] }

@@ -108,10 +108,10 @@ const browserActionScript = (action: { type: string; selector?: string; text?: s
   finish(); const invoke = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke; if (typeof invoke === 'function') invoke('codeclub_browser_selection', { selection: { title: 'ok', text: 'Acción ejecutada.', html: '', url: location.href, selector: '__codeclub_action_result__', tag: 'action' } });
 })()`;
 
-const browserAgentOverlayScript = (selector?: string) => `(() => {
+const browserAgentOverlayScript = (selector?: string, cursorDataUrl = '') => `(() => {
   const overlayId = '__codeclub-agent-overlay';
   const bannerId = '__codeclub-agent-banner';
-  const cursor = 'url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2234%22 height=%2234%22 viewBox=%220 0 34 34%22 fill=%22none%22%3E%3Cdefs%3E%3ClinearGradient id=%22avatarGradient%22 x1=%220%22 y1=%220%22 x2=%221%22 y2=%221%22%3E%3Cstop offset=%220%25%22 stop-color=%22%238BC7FF%22/%3E%3Cstop offset=%2244%25%22 stop-color=%22%233D9BFF%22/%3E%3Cstop offset=%22100%25%22 stop-color=%22%231687FF%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M 5 5 L 14 29 A 1.5 1.5 0 0 0 17 28.5 L 19.5 20 L 28.5 17 A 1.5 1.5 0 0 0 29 14 L 5 5 Z%22 fill=%22url(%23avatarGradient)%22 stroke=%22white%22 stroke-width=%223%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E") 5 5, crosshair';
+  const cursor = ${JSON.stringify(cursorDataUrl ? `url("${cursorDataUrl}") 4 4, crosshair` : 'crosshair')};
   const overlay = document.getElementById(overlayId) || Object.assign(document.body.appendChild(document.createElement('div')), { id: overlayId });
   const banner = document.getElementById(bannerId) || Object.assign(document.body.appendChild(document.createElement('div')), { id: bannerId });
   Object.assign(overlay.style, { position: 'fixed', zIndex: '2147483646', pointerEvents: 'none', border: '2px solid #1687FF', background: 'rgba(22,135,255,.12)', boxShadow: '0 0 0 1px rgba(255,255,255,.35), 0 0 18px rgba(22,135,255,.45)', display: 'none' });
@@ -126,8 +126,8 @@ const browserAgentOverlayScript = (selector?: string) => `(() => {
   if (element) { const rect = element.getBoundingClientRect(); Object.assign(overlay.style, { display: 'block', left: Math.max(0, rect.left) + 'px', top: Math.max(0, rect.top) + 'px', width: Math.max(0, rect.width) + 'px', height: Math.max(0, rect.height) + 'px' }); }
 })()`;
 
-const browserInspectorScript = (active: boolean) => {
-  const cursor = `url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2234%22 height=%2234%22 viewBox=%220 0 34 34%22 fill=%22none%22%3E%3Cdefs%3E%3ClinearGradient id=%22avatarGradient%22 x1=%220%22 y1=%220%22 x2=%221%22 y2=%221%22%3E%3Cstop offset=%220%25%22 stop-color=%22%238BC7FF%22/%3E%3Cstop offset=%2244%25%22 stop-color=%22%233D9BFF%22/%3E%3Cstop offset=%22100%25%22 stop-color=%22%231687FF%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d=%22M 5 5 L 14 29 A 1.5 1.5 0 0 0 17 28.5 L 19.5 20 L 28.5 17 A 1.5 1.5 0 0 0 29 14 L 5 5 Z%22 fill=%22url(%23avatarGradient)%22 stroke=%22white%22 stroke-width=%223%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E") 5 5, crosshair`;
+const browserInspectorScript = (active: boolean, cursorDataUrl = '') => {
+  const cursor = cursorDataUrl ? `url("${cursorDataUrl}") 4 4, crosshair` : 'crosshair';
   return `(() => {
     const active = ${active ? 'true' : 'false'};
     const root = document.documentElement;
@@ -713,6 +713,7 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
   const addressRef = useRef(initialUrl);
   const historyIndexRef = useRef(0);
   const selectionKeyRef = useRef('');
+  const browserCursorDataUrlRef = useRef('');
   useEffect(() => {
     if (window.localStorage.getItem(LANGUAGE_STORAGE_KEY) === 'en') setLanguage('en');
     const handleLanguageChange = (event: Event) => {
@@ -733,10 +734,28 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
     return () => window.removeEventListener('codeclub:language-change', handleLanguageChange);
   }, []);
 
+  const getBrowserCursorDataUrl = async () => {
+    if (browserCursorDataUrlRef.current) return browserCursorDataUrlRef.current;
+    try {
+      const response = await fetch('/cursors/dark/arrow.cur', { cache: 'force-cache' });
+      if (!response.ok) return '';
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      let binary = '';
+      for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+        binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+      }
+      browserCursorDataUrlRef.current = `data:image/x-icon;base64,${btoa(binary)}`;
+      return browserCursorDataUrlRef.current;
+    } catch {
+      return '';
+    }
+  };
+
   const installInspector = async (active: boolean, view = webviewRef.current) => {
     if (!view) return;
     try {
-      await invoke('codeclub_browser_eval', { script: browserInspectorScript(active) });
+      const cursorDataUrl = await getBrowserCursorDataUrl();
+      await invoke('codeclub_browser_eval', { script: browserInspectorScript(active, cursorDataUrl) });
       setError('');
     } catch (reason) {
       setError(String(reason));
@@ -870,7 +889,7 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
     }).then((unlisten) => { stopListening = unlisten; });
     void listen<string>('codeclub-browser-page-loaded', () => { if (inspectModeRef.current) void installInspector(true); }).then((unlisten) => { stopPageListening = unlisten; });
     const handleStateRequest = () => { void invoke('codeclub_browser_eval', { script: browserStateScript }).catch(() => undefined); };
-    const handleAction = async (event: Event) => { const action = (event as CustomEvent).detail || {}; await invoke('codeclub_browser_eval', { script: browserAgentOverlayScript(action.selector) }).catch(() => undefined); await invoke('codeclub_browser_eval', { script: browserActionScript(action) }).catch(() => undefined); };
+    const handleAction = async (event: Event) => { const action = (event as CustomEvent).detail || {}; const cursorDataUrl = await getBrowserCursorDataUrl(); await invoke('codeclub_browser_eval', { script: browserAgentOverlayScript(action.selector, cursorDataUrl) }).catch(() => undefined); await invoke('codeclub_browser_eval', { script: browserActionScript(action) }).catch(() => undefined); };
     window.addEventListener('codeclub:browser-state-request', handleStateRequest);
     window.addEventListener('codeclub:browser-action', handleAction);
     void openPage(initialUrl, false);

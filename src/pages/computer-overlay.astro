@@ -12,8 +12,12 @@
       * { box-sizing: border-box; }
       html, body { width: 100%; height: 100%; margin: 0; background: transparent; overflow: hidden; }
       .pill {
-        width: 100%;
-        height: 42px;
+        position: absolute;
+        top: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: min(620px, calc(100% - 32px));
+        height: 48px;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -21,16 +25,29 @@
         padding: 0 18px;
         border: 1px solid rgba(141, 214, 255, 0.72);
         border-radius: 999px;
-        background: linear-gradient(105deg, rgba(72, 190, 255, 0.94), rgba(110, 202, 255, 0.86));
-        box-shadow: 0 0 18px rgba(61, 155, 255, 0.78), 0 8px 26px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.42);
+        background: linear-gradient(105deg, rgba(72, 190, 255, 0.84), rgba(110, 202, 255, 0.76));
+        box-shadow: 0 0 28px rgba(61, 155, 255, 0.9), 0 0 58px rgba(61, 155, 255, 0.32), 0 8px 26px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.42);
         color: #f7fcff;
-        font: 600 13px/1.1 "Segoe UI", sans-serif;
+        font: 600 14px/1.1 "Segoe UI", sans-serif;
         text-shadow: 0 1px 2px rgba(0, 50, 90, 0.32);
         white-space: nowrap;
       }
       .dot { width: 7px; height: 7px; border-radius: 50%; background: #fff; box-shadow: 0 0 8px #fff; }
       .separator { opacity: 0.68; }
       .cancel { font-weight: 700; }
+      .cursor {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 25px;
+        height: 29px;
+        pointer-events: none;
+        filter: drop-shadow(0 0 8px rgba(61, 155, 255, 0.95)) drop-shadow(0 3px 5px rgba(0, 0, 0, 0.42));
+        transform: translate(-100px, -100px);
+        transition: transform 45ms linear;
+        z-index: 2;
+      }
+      .cursor svg { display: block; width: 100%; height: 100%; overflow: visible; }
     </style>
   </head>
   <body>
@@ -40,5 +57,22 @@
       <span class="separator">·</span>
       <span class="cancel">Esc to cancel</span>
     </div>
+    <div class="cursor" id="computer-cursor" aria-hidden="true">
+      <svg viewBox="0 0 24 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M3.5 2.5L20.5 11.2L13 12.8L17.2 22.1L13.3 23.8L9.1 14.6L3.5 19.2V2.5Z" fill="#151A23" stroke="#FFFFFF" stroke-width="1.7" stroke-linejoin="round" />
+      </svg>
+    </div>
+    <script>
+      import { listen } from '@tauri-apps/api/event';
+      const cursor = document.querySelector('#computer-cursor');
+      if (cursor) {
+        listen('codeclub-computer-cursor', (event) => {
+          const point = event.payload;
+          if (point && typeof point.x === 'number' && typeof point.y === 'number') {
+            cursor.style.transform = `translate(${point.x}px, ${point.y}px)`;
+          }
+        });
+      }
+    </script>
   </body>
 </html>
