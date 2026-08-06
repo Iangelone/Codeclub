@@ -38,35 +38,55 @@ import ChatPanel from "../components/ChatPanel.astro";
         const { listen } = await import('@tauri-apps/api/event');
         const { getCurrentWindow } = await import('@tauri-apps/api/window');
         const appWindow = getCurrentWindow();
+        let nativeMenuCommand = Promise.resolve();
+        const queueNativeMenuCommand = (payload) => {
+          nativeMenuCommand = nativeMenuCommand
+            .catch(() => undefined)
+            .then(() => invoke('codeclub_popup_window', payload));
+          return nativeMenuCommand;
+        };
 
         const closeNativeMenu = () => {
           (window as Window & { __codeclubNativeMenuOpen?: boolean }).__codeclubNativeMenuOpen = false;
-          window.dispatchEvent(new CustomEvent('codeclub:right-panel-menu-close'));
-          void invoke('codeclub_menu_overlay', { open: false, x: 0, y: 0, width: 0, height: 0, html: '' }).catch(() => undefined);
+          document.documentElement.dataset.nativeMenuActive = 'false';
+          void queueNativeMenuCommand({ open: false, x: 0, y: 0, width: 0, height: 0, html: '' }).catch(() => undefined);
         };
-        const handleNativeMenu = (event) => {
-          const detail = event.detail || {};
-          if (!detail.open || !(detail.element instanceof HTMLElement)) {
+        const clearTopbarMenuState = () => {
+          document.querySelectorAll('.group\\/menu.menu-open').forEach((menu) => menu.classList.remove('menu-open'));
+        };
+        const openNativeMenu = (element) => {
+          if (!(element instanceof HTMLElement)) {
             closeNativeMenu();
             return;
           }
-          if (!document.querySelector('[data-native-browser-host]')) return;
-          const rect = detail.element.getBoundingClientRect();
+          const rect = element.getBoundingClientRect();
           if (rect.width <= 0 || rect.height <= 0) return;
           (window as Window & { __codeclubNativeMenuOpen?: boolean }).__codeclubNativeMenuOpen = true;
-          void invoke('codeclub_menu_overlay', {
+          document.documentElement.dataset.nativeMenuActive = 'true';
+          void queueNativeMenuCommand({
             open: true,
             x: rect.left,
             y: rect.top,
             width: rect.width,
             height: rect.height,
-            html: detail.element.outerHTML,
-          }).catch(() => closeNativeMenu());
+            html: element.outerHTML,
+          }).catch(() => { console.error('No se pudo mostrar el menú nativo del navegador.'); });
         };
+        const handleNativeMenu = (event) => {
+          const detail = event.detail || {};
+          if (!detail.open) {
+            closeNativeMenu();
+            return;
+          }
+          openNativeMenu(detail.element);
+        };
+        (window as Window & { codeclubOpenNativeMenu?: (element: HTMLElement | null) => void }).codeclubOpenNativeMenu = openNativeMenu;
+        (window as Window & { codeclubCloseNativeMenu?: () => void }).codeclubCloseNativeMenu = closeNativeMenu;
         window.addEventListener('codeclub:native-menu', handleNativeMenu);
         const stopNativeMenuAction = await listen('codeclub-menu-overlay-action', (event) => {
           const detail = event.payload || {};
           closeNativeMenu();
+          clearTopbarMenuState();
           if (detail.action) {
             Array.from(document.querySelectorAll('[data-action]')).find((element) => element.dataset.action === detail.action)?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
           }
@@ -77,7 +97,7 @@ import ChatPanel from "../components/ChatPanel.astro";
         });
         const stopNativeMenuClose = await listen('codeclub-menu-overlay-close', () => {
           closeNativeMenu();
-          document.querySelectorAll('.group\\/menu.menu-open').forEach((menu) => menu.classList.remove('menu-open'));
+          clearTopbarMenuState();
         });
 
         let computerOverlayActive = false;

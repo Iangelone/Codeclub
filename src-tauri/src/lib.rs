@@ -17,13 +17,13 @@ use base64::Engine as _;
 #[cfg(windows)]
 use uiautomation::{inputs::Mouse, patterns::{UIInvokePattern, UIValuePattern}, types::{ControlType, Point}, UIAutomation};
 #[cfg(windows)]
-use windows::Win32::Foundation::POINT;
+use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT};
 #[cfg(windows)]
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_ESCAPE};
 #[cfg(windows)]
-use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, LoadCursorFromFileW, SetSystemCursor, SystemParametersInfoW, OCR_NORMAL, SPI_SETCURSORS, SPIF_SENDCHANGE};
+use windows::Win32::UI::WindowsAndMessaging::{EnumChildWindows, GetCursorPos, GetWindowRect, HWND_TOP, LoadCursorFromFileW, SetSystemCursor, SetWindowPos, SystemParametersInfoW, OCR_NORMAL, SPI_SETCURSORS, SPIF_SENDCHANGE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE};
 #[cfg(windows)]
-use windows::core::PCWSTR;
+use windows::core::{BOOL, PCWSTR};
 
 #[cfg(windows)]
 fn computer_automation() -> Result<UIAutomation, String> {
@@ -263,6 +263,47 @@ struct MenuOverlayState {
     payload: Mutex<Option<MenuOverlayPayload>>,
 }
 
+#[cfg(windows)]
+struct NativeChildMatch {
+    target: RECT,
+    matched: Option<HWND>,
+}
+
+#[cfg(windows)]
+unsafe extern "system" fn find_native_child(hwnd: HWND, lparam: LPARAM) -> BOOL {
+    let state = unsafe { &mut *(lparam.0 as *mut NativeChildMatch) };
+    let mut rect = RECT::default();
+    if unsafe { GetWindowRect(hwnd, &mut rect) }.is_ok()
+        && ((rect.right - rect.left) - (state.target.right - state.target.left)).abs() <= 4
+        && ((rect.bottom - rect.top) - (state.target.bottom - state.target.top)).abs() <= 4
+    {
+        state.matched = Some(hwnd);
+        return BOOL(0);
+    }
+    BOOL(1)
+}
+
+#[cfg(windows)]
+fn raise_menu_child(main: &tauri::WebviewWindow, x: f64, y: f64, width: f64, height: f64) {
+    let Ok(scale) = main.scale_factor() else { return; };
+    let Ok(origin) = main.outer_position() else { return; };
+    let target = RECT {
+        left: origin.x + (x * scale).round() as i32,
+        top: origin.y + (y * scale).round() as i32,
+        right: origin.x + ((x + width) * scale).round() as i32,
+        bottom: origin.y + ((y + height) * scale).round() as i32,
+    };
+    let mut candidate = NativeChildMatch { target, matched: None };
+    if let Ok(parent) = main.hwnd() {
+        unsafe {
+            let _ = EnumChildWindows(Some(parent), Some(find_native_child), LPARAM((&mut candidate as *mut NativeChildMatch) as isize));
+            if let Some(child) = candidate.matched {
+                let _ = SetWindowPos(child, Some(HWND_TOP), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            }
+        }
+    }
+}
+
 #[tauri::command]
 fn codeclub_menu_overlay_content(state: State<'_, MenuOverlayState>) -> Result<Option<MenuOverlayPayload>, String> {
     state.payload.lock().map(|payload| payload.clone()).map_err(|error| error.to_string())
@@ -284,6 +325,9 @@ fn codeclub_menu_overlay(
         if let Ok(mut payload) = state.payload.lock() {
             *payload = None;
         }
+        if let Some(webview) = app.get_webview(overlay_label) {
+            webview.close().map_err(|error| error.to_string())?;
+        }
         if let Some(window) = app.get_webview_window(overlay_label) {
             window.close().map_err(|error| error.to_string())?;
         }
@@ -292,15 +336,13 @@ fn codeclub_menu_overlay(
     let payload = MenuOverlayPayload { html, width, height };
     *state.payload.lock().map_err(|error| error.to_string())? = Some(payload.clone());
     let main = app.get_webview_window("main").ok_or_else(|| "No se encontró la ventana principal.".to_string())?;
-    let scale = main.scale_factor().map_err(|error| error.to_string())?;
-    let main_position = main.outer_position().map_err(|error| error.to_string())?;
-    let overlay_x = main_position.x as f64 / scale + x;
-    let overlay_y = main_position.y as f64 / scale + y;
-    if let Some(window) = app.get_webview_window(overlay_label) {
-        window.set_position(LogicalPosition::new(overlay_x, overlay_y)).map_err(|error| error.to_string())?;
-        window.set_size(LogicalSize::new(width, height)).map_err(|error| error.to_string())?;
-        window.show().map_err(|error| error.to_string())?;
-        window.emit("codeclub-menu-overlay-content", payload).map_err(|error| error.to_string())?;
+    if let Some(webview) = app.get_webview(overlay_label) {
+        webview.set_position(LogicalPosition::new(x, y)).map_err(|error| error.to_string())?;
+        webview.set_size(LogicalSize::new(width, height)).map_err(|error| error.to_string())?;
+        webview.show().map_err(|error| error.to_string())?;
+        #[cfg(windows)]
+        raise_menu_child(&main, x, y, width, height);
+        webview.emit("codeclub-menu-overlay-content", payload).map_err(|error| error.to_string())?;
         return Ok(());
     }
     let overlay_url = if cfg!(debug_assertions) {
@@ -308,10 +350,37 @@ fn codeclub_menu_overlay(
     } else {
         WebviewUrl::App("menu-overlay".into())
     };
+    if let Some(window) = app.get_webview_window(overlay_label) {
+        window.close().map_err(|error| error.to_string())?;
+    }
+    // El menú comparte jerarquía con el navegador. Al crearlo después, Windows
+    // conserva el orden Z correcto sin congelar ni recalcular el WebView.
+    let child_host = app.get_window("main").ok_or_else(|| "No se encontró la ventana principal.".to_string())?;
+    let builder = WebviewBuilder::new(overlay_label, overlay_url.clone())
+        .transparent(true)
+        .background_color(tauri::window::Color(0, 0, 0, 0));
+    let webview = child_host
+        .add_child(builder, LogicalPosition::new(x, y), LogicalSize::new(width, height))
+        .map_err(|error| {
+            eprintln!("[menu-overlay] no se pudo crear el WebView hijo: {error}");
+            format!("No se pudo crear el menú overlay: {error}")
+        })?;
+    webview.show().map_err(|error| error.to_string())?;
+    #[cfg(windows)]
+    raise_menu_child(&main, x, y, width, height);
+    webview.emit("codeclub-menu-overlay-content", payload.clone()).map_err(|error| error.to_string())?;
+    let overlay_x = x;
+    let overlay_y = y;
+    if app.get_webview(overlay_label).is_some() {
+        return Ok(());
+    }
+
     let window = WebviewWindowBuilder::new(&app, overlay_label, overlay_url)
         .title("Codeclub menu")
         .inner_size(width, height)
         .position(overlay_x, overlay_y)
+        .owner(&main)
+        .map_err(|error| format!("No se pudo asociar el menu a la ventana principal: {error}"))?
         .decorations(false)
         .transparent(true)
         .shadow(false)
@@ -324,6 +393,117 @@ fn codeclub_menu_overlay(
         .map_err(|error| format!("No se pudo crear el menú overlay: {error}"))?;
     window.emit("codeclub-menu-overlay-content", payload).map_err(|error| error.to_string())?;
     Ok(())
+}
+
+fn main_relative_position(main: &tauri::WebviewWindow, x: f64, y: f64) -> Result<(f64, f64), String> {
+    let scale = main.scale_factor().map_err(|error| error.to_string())?;
+    let position = main.outer_position().map_err(|error| error.to_string())?;
+    Ok((position.x as f64 / scale + x, position.y as f64 / scale + y))
+}
+
+#[tauri::command]
+fn codeclub_popup_window(
+    app: AppHandle,
+    state: State<'_, MenuOverlayState>,
+    open: bool,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    html: String,
+) -> Result<(), String> {
+    let label = "codeclub-menu-overlay";
+    if let Some(webview) = app.get_webview(label) {
+        let _ = webview.close();
+    }
+    if let Some(window) = app.get_webview_window(label) {
+        let _ = window.close();
+    }
+    if !open {
+        *state.payload.lock().map_err(|error| error.to_string())? = None;
+        return Ok(());
+    }
+
+    let payload = MenuOverlayPayload { html, width, height };
+    *state.payload.lock().map_err(|error| error.to_string())? = Some(payload.clone());
+    let main = app.get_webview_window("main").ok_or_else(|| "No se encontró la ventana principal.".to_string())?;
+    let (screen_x, screen_y) = main_relative_position(&main, x, y)?;
+    let overlay_url = if cfg!(debug_assertions) {
+        WebviewUrl::External("http://127.0.0.1:4321/menu-overlay/".parse().map_err(|error| format!("URL inválida para el menú: {error}"))?)
+    } else {
+        WebviewUrl::App("menu-overlay".into())
+    };
+
+    let builder = WebviewWindowBuilder::new(&app, label, overlay_url)
+        .title("Codeclub menu")
+        .inner_size(width, height)
+        .position(screen_x, screen_y)
+        .decorations(false)
+        .transparent(true)
+        .shadow(false)
+        .skip_taskbar(true)
+        .resizable(false)
+        .focused(false)
+        .visible(true);
+    let builder = if let Some(browser) = app.get_webview_window("codeclub-browser") {
+        builder.owner(&browser).map_err(|error| format!("No se pudo asociar el menú al navegador: {error}"))?
+    } else {
+        builder.owner(&main).map_err(|error| format!("No se pudo asociar el menú a la app: {error}"))?
+    };
+    let window = builder.build().map_err(|error| format!("No se pudo crear el menú: {error}"))?;
+    window.emit("codeclub-menu-overlay-content", payload).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn codeclub_browser_window_open(
+    app: AppHandle,
+    url: String,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("codeclub-browser") {
+        let _ = window.close();
+    } else if let Some(webview) = app.get_webview("codeclub-browser") {
+        let _ = webview.close();
+    }
+    let parsed_url: tauri::Url = url.parse().map_err(|error| format!("URL inválida: {error}"))?;
+    if !matches!(parsed_url.scheme(), "http" | "https") || parsed_url.host().is_none() {
+        return Err("Solo se permiten URLs http(s) con dominio válido.".to_string());
+    }
+    let main = app.get_webview_window("main").ok_or_else(|| "No se encontró la ventana principal.".to_string())?;
+    let (screen_x, screen_y) = main_relative_position(&main, x, y)?;
+    let window = WebviewWindowBuilder::new(&app, "codeclub-browser", WebviewUrl::External(parsed_url))
+        .title("Codeclub Browser")
+        .inner_size(width, height)
+        .position(screen_x, screen_y)
+        .owner(&main)
+        .map_err(|error| format!("No se pudo asociar el navegador a la app: {error}"))?
+        .decorations(false)
+        .shadow(false)
+        .skip_taskbar(true)
+        .resizable(false)
+        .visible(true)
+        .build()
+        .map_err(|error| format!("No se pudo crear el navegador: {error}"))?;
+    window.show().map_err(|error| error.to_string())?;
+    window.set_focus().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn codeclub_browser_window_bounds(
+    app: AppHandle,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    let main = app.get_webview_window("main").ok_or_else(|| "No se encontró la ventana principal.".to_string())?;
+    let browser = app.get_webview_window("codeclub-browser").ok_or_else(|| "El navegador no está disponible.".to_string())?;
+    let (screen_x, screen_y) = main_relative_position(&main, x, y)?;
+    browser.set_position(LogicalPosition::new(screen_x, screen_y)).map_err(|error| error.to_string())?;
+    browser.set_size(LogicalSize::new(width, height)).map_err(|error| error.to_string())
 }
 
 fn codeclub_browser_webview(app: &AppHandle) -> Result<tauri::Webview, String> {
@@ -360,7 +540,22 @@ fn codeclub_browser_create(app: AppHandle, url: String, x: f64, y: f64, width: f
 }
 
 #[tauri::command]
+fn codeclub_browser_navigate(app: AppHandle, url: String) -> Result<(), String> {
+    let parsed_url: tauri::Url = url.parse().map_err(|error| format!("URL invÃ¡lida: {error}"))?;
+    if !matches!(parsed_url.scheme(), "http" | "https") || parsed_url.host().is_none() {
+        return Err("Solo se permiten URLs http(s) con dominio vÃ¡lido.".to_string());
+    }
+    codeclub_browser_webview(&app)?
+        .navigate(parsed_url)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn codeclub_browser_close(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("codeclub-browser") {
+        window.close().map_err(|error| error.to_string())?;
+        return Ok(());
+    }
     if let Ok(webview) = codeclub_browser_webview(&app) {
         webview.close().map_err(|error| error.to_string())?;
     }
@@ -369,6 +564,14 @@ fn codeclub_browser_close(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 fn codeclub_browser_set_visible(app: AppHandle, visible: bool) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("codeclub-browser") {
+        if visible {
+            window.show().map_err(|error| error.to_string())?;
+        } else {
+            window.hide().map_err(|error| error.to_string())?;
+        }
+        return Ok(());
+    }
     if let Ok(webview) = codeclub_browser_webview(&app) {
         if visible {
             webview.show().map_err(|error| error.to_string())?;
@@ -1688,6 +1891,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             codeclub_menu_overlay,
+            codeclub_popup_window,
             codeclub_menu_overlay_content,
             codeclub_list_files,
             codeclub_index_project,
@@ -1713,6 +1917,9 @@ pub fn run() {
             codeclub_computer_action,
             codeclub_computer_overlay,
             codeclub_browser_create,
+            codeclub_browser_window_open,
+            codeclub_browser_window_bounds,
+            codeclub_browser_navigate,
             codeclub_browser_close,
             codeclub_browser_set_visible,
             codeclub_browser_set_bounds,

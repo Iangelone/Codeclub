@@ -38,8 +38,8 @@ const t = topbarTranslations.es;
     
     <nav class="flex items-center gap-[2px] ml-1 h-full relative" aria-label={t.applicationMenu} data-i18n-aria="applicationMenu">
       <div class="relative h-full flex items-center group/menu">
-        <button class="h-[28px] px-[9px] text-xs border-0 rounded-md bg-transparent text-[#d8d8d8] hover:bg-[var(--color-surface-7)]" type="button" data-i18n="file">{t.file}</button>
-        <div class="absolute top-[34px] left-0 min-w-[210px] flex flex-col gap-[3px] p-2 border border-[var(--color-surface-10)] rounded-lg bg-[rgba(18,18,18,0.96)] shadow-[0_18px_54px_rgba(0,0,0,0.38)] opacity-0 pointer-events-none -translate-y-1 transition-all duration-120 ease-out group-hover/menu:opacity-100 group-hover/menu:pointer-events-auto group-hover/menu:translate-y-0 z-20">
+        <button class="h-[28px] px-[9px] text-xs border-0 rounded-md bg-transparent text-[#d8d8d8] hover:bg-[var(--color-surface-7)]" type="button" data-i18n="file" aria-haspopup="menu" aria-expanded="false" aria-controls="topbar-file-menu">{t.file}</button>
+        <div id="topbar-file-menu" role="menu" aria-label={t.file} class="absolute top-[34px] left-0 min-w-[210px] flex flex-col gap-[3px] p-2 border border-[var(--color-surface-10)] rounded-lg bg-[rgba(18,18,18,0.96)] shadow-[0_18px_54px_rgba(0,0,0,0.38)] opacity-0 pointer-events-none -translate-y-1 transition-all duration-120 ease-out group-hover/menu:opacity-100 group-hover/menu:pointer-events-auto group-hover/menu:translate-y-0 z-20">
           <a class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs no-underline hover:bg-[var(--color-surface-7)] hover:text-white" href="#" data-action="new-chat"><MessageSquarePlus class="shrink-0" size={14} /> <span data-i18n="newChat">{t.newChat}</span></a>
           <a class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs no-underline hover:bg-[var(--color-surface-7)] hover:text-white" href="#" data-action="open-projects"><Folder class="shrink-0" size={14} /> <span data-i18n="projects">{t.projects}</span></a>
           <a class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs no-underline hover:bg-[var(--color-surface-7)] hover:text-white" href="#" data-action="open-extensions"><Blocks class="shrink-0" size={14} /> <span data-i18n="extensions">{t.extensions}</span></a>
@@ -51,8 +51,8 @@ const t = topbarTranslations.es;
       </div>
       
       <div class="relative h-full flex items-center group/menu">
-        <button class="h-[28px] px-[9px] text-xs border-0 rounded-md bg-transparent text-[#d8d8d8] hover:bg-[var(--color-surface-7)]" type="button" data-i18n="view">{t.view}</button>
-        <div class="absolute top-[34px] left-0 min-w-[210px] flex flex-col gap-[3px] p-2 border border-[var(--color-surface-10)] rounded-lg bg-[rgba(18,18,18,0.96)] shadow-[0_18px_54px_rgba(0,0,0,0.38)] opacity-0 pointer-events-none -translate-y-1 transition-all duration-120 ease-out group-hover/menu:opacity-100 group-hover/menu:pointer-events-auto group-hover/menu:translate-y-0 z-20">
+        <button class="h-[28px] px-[9px] text-xs border-0 rounded-md bg-transparent text-[#d8d8d8] hover:bg-[var(--color-surface-7)]" type="button" data-i18n="view" aria-haspopup="menu" aria-expanded="false" aria-controls="topbar-view-menu">{t.view}</button>
+        <div id="topbar-view-menu" role="menu" aria-label={t.view} class="absolute top-[34px] left-0 min-w-[210px] flex flex-col gap-[3px] p-2 border border-[var(--color-surface-10)] rounded-lg bg-[rgba(18,18,18,0.96)] shadow-[0_18px_54px_rgba(0,0,0,0.38)] opacity-0 pointer-events-none -translate-y-1 transition-all duration-120 ease-out group-hover/menu:opacity-100 group-hover/menu:pointer-events-auto group-hover/menu:translate-y-0 z-20">
           <a class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs no-underline hover:bg-[var(--color-surface-7)] hover:text-white" href="#" data-action="toggle-sidebar"><PanelLeft class="shrink-0" size={14} /> <span data-i18n="sidePanel">{t.sidePanel}</span></a>
           <a class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs no-underline hover:bg-[var(--color-surface-7)] hover:text-white" href="#" data-action="toggle-fullscreen"><Square class="shrink-0" size={14} /> <span data-i18n="fullscreen">{t.fullscreen}</span></a>
           <a class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs no-underline hover:bg-[var(--color-surface-7)] hover:text-white" href="#" data-action="open-settings"><Eye class="shrink-0" size={14} /> <span data-i18n="appearance">{t.appearance}</span></a>
@@ -60,8 +60,8 @@ const t = topbarTranslations.es;
       </div>
       
       <div class="relative h-full flex items-center group/menu">
-        <button class="h-[28px] px-[9px] text-xs border-0 rounded-md bg-transparent text-[#d8d8d8] hover:bg-[var(--color-surface-7)]" type="button" data-i18n="help">{t.help}</button>
-        <div class="absolute top-[34px] left-0 min-w-[210px] flex flex-col gap-[3px] p-2 border border-[var(--color-surface-10)] rounded-lg bg-[rgba(18,18,18,0.96)] shadow-[0_18px_54px_rgba(0,0,0,0.38)] opacity-0 pointer-events-none -translate-y-1 transition-all duration-120 ease-out group-hover/menu:opacity-100 group-hover/menu:pointer-events-auto group-hover/menu:translate-y-0 z-20">
+        <button class="h-[28px] px-[9px] text-xs border-0 rounded-md bg-transparent text-[#d8d8d8] hover:bg-[var(--color-surface-7)]" type="button" data-i18n="help" aria-haspopup="menu" aria-expanded="false" aria-controls="topbar-help-menu">{t.help}</button>
+        <div id="topbar-help-menu" role="menu" aria-label={t.help} class="absolute top-[34px] left-0 min-w-[210px] flex flex-col gap-[3px] p-2 border border-[var(--color-surface-10)] rounded-lg bg-[rgba(18,18,18,0.96)] shadow-[0_18px_54px_rgba(0,0,0,0.38)] opacity-0 pointer-events-none -translate-y-1 transition-all duration-120 ease-out group-hover/menu:opacity-100 group-hover/menu:pointer-events-auto group-hover/menu:translate-y-0 z-20">
           <a class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs no-underline hover:bg-[var(--color-surface-7)] hover:text-white" href="#"><HelpCircle class="shrink-0" size={14} /> <span data-i18n="documentation">{t.documentation}</span></a>
           <a class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs no-underline hover:bg-[var(--color-surface-7)] hover:text-white" href="#"><Keyboard class="shrink-0" size={14} /> <span data-i18n="shortcuts">{t.shortcuts}</span></a>
           <a class="flex min-h-[30px] items-center gap-[9px] rounded-md px-[10px] text-[#bdbdbd] text-xs no-underline hover:bg-[var(--color-surface-7)] hover:text-white" href="#"><Bug class="shrink-0" size={14} /> <span data-i18n="reportProblem">{t.reportProblem}</span></a>
@@ -72,8 +72,8 @@ const t = topbarTranslations.es;
       </div>
 
       <div class="relative h-full flex items-center group/menu">
-        <button class="h-[28px] px-[9px] text-xs border-0 rounded-md bg-transparent text-[#eeeeee] hover:bg-[var(--color-surface-7)]" type="button" data-i18n="developer">{t.developer}</button>
-        <div class="absolute top-[34px] left-0 min-w-[240px] flex flex-col gap-[3px] p-2 border border-[var(--color-surface-10)] rounded-lg bg-[rgba(18,18,18,0.96)] shadow-[0_18px_54px_rgba(0,0,0,0.38)] opacity-0 pointer-events-none -translate-y-1 transition-all duration-120 ease-out group-hover/menu:opacity-100 group-hover/menu:pointer-events-auto group-hover/menu:translate-y-0 z-20">
+        <button class="h-[28px] px-[9px] text-xs border-0 rounded-md bg-transparent text-[#eeeeee] hover:bg-[var(--color-surface-7)]" type="button" data-i18n="developer" aria-haspopup="menu" aria-expanded="false" aria-controls="topbar-developer-menu">{t.developer}</button>
+        <div id="topbar-developer-menu" role="menu" aria-label={t.developer} class="absolute top-[34px] left-0 min-w-[240px] flex flex-col gap-[3px] p-2 border border-[var(--color-surface-10)] rounded-lg bg-[rgba(18,18,18,0.96)] shadow-[0_18px_54px_rgba(0,0,0,0.38)] opacity-0 pointer-events-none -translate-y-1 transition-all duration-120 ease-out group-hover/menu:opacity-100 group-hover/menu:pointer-events-auto group-hover/menu:translate-y-0 z-20">
           <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="dev-inspect" data-i18n="inspectWorkspace">{t.inspectWorkspace}</button>
           <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="dev-memory" data-i18n="testMemory">{t.testMemory}</button>
           <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="dev-plan" data-i18n="createPlan">{t.createPlan}</button>
@@ -85,8 +85,8 @@ const t = topbarTranslations.es;
         </div>
       </div>
       <div class="relative h-full flex items-center group/menu ml-1">
-        <button class="h-[28px] px-[9px] text-xs border-0 rounded-md bg-transparent text-[#eeeeee] hover:bg-[var(--color-surface-7)]" type="button" aria-label={t.assistant} data-i18n-aria="assistant" data-i18n="assistant">{t.assistant}</button>
-        <div class="absolute top-[34px] left-0 min-w-[240px] flex flex-col gap-[3px] p-2 border border-[var(--color-surface-10)] rounded-lg bg-[rgba(18,18,18,0.96)] shadow-[0_18px_54px_rgba(0,0,0,0.38)] opacity-0 pointer-events-none -translate-y-1 transition-all duration-120 ease-out group-hover/menu:opacity-100 group-hover/menu:pointer-events-auto group-hover/menu:translate-y-0 z-20">
+        <button class="h-[28px] px-[9px] text-xs border-0 rounded-md bg-transparent text-[#eeeeee] hover:bg-[var(--color-surface-7)]" type="button" aria-label={t.assistant} data-i18n-aria="assistant" data-i18n="assistant" aria-haspopup="menu" aria-expanded="false" aria-controls="topbar-assistant-menu">{t.assistant}</button>
+        <div id="topbar-assistant-menu" role="menu" aria-label={t.assistant} class="absolute top-[34px] left-0 min-w-[240px] flex flex-col gap-[3px] p-2 border border-[var(--color-surface-10)] rounded-lg bg-[rgba(18,18,18,0.96)] shadow-[0_18px_54px_rgba(0,0,0,0.38)] opacity-0 pointer-events-none -translate-y-1 transition-all duration-120 ease-out group-hover/menu:opacity-100 group-hover/menu:pointer-events-auto group-hover/menu:translate-y-0 z-20">
           <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="dev-memory" data-i18n="testMemory">{t.testMemory}</button>
           <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="dev-browser" data-i18n="testBrowser">{t.testBrowser}</button>
           <button class="flex min-h-[30px] items-center rounded-md px-[10px] text-[#bdbdbd] text-xs text-left hover:bg-[var(--color-surface-7)] hover:text-white" type="button" data-testing-action="dev-diagnostics" data-i18n="diagnostics">{t.diagnostics}</button>
@@ -127,6 +127,7 @@ const t = topbarTranslations.es;
 </header>
 
 <script>
+  import { surfaces } from '../lib/surfaces';
   import { LANGUAGE_STORAGE_KEY, topbarTranslations, type AppLanguage } from '../lib/i18n';
 
   const applyLanguage = (language: AppLanguage) => {
@@ -154,28 +155,67 @@ const t = topbarTranslations.es;
   });
 
   const topbarMenus = Array.from(document.querySelectorAll('.group\\/menu'));
-  const publishNativeMenu = (menu, open) => window.dispatchEvent(new CustomEvent('codeclub:native-menu', { detail: { open: Boolean(open), element: menu.querySelector(':scope > div') } }));
-  const setMenuState = (menu, open) => {
-    menu.classList.toggle('menu-open', open);
-    publishNativeMenu(menu, open);
+  const publishNativeMenu = async (menu: Element, open: boolean) => {
+    const element = open ? menu.querySelector<HTMLElement>(':scope > div') : null;
+    try {
+      if (!open || !element) {
+        await surfaces.popup.close();
+        return;
+      }
+      await surfaces.popup.open({ id: element.id || 'topbar-menu', anchor: element.getBoundingClientRect(), content: element });
+    } catch (error) {
+      console.error('No se pudo abrir el menú nativo.', error);
+    }
   };
-  const nativeMenuIsOpen = () => Boolean((window as Window & { __codeclubNativeMenuOpen?: boolean }).__codeclubNativeMenuOpen);
+  const closeTopbarMenus = () => {
+    let changed = false;
+    topbarMenus.forEach((menu) => {
+      if (menu.classList.contains('menu-open')) changed = true;
+      menu.classList.remove('menu-open');
+      menu.querySelector(':scope > button')?.setAttribute('aria-expanded', 'false');
+    });
+    if (changed || nativeMenuIsOpen()) {
+      void publishNativeMenu(topbarMenus[0], false);
+    }
+  };
+  const setMenuState = (menu, open) => {
+    if (open) {
+      topbarMenus.forEach((item) => {
+        if (item !== menu) item.classList.remove('menu-open');
+      });
+    }
+    menu.classList.toggle('menu-open', open);
+    menu.querySelector(':scope > button')?.setAttribute('aria-expanded', String(open));
+    void publishNativeMenu(menu, open);
+  };
+  const nativeMenuIsOpen = () => surfaces.popup.isOpen();
   topbarMenus.forEach((menu) => {
     const trigger = menu.querySelector(':scope > button');
-    menu.addEventListener('pointerenter', () => setMenuState(menu, true));
-    menu.addEventListener('pointerleave', () => {
-      if (!menu.matches(':focus-within') && !nativeMenuIsOpen()) setMenuState(menu, false);
-    });
+    menu.querySelectorAll(':scope > div a, :scope > div button').forEach((item) => item.setAttribute('role', 'menuitem'));
     trigger?.addEventListener('click', (event) => {
       event.stopPropagation();
-      topbarMenus.forEach((item) => { if (item !== menu) setMenuState(item, false); });
+      topbarMenus.forEach((item) => { if (item !== menu) item.classList.remove('menu-open'); });
       setMenuState(menu, !menu.classList.contains('menu-open'));
     });
     menu.addEventListener('click', (event) => {
-      if ((event.target as HTMLElement).closest('a, button, [data-testing-action]')) setMenuState(menu, false);
+      const target = event.target as HTMLElement;
+      const dropdown = menu.querySelector(':scope > div');
+      if (dropdown?.contains(target) && target.closest('a, button, [data-testing-action]')) closeTopbarMenus();
+    });
+    trigger?.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        if (!menu.classList.contains('menu-open')) setMenuState(menu, true);
+      }
     });
   });
-  document.addEventListener('click', () => topbarMenus.forEach((menu) => setMenuState(menu, false)));
+  document.addEventListener('click', closeTopbarMenus);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && (topbarMenus.some((menu) => menu.classList.contains('menu-open')) || nativeMenuIsOpen())) {
+      event.preventDefault();
+      closeTopbarMenus();
+    }
+  });
   document.querySelectorAll('[data-testing-action]').forEach((button) => {
     button.addEventListener('click', () => window.dispatchEvent(new CustomEvent('codeclub:testing-action', { detail: { action: button.dataset.testingAction } })));
   });
@@ -204,26 +244,15 @@ const t = topbarTranslations.es;
     top: 28px !important;
   }
 
-  .group\/menu::after {
-    content: '';
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 28px;
-    height: 8px;
-    pointer-events: auto;
-  }
-
   .group\/menu.menu-open > div {
     opacity: 1 !important;
     pointer-events: auto !important;
     transform: translateY(0) !important;
   }
 
-  .group\/menu:hover > div,
-  .group\/menu:focus-within > div {
-    opacity: 1 !important;
-    pointer-events: auto !important;
-    transform: translateY(0) !important;
+  :global(html[data-native-menu-active="true"]) .group\/menu.menu-open > div {
+    opacity: 0 !important;
+    pointer-events: none !important;
+    visibility: hidden !important;
   }
 </style>

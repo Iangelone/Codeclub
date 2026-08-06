@@ -7,7 +7,7 @@ import "../styles/global.css";
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <style>
+    <style is:global>
       :root, html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent !important; }
       #menu-root { width: 100%; height: 100%; overflow: visible; }
       #menu-root > * {
@@ -30,8 +30,10 @@ import "../styles/global.css";
         const { emit, listen } = await import('@tauri-apps/api/event');
         const { invoke } = await import('@tauri-apps/api/core');
         const root = document.querySelector('#menu-root');
+        let pointerEnteredMenu = false;
         const render = (payload) => {
           if (!root || !payload?.html) return;
+          pointerEnteredMenu = false;
           root.innerHTML = payload.html;
         };
         const current = await invoke('codeclub_menu_overlay_content').catch(() => null);
@@ -47,7 +49,15 @@ import "../styles/global.css";
             tab: target.dataset.menuTab || '',
           });
         });
-        root?.addEventListener('pointerleave', () => { void emit('codeclub-menu-overlay-close'); });
+        root?.addEventListener('pointerenter', () => { pointerEnteredMenu = true; });
+        root?.addEventListener('pointerleave', () => {
+          if (pointerEnteredMenu) void emit('codeclub-menu-overlay-close');
+        });
+        window.addEventListener('keydown', (event) => {
+          if (event.key !== 'Escape') return;
+          event.preventDefault();
+          void emit('codeclub-menu-overlay-close');
+        });
       };
       void start();
     </script>

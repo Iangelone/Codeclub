@@ -10,6 +10,7 @@ import { whatsappContextStore } from '../lib/store';
 import TerminalDock from './TerminalDock';
 import { readAgentState, writeAgentState, type AgentState, type TaskStatus } from '../lib/engine/planning';
 import { LANGUAGE_STORAGE_KEY, browserUiTranslations, rightSidebarTranslations, type AppLanguage } from '../lib/i18n';
+import { surfaces } from '../lib/surfaces';
 
 type FileEntry = { path: string; kind: 'file' | 'directory' };
 type FileNode = FileEntry & { name: string; children: FileNode[] };
@@ -785,6 +786,7 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
     if (!target) return { ok: false, error: 'No se pudo ubicar el elemento indicado en el estado actual del navegador.' };
     if (!host || host.width < 1 || host.height < 1) return { ok: false, error: 'El panel del navegador todavía no tiene un área visible para mover el cursor.' };
     try {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
       const appWindow = getCurrentWindow();
       const [position, scaleFactor] = await Promise.all([appWindow.outerPosition(), appWindow.scaleFactor()]);
       const x = Math.round(position.x + (host.left + target.rect.x + target.rect.width / 2) * scaleFactor);
@@ -796,11 +798,10 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
     }
   };
 
-  const installInspector = async (active: boolean, view = webviewRef.current) => {
-    if (!view) return;
+  const installInspector = async (active: boolean) => {
     try {
       const cursorDataUrl = await getBrowserCursorDataUrl();
-      await invoke('codeclub_browser_eval', { script: browserInspectorScript(active, cursorDataUrl) });
+      await surfaces.browser.evaluate(browserInspectorScript(active, cursorDataUrl));
       setError('');
     } catch (reason) {
       setError(String(reason));
@@ -860,7 +861,27 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
     }
   };
 
+  const getStableBrowserBounds = async () => {
+    let previous = await getBrowserBounds();
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+      const next = await getBrowserBounds();
+      if (next && previous
+        && Math.abs(next.left - previous.left) < 1
+        && Math.abs(next.top - previous.top) < 1
+        && Math.abs(next.width - previous.width) < 1
+        && Math.abs(next.height - previous.height) < 1) return next;
+      previous = next;
+    }
+    return previous;
+  };
+
   const syncWebview = async (view = webviewRef.current) => {
+    const visible = document.body.classList.contains('has-right-panel');
+    await surfaces.browser.setPanelVisible(visible);
+    if (visible) await surfaces.browser.syncBounds();
+    return;
+
     const isPanelOpen = document.body.classList.contains('has-right-panel');
     const bounds = isPanelOpen ? await getBrowserBounds() : null;
 
@@ -905,10 +926,20 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
     inspectModeRef.current = false;
     selectionKeyRef.current = '';
     try {
+      const managedHost = hostRef.current;
+      if (managedHost) {
+        if (push) {
+          setHistory((current) => [...current.slice(0, historyIndex + 1), url]);
+          setHistoryIndex((current) => { historyIndexRef.current = current + 1; return current + 1; });
+        }
+        await surfaces.browser.mount(managedHost, url);
+        await syncWebview();
+        return;
+      }
       await webviewRef.current?.close().catch(() => undefined);
       if (requestId !== requestRef.current) return;
       const isPanelOpen = document.body.classList.contains('has-right-panel');
-      const bounds = isPanelOpen ? await getBrowserBounds() : null;
+      const bounds = isPanelOpen ? await getStableBrowserBounds() : null;
       if (!bounds) {
         webviewRef.current = null;
         return;
@@ -925,6 +956,7 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
         zoomHotkeysEnabled: true,
       });
       webviewRef.current = view;
+      await view.hide();
       view.once('tauri://error', (event) => setError(`No se pudo abrir el navegador: ${JSON.stringify(event.payload || event)}`));
       view.once('tauri://created', () => { [300, 1000, 2500, 5000].forEach((delay) => { window.setTimeout(() => { if (inspectModeRef.current) void installInspector(true, view); }, delay); }); });
       if (push) {
@@ -932,6 +964,8 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
         setHistoryIndex((current) => { historyIndexRef.current = current + 1; return current + 1; });
       }
       await syncWebview(view);
+      await view.show();
+      [80, 240, 700].forEach((delay) => window.setTimeout(() => { void syncWebview(view); }, delay));
     } catch (reason) { setError(String(reason)); }
   };
 
@@ -942,11 +976,11 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
       applySelection(event.payload);
     }).then((unlisten) => { stopListening = unlisten; });
     void listen<string>('codeclub-browser-page-loaded', () => { if (inspectModeRef.current) void installInspector(true); }).then((unlisten) => { stopPageListening = unlisten; });
-    const handleStateRequest = () => { void invoke('codeclub_browser_eval', { script: browserStateScript }).catch(() => undefined); };
+    const handleStateRequest = () => { void surfaces.browser.evaluate(browserStateScript).catch(() => undefined); };
     const handleAction = async (event: Event) => {
       const action = (event as CustomEvent).detail || {};
       const cursorDataUrl = await getBrowserCursorDataUrl();
-      await invoke('codeclub_browser_eval', { script: browserAgentOverlayScript(action.selector, cursorDataUrl, language) }).catch(() => undefined);
+      await surfaces.browser.evaluate(browserAgentOverlayScript(action.selector, cursorDataUrl, language)).catch(() => undefined);
       if (action.type === 'move') {
         const result = await moveBrowserCursor(action.selector);
         if (!result.ok) {
@@ -954,7 +988,7 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
           return;
         }
       }
-      await invoke('codeclub_browser_eval', { script: browserActionScript(action) }).catch(() => undefined);
+      await surfaces.browser.evaluate(browserActionScript(action)).catch(() => undefined);
     };
     window.addEventListener('codeclub:browser-state-request', handleStateRequest);
     window.addEventListener('codeclub:browser-action', handleAction);
@@ -966,20 +1000,18 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
     bodyObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
     window.addEventListener('resize', handleSync);
     window.addEventListener('codeclub:right-panel-toggled', handleSync);
+    const closeBeforeReload = () => { void surfaces.browser.dispose(); };
+    window.addEventListener('beforeunload', closeBeforeReload);
     const navigationPoll = window.setInterval(async () => {
       try {
-        const view = webviewRef.current;
-        if (!view) return;
-        const currentUrl = await invoke<string>('codeclub_browser_get_url');
+        const currentUrl = await surfaces.browser.getUrl();
         const selectionMarker = currentUrl.indexOf(browserSelectionHash);
         if (selectionMarker >= 0) {
           try {
             const encoded = currentUrl.slice(selectionMarker + browserSelectionHash.length);
             const nextSelection = JSON.parse(decodeURIComponent(encoded)) as BrowserDomSelection;
             applySelection(nextSelection);
-            await invoke('codeclub_browser_eval', {
-              script: `history.replaceState(history.state, '', ${JSON.stringify(nextSelection.url)});`,
-            });
+            await surfaces.browser.evaluate(`history.replaceState(history.state, '', ${JSON.stringify(nextSelection.url)});`);
           } catch (reason) {
             setError(`No se pudo leer la selección: ${String(reason)}`);
           }
@@ -995,7 +1027,7 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
             return next;
           });
         }
-        if (inspectModeRef.current) void installInspector(true, view);
+        if (inspectModeRef.current) void installInspector(true);
       } catch { /* El WebView todavía puede estar navegando o cerrado. */ }
     }, 700);
     return () => {
@@ -1003,16 +1035,13 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
       bodyObserver.disconnect();
       window.removeEventListener('resize', handleSync);
       window.removeEventListener('codeclub:right-panel-toggled', handleSync);
+      window.removeEventListener('beforeunload', closeBeforeReload);
       window.removeEventListener('codeclub:browser-state-request', handleStateRequest);
       window.removeEventListener('codeclub:browser-action', handleAction);
       window.clearInterval(navigationPoll);
       stopListening?.();
       stopPageListening?.();
-      if (webviewRef.current) {
-        void webviewRef.current.close().catch(() => undefined);
-        webviewRef.current = null;
-      }
-      void invoke('codeclub_browser_close').catch(() => undefined);
+      void surfaces.browser.dispose();
     };
   }, [initialUrl]);
 
@@ -1459,8 +1488,28 @@ export default function RightSidebar() {
 
   useEffect(() => {
     const menu = menuOpen ? document.querySelector('.terminal-shell-menu') : null;
-    window.dispatchEvent(new CustomEvent('codeclub:native-menu', { detail: { open: Boolean(menu), element: menu } }));
+    if (menu instanceof HTMLElement) {
+      void surfaces.popup.open({ id: 'right-panel-tabs', anchor: menu.getBoundingClientRect(), content: menu });
+    } else {
+      void surfaces.popup.close();
+    }
   }, [menuOpen]);
+
+  useEffect(() => {
+    const closePopup = () => setMenuOpen(false);
+    const applyPopupAction = (event: Event) => {
+      const tab = (event as CustomEvent<{ tab?: string }>).detail?.tab;
+      if (!tab || !['files', 'review', 'browser', 'artifacts', 'terminals'].includes(tab)) return;
+      createTab(tab as RightTab);
+      setMenuOpen(false);
+    };
+    window.addEventListener('codeclub:surface-popup-close', closePopup);
+    window.addEventListener('codeclub:surface-popup-action', applyPopupAction);
+    return () => {
+      window.removeEventListener('codeclub:surface-popup-close', closePopup);
+      window.removeEventListener('codeclub:surface-popup-action', applyPopupAction);
+    };
+  }, [tabs]);
 
   useEffect(() => {
     const handleNativeTab = (event: Event) => {
@@ -1471,12 +1520,6 @@ export default function RightSidebar() {
     window.addEventListener('codeclub:right-panel-tab', handleNativeTab);
     return () => window.removeEventListener('codeclub:right-panel-tab', handleNativeTab);
   }, [tabs]);
-
-  useEffect(() => {
-    const closeNativeMenu = () => setMenuOpen(false);
-    window.addEventListener('codeclub:right-panel-menu-close', closeNativeMenu);
-    return () => window.removeEventListener('codeclub:right-panel-menu-close', closeNativeMenu);
-  }, []);
 
   useEffect(() => {
     const handleProject = (event: Event) => {
