@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "com.codeclub.desktop",
   "build": {
-    "beforeDevCommand": "bun run web:dev",
+    "beforeDevCommand": "npm run web:dev",
     "devUrl": "http://127.0.0.1:4321",
-    "beforeBuildCommand": "bun run web:build",
+    "beforeBuildCommand": "npm run web:build",
     "frontendDist": "../dist"
   },
   "app": {

@@ -28,7 +28,7 @@ It is **local-first**: all data lives on your filesystem. No cloud, no vendor lo
 | `readFile` | Read any project file |
 | `searchText` | Full-text search across the workspace |
 | `writeFile` | Create or modify files (requires approval) |
-| `runCommand` | Execute commands — `bun`, `npm`, `git`, `cargo`, `python`, `rg` (requires approval) |
+| `runCommand` | Execute commands — `node`, `npm`, `git`, `cargo`, `python`, `rg` (requires approval) |
 | `terminal` | Spawn persistent background terminal processes |
 | `openBrowser` | Open URLs in the built-in browser |
 | `askUser` | Request structured human decisions |
@@ -42,7 +42,7 @@ Provides development tools for files, terminal, browser, memory, plans, TODOs an
 
 ### Panels & Views
 - **Left sidebar**: project management, chat history, file explorer with CRUD, drag-and-drop
-- **Right sidebar** (resizable): file browser, git review, embedded WebView browser, artifacts (plans/TODOs/quotes), WhatsApp bridge
+- **Right sidebar** (resizable): file browser, git review, embedded WebView browser, artifacts (plans/TODOs/quotes)
 - **Terminal dock**: multi-tab floating terminal (PowerShell, CMD, Git Bash, WSL2), draggable and resizable
 - **Code editor**: CodeMirror 6 with syntax highlighting (JS/TS/HTML/CSS/JSON/MD/Python/Rust/SQL/XML)
 
@@ -63,11 +63,6 @@ Provides development tools for files, terminal, browser, memory, plans, TODOs an
 - Local-only, no cloud dependency
 - Per-project and global aggregation
 
-### WhatsApp Integration
-- WhatsApp Web bridge via `@whiskeysockets/baileys`
-- QR-based authentication
-- Agent can read WhatsApp context for business analysis
-- Read-only from the agent side
 
 ### File Attachments
 - Drag-and-drop or file-picker for text, images, PDFs, and DOCX
@@ -84,27 +79,27 @@ ChatInterface.tsx (React orchestrator)
 ```
 
 **Frontend**: Astro 7 + React 19 + TypeScript + Tailwind CSS 4
-**Backend**: Rust + Tauri 2 (filesystem, terminal, HTTP fetch, browser, WhatsApp)
-**Runtime**: Bun 1.3
+**Backend**: Rust + Tauri 2 (filesystem, terminal, HTTP fetch, browser)
+**Runtime**: Node.js 24 + npm 11
 **AI**: AI SDK v7 (`ai`, `@ai-sdk/openai-compatible`, `@ai-sdk/react`)
 
 ## Getting Started
 
 ### Prerequisites
-- [Bun](https://bun.com) 1.3+
+- [Node.js](https://nodejs.org) 24+
 - [Rust](https://rustup.rs) (for Tauri native backend)
 
 ### Install & Run
 
 ```bash
-bun install
-bun run dev
+npm install
+npm run dev
 ```
 
 ### Build
 
 ```bash
-bun run build
+npm run desktop:build
 ```
 
 ## Documentation
@@ -134,3 +129,10 @@ AI SDK documentation: https://ai-sdk.dev/docs
 - **Comercial paga**: empresas, corporaciones, uso comercial, SaaS, freelancers (> USD 60k/año).
 
 Contacto para licencias comerciales: **codeclubide@gmail.com**
+
+
+
+
+
+
+

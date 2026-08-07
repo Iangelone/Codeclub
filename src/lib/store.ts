@@ -22,11 +22,3 @@ export const activeChatStore = createStore<{ id?: string; kind?: string }>({});
 export type GlobalChat = { id: string; name: string; projectPath: string; projectName: string };
 export const chatsStore = createStore<GlobalChat[]>([]);
 
-export type WhatsAppChatContext = { id: string; name: string; unreadCount?: number; timestamp?: number; pinned?: number };
-export type WhatsAppMessageContext = { id: string; body: string; fromMe: boolean; timestamp?: number };
-export const whatsappContextStore = createStore<{
-  connected: boolean;
-  account?: string;
-  chats: WhatsAppChatContext[];
-  messages: Record<string, WhatsAppMessageContext[]>;
-}>({ connected: false, chats: [], messages: {} });

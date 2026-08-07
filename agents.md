@@ -9,7 +9,7 @@ src/pages/index.astro            → App shell (Astro, CSS Grid layout)
   ├── Topbar.astro               → App menu bar with window controls
   ├── Sidebar.tsx                → Left panel: projects, chats, files
   ├── ChatPanel.astro            → Chat wrapper (hosts ChatInterface)
-  ├── RightSidebar.tsx           → Right panel: files, review, browser, artifacts, WhatsApp
+  ├── RightSidebar.tsx           → Right panel: files, review, browser, artifacts
   └── TerminalDock.tsx           → Floating terminal (multi-tab, draggable)
 
 src/lib/engine/                  → AI execution layer
@@ -76,7 +76,7 @@ All data stored locally in OS app config/cache directories (`appConfigDir`, `app
 - Astro 7: https://docs.astro.build/ - UI shell and static frontend structure.
 - React 19: https://react.dev/ - Interactive components (chat, sidebar, panels, terminal).
 - Tailwind CSS: https://tailwindcss.com/docs - App styling, layout, spacing, and design tokens.
-- Bun: https://bun.com/docs - JavaScript runtime, package manager, and script runner.
+- Node.js: https://nodejs.org/docs - JavaScript runtime.\n- npm: https://docs.npmjs.com - package manager and script runner.
 - Tauri 2: https://v2.tauri.app/ - Desktop window, native APIs, packaging, and Rust bridge.
 - Models.dev: https://models.dev/models/ - An open-source database of AI models.
 - AI SDK v7: https://ai-sdk.dev/docs/introduction - The TypeScript toolkit designed to help developers build AI-powered applications and agents with React, Next.js, Vue, Svelte, Node.js, and more.
@@ -89,14 +89,29 @@ All data stored locally in OS app config/cache directories (`appConfigDir`, `app
 - **react-markdown + remark-gfm** — Markdown rendering
 - **mammoth** — DOCX conversion
 - **lucide-react / lucide-astro** — Icons
-- **@whiskeysockets/baileys** — WhatsApp Web bridge
 
 ## Commands
 
-- `bun run dev` -> start the desktop app.
-- `bun run build` -> build the desktop app.
-- `bun install` -> install dependencies.
-- `bun run stop` -> stop all running processes.
-- `bun run web:dev` -> start Astro dev server only.
-- `bun run web:build` -> build frontend only.
-- `bun run whatsapp:debug` -> debug WhatsApp bridge.
+- `npm run dev` -> build Next.js and start the Electron desktop app.
+- `npm run next:dev` -> optional renderer-only development server.
+- `npm run desktop:build` -> build Next.js and compile Electron.
+- `npm install` -> install dependencies.
+- `npm run electron:dev` -> start the Electron shell.
+- `npm run web:dev` -> start Astro dev server during transition.
+- `npm run web:build` -> build the legacy frontend.
+
+
+
+
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
+
+

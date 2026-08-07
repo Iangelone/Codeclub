@@ -1,0 +1,49 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { House, Minus, PanelLeft, PanelRight, PanelTop, Plus, Square, X } from 'lucide-react';
+import { motion } from 'motion/react';
+import { topbarTranslations } from '../lib/i18n';
+
+const t = topbarTranslations.es as Record<string, string>;
+
+export default function Topbar({ leftOpen, rightOpen, onToggleLeft, onToggleRight }: { leftOpen: boolean; rightOpen: boolean; onToggleLeft: () => void; onToggleRight: () => void }) {
+  const [projects, setProjects] = useState<Array<{ id: string; name: string; path: string }>>([]);
+  const [activeProjectId, setActiveProjectId] = useState('home');
+  const noDragStyle = { WebkitAppRegion: 'no-drag' } as React.CSSProperties;
+  const nativeWindow = (action: 'windowMinimize' | 'windowMaximize' | 'windowClose') => { const api = (window as any).codeclub; if (!api?.[action]) { console.error(`Electron bridge no disponible: ${action}`); return; } void Promise.resolve(api[action]()).catch((error) => console.error(`Falló ${action}`, error)); };
+  useEffect(() => { void (async () => { const existing = await (window as any).codeclub?.listProjects?.(); if (Array.isArray(existing)) setProjects(existing); })(); }, []);
+  const addProject = async () => {
+    const api = (window as any).codeclub;
+    if (!api?.selectProjectFolder) { console.error('Electron bridge codeclub no disponible'); return; }
+    let project;
+    try { project = await api.selectProjectFolder(); } catch (error) { console.error('No se pudo seleccionar la carpeta del proyecto', error); return; }
+    if (!project) return;
+    setProjects((current) => [...current.filter((item) => item.id !== project.id), project]);
+    setActiveProjectId(project.id);
+    window.dispatchEvent(new CustomEvent('codeclub:project-switch', { detail: project }));
+  };
+  const selectProject = async (project: { id: string; name: string; path: string }) => {
+    setActiveProjectId(project.id);
+    await (window as any).codeclub?.switchProject?.(project.id);
+    window.dispatchEvent(new CustomEvent('codeclub:project-switch', { detail: project }));
+  };
+  return <header aria-label="Barra principal de Codeclub" className="codeclub-graphite relative z-[100] col-span-full flex h-[34px] min-w-0 items-center select-none backdrop-blur-xl backdrop-saturate-150">
+    <div className="flex h-full items-center gap-1 pl-2" role="tablist" aria-label="Pestañas de proyectos">
+      <motion.button type="button" role="tab" aria-selected={activeProjectId === 'home'} title="Inicio" style={noDragStyle} onClick={() => setActiveProjectId('home')} animate={{ scale: activeProjectId === 'home' ? 1 : 0.97, opacity: activeProjectId === 'home' ? 1 : 0.72 }} whileHover={{ scale: activeProjectId === 'home' ? 1.03 : 1 }} whileTap={{ scale: 0.96 }} transition={{ type: 'spring', stiffness: 420, damping: 26 }} className={`flex h-[28px] w-fit items-center gap-1.5 rounded-lg border px-2.5 !text-[12px] leading-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--codeclub-accent) ${activeProjectId === 'home' ? 'border-(--codeclub-border-soft) bg-(--codeclub-acrylic-active) text-(--codeclub-text-strong) shadow-(--codeclub-shadow-soft)' : 'border-transparent bg-transparent text-(--codeclub-text-muted) hover:bg-(--codeclub-hover)'}`}><House size={15} aria-hidden="true" className="shrink-0" /><span>Inicio</span></motion.button>
+      {projects.map((project) => <motion.button type="button" role="tab" aria-selected={activeProjectId === project.id} title={`Abrir proyecto ${project.name}`} style={noDragStyle} key={project.id} onClick={() => void selectProject(project)} animate={{ scale: activeProjectId === project.id ? 1 : 0.97, opacity: activeProjectId === project.id ? 1 : 0.72 }} whileHover={{ scale: activeProjectId === project.id ? 1.03 : 1 }} whileTap={{ scale: 0.96 }} transition={{ type: 'spring', stiffness: 420, damping: 26 }} className={`group flex h-[28px] max-w-[220px] items-center gap-1.5 rounded-lg border px-2.5 !text-[12px] leading-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--codeclub-accent) ${activeProjectId === project.id ? 'border-(--codeclub-border-soft) bg-(--codeclub-acrylic-active) text-(--codeclub-text-strong) shadow-(--codeclub-shadow-soft)' : 'border-transparent bg-transparent text-(--codeclub-text-muted) hover:bg-(--codeclub-hover)'}`}><span aria-hidden="true" className="grid h-5 w-5 shrink-0 place-items-center rounded-md border border-(--codeclub-border-soft) bg-(--codeclub-surface-raised) text-[11px] font-medium uppercase text-(--codeclub-text-strong)">{project.name.charAt(0)}</span><span className="truncate">{project.name}</span><span aria-hidden="true" className={`ml-1 grid h-5 w-5 shrink-0 place-items-center rounded-md text-(--codeclub-text-muted) opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong) ${activeProjectId === project.id ? 'opacity-100' : ''}`}><X size={13} /></span></motion.button>)}
+      <button type="button" style={noDragStyle} onClick={() => void addProject()} className="grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent text-(--codeclub-text) hover:bg-(--codeclub-hover) focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--codeclub-accent)" aria-label="Agregar proyecto o vincular carpeta" title="Vincular carpeta como proyecto"><Plus size={17} aria-hidden="true" /></button>
+    </div>
+    <div className="min-w-0 flex-1" />
+    <nav className="mr-2 flex h-full items-center gap-1" aria-label="Paneles" style={noDragStyle}>
+      <motion.button type="button" title="Topbar (próximamente)" onClick={() => undefined} animate={{ scale: 0.94, opacity: 0.58 }} whileHover={{ scale: 0.98, opacity: 0.72 }} whileTap={{ scale: 0.94 }} transition={{ type: 'spring', stiffness: 420, damping: 26 }} className="grid h-7 w-7 place-items-center rounded-md border border-transparent bg-transparent text-(--codeclub-icon) hover:bg-(--codeclub-hover) focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--codeclub-accent)" aria-label="Topbar próximamente" aria-disabled="true" aria-pressed="false"><PanelTop size={14} aria-hidden="true" /></motion.button>
+      <motion.button type="button" title={leftOpen ? 'Ocultar sidebar izquierda' : 'Mostrar sidebar izquierda'} onClick={onToggleLeft} animate={{ scale: leftOpen ? 1 : 0.94, opacity: leftOpen ? 1 : 0.58 }} whileHover={{ scale: leftOpen ? 1.08 : 1 }} whileTap={{ scale: 0.9 }} transition={{ type: 'spring', stiffness: 420, damping: 26 }} className={`grid h-7 w-7 place-items-center border focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--codeclub-accent) ${leftOpen ? 'rounded-full border-(--codeclub-border-soft) bg-(--codeclub-acrylic-active) text-(--codeclub-text-strong)' : 'rounded-md border-transparent bg-transparent text-(--codeclub-icon) hover:bg-(--codeclub-hover)'}`} aria-label={leftOpen ? 'Ocultar sidebar izquierda' : 'Mostrar sidebar izquierda'} aria-pressed={leftOpen}><PanelLeft size={14} aria-hidden="true" /></motion.button>
+      <motion.button type="button" title={rightOpen ? 'Ocultar sidebar derecha' : 'Mostrar sidebar derecha'} onClick={onToggleRight} animate={{ scale: rightOpen ? 1 : 0.94, opacity: rightOpen ? 1 : 0.58 }} whileHover={{ scale: rightOpen ? 1.08 : 1 }} whileTap={{ scale: 0.9 }} transition={{ type: 'spring', stiffness: 420, damping: 26 }} className={`grid h-7 w-7 place-items-center border focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--codeclub-accent) ${rightOpen ? 'rounded-full border-(--codeclub-border-soft) bg-(--codeclub-acrylic-active) text-(--codeclub-text-strong)' : 'rounded-md border-transparent bg-transparent text-(--codeclub-icon) hover:bg-(--codeclub-hover)'}`} aria-label={rightOpen ? 'Ocultar sidebar derecha' : 'Mostrar sidebar derecha'} aria-pressed={rightOpen}><PanelRight size={14} aria-hidden="true" /></motion.button>
+    </nav>
+    <nav className="flex h-full items-center" aria-label={t.windowControls}>
+      <button id="minimize" title="Minimizar ventana" style={noDragStyle} onClick={() => nativeWindow('windowMinimize')} className="grid h-[34px] w-[42px] place-items-center border-0 bg-transparent text-(--codeclub-text) hover:bg-(--codeclub-hover) focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--codeclub-accent)" aria-label="Minimizar ventana"><Minus size={13} aria-hidden="true" /></button>
+      <button id="maximize" title="Maximizar o restaurar ventana" style={noDragStyle} onClick={() => nativeWindow('windowMaximize')} className="grid h-[34px] w-[42px] place-items-center border-0 bg-transparent text-(--codeclub-text) hover:bg-(--codeclub-hover) focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--codeclub-accent)" aria-label="Maximizar o restaurar ventana"><Square size={12} aria-hidden="true" /></button>
+      <button id="close" title="Ocultar en la bandeja" style={noDragStyle} onClick={() => nativeWindow('windowClose')} className="grid h-[34px] w-[42px] place-items-center border-0 bg-transparent text-(--codeclub-text) hover:bg-(--codeclub-danger) hover:text-white focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--codeclub-accent)" aria-label="Ocultar aplicación en la bandeja"><X size={15} aria-hidden="true" /></button>
+    </nav>
+  </header>;
+}

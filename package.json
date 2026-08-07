@@ -3,16 +3,22 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "packageManager": "bun@1.3.14",
+  "main": "electron-dist/main.js",
+  "packageManager": "npm@11.17.0",
   "scripts": {
-    "dev": "bun run scripts/dev.mjs",
-    "stop": "bun run scripts/stop.mjs",
+    "dev": "npm run desktop:dev",
+    "desktop:dev": "npm run electron:compile && node scripts/desktop-dev.mjs",
+    "desktop:build": "npm run next:build && npm run electron:compile",
     "build": "tauri build",
     "web:dev": "astro dev --host 127.0.0.1",
     "web:dev:force": "astro dev --host 127.0.0.1 --force",
     "web:build": "astro build",
     "web:preview": "astro preview",
-    "whatsapp:debug": "node scripts/whatsapp-debug.mjs",
+    "next:dev": "next dev --hostname 127.0.0.1",
+    "next:build": "next build",
+    "electron:compile": "tsc -p tsconfig.electron.json",
+    "electron:launch": "electron .",
+    "electron:dev": "npm run electron:compile && electron .",
     "tauri": "tauri"
   },
   "dependencies": {
@@ -39,16 +45,17 @@
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "~2",
     "@tauri-apps/plugin-fs": "~2",
-    "@whiskeysockets/baileys": "^7.0.0-rc13",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "ai": "^7.0.16",
     "astro": "7.1.3",
+    "electron": "^43.3.0",
     "highlight.js": "^11.11.1",
     "lucide-astro": "^0.556.0",
     "lucide-react": "^1.23.0",
     "mammoth": "^1.12.0",
     "motion": "^12.43.0",
+    "next": "16.3.0",
     "qrcode": "^1.5.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
@@ -60,7 +67,9 @@
     "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
     "@tauri-apps/cli": "^2.11.4",
+    "tsx": "^4.23.11",
     "typescript": "^5.9.3"
   }
 }

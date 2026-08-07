@@ -275,10 +275,10 @@ function DeveloperLoopPreviewOld({ onClose }: { onClose: () => void }) {
     { role: 'event', label: 'TODO', text: '1. Inspeccionar componentes\n2. Implementar el cambio\n3. Ejecutar verificaciones' },
     { role: 'assistant', label: 'Planificar', text: 'Ya tengo el plan. Empiezo por el componente principal y sus estilos.' },
     { role: 'tool', label: 'Acción · archivos', text: 'Abro src/components/ChatInterface.tsx' },
-    { role: 'tool', label: 'Terminal', text: '$ bun run typecheck\n> Revisando tipos…' },
+    { role: 'tool', label: 'Terminal', text: '$ npm run typecheck\n> Revisando tipos…' },
     { role: 'assistant', label: 'Ask user', text: 'Encontré dos variantes posibles. ¿Preferís mantener el diseño actual o usar tarjetas más compactas?' },
     { role: 'user', text: 'Mantené el diseño actual y hacelo más claro.' },
-    { role: 'tool', label: 'Verificación', text: '$ bun run web:build\n✓ Build completado sin errores' },
+    { role: 'tool', label: 'Verificación', text: '$ npm run web:build\n✓ Build completado sin errores' },
     { role: 'assistant', label: 'Entregar', text: 'Listo. Apliqué la mejora, actualicé el TODO y verifiqué que el proyecto compile.' },
   ] as const;
 
@@ -297,3 +297,6 @@ function DeveloperLoopPreviewOld({ onClose }: { onClose: () => void }) {
     </div>
   </aside>;
 }
+
+
+

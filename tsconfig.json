@@ -4,5 +4,6 @@
     "types": ["@tauri-apps/api"],
     "jsx": "react-jsx",
     "jsxImportSource": "react"
-  }
+  },
+  "exclude": ["node_modules", "src-tauri/target", "out", "dist"]
 }

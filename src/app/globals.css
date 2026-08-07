@@ -1,0 +1,37 @@
+@import 'tailwindcss';
+
+:root {
+  --codeclub-bg: #111111;
+  --codeclub-center: #191919;
+  --codeclub-surface: #161616;
+    --codeclub-surface-raised: #1e1e1e;
+  --codeclub-panel: rgba(27, 32, 41, 1);
+  --codeclub-graphite: linear-gradient(115deg, #1c2028 0%, #1b202a 52%, #1d2535 100%);
+  --codeclub-border: #2b2b2b;
+  --codeclub-border-soft: rgba(255, 255, 255, 0.1);
+  --codeclub-border-faint: rgba(255, 255, 255, 0.06);
+  --codeclub-acrylic: rgba(27, 32, 41, 1);
+  --codeclub-acrylic-active: rgba(43, 48, 58, 1);
+  --codeclub-hover: rgba(255, 255, 255, 0.08);
+  --codeclub-text: #dedede;
+  --codeclub-text-strong: #f1f1f1;
+  --codeclub-text-muted: #9a9a9a;
+  --codeclub-icon: #c7c9ce;
+  --codeclub-danger: #c42b1c;
+  --codeclub-shadow-soft: 0 1px 3px rgba(0, 0, 0, 0.18);
+  --codeclub-accent: #3d9bff;
+  --codeclub-accent-bright: #8bc7ff;
+}
+
+html,
+body {
+  background: transparent;
+}
+
+.codeclub-graphite {
+  background: var(--codeclub-graphite);
+}
+
+.codeclub-resize-indicator {
+  background: linear-gradient(to bottom, transparent 0%, var(--codeclub-accent) 32%, var(--codeclub-accent) 68%, transparent 100%);
+}

@@ -44,7 +44,7 @@ fn lock_computer_automation() -> Result<std::sync::MutexGuard<'static, ()>, Stri
     COMPUTER_AUTOMATION_LOCK
         .get_or_init(|| Mutex::new(()))
         .lock()
-        .map_err(|_| "Computer Use está ocupado.".to_string())
+        .map_err(|_| "Computer Use est� ocupado.".to_string())
 }
 
 #[cfg(windows)]
@@ -81,7 +81,7 @@ fn set_computer_cursor(app: &AppHandle, active: bool) -> Result<(), String> {
     ]
     .into_iter()
     .find(|candidate| candidate.exists())
-    .ok_or_else(|| "No se encontró el cursor dark/arrow.cur en los recursos de Codeclub.".to_string())?;
+    .ok_or_else(|| "No se encontr� el cursor dark/arrow.cur en los recursos de Codeclub.".to_string())?;
     let wide_path: Vec<u16> = path.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
     let cursor = unsafe { LoadCursorFromFileW(PCWSTR(wide_path.as_ptr())) }
         .map_err(|error| format!("No se pudo cargar el cursor de Computer Use: {error}"))?;
@@ -94,7 +94,7 @@ fn set_computer_cursor(app: &AppHandle, active: bool) -> Result<(), String> {
 fn move_cursor_smoothly(target_x: i32, target_y: i32) -> Result<(), String> {
     let mut current = POINT::default();
     unsafe { GetCursorPos(&mut current) }
-        .map_err(|error| format!("No se pudo leer la posición actual del cursor: {error}"))?;
+        .map_err(|error| format!("No se pudo leer la posici�n actual del cursor: {error}"))?;
 
     let delta_x = (target_x - current.x) as f64;
     let delta_y = (target_y - current.y) as f64;
@@ -441,7 +441,7 @@ fn codeclub_menu_overlay(
     }
     let payload = MenuOverlayPayload { html, width, height };
     *state.payload.lock().map_err(|error| error.to_string())? = Some(payload.clone());
-    let main = app.get_webview_window("main").ok_or_else(|| "No se encontró la ventana principal.".to_string())?;
+    let main = app.get_webview_window("main").ok_or_else(|| "No se encontr� la ventana principal.".to_string())?;
     if let Some(webview) = app.get_webview(overlay_label) {
         webview.set_position(LogicalPosition::new(x, y)).map_err(|error| error.to_string())?;
         webview.set_size(LogicalSize::new(width, height)).map_err(|error| error.to_string())?;
@@ -452,7 +452,7 @@ fn codeclub_menu_overlay(
         return Ok(());
     }
     let overlay_url = if cfg!(debug_assertions) {
-        WebviewUrl::External("http://127.0.0.1:4321/menu-overlay/".parse().map_err(|error| format!("URL inválida para el menú overlay: {error}"))?)
+        WebviewUrl::External("http://127.0.0.1:4321/menu-overlay/".parse().map_err(|error| format!("URL inv�lida para el men� overlay: {error}"))?)
     } else {
         WebviewUrl::App("menu-overlay".into())
     };
@@ -460,9 +460,9 @@ fn codeclub_menu_overlay(
         // Ocultar conserva la instancia precargada para poder reutilizarla.
         window.hide().map_err(|error| error.to_string())?;
     }
-    // El menú comparte jerarquía con el navegador. Al crearlo después, Windows
+    // El men� comparte jerarqu�a con el navegador. Al crearlo despu�s, Windows
     // conserva el orden Z correcto sin congelar ni recalcular el WebView.
-    let child_host = app.get_window("main").ok_or_else(|| "No se encontró la ventana principal.".to_string())?;
+    let child_host = app.get_window("main").ok_or_else(|| "No se encontr� la ventana principal.".to_string())?;
     let builder = WebviewBuilder::new(overlay_label, overlay_url.clone())
         .transparent(true)
         .background_color(tauri::window::Color(0, 0, 0, 0));
@@ -470,7 +470,7 @@ fn codeclub_menu_overlay(
         .add_child(builder, LogicalPosition::new(x, y), LogicalSize::new(width, height))
         .map_err(|error| {
             eprintln!("[menu-overlay] no se pudo crear el WebView hijo: {error}");
-            format!("No se pudo crear el menú overlay: {error}")
+            format!("No se pudo crear el men� overlay: {error}")
         })?;
     webview.show().map_err(|error| error.to_string())?;
     #[cfg(windows)]
@@ -497,7 +497,7 @@ fn codeclub_menu_overlay(
         .focused(false)
         .visible(true)
         .build()
-        .map_err(|error| format!("No se pudo crear el menú overlay: {error}"))?;
+        .map_err(|error| format!("No se pudo crear el men� overlay: {error}"))?;
     window.emit("codeclub-menu-overlay-content", payload).map_err(|error| error.to_string())?;
     Ok(())
 }
@@ -533,10 +533,10 @@ fn codeclub_popup_window(
 
     let payload = MenuOverlayPayload { html, width, height };
     *state.payload.lock().map_err(|error| error.to_string())? = Some(payload.clone());
-    let main = app.get_webview_window("main").ok_or_else(|| "No se encontró la ventana principal.".to_string())?;
+    let main = app.get_webview_window("main").ok_or_else(|| "No se encontr� la ventana principal.".to_string())?;
     let (screen_x, screen_y) = main_relative_position(&main, x, y)?;
     let overlay_url = if cfg!(debug_assertions) {
-        WebviewUrl::External("http://127.0.0.1:4321/menu-overlay/".parse().map_err(|error| format!("URL inválida para el menú: {error}"))?)
+        WebviewUrl::External("http://127.0.0.1:4321/menu-overlay/".parse().map_err(|error| format!("URL inv�lida para el men�: {error}"))?)
     } else {
         WebviewUrl::App("menu-overlay".into())
     };
@@ -553,11 +553,11 @@ fn codeclub_popup_window(
         .focused(false)
         .visible(true);
     let builder = if let Some(browser) = app.get_webview_window("codeclub-browser") {
-        builder.owner(&browser).map_err(|error| format!("No se pudo asociar el menú al navegador: {error}"))?
+        builder.owner(&browser).map_err(|error| format!("No se pudo asociar el men� al navegador: {error}"))?
     } else {
-        builder.owner(&main).map_err(|error| format!("No se pudo asociar el menú a la app: {error}"))?
+        builder.owner(&main).map_err(|error| format!("No se pudo asociar el men� a la app: {error}"))?
     };
-    let window = builder.build().map_err(|error| format!("No se pudo crear el menú: {error}"))?;
+    let window = builder.build().map_err(|error| format!("No se pudo crear el men�: {error}"))?;
     window.emit("codeclub-menu-overlay-content", payload).map_err(|error| error.to_string())
 }
 
@@ -575,11 +575,11 @@ fn codeclub_browser_window_open(
     } else if let Some(webview) = app.get_webview("codeclub-browser") {
         let _ = webview.close();
     }
-    let parsed_url: tauri::Url = url.parse().map_err(|error| format!("URL inválida: {error}"))?;
+    let parsed_url: tauri::Url = url.parse().map_err(|error| format!("URL inv�lida: {error}"))?;
     if !matches!(parsed_url.scheme(), "http" | "https") || parsed_url.host().is_none() {
-        return Err("Solo se permiten URLs http(s) con dominio válido.".to_string());
+        return Err("Solo se permiten URLs http(s) con dominio v�lido.".to_string());
     }
-    let main = app.get_webview_window("main").ok_or_else(|| "No se encontró la ventana principal.".to_string())?;
+    let main = app.get_webview_window("main").ok_or_else(|| "No se encontr� la ventana principal.".to_string())?;
     let (screen_x, screen_y) = main_relative_position(&main, x, y)?;
     let window = WebviewWindowBuilder::new(&app, "codeclub-browser", WebviewUrl::External(parsed_url))
         .title("Codeclub Browser")
@@ -606,8 +606,8 @@ fn codeclub_browser_window_bounds(
     width: f64,
     height: f64,
 ) -> Result<(), String> {
-    let main = app.get_webview_window("main").ok_or_else(|| "No se encontró la ventana principal.".to_string())?;
-    let browser = app.get_webview_window("codeclub-browser").ok_or_else(|| "El navegador no está disponible.".to_string())?;
+    let main = app.get_webview_window("main").ok_or_else(|| "No se encontr� la ventana principal.".to_string())?;
+    let browser = app.get_webview_window("codeclub-browser").ok_or_else(|| "El navegador no est� disponible.".to_string())?;
     let (screen_x, screen_y) = main_relative_position(&main, x, y)?;
     browser.set_position(LogicalPosition::new(screen_x, screen_y)).map_err(|error| error.to_string())?;
     browser.set_size(LogicalSize::new(width, height)).map_err(|error| error.to_string())
@@ -625,7 +625,7 @@ fn codeclub_browser_webview(app: &AppHandle) -> Result<tauri::Webview, String> {
                 webview.label() == "codeclub-browser"
             })
         })
-        .ok_or_else(|| "El WebView del navegador no está disponible.".to_string())
+        .ok_or_else(|| "El WebView del navegador no est� disponible.".to_string())
 }
 
 #[tauri::command]
@@ -637,7 +637,7 @@ fn codeclub_browser_create_on_main_thread(
     width: f64,
     height: f64,
 ) -> Result<(), String> {
-    let window = app.get_window("main").ok_or_else(|| "No se encontró la ventana principal.".to_string())?;
+    let window = app.get_window("main").ok_or_else(|| "No se encontr� la ventana principal.".to_string())?;
     // Reutilizar el WebView evita que close() bloquee el hilo nativo de
     // WebView2 y evita recreaciones/cargas duplicadas durante syncBounds.
     if let Some(existing) = BROWSER_WEBVIEW.get() {
@@ -685,7 +685,7 @@ fn codeclub_browser_create_on_main_thread(
     webview.show().map_err(|error| error.to_string())?;
     webview
         .navigate(parsed_url)
-        .map_err(|error| format!("No se pudo iniciar navegación WebView2: {error}"))?;
+        .map_err(|error| format!("No se pudo iniciar navegaci�n WebView2: {error}"))?;
     #[cfg(windows)]
     if let Some(main) = app.get_webview_window("main") {
         repair_browser_child(&main, x, y, width, height);
@@ -695,9 +695,9 @@ fn codeclub_browser_create_on_main_thread(
 
 #[tauri::command]
 fn codeclub_browser_create(app: AppHandle, url: String, x: f64, y: f64, width: f64, height: f64) -> Result<(), String> {
-    let parsed_url: tauri::Url = url.parse().map_err(|error| format!("URL inválida: {error}"))?;
+    let parsed_url: tauri::Url = url.parse().map_err(|error| format!("URL inv�lida: {error}"))?;
     if !matches!(parsed_url.scheme(), "http" | "https") || parsed_url.host().is_none() {
-        return Err("Solo se permiten URLs http(s) con dominio válido.".to_string());
+        return Err("Solo se permiten URLs http(s) con dominio v�lido.".to_string());
     }
     let app_for_main = app.clone();
     app.run_on_main_thread(move || {
@@ -705,14 +705,14 @@ fn codeclub_browser_create(app: AppHandle, url: String, x: f64, y: f64, width: f
             eprintln!("[browser] main-thread create failed: {error}");
         }
     })
-    .map_err(|error| format!("No se pudo despachar creación de WebView2 al hilo principal: {error}"))
+    .map_err(|error| format!("No se pudo despachar creaci�n de WebView2 al hilo principal: {error}"))
 }
 
 #[tauri::command]
 fn codeclub_browser_navigate(app: AppHandle, url: String) -> Result<(), String> {
-    let parsed_url: tauri::Url = url.parse().map_err(|error| format!("URL invÃ¡lida: {error}"))?;
+    let parsed_url: tauri::Url = url.parse().map_err(|error| format!("URL inválida: {error}"))?;
     if !matches!(parsed_url.scheme(), "http" | "https") || parsed_url.host().is_none() {
-        return Err("Solo se permiten URLs http(s) con dominio vÃ¡lido.".to_string());
+        return Err("Solo se permiten URLs http(s) con dominio válido.".to_string());
     }
     codeclub_browser_webview(&app)?
         .navigate(parsed_url)
@@ -778,10 +778,6 @@ struct TerminalRegistry {
     sessions: Mutex<HashMap<String, TerminalSession>>,
 }
 
-#[derive(Default)]
-struct WhatsAppRegistry {
-    child: Mutex<Option<Child>>,
-}
 
 struct TerminalSession {
     info: TerminalInfo,
@@ -1416,7 +1412,7 @@ fn codeclub_list_skills(project_path: String) -> Result<Vec<SkillEntry>, String>
             let id = dir.file_name().and_then(|name| name.to_str()).unwrap_or_default().to_string();
             if id.is_empty() || !seen.insert(id.clone()) { continue; }
             let name = frontmatter_value(&content, "name").unwrap_or_else(|| id.clone());
-            let description = frontmatter_value(&content, "description").unwrap_or_else(|| "Habilidad disponible para esta sesión.".into());
+            let description = frontmatter_value(&content, "description").unwrap_or_else(|| "Habilidad disponible para esta sesi�n.".into());
             skills.push(SkillEntry { id, name, description, source: source.clone(), content });
         }
     }
@@ -1508,9 +1504,9 @@ fn validate_mcp_entry(name: &str, value: &serde_json::Value, root: &Path) -> Res
         "stdio" => {
             let command = object.get("command").and_then(|value| value.as_str()).ok_or_else(|| format!("MCP {name}: falta command."))?;
             if command.trim().is_empty() || command.contains(char::is_whitespace) { return Err(format!("MCP {name}: command debe ser un token.")); }
-            if let Some(args) = object.get("args") { if args.as_array().is_none_or(|items| items.iter().any(|item| item.as_str().is_none())) { return Err(format!("MCP {name}: args inválidos.")); } }
+            if let Some(args) = object.get("args") { if args.as_array().is_none_or(|items| items.iter().any(|item| item.as_str().is_none())) { return Err(format!("MCP {name}: args inv�lidos.")); } }
             if let Some(env) = object.get("env") {
-                if env.as_object().is_none_or(|items| items.keys().any(|key| key == "PLUGIN_ROOT" || key == "PLUGIN_DATA") || items.values().any(|item| item.as_str().is_none())) { return Err(format!("MCP {name}: env inválido.")); }
+                if env.as_object().is_none_or(|items| items.keys().any(|key| key == "PLUGIN_ROOT" || key == "PLUGIN_DATA") || items.values().any(|item| item.as_str().is_none())) { return Err(format!("MCP {name}: env inv�lido.")); }
             }
             for key in ["command", "cwd"] {
                 if let Some(path) = object.get(key).and_then(|value| value.as_str()) && path.starts_with("./") {
@@ -1526,15 +1522,15 @@ fn validate_mcp_entry(name: &str, value: &serde_json::Value, root: &Path) -> Res
         }
         "streamable-http" | "sse" => {
             let url = object.get("url").and_then(|value| value.as_str()).ok_or_else(|| format!("MCP {name}: falta url."))?;
-            if url.contains('#') || url.contains('@') || (!url.starts_with("https://") && !url.starts_with("http://")) { return Err(format!("MCP {name}: url inválida.")); }
+            if url.contains('#') || url.contains('@') || (!url.starts_with("https://") && !url.starts_with("http://")) { return Err(format!("MCP {name}: url inv�lida.")); }
             if url.starts_with("http://") {
                 let host = url.trim_start_matches("http://").split(['/', ':']).next().unwrap_or_default();
                 if !["localhost", "127.0.0.1", "::1"].contains(&host) { return Err(format!("MCP {name}: los endpoints remotos deben usar HTTPS.")); }
             }
             if let Some(headers) = object.get("headers") {
-                let Some(items) = headers.as_object() else { return Err(format!("MCP {name}: headers inválidos.")); };
+                let Some(items) = headers.as_object() else { return Err(format!("MCP {name}: headers inv�lidos.")); };
                 let mut names = std::collections::HashSet::new();
-                for (key, value) in items { if value.as_str().is_none() || !names.insert(key.to_lowercase()) { return Err(format!("MCP {name}: headers inválidos.")); } }
+                for (key, value) in items { if value.as_str().is_none() || !names.insert(key.to_lowercase()) { return Err(format!("MCP {name}: headers inv�lidos.")); } }
             }
         }
         _ => unreachable!(),
@@ -1582,7 +1578,7 @@ fn codeclub_list_agent_plugins(app: AppHandle, project_path: String) -> Result<V
             if mcp_path.is_file() {
                 let parsed = match fs::read_to_string(&mcp_path).ok().and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok()) {
                     Some(value) => Some(value),
-                    None => { warnings.push("mcp.json no contiene JSON válido.".into()); None },
+                    None => { warnings.push("mcp.json no contiene JSON v�lido.".into()); None },
                 };
                 if let Some(config) = parsed.and_then(|value| {
                     let object = value.as_object()?;
@@ -1610,7 +1606,7 @@ fn mcp_request(session: &mut McpSession, method: &str, params: serde_json::Value
     let mut line = String::new();
     loop {
         line.clear();
-        if session.stdout.read_line(&mut line).map_err(|error| error.to_string())? == 0 { return Err("El servidor MCP cerró stdout.".into()); }
+        if session.stdout.read_line(&mut line).map_err(|error| error.to_string())? == 0 { return Err("El servidor MCP cerr� stdout.".into()); }
         let value: serde_json::Value = match serde_json::from_str(line.trim()) { Ok(value) => value, Err(_) => continue };
         if value.get("id").and_then(|value| value.as_u64()) == Some(id) {
             if let Some(error) = value.get("error") { return Err(error.to_string()); }
@@ -1651,7 +1647,7 @@ fn codeclub_mcp_stdio_start(state: State<'_, McpRegistry>, request: McpStdioStar
 #[tauri::command]
 fn codeclub_mcp_stdio_call(state: State<'_, McpRegistry>, request: McpCallRequest) -> Result<serde_json::Value, String> {
     let mut sessions = state.sessions.lock().map_err(|_| "No se pudo acceder a MCP.".to_string())?;
-    let session = sessions.get_mut(&request.session_id).ok_or_else(|| "Sesión MCP inexistente.".to_string())?;
+    let session = sessions.get_mut(&request.session_id).ok_or_else(|| "Sesi�n MCP inexistente.".to_string())?;
     mcp_request(session, "tools/call", serde_json::json!({"name":request.name,"arguments":request.arguments}))
 }
 
@@ -1663,7 +1659,7 @@ fn codeclub_mcp_stdio_close(state: State<'_, McpRegistry>, session_id: String) -
 
 #[tauri::command]
 fn codeclub_agent_plugin_data(app: AppHandle, plugin_id: String) -> Result<String, String> {
-    if !valid_plugin_name(&plugin_id) { return Err("Identificador de plugin inválido.".into()); }
+    if !valid_plugin_name(&plugin_id) { return Err("Identificador de plugin inv�lido.".into()); }
     let root = app.path().app_cache_dir().map_err(|error| error.to_string())?.join("agent-plugins").join(plugin_id);
     fs::create_dir_all(&root).map_err(|error| error.to_string())?;
     Ok(root.to_string_lossy().to_string())
@@ -1671,13 +1667,13 @@ fn codeclub_agent_plugin_data(app: AppHandle, plugin_id: String) -> Result<Strin
 
 #[tauri::command]
 fn codeclub_delete_agent_plugin(project_path: String, plugin_id: String) -> Result<(), String> {
-    if !valid_plugin_name(&plugin_id) { return Err("Identificador de plugin inválido.".into()); }
+    if !valid_plugin_name(&plugin_id) { return Err("Identificador de plugin inv�lido.".into()); }
     let root = workspace_root(&project_path)?;
     let plugins_root = root.join(".codeclub/plugins").canonicalize().unwrap_or_else(|_| root.join(".codeclub/plugins"));
     let target = plugins_root.join(&plugin_id);
-    if !target.exists() { return Err("No se encontró el paquete Agent Plugin.".into()); }
+    if !target.exists() { return Err("No se encontr� el paquete Agent Plugin.".into()); }
     let resolved = target.canonicalize().map_err(|error| error.to_string())?;
-    if !resolved.starts_with(&plugins_root) { return Err("El plugin está fuera del directorio permitido.".into()); }
+    if !resolved.starts_with(&plugins_root) { return Err("El plugin est� fuera del directorio permitido.".into()); }
     fs::remove_dir_all(resolved).map_err(|error| format!("No se pudo eliminar el plugin: {error}"))
 }
 
@@ -1946,7 +1942,7 @@ fn codeclub_computer_get_state() -> Result<ComputerState, String> {
         Ok(ComputerState { focused_window, focused_element: focused.as_ref().and_then(|item| describe(item, &focused_id)), elements: Vec::new() })
     }
     #[cfg(not(windows))]
-    { Err("Computer Use solo está disponible en Windows.".to_string()) }
+    { Err("Computer Use solo est� disponible en Windows.".to_string()) }
 }
 
 #[tauri::command]
@@ -1977,7 +1973,7 @@ fn codeclub_computer_list_windows() -> Result<Vec<ComputerWindow>, String> {
         return Ok(windows);
     }
     #[cfg(not(windows))]
-    { Err("Computer Use solo está disponible en Windows.".to_string()) }
+    { Err("Computer Use solo est� disponible en Windows.".to_string()) }
 }
 
 #[tauri::command]
@@ -1999,7 +1995,7 @@ fn codeclub_computer_screenshot() -> Result<ComputerScreenshot, String> {
         });
     }
     #[cfg(not(windows))]
-    { Err("Computer Use solo está disponible en Windows.".to_string()) }
+    { Err("Computer Use solo est� disponible en Windows.".to_string()) }
 }
 
 #[tauri::command]
@@ -2049,11 +2045,11 @@ fn codeclub_computer_action(request: ComputerActionRequest) -> Result<(), String
             "rightClick" => Mouse::new().right_click(&Point::new(request.x.ok_or("Falta x")?, request.y.ok_or("Falta y")?)).map_err(|error| error.to_string()),
             "type" => automation.get_root_element().map_err(|error| error.to_string())?.send_text_by_clipboard(&request.text.unwrap_or_default()).map_err(|error| error.to_string()),
             "key" => automation.get_root_element().map_err(|error| error.to_string())?.send_keys(&request.key.unwrap_or_default(), 10).map_err(|error| error.to_string()),
-            _ => Err("Acción de Computer Use no reconocida.".to_string()),
+            _ => Err("Acci�n de Computer Use no reconocida.".to_string()),
         }
     }
     #[cfg(not(windows))]
-    { let _ = request; Err("Computer Use solo está disponible en Windows.".to_string()) }
+    { let _ = request; Err("Computer Use solo est� disponible en Windows.".to_string()) }
 }
 
 #[tauri::command]
@@ -2158,119 +2154,6 @@ fn codeclub_browser_selection(app: AppHandle, selection: BrowserSelection) -> Re
         .map_err(|error| error.to_string())
 }
 
-#[tauri::command]
-fn codeclub_whatsapp_start(app: AppHandle, state: State<'_, WhatsAppRegistry>) -> Result<(), String> {
-    let mut registry = state.child.lock().map_err(|error| error.to_string())?;
-    if let Some(child) = registry.as_mut() {
-        if child.try_wait().map_err(|error| error.to_string())?.is_none() {
-            if let Some(stdin) = child.stdin.as_mut() {
-                let _ = writeln!(stdin, "{}", serde_json::json!({ "type": "list_chats" }));
-                let _ = stdin.flush();
-            }
-            return Ok(());
-        }
-    }
-
-    let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("scripts").join("whatsapp-bridge.mjs");
-    let data_dir = app.path().app_data_dir().map_err(|error| error.to_string())?.join("whatsapp-baileys-session");
-    fs::create_dir_all(&data_dir).map_err(|error| error.to_string())?;
-    let mut child = Command::new("node")
-        .arg(script)
-        .env("CODECLUB_WHATSAPP_DIR", data_dir)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| format!("No se pudo iniciar WhatsApp: {error}"))?;
-
-    if let Some(stdout) = child.stdout.take() {
-        let app_handle = app.clone();
-        std::thread::spawn(move || {
-            let reader = std::io::BufReader::new(stdout);
-            for line in reader.lines().flatten() {
-                if let Ok(payload) = serde_json::from_str::<serde_json::Value>(&line) {
-                    let _ = app_handle.emit("codeclub:whatsapp-event", payload);
-                }
-            }
-        });
-    }
-    if let Some(stderr) = child.stderr.take() {
-        let app_handle = app.clone();
-        std::thread::spawn(move || {
-            let reader = std::io::BufReader::new(stderr);
-            for line in reader.lines().flatten() {
-                let _ = app_handle.emit(
-                    "codeclub:whatsapp-event",
-                    serde_json::json!({ "type": "error", "message": line }),
-                );
-            }
-        });
-    }
-    *registry = Some(child);
-    Ok(())
-}
-
-#[tauri::command]
-fn codeclub_whatsapp_send(state: State<'_, WhatsAppRegistry>, chat_id: String, body: String) -> Result<(), String> {
-    let mut registry = state.child.lock().map_err(|error| error.to_string())?;
-    if registry.as_mut().and_then(|child| child.try_wait().ok()).flatten().is_some() {
-        *registry = None;
-        return Err("WhatsApp bridge finished. Start WhatsApp again.".to_string());
-    }
-    let child = registry.as_mut().ok_or_else(|| "WhatsApp no está iniciado".to_string())?;
-    let stdin = child.stdin.as_mut().ok_or_else(|| "No hay canal de WhatsApp".to_string())?;
-    writeln!(stdin, "{}", serde_json::json!({ "type": "send", "chatId": chat_id, "body": body })).map_err(|error| error.to_string())?;
-    stdin.flush().map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-fn codeclub_whatsapp_get_messages(state: State<'_, WhatsAppRegistry>, chat_id: String) -> Result<(), String> {
-    let mut registry = state.child.lock().map_err(|error| error.to_string())?;
-    if registry.as_mut().and_then(|child| child.try_wait().ok()).flatten().is_some() {
-        *registry = None;
-        return Err("WhatsApp bridge finished. Start WhatsApp again.".to_string());
-    }
-    let child = registry.as_mut().ok_or_else(|| "WhatsApp no está iniciado".to_string())?;
-    let stdin = child.stdin.as_mut().ok_or_else(|| "No hay canal de WhatsApp".to_string())?;
-    writeln!(stdin, "{}", serde_json::json!({ "type": "get_messages", "chatId": chat_id })).map_err(|error| error.to_string())?;
-    stdin.flush().map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-fn codeclub_whatsapp_refresh(state: State<'_, WhatsAppRegistry>) -> Result<(), String> {
-    let mut registry = state.child.lock().map_err(|error| error.to_string())?;
-    if registry.as_mut().and_then(|child| child.try_wait().ok()).flatten().is_some() {
-        *registry = None;
-        return Err("WhatsApp bridge finished. Start WhatsApp again.".to_string());
-    }
-    let child = registry.as_mut().ok_or_else(|| "WhatsApp no está iniciado".to_string())?;
-    let stdin = child.stdin.as_mut().ok_or_else(|| "No hay canal de WhatsApp".to_string())?;
-    writeln!(stdin, "{}", serde_json::json!({ "type": "refresh" })).map_err(|error| error.to_string())?;
-    stdin.flush().map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-fn codeclub_whatsapp_logout(state: State<'_, WhatsAppRegistry>) -> Result<(), String> {
-    let mut registry = state.child.lock().map_err(|error| error.to_string())?;
-    if registry.as_mut().and_then(|child| child.try_wait().ok()).flatten().is_some() {
-        *registry = None;
-        return Err("WhatsApp bridge finished. Start WhatsApp again.".to_string());
-    }
-    let child = registry.as_mut().ok_or_else(|| "WhatsApp no está iniciado".to_string())?;
-    let stdin = child.stdin.as_mut().ok_or_else(|| "No hay canal de WhatsApp".to_string())?;
-    writeln!(stdin, "{}", serde_json::json!({ "type": "logout" })).map_err(|error| error.to_string())?;
-    stdin.flush().map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-fn codeclub_whatsapp_stop(state: State<'_, WhatsAppRegistry>) -> Result<(), String> {
-    let mut registry = state.child.lock().map_err(|error| error.to_string())?;
-    if let Some(mut child) = registry.take() {
-        let _ = child.kill();
-    }
-    Ok(())
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -2323,7 +2206,7 @@ pub fn run() {
                     )
                     .map_err(|error| format!("No se pudo precargar el WebView2 del navegador: {error}"))?;
                 browser.hide().map_err(|error| error.to_string())?;
-                // El handle debe vivir durante toda la sesión; si se descarta
+                // El handle debe vivir durante toda la sesi�n; si se descarta
                 // al salir de setup, el manager deja de encontrar el hijo y el
                 // siguiente create vuelve a entrar en add_child (que bloquea).
                 BROWSER_WEBVIEW
@@ -2334,7 +2217,6 @@ pub fn run() {
         })
         .manage(TerminalRegistry::default())
         .manage(McpRegistry::default())
-        .manage(WhatsAppRegistry::default())
         .manage(MenuOverlayState::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -2381,13 +2263,7 @@ pub fn run() {
             codeclub_browser_set_bounds,
             codeclub_browser_eval,
             codeclub_browser_get_url,
-            codeclub_browser_selection,
-            codeclub_whatsapp_start,
-            codeclub_whatsapp_send,
-            codeclub_whatsapp_get_messages,
-            codeclub_whatsapp_refresh,
-            codeclub_whatsapp_logout,
-            codeclub_whatsapp_stop
+            codeclub_browser_selection
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -2421,3 +2297,6 @@ mod agent_plugin_tests {
         assert_eq!(mcp["$id"], super::AGENT_MCP_SCHEMA);
     }
 }
+
+
+
