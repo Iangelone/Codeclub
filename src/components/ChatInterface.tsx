@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUp, ArrowUpRight, Box, Bug, Camera, Check, ChevronDown, ChevronRight, CircleHelp, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Layers, LayoutTemplate, Lightbulb, ListChecks, ListTodo, MessageSquare, Monitor, MousePointer2, Orbit, Paperclip, Pencil, Presentation, RotateCcw, Search, ScrollText, Square, Table2, Terminal, Folder, FolderTree, RefreshCw, WandSparkles, Wifi, X } from 'lucide-react';
+import { ArrowUp, ArrowUpRight, Box, Bug, Camera, Check, ChevronDown, ChevronRight, CircleHelp, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Languages, LayoutTemplate, Lightbulb, ListChecks, ListTodo, MessageSquare, Monitor, MousePointer2, Orbit, Paperclip, Pencil, Presentation, Radar, RotateCcw, Search, ScrollText, Square, Table2, Terminal, Folder, FolderTree, RefreshCw, WandSparkles, Wifi, X } from 'lucide-react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -261,6 +261,15 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     ? { label: 'Autonomous', description: 'Let the agent execute and verify the required tools', active: 'Active' }
     : { label: 'Autónomo', description: 'Dejá que el agente ejecute y verifique las tools necesarias', active: 'Activo' };
   const projectsSlashLabel = language === 'en' ? 'Projects' : 'Proyectos';
+  const languageOptions = [
+    { id: 'es', label: 'Español', description: 'Usar español', type: 'language' },
+    { id: 'en', label: 'English', description: 'Use English', type: 'language' },
+  ];
+  const developmentOptions = [
+    { id: 'build-feature', label: 'Desarrollar funcionalidad', description: 'Planificar, implementar y verificar', type: 'development', prompt: 'Desarrollá esta funcionalidad usando las tools necesarias. Primero inspeccioná el proyecto, proponé un plan breve, implementá los cambios y verificá que todo funcione.' },
+    { id: 'debug-project', label: 'Investigar y corregir', description: 'Diagnosticar con tools', type: 'development', prompt: 'Investigá este problema usando las tools disponibles. Revisá el proyecto, encontrá la causa raíz, aplicá una solución y verificá el resultado.' },
+    { id: 'review-changes', label: 'Revisar el proyecto', description: 'Analizar estado y próximos pasos', type: 'development', prompt: 'Revisá el estado actual del proyecto usando las tools necesarias. Señalá problemas importantes, proponé mejoras concretas y aplicá las que correspondan.' },
+  ];
   const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
   const [copiedToolLogIndex, setCopiedToolLogIndex] = useState<number | null>(null);
   const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -814,7 +823,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     return () => window.removeEventListener('codeclub:open-command-menu', handleOpenCommandMenu);
   }, [menuOpen, commandKind]);
 
-  const commandOptions = commandKind === 'project' ? projectOptions : commandKind === 'skill' ? skillOptions.map((skill) => ({ ...skill, type: 'skill', label: skill.name })) : catalog;
+  const commandOptions = commandKind === 'project' ? projectOptions : commandKind === 'skill' ? skillOptions.map((skill) => ({ ...skill, type: 'skill', label: skill.name })) : commandKind === 'language' ? languageOptions : commandKind === 'development' ? developmentOptions : catalog;
   const filteredCatalog = commandOptions.filter((item) => {
     const matchesKind = item.type === commandKind;
     const itemLabel = item.label || item.id || '';
@@ -822,12 +831,14 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     const matchesProvider = commandKind !== 'model' || item.providerId === currentProvider?.id;
     return matchesKind && matchesQuery && matchesProvider;
   });
-  const activeSelection = commandKind === 'provider' ? currentProvider : commandKind === 'model' ? currentModel : commandKind === 'project' && activeProject ? { id: activeProject.projectPath, label: activeProject.name } : commandKind === 'command' && autonomousMode ? { id: 'autonomo', label: autonomousText.label } : null;
+  const activeSelection = commandKind === 'provider' ? currentProvider : commandKind === 'model' ? currentModel : commandKind === 'project' && activeProject ? { id: activeProject.projectPath, label: activeProject.name } : commandKind === 'language' ? { id: language, label: language === 'en' ? 'English' : 'Español' } : commandKind === 'command' && autonomousMode ? { id: 'autonomo', label: autonomousText.label } : null;
   const slashCommands = [
-    { id: 'proveedor', label: chatText.slash.provider, description: chatText.slash.providerDescription, aliases: ['proveedor', 'provider'], type: 'command', icon: Layers },
+    { id: 'proveedor', label: chatText.slash.provider, description: chatText.slash.providerDescription, aliases: ['proveedor', 'provider'], type: 'command', icon: Radar },
     { id: 'modelo', label: chatText.slash.model, description: chatText.slash.modelDescription, aliases: ['modelo', 'model'], type: 'command', icon: Box },
     { id: 'proyecto', label: projectsSlashLabel, description: chatText.slash.projectDescription, aliases: ['proyecto', 'proyectos', 'project', 'projects'], type: 'command', icon: Folder },
     { id: 'habilidad', label: chatText.slash.skill, description: chatText.slash.skillDescription, aliases: ['habilidad', 'skill'], type: 'command', icon: WandSparkles },
+    { id: 'idioma', label: language === 'en' ? 'Language' : 'Idioma', description: language === 'en' ? 'Change language' : 'Cambiar idioma', aliases: ['idioma', 'language', 'lang'], type: 'command', icon: Languages },
+    { id: 'desarrollo', label: language === 'en' ? 'Development' : 'Desarrollo', description: language === 'en' ? 'Insert a development prompt' : 'Inyectar un prompt de desarrollo', aliases: ['desarrollo', 'desarrollar', 'development', 'develop'], type: 'command', icon: Code2 },
     { id: 'autonomo', label: autonomousText.label, description: autonomousText.description, aliases: ['autonomo', 'autonomous'], type: 'command', icon: Orbit },
     ...availableExtensions.filter((extension) => enabledExtensions[extension.id]).map((extension) => ({ id: extension.id, label: extension.name, description: extension.description, type: 'extension' as const, icon: extensionIcons[extension.id] || Box, extension })),
   ].filter((command) => command.label.toLowerCase().includes(searchQuery.toLowerCase()) || command.aliases?.some((alias) => alias.includes(searchQuery.toLowerCase())));
@@ -905,6 +916,18 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
         openCommandMenu('skill');
         return;
       }
+      if (item.id === 'idioma') {
+        setInput('');
+        setSearchQuery('');
+        openCommandMenu('language');
+        return;
+      }
+      if (item.id === 'desarrollo') {
+        setInput('');
+        setSearchQuery('');
+        openCommandMenu('development');
+        return;
+      }
       if (item.id === 'autonomo') {
         setAutonomousMode((current) => !current);
         setInput('');
@@ -926,6 +949,26 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       setMenuOpen(false);
       setCommandKind('');
       chatInputRef.current?.focus();
+      return;
+    }
+    if (item.type === 'language') {
+      const nextLanguage = item.id === 'en' ? 'en' : 'es';
+      setLanguage(nextLanguage);
+      window.localStorage.setItem(LANGUAGE_STORAGE_KEY, nextLanguage);
+      window.dispatchEvent(new CustomEvent('codeclub:language-change', { detail: { language: nextLanguage } }));
+      setInput('');
+      setSearchQuery('');
+      setMenuOpen(false);
+      setCommandKind('');
+      chatInputRef.current?.focus();
+      return;
+    }
+    if (item.type === 'development') {
+      setInput(item.prompt);
+      setSearchQuery('');
+      setMenuOpen(false);
+      setCommandKind('');
+      requestAnimationFrame(() => chatInputRef.current?.focus());
       return;
     }
     if (item.type === 'extension') {
@@ -2560,7 +2603,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               target.style.overflowY = target.scrollHeight > 180 ? 'auto' : 'hidden';
             }}
             onKeyDown={(e) => {
-              const slashMenuActive = ['command', 'provider', 'model', 'project', 'skill'].includes(commandKind) && (menuOpen || commandKind === 'command');
+              const slashMenuActive = ['command', 'provider', 'model', 'project', 'skill', 'language', 'development'].includes(commandKind) && (menuOpen || commandKind === 'command');
               if (slashMenuActive && ['ArrowDown', 'ArrowUp', 'Enter', 'Escape'].includes(e.key)) {
                 e.preventDefault();
                 handleCommandMenuKeyDown(e);
@@ -2586,7 +2629,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           {artifactReference && <button type="button" onClick={() => setArtifactReference(null)} className="absolute left-[16px] top-1/2 z-10 max-w-[130px] -translate-y-1/2 truncate rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar referencia">@{artifactReference.kind} · {artifactReference.title}</button>}
           <div className="order-2 flex min-h-[30px] items-center justify-start gap-3">
             <button type="button" onClick={() => { triggerActionShine('attach'); void handleAttachFiles(); }} aria-label={chatText.attach} title={chatText.attach} className="composer-action group flex items-center justify-center gap-1.5 rounded-lg border-0 bg-transparent text-(--codeclub-text-muted) hover:bg-(--codeclub-surface-raised) hover:text-(--codeclub-text-strong)"><Paperclip className={attachedFiles.length > 0 ? 'text-(--codeclub-text-strong)' : ''} size={15} strokeWidth={1.8} /><span className={`composer-action-label text-[11px] ${shiningAction === 'attach' || attachedFiles.length > 0 ? 'composer-action-shine' : ''}`}>{chatText.attach}</span></button>
-            <button type="button" data-command-menu-kind="provider" onClick={() => { triggerActionShine('provider'); toggleCommandMenu('provider'); }} aria-label={chatText.slash.provider} title={chatText.slash.provider} className={`composer-action group flex items-center justify-center gap-1.5 rounded-lg border-0 text-(--codeclub-text-muted) hover:bg-(--codeclub-surface-raised) hover:text-(--codeclub-text-strong) ${menuOpen && commandKind === 'provider' ? 'bg-(--codeclub-surface-raised) text-(--codeclub-text-muted)' : 'bg-transparent'}`}><Layers className={menuOpen && commandKind === 'provider' ? 'text-(--codeclub-text-strong)' : ''} size={15} strokeWidth={1.8} /><span className={`composer-action-label text-[11px] ${shiningAction === 'provider' || (menuOpen && commandKind === 'provider') ? 'composer-action-shine' : ''}`}>{chatText.slash.provider}</span></button>
+            <button type="button" data-command-menu-kind="provider" onClick={() => { triggerActionShine('provider'); toggleCommandMenu('provider'); }} aria-label={chatText.slash.provider} title={chatText.slash.provider} className={`composer-action group flex items-center justify-center gap-1.5 rounded-lg border-0 text-(--codeclub-text-muted) hover:bg-(--codeclub-surface-raised) hover:text-(--codeclub-text-strong) ${menuOpen && commandKind === 'provider' ? 'bg-(--codeclub-surface-raised) text-(--codeclub-text-muted)' : 'bg-transparent'}`}><Radar className={menuOpen && commandKind === 'provider' ? 'text-(--codeclub-text-strong)' : ''} size={15} strokeWidth={1.8} /><span className={`composer-action-label text-[11px] ${shiningAction === 'provider' || (menuOpen && commandKind === 'provider') ? 'composer-action-shine' : ''}`}>{chatText.slash.provider}</span></button>
             <button type="button" data-command-menu-kind="model" onClick={() => { triggerActionShine('model'); toggleCommandMenu('model'); }} aria-label={chatText.slash.model} title={chatText.slash.model} className={`composer-action group flex items-center justify-center gap-1.5 rounded-lg border-0 text-(--codeclub-text-muted) hover:bg-(--codeclub-surface-raised) hover:text-(--codeclub-text-strong) ${menuOpen && commandKind === 'model' ? 'bg-(--codeclub-surface-raised) text-(--codeclub-text-muted)' : 'bg-transparent'}`}><Box className={menuOpen && commandKind === 'model' ? 'text-(--codeclub-text-strong)' : ''} size={15} strokeWidth={1.8} /><span className={`composer-action-label text-[11px] ${shiningAction === 'model' || (menuOpen && commandKind === 'model') ? 'composer-action-shine' : ''}`}>{chatText.slash.model}</span></button>
             <motion.button type={isAgentBusy ? 'button' : 'submit'} onClick={isAgentBusy ? cancelGeneration : undefined} disabled={!sendButtonActive} animate={{ scale: sendButtonActive ? 1 : 0.94, opacity: sendButtonActive ? 1 : 0.62 }} whileHover={{ scale: sendButtonActive ? 1.06 : 0.98 }} whileTap={{ scale: 0.9 }} transition={{ type: 'spring', stiffness: 460, damping: 28 }} className={`send-button ml-auto flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full text-(--codeclub-text-strong) shadow-none transition-colors disabled:cursor-not-allowed ${sendButtonActive ? 'send-button-shine border border-(--codeclub-border-soft) bg-(--codeclub-send-active-radial)' : 'border border-transparent bg-(--codeclub-surface-raised)'}`} aria-label={isAgentBusy ? "Cancelar generación" : credentialProvider ? "Guardar credencial" : "Enviar"} title={isAgentBusy ? "Cancelar generación" : credentialProvider ? "Guardar credencial" : "Enviar"}>
             {isAgentBusy ? <Square size={13} strokeWidth={2.4} fill="currentColor" /> : <ArrowUp size={15} strokeWidth={2.2} />}
@@ -2670,7 +2713,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 {index === activeCommandIndex && <motion.span layoutId="command-menu-active" transition={{ type: 'spring', stiffness: 520, damping: 34 }} aria-hidden="true" style={{ position: 'absolute', inset: 0, borderRadius: '7px', background: '#2F2F2F', zIndex: 0 }} />}
                 <span className="relative z-[1] flex min-w-0 items-center gap-2">{item.icon && React.createElement(item.icon, { size: 14, strokeWidth: 1.8 })}<span className="truncate">{item.label}</span></span>
                 <small className="relative z-[1]" style={{ color: 'rgba(216, 216, 216, 0.36)', fontSize: '11px' }}>
-                  {item.id === 'autonomo' && autonomousMode ? autonomousText.active : item.type === 'command' ? item.description : item.type === 'provider' ? chatText.provider : item.type === 'project' ? chatText.project : item.type === 'skill' ? item.source : item.type === 'extension' ? chatText.extension : chatText.model}
+                  {item.id === 'autonomo' && autonomousMode ? autonomousText.active : item.type === 'command' ? item.description : item.type === 'language' ? item.description : item.type === 'development' ? item.description : item.type === 'provider' ? chatText.provider : item.type === 'project' ? chatText.project : item.type === 'skill' ? item.source : item.type === 'extension' ? chatText.extension : chatText.model}
                 </small>
               </motion.button>
             ))}
