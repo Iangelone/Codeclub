@@ -162,6 +162,62 @@ struct SkillEntry {
     content: String,
 }
 
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct AgentPluginSkill {
+    id: String,
+    name: String,
+    description: String,
+    content: String,
+    plugin_name: String,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct AgentPluginDescriptor {
+    id: String,
+    name: String,
+    version: Option<String>,
+    description: Option<String>,
+    root: String,
+    source: String,
+    skills: Vec<AgentPluginSkill>,
+    mcp_servers: serde_json::Value,
+    warnings: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct McpStdioStartRequest {
+    plugin_root: String,
+    plugin_data: String,
+    name: String,
+    command: String,
+    args: Vec<String>,
+    env: HashMap<String, String>,
+    cwd: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct McpCallRequest {
+    session_id: String,
+    name: String,
+    arguments: serde_json::Value,
+}
+
+struct McpSession {
+    child: Child,
+    stdin: ChildStdin,
+    stdout: std::io::BufReader<std::process::ChildStdout>,
+    next_id: u64,
+}
+
+#[derive(Default)]
+struct McpRegistry {
+    sessions: Mutex<HashMap<String, McpSession>>,
+}
+
 #[derive(Deserialize)]
 struct CommandRequest {
     command: String,
@@ -1368,6 +1424,263 @@ fn codeclub_list_skills(project_path: String) -> Result<Vec<SkillEntry>, String>
     Ok(skills)
 }
 
+const AGENT_PLUGIN_SCHEMA: &str = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
+const AGENT_MCP_SCHEMA: &str = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json";
+const AGENT_PLUGIN_SCHEMA_DOCUMENT: &str = include_str!("../resources/agent-plugins/1.0.0/plugin.schema.json");
+const AGENT_MCP_SCHEMA_DOCUMENT: &str = include_str!("../resources/agent-plugins/1.0.0/mcp.schema.json");
+
+fn path_inside(root: &Path, candidate: &Path) -> bool {
+    candidate.canonicalize().map(|path| path.starts_with(root)).unwrap_or(false)
+}
+
+fn placeholder_path_stays_inside(value: &str, prefix: &str) -> bool {
+    let suffix = value.strip_prefix(prefix).unwrap_or(value).trim_start_matches(['/', '\\']);
+    let mut depth = 0i32;
+    for component in Path::new(suffix).components() {
+        match component {
+            Component::ParentDir => { depth -= 1; if depth < 0 { return false; } }
+            Component::Normal(_) => depth += 1,
+            Component::CurDir | Component::RootDir | Component::Prefix(_) => {}
+        }
+    }
+    true
+}
+
+fn valid_plugin_name(name: &str) -> bool {
+    let chars: Vec<char> = name.chars().collect();
+    !chars.is_empty() && chars.len() <= 64
+        && chars.iter().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '-' || *c == '.')
+        && chars.first().is_some_and(|c| c.is_ascii_alphanumeric())
+        && chars.last().is_some_and(|c| c.is_ascii_alphanumeric())
+        && !name.contains("--") && !name.contains("..")
+}
+
+fn valid_skill_name(name: &str) -> bool {
+    !name.is_empty() && name.len() <= 64 && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') && !name.starts_with('-') && !name.ends_with('-') && !name.contains("--")
+}
+
+fn json_string(object: &serde_json::Map<String, serde_json::Value>, key: &str) -> Option<String> {
+    object.get(key).and_then(|value| value.as_str()).map(str::to_string)
+}
+
+fn validate_plugin_manifest(value: &serde_json::Value) -> Result<(String, Option<String>, Option<String>, Vec<String>), String> {
+    debug_assert!(AGENT_PLUGIN_SCHEMA_DOCUMENT.contains(AGENT_PLUGIN_SCHEMA));
+    let object = value.as_object().ok_or_else(|| "plugin.json debe contener un objeto JSON.".to_string())?;
+    let schema = json_string(object, "$schema").ok_or_else(|| "Falta $schema en plugin.json.".to_string())?;
+    if schema != AGENT_PLUGIN_SCHEMA { return Err(format!("Schema Agent Plugins no soportado: {schema}")); }
+    let name = json_string(object, "name").ok_or_else(|| "Falta name en plugin.json.".to_string())?;
+    if !valid_plugin_name(&name) { return Err("name no cumple las restricciones de Agent Plugins.".into()); }
+    let mut warnings = Vec::new();
+    for key in object.keys() {
+        if !["$schema", "name", "version", "description", "author", "homepage", "repository", "license", "keywords", "extensions"].contains(&key.as_str()) {
+            warnings.push(format!("Campo desconocido ignorado en plugin.json: {key}"));
+        }
+    }
+    for key in ["version", "description", "homepage", "repository", "license"] {
+        if object.contains_key(key) && object.get(key).and_then(|value| value.as_str()).is_none() {
+            return Err(format!("{key} debe ser texto en plugin.json."));
+        }
+    }
+    if let Some(author) = object.get("author") {
+        let author = author.as_object().ok_or_else(|| "author debe ser un objeto.".to_string())?;
+        for key in author.keys() {
+            if !["name", "email", "url"].contains(&key.as_str()) { return Err(format!("Campo author desconocido: {key}")); }
+        }
+        if author.values().any(|value| value.as_str().is_none()) { return Err("Los campos de author deben ser texto.".into()); }
+    }
+    if let Some(keywords) = object.get("keywords") {
+        let keywords = keywords.as_array().ok_or_else(|| "keywords debe ser un arreglo.".to_string())?;
+        if keywords.iter().any(|value| value.as_str().is_none()) { return Err("keywords solo puede contener textos.".into()); }
+    }
+    if let Some(extensions) = object.get("extensions") && !extensions.is_object() {
+        warnings.push("extensions no es un objeto y fue ignorado.".into());
+    }
+    Ok((name, json_string(object, "version"), json_string(object, "description"), warnings))
+}
+
+fn validate_mcp_entry(name: &str, value: &serde_json::Value, root: &Path) -> Result<serde_json::Value, String> {
+    debug_assert!(AGENT_MCP_SCHEMA_DOCUMENT.contains(AGENT_MCP_SCHEMA));
+    let object = value.as_object().ok_or_else(|| format!("MCP {name}: la entrada debe ser un objeto."))?;
+    let transport = object.get("type").and_then(|value| value.as_str()).ok_or_else(|| format!("MCP {name}: falta type."))?;
+    let allowed: &[&str] = match transport { "stdio" => &["type", "command", "args", "env", "cwd"], "streamable-http" => &["type", "url", "headers"], "sse" => &["type", "url", "headers"], _ => return Err(format!("MCP {name}: transporte no soportado: {transport}")) };
+    if object.keys().any(|key| !allowed.contains(&key.as_str())) { return Err(format!("MCP {name}: contiene campos desconocidos.")); }
+    match transport {
+        "stdio" => {
+            let command = object.get("command").and_then(|value| value.as_str()).ok_or_else(|| format!("MCP {name}: falta command."))?;
+            if command.trim().is_empty() || command.contains(char::is_whitespace) { return Err(format!("MCP {name}: command debe ser un token.")); }
+            if let Some(args) = object.get("args") { if args.as_array().is_none_or(|items| items.iter().any(|item| item.as_str().is_none())) { return Err(format!("MCP {name}: args inválidos.")); } }
+            if let Some(env) = object.get("env") {
+                if env.as_object().is_none_or(|items| items.keys().any(|key| key == "PLUGIN_ROOT" || key == "PLUGIN_DATA") || items.values().any(|item| item.as_str().is_none())) { return Err(format!("MCP {name}: env inválido.")); }
+            }
+            for key in ["command", "cwd"] {
+                if let Some(path) = object.get(key).and_then(|value| value.as_str()) && path.starts_with("./") {
+                    let resolved = root.join(path);
+                    if !path_inside(root, &resolved) { return Err(format!("MCP {name}: {key} escapa del plugin.")); }
+                }
+            }
+            if let Some(cwd) = object.get("cwd").and_then(|value| value.as_str()) {
+                let valid_form = cwd.starts_with("./") || cwd == "${PLUGIN_ROOT}" || cwd.starts_with("${PLUGIN_ROOT}/") || cwd == "${PLUGIN_DATA}" || cwd.starts_with("${PLUGIN_DATA}/");
+                let valid_containment = if cwd.starts_with("./") || cwd.starts_with("${PLUGIN_ROOT}") { placeholder_path_stays_inside(cwd, if cwd.starts_with("./") { "./" } else { "${PLUGIN_ROOT}" }) } else { placeholder_path_stays_inside(cwd, "${PLUGIN_DATA}") };
+                if !valid_form || !valid_containment { return Err(format!("MCP {name}: cwd debe usar una ruta contenida del plugin o PLUGIN_DATA.")); }
+            }
+        }
+        "streamable-http" | "sse" => {
+            let url = object.get("url").and_then(|value| value.as_str()).ok_or_else(|| format!("MCP {name}: falta url."))?;
+            if url.contains('#') || url.contains('@') || (!url.starts_with("https://") && !url.starts_with("http://")) { return Err(format!("MCP {name}: url inválida.")); }
+            if url.starts_with("http://") {
+                let host = url.trim_start_matches("http://").split(['/', ':']).next().unwrap_or_default();
+                if !["localhost", "127.0.0.1", "::1"].contains(&host) { return Err(format!("MCP {name}: los endpoints remotos deben usar HTTPS.")); }
+            }
+            if let Some(headers) = object.get("headers") {
+                let Some(items) = headers.as_object() else { return Err(format!("MCP {name}: headers inválidos.")); };
+                let mut names = std::collections::HashSet::new();
+                for (key, value) in items { if value.as_str().is_none() || !names.insert(key.to_lowercase()) { return Err(format!("MCP {name}: headers inválidos.")); } }
+            }
+        }
+        _ => unreachable!(),
+    }
+    Ok(value.clone())
+}
+
+#[tauri::command]
+fn codeclub_list_agent_plugins(app: AppHandle, project_path: String) -> Result<Vec<AgentPluginDescriptor>, String> {
+    let mut roots = Vec::new();
+    if !project_path.trim().is_empty() { roots.push((PathBuf::from(project_path).join(".codeclub/plugins"), "project".to_string())); }
+    if let Ok(config) = app.path().app_config_dir() { roots.push((config.join("plugins"), "global".to_string())); }
+    let mut plugins = Vec::new();
+    for (plugins_root, source) in roots {
+        if !plugins_root.is_dir() { continue; }
+        let entries = fs::read_dir(&plugins_root).map_err(|error| format!("No se pudieron listar plugins: {error}"))?;
+        for entry in entries.flatten() {
+            let root = entry.path();
+            if !root.is_dir() { continue; }
+            let root = match root.canonicalize() { Ok(root) => root, Err(_) => continue };
+            let manifest_path = root.join("plugin.json");
+            if !manifest_path.is_file() || !path_inside(&root, &manifest_path) { continue; }
+            let manifest = match fs::read_to_string(&manifest_path).ok().and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok()) {
+                Some(value) => value,
+                None => continue,
+            };
+            let (name, version, description, mut warnings) = match validate_plugin_manifest(&manifest) { Ok(value) => value, Err(error) => { eprintln!("Plugin rechazado en {}: {error}", root.display()); continue; } };
+            let mut skills = Vec::new();
+            let skills_root = root.join("skills");
+            if skills_root.is_dir() {
+                for child in fs::read_dir(&skills_root).into_iter().flatten().flatten() {
+                    let dir = child.path();
+                    let skill_file = dir.join("SKILL.md");
+                    if !dir.is_dir() || !skill_file.is_file() || !path_inside(&root, &skill_file) { continue; }
+                    let Ok(content) = fs::read_to_string(&skill_file) else { continue };
+                    let id = dir.file_name().and_then(|value| value.to_str()).unwrap_or_default().to_string();
+                    let Some(skill_name) = frontmatter_value(&content, "name") else { continue };
+                    let Some(skill_description) = frontmatter_value(&content, "description") else { continue };
+                    if id.is_empty() || !valid_skill_name(&skill_name) || skill_description.is_empty() || skill_description.len() > 1024 { continue; }
+                    skills.push(AgentPluginSkill { id, name: skill_name, description: skill_description, content, plugin_name: name.clone() });
+                }
+            }
+            let mut mcp_servers = serde_json::json!({});
+            let mcp_path = root.join("mcp.json");
+            if mcp_path.is_file() {
+                let parsed = match fs::read_to_string(&mcp_path).ok().and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok()) {
+                    Some(value) => Some(value),
+                    None => { warnings.push("mcp.json no contiene JSON válido.".into()); None },
+                };
+                if let Some(config) = parsed.and_then(|value| {
+                    let object = value.as_object()?;
+                    if object.keys().any(|key| !["$schema", "mcpServers"].contains(&key.as_str())) { warnings.push("mcp.json contiene campos desconocidos.".into()); return None; }
+                    if object.get("$schema")?.as_str()? != AGENT_MCP_SCHEMA { warnings.push("mcp.json usa un schema no soportado.".into()); return None; }
+                    let Some(servers) = object.get("mcpServers").and_then(|value| value.as_object()) else { warnings.push("mcpServers debe ser un objeto.".into()); return None; };
+                    let mut valid = serde_json::Map::new();
+                    for (server_name, entry) in servers { match validate_mcp_entry(server_name, entry, &root) { Ok(value) => { valid.insert(server_name.clone(), value); }, Err(error) => warnings.push(error) } }
+                    Some(serde_json::Value::Object(valid))
+                }) { mcp_servers = config; }
+            }
+            plugins.push(AgentPluginDescriptor { id: name.clone(), name, version, description, root: root.to_string_lossy().to_string(), source: source.clone(), skills, mcp_servers, warnings });
+        }
+    }
+    plugins.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+    Ok(plugins)
+}
+
+fn mcp_request(session: &mut McpSession, method: &str, params: serde_json::Value) -> Result<serde_json::Value, String> {
+    let id = session.next_id;
+    session.next_id += 1;
+    let request = serde_json::json!({"jsonrpc":"2.0","id":id,"method":method,"params":params});
+    writeln!(session.stdin, "{}", request).map_err(|error| error.to_string())?;
+    session.stdin.flush().map_err(|error| error.to_string())?;
+    let mut line = String::new();
+    loop {
+        line.clear();
+        if session.stdout.read_line(&mut line).map_err(|error| error.to_string())? == 0 { return Err("El servidor MCP cerró stdout.".into()); }
+        let value: serde_json::Value = match serde_json::from_str(line.trim()) { Ok(value) => value, Err(_) => continue };
+        if value.get("id").and_then(|value| value.as_u64()) == Some(id) {
+            if let Some(error) = value.get("error") { return Err(error.to_string()); }
+            return Ok(value.get("result").cloned().unwrap_or(serde_json::Value::Null));
+        }
+    }
+}
+
+#[tauri::command]
+fn codeclub_mcp_stdio_start(state: State<'_, McpRegistry>, request: McpStdioStartRequest) -> Result<serde_json::Value, String> {
+    let root = PathBuf::from(&request.plugin_root).canonicalize().map_err(|error| error.to_string())?;
+    let data = PathBuf::from(&request.plugin_data);
+    fs::create_dir_all(&data).map_err(|error| error.to_string())?;
+    let command_path = if request.command.starts_with("./") { root.join(&request.command).canonicalize().map_err(|error| error.to_string())? } else { PathBuf::from(&request.command) };
+    if request.command.starts_with("./") && !command_path.starts_with(&root) { return Err("command escapa del plugin.".into()); }
+    let cwd = request.cwd.as_deref().map(|value| value.replace("${PLUGIN_ROOT}", &root.to_string_lossy()).replace("${PLUGIN_DATA}", &data.to_string_lossy())).unwrap_or_else(|| root.to_string_lossy().to_string());
+    let cwd_path = PathBuf::from(&cwd).canonicalize().map_err(|error| format!("No se pudo resolver cwd de MCP: {error}"))?;
+    if !cwd_path.starts_with(&root) && !cwd_path.starts_with(&data) { return Err("cwd escapa del plugin o de PLUGIN_DATA.".into()); }
+    let mut environment = std::env::vars().collect::<HashMap<_, _>>();
+    for (key, value) in request.env { environment.insert(key, value.replace("${PLUGIN_ROOT}", &root.to_string_lossy()).replace("${PLUGIN_DATA}", &data.to_string_lossy())); }
+    environment.insert("PLUGIN_ROOT".into(), root.to_string_lossy().to_string());
+    environment.insert("PLUGIN_DATA".into(), data.to_string_lossy().to_string());
+    let mut command = if cfg!(windows) && (command_path.extension().and_then(|value| value.to_str()) == Some("cmd") || command_path.extension().and_then(|value| value.to_str()) == Some("bat")) { let mut cmd = Command::new("cmd"); cmd.arg("/C").arg(&command_path); cmd } else { Command::new(&command_path) };
+    let args = request.args.into_iter().map(|value| value.replace("${PLUGIN_ROOT}", &root.to_string_lossy()).replace("${PLUGIN_DATA}", &data.to_string_lossy())).collect::<Vec<_>>();
+    let mut child = command.args(args).current_dir(cwd).envs(environment).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().map_err(|error| format!("No se pudo iniciar MCP {}: {error}", request.name))?;
+    let stdin = child.stdin.take().ok_or_else(|| "MCP no expuso stdin.".to_string())?;
+    let stdout = child.stdout.take().ok_or_else(|| "MCP no expuso stdout.".to_string())?;
+    let mut session = McpSession { child, stdin, stdout: std::io::BufReader::new(stdout), next_id: 1 };
+    mcp_request(&mut session, "initialize", serde_json::json!({"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"Codeclub","version":"0.1.0"}}))?;
+    writeln!(session.stdin, "{}", serde_json::json!({"jsonrpc":"2.0","method":"notifications/initialized"})).map_err(|error| error.to_string())?;
+    session.stdin.flush().map_err(|error| error.to_string())?;
+    let tools = mcp_request(&mut session, "tools/list", serde_json::json!({}))?;
+    let id = format!("mcp-{}-{}", request.name, now_millis());
+    state.sessions.lock().map_err(|_| "No se pudo registrar MCP.".to_string())?.insert(id.clone(), session);
+    Ok(serde_json::json!({"sessionId":id,"tools":tools.get("tools").cloned().unwrap_or(serde_json::json!([]))}))
+}
+
+#[tauri::command]
+fn codeclub_mcp_stdio_call(state: State<'_, McpRegistry>, request: McpCallRequest) -> Result<serde_json::Value, String> {
+    let mut sessions = state.sessions.lock().map_err(|_| "No se pudo acceder a MCP.".to_string())?;
+    let session = sessions.get_mut(&request.session_id).ok_or_else(|| "Sesión MCP inexistente.".to_string())?;
+    mcp_request(session, "tools/call", serde_json::json!({"name":request.name,"arguments":request.arguments}))
+}
+
+#[tauri::command]
+fn codeclub_mcp_stdio_close(state: State<'_, McpRegistry>, session_id: String) -> Result<(), String> {
+    if let Some(mut session) = state.sessions.lock().map_err(|_| "No se pudo acceder a MCP.".to_string())?.remove(&session_id) { let _ = session.child.kill(); }
+    Ok(())
+}
+
+#[tauri::command]
+fn codeclub_agent_plugin_data(app: AppHandle, plugin_id: String) -> Result<String, String> {
+    if !valid_plugin_name(&plugin_id) { return Err("Identificador de plugin inválido.".into()); }
+    let root = app.path().app_cache_dir().map_err(|error| error.to_string())?.join("agent-plugins").join(plugin_id);
+    fs::create_dir_all(&root).map_err(|error| error.to_string())?;
+    Ok(root.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn codeclub_delete_agent_plugin(project_path: String, plugin_id: String) -> Result<(), String> {
+    if !valid_plugin_name(&plugin_id) { return Err("Identificador de plugin inválido.".into()); }
+    let root = workspace_root(&project_path)?;
+    let plugins_root = root.join(".codeclub/plugins").canonicalize().unwrap_or_else(|_| root.join(".codeclub/plugins"));
+    let target = plugins_root.join(&plugin_id);
+    if !target.exists() { return Err("No se encontró el paquete Agent Plugin.".into()); }
+    let resolved = target.canonicalize().map_err(|error| error.to_string())?;
+    if !resolved.starts_with(&plugins_root) { return Err("El plugin está fuera del directorio permitido.".into()); }
+    fs::remove_dir_all(resolved).map_err(|error| format!("No se pudo eliminar el plugin: {error}"))
+}
+
 #[tauri::command]
 fn codeclub_terminal_list(state: State<'_, TerminalRegistry>) -> Result<Vec<TerminalInfo>, String> {
     let sessions = state
@@ -2020,6 +2333,7 @@ pub fn run() {
             Ok(())
         })
         .manage(TerminalRegistry::default())
+        .manage(McpRegistry::default())
         .manage(WhatsAppRegistry::default())
         .manage(MenuOverlayState::default())
         .plugin(tauri_plugin_dialog::init())
@@ -2033,6 +2347,12 @@ pub fn run() {
             codeclub_index_project,
             codeclub_get_username,
             codeclub_list_skills,
+            codeclub_list_agent_plugins,
+            codeclub_mcp_stdio_start,
+            codeclub_mcp_stdio_call,
+            codeclub_mcp_stdio_close,
+            codeclub_agent_plugin_data,
+            codeclub_delete_agent_plugin,
             codeclub_get_system_root,
             codeclub_read_file,
             codeclub_search_text,
@@ -2071,4 +2391,33 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod agent_plugin_tests {
+    use super::{valid_plugin_name, valid_skill_name};
+
+    #[test]
+    fn validates_agent_plugin_names() {
+        assert!(valid_plugin_name("acme.tools"));
+        assert!(valid_plugin_name("lint3r"));
+        assert!(!valid_plugin_name("My-Plugin"));
+        assert!(!valid_plugin_name("has--double"));
+        assert!(!valid_plugin_name("-start"));
+    }
+
+    #[test]
+    fn validates_agent_skill_names() {
+        assert!(valid_skill_name("frontend-review"));
+        assert!(!valid_skill_name("Frontend Review"));
+        assert!(!valid_skill_name("double--dash"));
+    }
+
+    #[test]
+    fn bundles_canonical_agent_plugin_schemas() {
+        let plugin: serde_json::Value = serde_json::from_str(super::AGENT_PLUGIN_SCHEMA_DOCUMENT).expect("plugin schema JSON");
+        let mcp: serde_json::Value = serde_json::from_str(super::AGENT_MCP_SCHEMA_DOCUMENT).expect("mcp schema JSON");
+        assert_eq!(plugin["$id"], super::AGENT_PLUGIN_SCHEMA);
+        assert_eq!(mcp["$id"], super::AGENT_MCP_SCHEMA);
+    }
 }
