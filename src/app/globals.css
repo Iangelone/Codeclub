@@ -15,7 +15,7 @@
   --codeclub-user-bubble: #363636;
   --codeclub-acrylic-light: rgba(255, 255, 255, 0.14);
   --codeclub-acrylic-light-radial: radial-gradient(circle at center, transparent 0%, transparent 42%, rgba(255, 255, 255, 0.13) 100%);
-  --codeclub-send-active-radial: radial-gradient(circle at center, transparent 0%, transparent 42%, rgba(61, 155, 255, 0.24) 72%, rgba(139, 199, 255, 0.68) 100%);
+  --codeclub-send-active-radial: radial-gradient(circle at center, transparent 0%, transparent 42%, rgba(255, 255, 255, 0.025) 72%, rgba(255, 255, 255, 0.06) 100%);
   --codeclub-hover: rgba(255, 255, 255, 0.08);
   --codeclub-text: #dedede;
   --codeclub-text-strong: #f1f1f1;
@@ -56,6 +56,45 @@ body {
   z-index: 10;
   pointer-events: auto;
   cursor: pointer;
+}
+
+.composer-action-shine {
+  color: transparent !important;
+  background: linear-gradient(90deg, #9a9a9a 0%, #9a9a9a 34%, #ffffff 50%, #9a9a9a 66%, #9a9a9a 100%);
+  background-size: 240% 100%;
+  background-position: 120% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: composer-action-shine 3.2s linear infinite;
+}
+
+.send-button-shine {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.send-button-shine::after {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  content: '';
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent 0%, transparent 28%, rgba(255, 255, 255, 0.02) 38%, rgba(255, 255, 255, 0.035) 46%, rgba(255, 255, 255, 0.05) 50%, rgba(255, 255, 255, 0.035) 54%, rgba(255, 255, 255, 0.02) 62%, transparent 72%, transparent 100%);
+  background-size: 240% 100%;
+  background-position: 120% 0;
+  pointer-events: none;
+  animation: composer-action-shine 3.2s linear infinite;
+}
+
+.send-button-shine > * {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes composer-action-shine {
+  from { background-position: 120% 0; }
+  to { background-position: -20% 0; }
 }
 
 .attachment-image-preview-image {

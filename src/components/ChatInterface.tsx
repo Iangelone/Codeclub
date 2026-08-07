@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUp, ArrowUpRight, Box, Bug, Camera, Check, ChevronDown, ChevronRight, CircleHelp, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Layers, LayoutTemplate, ListChecks, ListTodo, MessageSquare, Monitor, MousePointer2, Orbit, Paperclip, Pencil, Presentation, RotateCcw, Search, ScrollText, Square, Table2, Terminal, Folder, FolderTree, RefreshCw, WandSparkles, Wifi, X } from 'lucide-react';
+import { ArrowUp, ArrowUpRight, Box, Bug, Camera, Check, ChevronDown, ChevronRight, CircleHelp, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Layers, LayoutTemplate, Lightbulb, ListChecks, ListTodo, MessageSquare, Monitor, MousePointer2, Orbit, Paperclip, Pencil, Presentation, RotateCcw, Search, ScrollText, Square, Table2, Terminal, Folder, FolderTree, RefreshCw, WandSparkles, Wifi, X } from 'lucide-react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -274,6 +274,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const chatPanelRef = useRef<HTMLDivElement>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [agentState, setAgentState] = useState('idle');
+  const [connectionAttempt, setConnectionAttempt] = useState(1);
   const [agentElapsedMs, setAgentElapsedMs] = useState(0);
   const agentStartedAtRef = useRef(0);
   const [activeToolName, setActiveToolName] = useState('');
@@ -314,6 +315,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [commandKind, setCommandKind] = useState('');
+  const [shiningAction, setShiningAction] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [projectOptions, setProjectOptions] = useState<any[]>([]);
   const [skillOptions, setSkillOptions] = useState<SessionSkill[]>([]);
@@ -760,6 +762,11 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       return;
     }
     openCommandMenu(kind);
+  };
+
+  const triggerActionShine = (action: string) => {
+    setShiningAction(action);
+    window.setTimeout(() => setShiningAction((current) => current === action ? '' : current), 1400);
   };
 
   useEffect(() => {
@@ -1418,6 +1425,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     setInput('');
     if (chatInputRef.current) chatInputRef.current.style.height = '22px';
     setIsStreaming(true);
+    setConnectionAttempt(1);
     agentStartedAtRef.current = Date.now();
     setAgentState('connecting');
     publishRuntime();
@@ -1813,6 +1821,10 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         let lastError: unknown;
         for (let attempt = 0; attempt < 5; attempt += 1) {
           try {
+            if (attempt > 0) {
+              setConnectionAttempt(attempt + 1);
+              guardedSetAgentState('connecting');
+            }
             return await runAssistant(instruction);
           } catch (error) {
             lastError = error;
@@ -1904,8 +1916,9 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         console.error('No se pudo guardar el historial del chat:', error);
       });
     } catch (error) {
-      if (!isCurrentGeneration()) return;
-      if (!abortController.signal.aborted) {
+      if (chatRuntimesRef.current.get(chatId)?.controller !== abortController) return;
+      const wasCancelled = abortController.signal.aborted;
+      if (!wasCancelled) {
         const isConfigurationError = String(error?.message || error).includes('API Key no configurada');
         if (!isConfigurationError) console.error(formatDebugError(error));
         runtime.state = 'error';
@@ -1916,16 +1929,14 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         const updated = [...prev];
         const last = updated[updated.length - 1];
         if (last?.role === 'assistant' && last.content === '') {
-          if (abortController.signal.aborted) {
-            updated.pop();
-          } else updated[updated.length - 1] = {
+          updated[updated.length - 1] = {
             ...last,
-            content: error?.name === 'TimeoutError' ? 'La respuesta tard� demasiado y fue cancelada.' : 'No pude completar la respuesta. Revis� el proveedor o intent� nuevamente.',
+            content: '',
             meta: {
               provider: currentProvider.label || currentProvider.id,
               model: currentModel.label || currentModel.id,
               durationMs: Date.now() - generationStartedAt,
-              status: 'error',
+              status: wasCancelled ? 'cancelled' : 'error',
               errorName: error?.name || 'Error',
               configuration: String(error?.message || error).includes('API Key no configurada'),
             },
@@ -1934,14 +1945,14 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         return updated;
       };
       runtime.messages = updateErrorMessages(runtime.messages);
-      if (isVisibleGeneration()) setMessages(runtime.messages);
+      if (activeChatRef.current?.chatId === chatId) setMessages(runtime.messages);
       await writeChatJsonl(runtime.messages, chat);
     } finally {
       await Promise.all(mcpClients.map((client) => client.close().catch(() => undefined)));
       // Las sesiones stdio de plugins tienen un ciclo de vida separado del SDK MCP.
       // Se cierran incluso si una conexi�n remota fall�.
       if (pluginMcpClose) await pluginMcpClose().catch(() => undefined);
-      if (!isCurrentGeneration()) return;
+      if (chatRuntimesRef.current.get(chatId)?.controller !== abortController) return;
       if (toolStateTimerRef.current) {
         clearTimeout(toolStateTimerRef.current);
         toolStateTimerRef.current = null;
@@ -1949,7 +1960,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       if (abortControllerRef.current === abortController) abortControllerRef.current = null;
       runtime.pendingApprovals = [];
       runtime.approvalResolvers.clear();
-      if (isVisibleGeneration()) {
+      if (activeChatRef.current?.chatId === chatId) {
         setIsStreaming(false);
         setActiveToolName('');
         setComputerUseActive(false);
@@ -2406,13 +2417,12 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               const m = turnItem;
               const i = turnIndex + turnOffset;
               return <React.Fragment key={m.role === 'assistant' && isStreaming && i === messages.length - 1 ? `${i}-${m.content.length}` : i}>
-            {m.role === 'user' && isStreaming && agentState !== 'error' && messages[i + 1]?.role === 'assistant' && i + 1 === messages.length - 1 && <ProcessingStatusFixed startedAt={agentStartedAtRef.current || Date.now()} provider={currentProvider?.label || currentProvider?.id || 'Proveedor'} model={currentModel?.label || currentModel?.id || 'Modelo'} />}
-            {m.role === 'user' && messages[i + 1]?.role === 'assistant' && messages[i + 1]?.meta && !(isStreaming && i + 1 === messages.length - 1) && <CompletedStatusFixed language={language} provider={messages[i + 1].meta.provider} model={messages[i + 1].meta.model} durationMs={messages[i + 1].meta.durationMs} />}
+            {m.role === 'user' && isStreaming && agentState !== 'error' && messages[i + 1]?.role === 'assistant' && i + 1 === messages.length - 1 && <ProcessingStatusStateFixed startedAt={agentStartedAtRef.current || Date.now()} provider={currentProvider?.label || currentProvider?.id || 'Proveedor'} model={currentModel?.label || currentModel?.id || 'Modelo'} state={agentState} attempt={connectionAttempt} />}
+            {m.role === 'user' && messages[i + 1]?.role === 'assistant' && messages[i + 1]?.meta && !(isStreaming && i + 1 === messages.length - 1) && <CompletedStatusFixed language={language} provider={messages[i + 1].meta.provider} model={messages[i + 1].meta.model} durationMs={messages[i + 1].meta.durationMs} status={messages[i + 1].meta.status} errorName={messages[i + 1].meta.errorName} />}
             {m.role === 'user' && (
               <div aria-hidden="true" style={{ alignSelf: 'stretch', borderTop: '1px solid rgba(255, 255, 255, 0.08)', margin: '4px 0 38px' }} />
             )}
-            <div className={m.role === 'assistant' ? 'chat-assistant-message' : 'chat-user-message'} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '5px', maxWidth: '80%', marginTop: m.role === 'assistant' ? '50px' : 0 }}>
-              {m.role === 'assistant' && m.meta?.status === 'error' && <ErrorRecoveryNotice configurationError={m.meta.configuration === true} />}
+            {m.role === 'assistant' && m.meta?.status === 'error' ? <ErrorRecoveryNotice configurationError={m.meta.configuration === true} /> : <div className={m.role === 'assistant' ? 'chat-assistant-message' : 'chat-user-message'} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '5px', maxWidth: '80%', marginTop: m.role === 'assistant' ? '50px' : 0 }}>
               {m.role === 'user' && m.attachments?.length > 0 && <div className="chat-attachments" aria-label="Archivos adjuntos">{m.attachments.map((file) => file.mediaType?.startsWith('image/') ? <div key={file.path || file.name} className="chat-attachment-card" title={file.name}><img src={file.previewUrl || convertFileSrc(file.path)} alt={file.name} /></div> : <div key={file.path || file.name} className="chat-attachment-card chat-attachment-file" title={file.name}>{file.previewText ? <pre className="chat-attachment-preview-text">{file.previewText}</pre> : <span>{file.name.split('.').pop()?.toUpperCase().slice(0, 6) || 'FILE'}</span>}</div>)}</div>}
               <div className={`w-fit max-w-full break-words text-sm leading-6 text-(--codeclub-text-strong) ${m.role === 'user' && m.content.trim() ? 'rounded-[24px_24px_4px_24px] bg-(--codeclub-user-bubble) px-5 py-3.5 leading-[1.4]' : ''}`}>
                 <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{ p: ({ children }) => <p style={{ margin: m.role === 'user' ? 0 : '0 0 12px', lineHeight: m.role === 'user' ? 1.4 : 1.6 }}>{children}</p>, ul: ({ children }) => <ul style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ul>, ol: ({ children }) => <ol style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ol>, li: ({ children }) => <li style={{ margin: m.role === 'user' ? 0 : '4px 0' }}>{children}</li>, table: ({ children }) => <div style={{ overflowX: 'auto', margin: '12px 0' }}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>{children}</table></div>, th: ({ children }) => <th style={{ border: '1px solid #2b2b2b', padding: '7px 9px', background: '#1c1c1c', textAlign: 'left', fontWeight: 600 }}>{children}</th>, td: ({ children }) => <td style={{ border: '1px solid #2b2b2b', padding: '7px 9px', verticalAlign: 'top' }}>{children}</td>, h1: ({ children }) => <h1 style={{ margin: '18px 0 10px', fontSize: '20px' }}>{children}</h1>, h2: ({ children }) => <h2 style={{ margin: '16px 0 8px', fontSize: '17px' }}>{children}</h2>, h3: ({ children }) => <h3 style={{ margin: '14px 0 7px', fontSize: '15px' }}>{children}</h3> }}>{normalizeChatContent(m.displayContent || m.content)}</ReactMarkdown>
@@ -2432,7 +2442,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                   <RotateCcw size={13} strokeWidth={2} />
                 </button>}
               </div>}
-            </div>
+            </div>}
               </React.Fragment>;
             })}
           </div>;
@@ -2555,10 +2565,10 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           />
           {artifactReference && <button type="button" onClick={() => setArtifactReference(null)} className="absolute left-[16px] top-1/2 z-10 max-w-[130px] -translate-y-1/2 truncate rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar referencia">@{artifactReference.kind} · {artifactReference.title}</button>}
           <div className="order-2 flex min-h-[30px] items-center justify-start gap-3">
-            <motion.button type="button" onClick={handleAttachFiles} aria-label={chatText.attach} title={chatText.attach} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} transition={{ type: 'spring', stiffness: 480, damping: 28 }} className="composer-action group flex items-center justify-center gap-1.5 rounded-lg border-0 bg-transparent text-(--codeclub-text-muted) hover:bg-(--codeclub-surface-raised) hover:text-(--codeclub-text-strong)"><Paperclip size={15} strokeWidth={1.8} /><motion.span initial={{ opacity: 0.72 }} whileHover={{ opacity: 1 }} className="composer-action-label text-[11px]">{chatText.attach}</motion.span></motion.button>
-            <motion.button type="button" data-command-menu-kind="provider" onClick={() => toggleCommandMenu('provider')} aria-label={chatText.slash.provider} title={chatText.slash.provider} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} transition={{ type: 'spring', stiffness: 480, damping: 28 }} className={`composer-action group flex items-center justify-center gap-1.5 rounded-lg border-0 text-(--codeclub-text-muted) hover:bg-(--codeclub-surface-raised) hover:text-(--codeclub-text-strong) ${menuOpen && commandKind === 'provider' ? 'bg-(--codeclub-surface-raised) text-(--codeclub-text-strong)' : 'bg-transparent'}`}><Layers size={15} strokeWidth={1.8} /><motion.span initial={{ opacity: 0.72 }} animate={{ opacity: menuOpen && commandKind === 'provider' ? 1 : 0.72 }} className="composer-action-label text-[11px]">{chatText.slash.provider}</motion.span></motion.button>
-            <motion.button type="button" data-command-menu-kind="model" onClick={() => toggleCommandMenu('model')} aria-label={chatText.slash.model} title={chatText.slash.model} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} transition={{ type: 'spring', stiffness: 480, damping: 28 }} className={`composer-action group flex items-center justify-center gap-1.5 rounded-lg border-0 text-(--codeclub-text-muted) hover:bg-(--codeclub-surface-raised) hover:text-(--codeclub-text-strong) ${menuOpen && commandKind === 'model' ? 'bg-(--codeclub-surface-raised) text-(--codeclub-text-strong)' : 'bg-transparent'}`}><Box size={15} strokeWidth={1.8} /><motion.span initial={{ opacity: 0.72 }} animate={{ opacity: menuOpen && commandKind === 'model' ? 1 : 0.72 }} className="composer-action-label text-[11px]">{chatText.slash.model}</motion.span></motion.button>
-            <motion.button type={isAgentBusy ? 'button' : 'submit'} onClick={isAgentBusy ? cancelGeneration : undefined} disabled={!sendButtonActive} animate={{ scale: sendButtonActive ? 1 : 0.94, opacity: sendButtonActive ? 1 : 0.62 }} whileHover={{ scale: sendButtonActive ? 1.06 : 0.98 }} whileTap={{ scale: 0.9 }} transition={{ type: 'spring', stiffness: 460, damping: 28 }} className={`send-button ml-auto flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full text-(--codeclub-text-strong) shadow-none transition-colors disabled:cursor-not-allowed ${sendButtonActive ? 'border border-(--codeclub-border-soft) bg-(--codeclub-send-active-radial)' : 'border border-transparent bg-(--codeclub-surface-raised)'}`} aria-label={isAgentBusy ? "Cancelar generación" : credentialProvider ? "Guardar credencial" : "Enviar"} title={isAgentBusy ? "Cancelar generación" : credentialProvider ? "Guardar credencial" : "Enviar"}>
+            <button type="button" onClick={() => { triggerActionShine('attach'); void handleAttachFiles(); }} aria-label={chatText.attach} title={chatText.attach} className="composer-action group flex items-center justify-center gap-1.5 rounded-lg border-0 bg-transparent text-(--codeclub-text-muted) hover:bg-(--codeclub-surface-raised) hover:text-(--codeclub-text-strong)"><Paperclip className={attachedFiles.length > 0 ? 'text-(--codeclub-text-strong)' : ''} size={15} strokeWidth={1.8} /><span className={`composer-action-label text-[11px] ${shiningAction === 'attach' || attachedFiles.length > 0 ? 'composer-action-shine' : ''}`}>{chatText.attach}</span></button>
+            <button type="button" data-command-menu-kind="provider" onClick={() => { triggerActionShine('provider'); toggleCommandMenu('provider'); }} aria-label={chatText.slash.provider} title={chatText.slash.provider} className={`composer-action group flex items-center justify-center gap-1.5 rounded-lg border-0 text-(--codeclub-text-muted) hover:bg-(--codeclub-surface-raised) hover:text-(--codeclub-text-strong) ${menuOpen && commandKind === 'provider' ? 'bg-(--codeclub-surface-raised) text-(--codeclub-text-muted)' : 'bg-transparent'}`}><Layers className={menuOpen && commandKind === 'provider' ? 'text-(--codeclub-text-strong)' : ''} size={15} strokeWidth={1.8} /><span className={`composer-action-label text-[11px] ${shiningAction === 'provider' || (menuOpen && commandKind === 'provider') ? 'composer-action-shine' : ''}`}>{chatText.slash.provider}</span></button>
+            <button type="button" data-command-menu-kind="model" onClick={() => { triggerActionShine('model'); toggleCommandMenu('model'); }} aria-label={chatText.slash.model} title={chatText.slash.model} className={`composer-action group flex items-center justify-center gap-1.5 rounded-lg border-0 text-(--codeclub-text-muted) hover:bg-(--codeclub-surface-raised) hover:text-(--codeclub-text-strong) ${menuOpen && commandKind === 'model' ? 'bg-(--codeclub-surface-raised) text-(--codeclub-text-muted)' : 'bg-transparent'}`}><Box className={menuOpen && commandKind === 'model' ? 'text-(--codeclub-text-strong)' : ''} size={15} strokeWidth={1.8} /><span className={`composer-action-label text-[11px] ${shiningAction === 'model' || (menuOpen && commandKind === 'model') ? 'composer-action-shine' : ''}`}>{chatText.slash.model}</span></button>
+            <motion.button type={isAgentBusy ? 'button' : 'submit'} onClick={isAgentBusy ? cancelGeneration : undefined} disabled={!sendButtonActive} animate={{ scale: sendButtonActive ? 1 : 0.94, opacity: sendButtonActive ? 1 : 0.62 }} whileHover={{ scale: sendButtonActive ? 1.06 : 0.98 }} whileTap={{ scale: 0.9 }} transition={{ type: 'spring', stiffness: 460, damping: 28 }} className={`send-button ml-auto flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full text-(--codeclub-text-strong) shadow-none transition-colors disabled:cursor-not-allowed ${sendButtonActive ? 'send-button-shine border border-(--codeclub-border-soft) bg-(--codeclub-send-active-radial)' : 'border border-transparent bg-(--codeclub-surface-raised)'}`} aria-label={isAgentBusy ? "Cancelar generación" : credentialProvider ? "Guardar credencial" : "Enviar"} title={isAgentBusy ? "Cancelar generación" : credentialProvider ? "Guardar credencial" : "Enviar"}>
             {isAgentBusy ? <Square size={13} strokeWidth={2.4} fill="currentColor" /> : <ArrowUp size={15} strokeWidth={2.2} />}
             </motion.button>
           </div>
@@ -2780,8 +2790,25 @@ function ProcessingStatusFixed({ startedAt, provider, model }: { startedAt: numb
   return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', padding: '0 0 12px', color: '#999', fontSize: '12px' }}><span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#777' }}>{provider} · {model}</span><span style={{ flexShrink: 0 }}>Procesando desde hace {formatProcessingDuration(elapsed)}</span></div>;
 }
 
-function CompletedStatusFixed({ language, provider, model, durationMs }: { language: AppLanguage; provider: string; model: string; durationMs: number }) {
-  return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', alignSelf: 'stretch', margin: '20px 0 -6px', color: 'rgba(216, 216, 216, 0.52)', fontSize: '12px', letterSpacing: '0.01em' }}><span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{provider} · {model}</span><span style={{ flexShrink: 0 }}>{language === 'en' ? 'Completed in' : 'Completado en'} {formatProcessingDuration(durationMs)}</span></div>;
+function ProcessingStatusStateFixed({ startedAt, provider, model, state, attempt }: { startedAt: number; provider: string; model: string; state: string; attempt: number }) {
+  const [elapsed, setElapsed] = useState(() => Math.max(0, Date.now() - startedAt));
+  useEffect(() => {
+    const timer = window.setInterval(() => setElapsed(Math.max(0, Date.now() - startedAt)), 1000);
+    return () => window.clearInterval(timer);
+  }, [startedAt]);
+  const status = state === 'approval' ? 'Esperando aprobación' : state === 'tool_call' ? 'Ejecutando herramienta' : state === 'connecting' && attempt > 1 ? `Reconectando ${attempt}/5` : state === 'connecting' ? 'Conectando con el proveedor' : 'Pensando';
+  const Icon = state === 'connecting' ? Wifi : state === 'approval' ? CircleHelp : state === 'tool_call' ? Terminal : MessageSquare;
+  return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', padding: '0 0 12px', color: '#999', fontSize: '12px' }}><span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#777' }}>{provider} · {model}</span><span style={{ display: 'flex', alignItems: 'center', gap: '7px', flexShrink: 0 }}><Icon size={14} strokeWidth={1.7} aria-hidden="true" />{status} · {formatProcessingDuration(elapsed)}</span></div>;
+}
+
+function CompletedStatusFixed({ language, provider, model, durationMs, status, errorName }: { language: AppLanguage; provider: string; model: string; durationMs: number; status?: string; errorName?: string }) {
+  const stateLabel = status === 'cancelled'
+    ? (language === 'en' ? 'Cancelled by user' : 'Cancelado por el usuario')
+    : status === 'error'
+      ? errorName === 'TimeoutError' ? (language === 'en' ? 'Timed out at' : 'Tiempo agotado a los') : (language === 'en' ? 'Error at' : 'Error a los')
+      : language === 'en' ? 'Completed in' : 'Completado en';
+  const Icon = status === 'error' ? CircleHelp : status === 'cancelled' ? X : Check;
+  return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', alignSelf: 'stretch', margin: '20px 0 -6px', color: status === 'error' ? 'rgba(220, 150, 150, 0.72)' : 'rgba(216, 216, 216, 0.52)', fontSize: '12px', letterSpacing: '0.01em' }}><span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{provider} · {model}</span><span style={{ display: 'flex', alignItems: 'center', gap: '7px', flexShrink: 0 }}><Icon size={14} strokeWidth={1.7} aria-hidden="true" />{stateLabel} {formatProcessingDuration(durationMs)}</span></div>;
 }
 
 const ERROR_RECOVERY_TIPS = [
@@ -2793,19 +2820,29 @@ const ERROR_RECOVERY_TIPS = [
 ];
 
 function ErrorRecoveryNotice({ configurationError }: { configurationError: boolean }) {
-  const [step, setStep] = useState(configurationError ? 5 : 0);
+  const [step, setStep] = useState(0);
+  const [tipVisible, setTipVisible] = useState(false);
   const [tip] = useState(() => ERROR_RECOVERY_TIPS[Math.floor(Math.random() * ERROR_RECOVERY_TIPS.length)]);
 
   useEffect(() => {
-    if (configurationError || step >= 5) return;
+    if (configurationError) {
+      const timer = window.setTimeout(() => setTipVisible(true), 1800);
+      return () => window.clearTimeout(timer);
+    }
+    if (step >= 5) {
+      const timer = window.setTimeout(() => setTipVisible(true), 350);
+      return () => window.clearTimeout(timer);
+    }
     const timer = window.setTimeout(() => setStep((current) => Math.min(5, current + 1)), 420);
     return () => window.clearTimeout(timer);
   }, [configurationError, step]);
 
-  const label = step < 5 ? `Reconectando ${step + 1}/5` : tip;
-  return <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '8px 0 2px', color: 'rgba(216, 216, 216, 0.58)', fontSize: '12px', lineHeight: 1.4 }}>
-    {step < 5 ? <Wifi size={15} strokeWidth={1.7} aria-hidden="true" /> : <CircleHelp size={15} strokeWidth={1.7} aria-hidden="true" />}
-    <span>{label}</span>
+  const label = tipVisible ? tip : configurationError ? 'Revisando la configuración' : `Reconectando ${step + 1}/5`;
+  return <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '8px 0 2px', color: 'rgba(216, 216, 216, 0.58)', fontSize: '12px', lineHeight: '18px' }}>
+    <span style={{ display: 'grid', width: '18px', height: '18px', flexShrink: 0, placeItems: 'center' }}>
+      {!tipVisible ? <Wifi size={15} strokeWidth={1.7} aria-hidden="true" /> : <Lightbulb size={15} strokeWidth={1.7} aria-hidden="true" />}
+    </span>
+    <span style={{ display: 'block', lineHeight: '18px' }}>{label}</span>
   </div>;
 }
 
