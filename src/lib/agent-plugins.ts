@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { nativeInvoke as invoke } from './runtime';
 import { jsonSchema } from 'ai';
 
 export type AgentPluginSkill = {

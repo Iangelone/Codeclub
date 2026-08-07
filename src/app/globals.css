@@ -68,6 +68,17 @@ body {
   animation: composer-action-shine 3.2s linear infinite;
 }
 
+.command-menu::after {
+  display: block;
+  width: 100%;
+  flex: 0 0 1px;
+  height: 1px;
+  margin: 8px 0 0;
+  content: '';
+  background: linear-gradient(to right, transparent 0%, transparent 24%, var(--codeclub-accent) 42%, var(--codeclub-accent) 58%, transparent 76%, transparent 100%);
+  pointer-events: none;
+}
+
 .send-button-shine {
   position: relative;
   overflow: hidden;

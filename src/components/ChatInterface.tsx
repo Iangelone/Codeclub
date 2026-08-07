@@ -345,10 +345,9 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   useEffect(() => {
     const loadSkills = async () => {
       try {
-        const [legacy, plugins] = await Promise.all([
-          invoke<SessionSkill[]>('codeclub_list_skills', { projectPath: activeProject?.projectPath || '' }),
-          loadAgentPlugins(activeProject?.projectPath || ''),
-        ]);
+        let legacy: SessionSkill[] = [];
+        try { legacy = await invoke<SessionSkill[]>('codeclub_list_skills', { projectPath: activeProject?.projectPath || '' }); } catch { /* Electron usa Agent Plugins como fuente nativa. */ }
+        const plugins = await loadAgentPlugins(activeProject?.projectPath || '');
         const pluginSkills = plugins.flatMap((plugin) => plugin.skills.map((skill) => ({ ...skill, id: `${plugin.id}:${skill.id}`, source: `plugin:${plugin.name}`, pluginRoot: plugin.root })));
         setSkillOptions([...(legacy || []), ...pluginSkills]);
       } catch { setSkillOptions([]); }
@@ -748,6 +747,15 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     setTimeout(() => commandMenuRef.current?.focus(), 10);
   };
 
+  const readProjectsForCommandMenu = async () => {
+    const bridge = (window as any).codeclub;
+    if (typeof bridge?.listProjects === 'function') {
+      const projects = await bridge.listProjects();
+      return (projects || []).map((project: any) => ({ id: project.id, path: project.path, name: project.name }));
+    }
+    return readProjectIndex();
+  };
+
   const toggleCommandMenu = (kind) => {
     if (menuOpen && commandKind === kind) {
       setMenuOpen(false);
@@ -755,8 +763,8 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       return;
     }
     if (kind === 'project') {
-      void readProjectIndex().then((projects) => {
-        setProjectOptions([{ id: '__none__', label: chatText.noProject, type: 'project', projectPath: null, isNone: true }, ...projects.map((project) => ({ id: project.path, label: project.name, type: 'project', projectPath: project.path }))]);
+      void readProjectsForCommandMenu().then((projects) => {
+        setProjectOptions([{ id: '__none__', label: chatText.noProject, type: 'project', projectPath: null, isNone: true }, ...projects.map((project) => ({ id: project.id || project.path, label: project.name, type: 'project', projectPath: project.path, projectId: project.id }))]);
         openCommandMenu(kind);
       });
       return;
@@ -791,8 +799,8 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
           setMenuOpen(false);
           return;
         }
-        void readProjectIndex().then((projects) => {
-          setProjectOptions([{ id: '__none__', label: chatText.noProject, type: 'project', projectPath: null, isNone: true }, ...projects.map((project) => ({ id: project.path, label: project.name, type: 'project', projectPath: project.path }))]);
+        void readProjectsForCommandMenu().then((projects) => {
+          setProjectOptions([{ id: '__none__', label: chatText.noProject, type: 'project', projectPath: null, isNone: true }, ...projects.map((project) => ({ id: project.id || project.path, label: project.name, type: 'project', projectPath: project.path, projectId: project.id }))]);
           openCommandMenu('project');
         });
       }
@@ -825,7 +833,12 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   ].filter((command) => command.label.toLowerCase().includes(searchQuery.toLowerCase()) || command.aliases?.some((alias) => alias.includes(searchQuery.toLowerCase())));
   const commandMenuItems = commandKind === 'command'
     ? slashCommands
-    : filteredCatalog.filter((item) => item.id !== activeSelection?.id);
+    : filteredCatalog.filter((item) => {
+      if (!activeSelection) return true;
+      if (item.id === activeSelection.id) return false;
+      if (commandKind === 'project' && item.projectPath === activeProject?.projectPath) return false;
+      return true;
+    });
   const hasCommandMenuResults = commandMenuItems.length > 0;
 
   useEffect(() => {
@@ -880,8 +893,8 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
         return;
       }
       if (item.id === 'proyecto') {
-        void readProjectIndex().then((projects) => {
-          setProjectOptions([{ id: '__none__', label: 'Sin proyecto', type: 'project', projectPath: null, isNone: true }, ...projects.map((project) => ({ id: project.path, label: project.name, type: 'project', projectPath: project.path }))]);
+        void readProjectsForCommandMenu().then((projects) => {
+          setProjectOptions([{ id: '__none__', label: 'Sin proyecto', type: 'project', projectPath: null, isNone: true }, ...projects.map((project) => ({ id: project.id || project.path, label: project.name, type: 'project', projectPath: project.path, projectId: project.id }))]);
           openCommandMenu('project');
         });
         return;
@@ -929,10 +942,15 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
         setActiveProject(null);
         window.dispatchEvent(new CustomEvent('codeclub:project-selection-changed', { detail: { selected: false, keepChat: true } }));
         window.dispatchEvent(new CustomEvent('codeclub:active-project', { detail: { projectPath: null, projectName: '' } }));
+        window.dispatchEvent(new CustomEvent('codeclub:project-switch', { detail: { id: 'home', name: 'Codeclub' } }));
+        window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
       } else {
         setActiveProject({ projectPath: item.projectPath, name: item.label });
         window.dispatchEvent(new CustomEvent('codeclub:project-selection-changed', { detail: { selected: true, projectPath: item.projectPath, projectName: item.label } }));
         window.dispatchEvent(new CustomEvent('codeclub:active-project', { detail: { projectPath: item.projectPath, projectName: item.label } }));
+        window.dispatchEvent(new CustomEvent('codeclub:project-switch', { detail: { id: item.projectId || item.projectPath, name: item.label, path: item.projectPath } }));
+        void (window as any).codeclub?.switchProject?.(item.projectId || item.projectPath);
+        window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
       }
       setMenuOpen(false);
       setCommandKind('');
@@ -1012,9 +1030,11 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       return;
     }
 
-    if (e.key === 'Enter' && selectableItems[activeCommandIndex]) {
+    if (e.key === 'Enter') {
       e.preventDefault();
-      handleItemClick(selectableItems[activeCommandIndex]);
+      const index = activeCommandIndex >= 0 ? activeCommandIndex : 0;
+      const selectedItem = selectableItems[index];
+      if (selectedItem) handleItemClick(selectedItem);
     }
   };
 
@@ -2576,11 +2596,14 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           </div>
         </div>
 
-        {commandMenuHostRef.current && createPortal((<div
+        {commandMenuHostRef.current && createPortal((<motion.div
           ref={commandMenuRef}
           tabIndex={-1}
           onKeyDown={handleCommandMenuKeyDown}
           className={`command-menu ${menuOpen ? 'is-open' : ''}`}
+          initial={false}
+          animate={{ opacity: menuOpen ? 1 : 0, y: menuOpen ? 0 : -6, scale: menuOpen ? 1 : 0.985 }}
+          transition={{ type: 'spring', stiffness: 420, damping: 32, mass: 0.7 }}
           style={{ position: 'static', width: 'calc(100% - 16px)', margin: '0 8px', display: menuOpen && (commandKind === 'credential' || commandKind === 'custom-config' || hasCommandMenuResults) ? 'grid' : 'none', gap: '8px', padding: '8px', border: 0, borderRadius: '10px', background: 'transparent', boxShadow: 'none', zIndex: 10, outline: 'none' }}
         >
           {commandKind !== 'credential' && commandKind !== 'custom-config' && <div style={{ position: 'relative' }}>
@@ -2623,33 +2646,36 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               </div>
               {customConfigError && <span style={{ color: '#f28b82', fontSize: '11px' }}>{customConfigError}</span>}
             </div>
-          ) : <div className="command-list" style={{ display: 'grid', gap: '4px', maxHeight: '300px', overflow: 'auto', scrollbarWidth: 'none', paddingBottom: '12px', maskImage: 'linear-gradient(to bottom, black 92%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to bottom, black 92%, transparent 100%)' }}>
+          ) : <div className="command-list" style={{ display: 'grid', gap: '4px', maxHeight: '300px', overflow: 'auto', scrollbarWidth: 'none', paddingBottom: '12px' }}>
             {activeSelection && (
-              <div aria-current="true" style={{ minHeight: '30px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', borderRadius: '7px', background: '#1C1C1C', color: '#eeeeee', fontSize: '11px', padding: '0 9px' }}>
+              <div aria-current="true" style={{ minHeight: '30px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', borderRadius: '7px', background: '#1E1E1E', color: 'var(--codeclub-accent)', fontSize: '11px', padding: '0 9px' }}>
                 <span className="flex items-center gap-2">{activeSelection.id === 'autonomo' && <Orbit size={14} strokeWidth={1.8} />}{activeSelection.label || activeSelection.id}</span>
-                <small style={{ color: 'rgba(216, 216, 216, 0.5)', fontSize: '11px' }}>{chatText.selected}</small>
+                <small style={{ color: 'var(--codeclub-accent)', fontSize: '11px', opacity: 0.88 }}>{chatText.selected}</small>
               </div>
             )}
             {commandMenuItems.map((item, index) => (
-              <button
+              <motion.button
                 key={item.id}
                 className={`command-menu-item ${index === activeCommandIndex ? 'is-active' : ''}`}
                 type="button"
                 data-command-index={index}
-                onClick={() => handleItemClick(item)}
+                onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); handleItemClick(item); }}
                 onFocus={() => setActiveCommandIndex(index)}
                 onMouseEnter={() => setActiveCommandIndex(index)}
                 onMouseLeave={() => setActiveCommandIndex(-1)}
-                style={{ minHeight: '32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', border: 0, borderRadius: '7px', background: index === activeCommandIndex ? 'var(--color-surface-7, #2c2c2c)' : 'transparent', color: index === activeCommandIndex ? '#ffffff' : 'rgba(238, 238, 238, 0.78)', fontSize: '12px', padding: '0 9px', textAlign: 'left', cursor: 'pointer' }}
+                animate={{ color: index === activeCommandIndex ? '#ffffff' : 'rgba(238, 238, 238, 0.78)' }}
+                transition={{ duration: 0.16, ease: 'easeOut' }}
+                style={{ position: 'relative', minHeight: '32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', border: 0, borderRadius: '7px', background: 'transparent', fontSize: '12px', padding: '0 9px', textAlign: 'left', cursor: 'pointer', overflow: 'hidden' }}
               >
-                <span className="flex min-w-0 items-center gap-2">{item.icon && React.createElement(item.icon, { size: 14, strokeWidth: 1.8 })}<span className="truncate">{item.label}</span></span>
-                <small style={{ color: 'rgba(216, 216, 216, 0.36)', fontSize: '11px' }}>
+                {index === activeCommandIndex && <motion.span layoutId="command-menu-active" transition={{ type: 'spring', stiffness: 520, damping: 34 }} aria-hidden="true" style={{ position: 'absolute', inset: 0, borderRadius: '7px', background: '#2F2F2F', zIndex: 0 }} />}
+                <span className="relative z-[1] flex min-w-0 items-center gap-2">{item.icon && React.createElement(item.icon, { size: 14, strokeWidth: 1.8 })}<span className="truncate">{item.label}</span></span>
+                <small className="relative z-[1]" style={{ color: 'rgba(216, 216, 216, 0.36)', fontSize: '11px' }}>
                   {item.id === 'autonomo' && autonomousMode ? autonomousText.active : item.type === 'command' ? item.description : item.type === 'provider' ? chatText.provider : item.type === 'project' ? chatText.project : item.type === 'skill' ? item.source : item.type === 'extension' ? chatText.extension : chatText.model}
                 </small>
-              </button>
+              </motion.button>
             ))}
           </div>}
-        </div>), commandMenuHostRef.current)}
+        </motion.div>), commandMenuHostRef.current)}
       </div>
     </div>
   );

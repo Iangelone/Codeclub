@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { nativeInvoke as invoke } from '../runtime';
 import { jsonSchema, Output, tool } from 'ai';
 import type { ToolContext } from './types';
 import { runStream } from './run';
@@ -1326,6 +1326,5 @@ export function createParentTools(ctx: ToolContext & { availableTools: Record<st
     }),
   });
 }
-
 
 

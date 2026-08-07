@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('codeclub', {
+  invoke: (command, args) => ipcRenderer.invoke('native:invoke', { command, args }),
   listProjects: () => ipcRenderer.invoke('projects:list'),
   selectProjectFolder: () => ipcRenderer.invoke('projects:select-folder'),
   selectFiles: () => ipcRenderer.invoke('files:select'),

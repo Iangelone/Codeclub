@@ -1,5 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { nativeInvoke as invoke } from './runtime';
 
 export type SurfaceBounds = { left: number; top: number; width: number; height: number };
 export type PopupAction = { action?: string; testingAction?: string; tab?: string };
@@ -23,10 +22,8 @@ class BrowserSurfaceController {
   private async bounds(): Promise<SurfaceBounds | null> {
     const rect = this.host?.getBoundingClientRect();
     if (!this.panelVisible || !rect || rect.width < 1 || rect.height < 1) return null;
-    const app = getCurrentWindow();
-    const [size, scale] = await Promise.all([app.innerSize(), app.scaleFactor()]);
-    const width = size.width / scale;
-    const height = size.height / scale;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
     const left = Math.max(0, Math.min(rect.left, width));
     const top = Math.max(0, Math.min(rect.top, height));
     const boundedWidth = Math.max(0, Math.min(rect.width, width - left));

@@ -14,6 +14,19 @@ export default function Topbar({ leftOpen, rightOpen, onToggleLeft, onToggleRigh
   const nativeWindow = (action: 'windowMinimize' | 'windowMaximize' | 'windowClose') => { const api = (window as any).codeclub; if (!api?.[action]) { console.error(`Electron bridge no disponible: ${action}`); return; } void Promise.resolve(api[action]()).catch((error) => console.error(`Falló ${action}`, error)); };
   useEffect(() => { void (async () => { const existing = await (window as any).codeclub?.listProjects?.(); if (Array.isArray(existing)) setProjects(existing); })(); }, []);
   useEffect(() => { const handleProjectRenamed = (event: Event) => { const project = (event as CustomEvent<{ id?: string; name?: string; path?: string }>).detail; if (!project?.id || !project.name) return; setProjects((current) => current.map((item) => item.id === project.id ? { ...item, name: project.name!, path: project.path ?? item.path } : item)); }; window.addEventListener('codeclub:project-renamed', handleProjectRenamed); return () => window.removeEventListener('codeclub:project-renamed', handleProjectRenamed); }, []);
+  useEffect(() => {
+    const handleProjectSwitch = (event: Event) => {
+      const project = (event as CustomEvent<{ id?: string; name?: string; path?: string }>).detail;
+      if (!project?.id) return;
+      setActiveProjectId(project.id);
+      if (project.id === 'home' || !project.path) return;
+      setProjects((current) => current.some((item) => item.id === project.id)
+        ? current.map((item) => item.id === project.id ? { ...item, name: project.name ?? item.name, path: project.path ?? item.path } : item)
+        : [...current, { id: project.id, name: project.name ?? project.id, path: project.path }]);
+    };
+    window.addEventListener('codeclub:project-switch', handleProjectSwitch);
+    return () => window.removeEventListener('codeclub:project-switch', handleProjectSwitch);
+  }, []);
   const addProject = async () => {
     const api = (window as any).codeclub;
     if (!api?.selectProjectFolder) { console.error('Electron bridge codeclub no disponible'); return; }

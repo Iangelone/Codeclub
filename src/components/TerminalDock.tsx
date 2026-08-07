@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { PanelBottomClose, Plus, X } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import { nativeInvoke as invoke, safeListen as listen } from '../lib/runtime';
 import '@xterm/xterm/css/xterm.css';
 import { getSetting, setSetting } from '../lib/persistence';
 import { LANGUAGE_STORAGE_KEY, rightSidebarTranslations, type AppLanguage } from '../lib/i18n';
