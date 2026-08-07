@@ -12,9 +12,9 @@ type SelectedProject = { projectPath: string; projectName?: string };
 const CHAT_AVATAR_GRADIENT = 'linear-gradient(145deg, #8BC7FF 0%, #3D9BFF 44%, #1687FF 100%)';
 const AgentCreature = ({ creatureRef }: { creatureRef: React.RefObject<HTMLDivElement | null> }) => <div ref={creatureRef} aria-hidden="true" className="relative grid h-[88px] w-[88px] place-items-center rounded-[26px] shadow-[0_10px_24px_rgba(22,135,255,0.18)]" style={{ background: CHAT_AVATAR_GRADIENT }}><div className="flex items-center gap-4"><span className="h-9 w-5 rounded-full bg-white shadow-[0_0_4px_rgba(255,255,255,0.48)] transition-transform duration-100 ease-out" style={{ transform: 'translate(var(--agent-eye-x, 0px), var(--agent-eye-y, 0px))' }} /><span className="h-9 w-5 rounded-full bg-white shadow-[0_0_4px_rgba(255,255,255,0.48)] transition-transform duration-100 ease-out" style={{ transform: 'translate(var(--agent-eye-x, 0px), var(--agent-eye-y, 0px))' }} /></div></div>;
 
-export default function WorkspaceManager({ catalog, defaultProvider, defaultModel }) {
+export default function WorkspaceManager({ catalog, defaultProvider, defaultModel, initialView = 'projects' }: { catalog: any; defaultProvider: any; defaultModel: any; initialView?: 'projects' | 'chat' }) {
   const [selectedProject, setSelectedProject] = useState<SelectedProject | null>(null);
-  const [showProjects, setShowProjects] = useState(true);
+  const [showProjects, setShowProjects] = useState(initialView !== 'chat');
   const [showAgent, setShowAgent] = useState(false);
   const [showExtensions, setShowExtensions] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -297,6 +297,5 @@ function DeveloperLoopPreviewOld({ onClose }: { onClose: () => void }) {
     </div>
   </aside>;
 }
-
 
 

@@ -27,12 +27,13 @@ export interface ProjectMeta {
   name: string;
   path: string;
   created_at: string;
-  chats: Array<{ id: string; name: string }>;
+  chats: Array<{ id: string; name: string; customName?: boolean }>;
 }
 
 export interface GlobalChatEntry {
   id: string;
   name: string;
+  customName?: boolean;
   projectPath: "";
   projectName: "Sin proyecto";
 }

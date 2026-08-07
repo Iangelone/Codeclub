@@ -12,6 +12,10 @@
   --codeclub-border-faint: rgba(255, 255, 255, 0.06);
   --codeclub-acrylic: rgba(27, 32, 41, 1);
   --codeclub-acrylic-active: rgba(43, 48, 58, 1);
+  --codeclub-user-bubble: #363636;
+  --codeclub-acrylic-light: rgba(255, 255, 255, 0.14);
+  --codeclub-acrylic-light-radial: radial-gradient(circle at center, transparent 0%, transparent 42%, rgba(255, 255, 255, 0.13) 100%);
+  --codeclub-send-active-radial: radial-gradient(circle at center, transparent 0%, transparent 42%, rgba(61, 155, 255, 0.24) 72%, rgba(139, 199, 255, 0.68) 100%);
   --codeclub-hover: rgba(255, 255, 255, 0.08);
   --codeclub-text: #dedede;
   --codeclub-text-strong: #f1f1f1;
@@ -45,4 +49,71 @@ body {
 .codeclub-panel-edge {
   border-top: 1px solid var(--codeclub-border-faint);
   border-left: 1px solid var(--codeclub-border-faint);
+}
+
+.composer-action {
+  position: relative;
+  z-index: 10;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.attachment-image-preview-image {
+  transition: filter 180ms ease-out;
+}
+
+.attachment-image-preview-close,
+.attachment-file-preview-close {
+  opacity: 0;
+  visibility: hidden;
+  background: transparent;
+  transition: opacity 180ms ease-out, visibility 180ms ease-out, background-color 180ms ease-out;
+}
+
+.attachment-image-preview:hover .attachment-image-preview-image {
+  filter: brightness(0.42);
+}
+
+.attachment-image-preview:hover .attachment-image-preview-close,
+.attachment-file-preview:hover .attachment-file-preview-close {
+  opacity: 1;
+  visibility: visible;
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.attachment-file-preview {
+  transition: background-color 180ms ease-out, color 180ms ease-out;
+}
+
+.attachment-file-preview:hover {
+  background: #202020;
+}
+
+.attachment-file-preview-text {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  padding: 8px;
+  color: #bdbdbd;
+  font: 5px/1.35 ui-monospace, SFMono-Regular, Consolas, monospace;
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-word;
+  opacity: 0.82;
+}
+
+.attachment-file-preview-name {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 8px;
+  color: #cfcfcf;
+  font-size: 10px;
+  line-height: 1.3;
+  text-align: center;
+  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
 }

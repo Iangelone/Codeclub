@@ -1,8 +1,11 @@
 import { appCacheDir, appConfigDir, join } from "@tauri-apps/api/path";
 import { copyFile, exists, mkdir, readDir, readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
+import { isTauriRuntime } from './runtime';
 
 const PERSISTENCE_LOG = "persistence-log.jsonl";
 const SETTINGS_FILE = "settings.json";
+
+const browserSettingsKey = 'codeclub:settings';
 
 export const getAppConfigFilePath = async (...parts: string[]) => join(await appConfigDir(), ...parts);
 export const getAppCacheFilePath = async (...parts: string[]) => join(await appCacheDir(), ...parts);
@@ -75,6 +78,10 @@ let settingsWriteQueue = Promise.resolve();
 
 const loadSettings = async (): Promise<Record<string, unknown>> => {
   if (settingsCache) return settingsCache;
+  if (!isTauriRuntime()) {
+    try { settingsCache = JSON.parse(window.localStorage.getItem(browserSettingsKey) ?? '{}'); } catch { settingsCache = {}; }
+    return settingsCache;
+  }
   const path = await getAppConfigFilePath(SETTINGS_FILE);
   try {
     settingsCache = (await exists(path)) ? JSON.parse(await readTextFile(path)) : {};
@@ -93,6 +100,10 @@ export const setSetting = async (key: string, value: unknown) => {
   const operation = settingsWriteQueue.then(async () => {
     const settings = await loadSettings();
     settings[key] = value;
+    if (!isTauriRuntime()) {
+      window.localStorage.setItem(browserSettingsKey, JSON.stringify(settings));
+      return;
+    }
     const configPath = await appConfigDir();
     await mkdir(configPath, { recursive: true });
     await writeTextFile(await getAppConfigFilePath(SETTINGS_FILE), JSON.stringify(settings));

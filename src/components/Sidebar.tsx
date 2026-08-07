@@ -214,16 +214,18 @@ export default function Sidebar() {
       if (!detail.projectPath) {
         const chats = await readGlobalChats();
         const chat = chats.find((item) => item.id === detail.chatId);
-        if (!chat) return;
+        if (!chat || (detail.automatic && chat.customName)) return;
         chat.name = detail.newName;
+        if (!detail.automatic) chat.customName = true;
         await writeGlobalChats(chats);
         await loadProjects();
         return;
       }
       const metaData = await readProjectMeta(detail.projectPath);
       const chat = metaData?.chats?.find((item) => item.id === detail.chatId);
-      if (!metaData || !chat || chat.name === detail.newName) return;
+      if (!metaData || !chat || (detail.automatic && chat.customName) || chat.name === detail.newName) return;
       chat.name = detail.newName;
+      if (!detail.automatic) chat.customName = true;
       await writeProjectMeta(detail.projectPath, metaData);
       notifyProjectMetaChanged(detail.projectPath);
       await loadProjects();

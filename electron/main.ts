@@ -12,6 +12,7 @@ let tray: Tray | null = null;
 let isQuitting = false;
 
 const projectsFile = () => path.join(app.getPath('userData'), 'projects.json');
+const projectChatFile = (projectPath: string, chatId: string) => path.join(app.getPath('userData'), 'chat-history', encodeURIComponent(projectPath), `${encodeURIComponent(chatId)}.jsonl`);
 const projectId = (value: string) => value.toLowerCase().replace(/[\\/:*?"<>|\s]+/g, '-');
 
 async function loadProjects() { try { projects = JSON.parse(await fs.readFile(projectsFile(), 'utf8')); } catch { projects = []; } }
@@ -68,6 +69,18 @@ app.whenReady().then(async () => {
   await loadProjects();
   ipcMain.handle('projects:list', () => projects);
   ipcMain.handle('projects:select-folder', async () => { const result = await dialog.showOpenDialog({ properties: ['openDirectory'] }); if (result.canceled || !result.filePaths[0]) return null; const project = registerProject(result.filePaths[0]); await saveProjects(); return project; });
+  ipcMain.handle('files:select', async () => { const result = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] }); return result.canceled ? [] : result.filePaths; });
+  ipcMain.handle('files:read', async (_event, filePath: string) => Array.from(await fs.readFile(filePath)));
+  ipcMain.handle('files:read-text', async (_event, filePath: string) => fs.readFile(filePath, 'utf8'));
+  ipcMain.handle('chats:read-project', async (_event, projectPath: string, chatId: string) => {
+    try { return await fs.readFile(projectChatFile(projectPath, chatId), 'utf8'); } catch { return ''; }
+  });
+  ipcMain.handle('chats:write-project', async (_event, projectPath: string, chatId: string, content: string) => {
+    const filePath = projectChatFile(projectPath, chatId);
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, content, 'utf8');
+    return true;
+  });
   ipcMain.handle('projects:switch', async (_event, id: string) => { const project = projects.find((item) => item.id === id); if (!project) throw new Error('Proyecto no encontrado.'); project.lastOpenedAt = new Date().toISOString(); await saveProjects(); return project; });
   ipcMain.handle('projects:rename', async (_event, id: string, name: string) => {
     const project = projects.find((item) => item.id === id);

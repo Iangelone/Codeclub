@@ -170,6 +170,7 @@ button {
 
 .attachment-image-preview-close {
   opacity: 0;
+  visibility: hidden;
   background: transparent;
   transition: opacity 180ms ease-out, background-color 180ms ease-out;
 }
@@ -179,7 +180,8 @@ button {
 }
 
 .attachment-image-preview:hover .attachment-image-preview-close {
-  opacity: 1;
+  opacity: 1 !important;
+  visibility: visible;
   background: rgba(0, 0, 0, 0.08);
 }
 
@@ -189,6 +191,7 @@ button {
 
 .attachment-file-preview-close {
   opacity: 0;
+  visibility: hidden;
   background: transparent;
   transition: opacity 180ms ease-out, background-color 180ms ease-out;
 }
@@ -202,7 +205,8 @@ button {
 }
 
 .attachment-file-preview:hover .attachment-file-preview-close {
-  opacity: 1;
+  opacity: 1 !important;
+  visibility: visible;
   background: rgba(0, 0, 0, 0.12);
 }
 
@@ -218,6 +222,25 @@ button {
   white-space: pre-wrap;
   word-break: break-word;
   opacity: 0.82;
+}
+
+.attachment-file-preview-name {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 8px;
+  color: #cfcfcf;
+  font-size: 10px;
+  line-height: 1.3;
+  text-align: center;
+  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+
+.attachment-file-preview:hover .attachment-file-preview-name {
+  color: #eeeeee;
 }
 
 .attachment-file-preview:hover .attachment-file-preview-text {

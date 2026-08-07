@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUp, ArrowUpRight, Box, Bug, Camera, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Layers, LayoutTemplate, ListChecks, ListTodo, MessageSquare, Monitor, MousePointer2, Orbit, Paperclip, Pencil, Presentation, RotateCcw, Search, ScrollText, Square, Table2, Terminal, Folder, FolderTree, RefreshCw, WandSparkles, X } from 'lucide-react';
+import { ArrowUp, ArrowUpRight, Box, Bug, Camera, Check, ChevronDown, ChevronRight, CircleHelp, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Layers, LayoutTemplate, ListChecks, ListTodo, MessageSquare, Monitor, MousePointer2, Orbit, Paperclip, Pencil, Presentation, RotateCcw, Search, ScrollText, Square, Table2, Terminal, Folder, FolderTree, RefreshCw, WandSparkles, Wifi, X } from 'lucide-react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -14,12 +14,13 @@ import { sql } from '@codemirror/lang-sql';
 import { xml } from '@codemirror/lang-xml';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import { copyText, safeListen } from '../lib/runtime';
 import { exists, mkdir, readFile, readTextFile, remove, writeTextFile } from '@tauri-apps/plugin-fs';
 import { open } from '@tauri-apps/plugin-dialog';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { jsonSchema, Output } from 'ai';
 import ReactMarkdown from 'react-markdown';
+import { motion } from 'motion/react';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import { createPortal } from 'react-dom';
@@ -96,6 +97,41 @@ type ChatRuntime = {
 };
 
 const getAttachmentName = (path: string) => path.split(/[\\/]/).pop() || path;
+const readDesktopFile = async (path: string) => {
+  const reader = (window as any).codeclub?.readFile;
+  return reader ? new Uint8Array(await reader(path)) : readFile(path);
+};
+const readDesktopTextFile = async (path: string) => {
+  const reader = (window as any).codeclub?.readTextFile;
+  return reader ? String(await reader(path)) : readTextFile(path);
+};
+const readProjectChatHistory = async (projectPath: string, chatId: string) => {
+  const desktopReader = (window as any).codeclub?.readProjectChat;
+  if (desktopReader) {
+    const content = String(await desktopReader(projectPath, chatId) || '');
+    return content.split('\n').filter((line) => line.trim()).map((line) => JSON.parse(line));
+  }
+  const path = await getProjectFilePath(projectPath, 'chats', `${chatId}.jsonl`);
+  if (!(await exists(path))) return [];
+  const content = await readTextFile(path);
+  return content.split('\n').filter((line) => line.trim()).map((line) => JSON.parse(line));
+};
+const writeProjectChatHistory = async (projectPath: string, chatId: string, messages: any[]) => {
+  const content = messages.map((message) => JSON.stringify(message)).join('\n') + (messages.length ? '\n' : '');
+  const desktopWriter = (window as any).codeclub?.writeProjectChat;
+  if (desktopWriter) {
+    await desktopWriter(projectPath, chatId, content);
+    return;
+  }
+  const dir = await getProjectFilePath(projectPath, 'chats');
+  await mkdir(dir, { recursive: true });
+  await writeTextFile(await getProjectFilePath(projectPath, 'chats', `${chatId}.jsonl`), content);
+};
+const normalizeChatContent = (value: unknown) => {
+  const text = String(value ?? '');
+  if (text.includes('No pude completar la respuesta') || text.includes('La respuesta tard')) return '';
+  return text;
+};
 const getAttachmentMediaType = (name: string) => {
   const extension = name.split('.').pop()?.toLowerCase();
   const types: Record<string, string> = {
@@ -103,6 +139,7 @@ const getAttachmentMediaType = (name: string) => {
     txt: 'text/plain', md: 'text/markdown', mdx: 'text/markdown', json: 'application/json', csv: 'text/csv',
     js: 'text/javascript', jsx: 'text/javascript', ts: 'text/typescript', tsx: 'text/typescript', css: 'text/css',
     html: 'text/html', htm: 'text/html', rs: 'text/plain', py: 'text/x-python', sql: 'text/plain',
+    svg: 'image/svg+xml', bmp: 'image/bmp', ico: 'image/x-icon', avif: 'image/avif', webp: 'image/webp', tif: 'image/tiff', tiff: 'image/tiff',
     pdf: 'application/pdf', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   };
   return types[extension || ''] || 'application/octet-stream';
@@ -125,7 +162,7 @@ const readAttachmentParts = async (attachments: ChatAttachment[]) => {
         const text = await readTextFile(attachment.path);
         parts.push({ type: 'text', text: `Archivo ${attachment.name}:\n${text.slice(0, 120_000)}` });
       } else {
-        const bytes = await readFile(attachment.path);
+        const bytes = await readDesktopFile(attachment.path);
         const data = bytesToBase64(bytes);
         const dataUrl = `data:${attachment.mediaType};base64,${data}`;
         parts.push(attachment.mediaType.startsWith('image/')
@@ -142,7 +179,7 @@ const readAttachmentParts = async (attachments: ChatAttachment[]) => {
 
 const getArtifactOutputConfig = (_mode: 'development', prompt: string) => {
   const text = prompt.toLowerCase();
-  if (mode === 'business' && /cotiz|presupuesto|propuesta|estimaci[o�]n/.test(text)) {
+  if (mode === 'business' && /cotiz|presupuesto|propuesta|estimaci[oó]n/.test(text)) {
     return Output.object({
       name: 'QuoteArtifact',
       description: 'A validated quotation summary for the project Artifacts panel.',
@@ -195,9 +232,9 @@ const getArtifactOutputConfig = (_mode: 'development', prompt: string) => {
 };
 
 const formatArtifactOutput = (output: any) => {
-  if (output?.items && output?.total !== undefined) return `Cotizaci�n �${output.title}� preparada y validada para Artifacts.`;
+  if (output?.items && output?.total !== undefined) return `Cotización «${output.title}» preparada y validada para Artifacts.`;
   if (output?.items) return `${output.items.length} TODO${output.items.length === 1 ? '' : 's'} estructurado${output.items.length === 1 ? '' : 's'} y validado${output.items.length === 1 ? '' : 's'} para Artifacts.`;
-  if (output?.steps) return `Plan �${output.title}� estructurado y validado para Artifacts.`;
+  if (output?.steps) return `Plan «${output.title}» estructurado y validado para Artifacts.`;
   return null;
 };
 
@@ -208,16 +245,21 @@ const formatToolExecutionFallback = (mode: AgentMode, specialist: AgentSpecialis
     const raw = typeof event.output === 'string' ? event.output : JSON.stringify(event.output ?? {});
     return `- ${event.name}: ${raw.slice(0, 900)}`;
   }).join('\n');
-  return `Ejecuci�n completada con evidencia real.\n\nModo: ${mode}\nEspecialista: ${specialist}\nTools usadas: ${completed.map((event) => event.name).join(', ')}\n\nResultados:\n${details}`;
+  return `Ejecución completada con evidencia real.\n\nModo: ${mode}\nEspecialista: ${specialist}\nTools usadas: ${completed.map((event) => event.name).join(', ')}\n\nResultados:\n${details}`;
 };
 
 export default function ChatInterface({ catalog, defaultProvider, defaultModel, panelId = 'left', eventPrefix = 'codeclub', selectedProject, blockedPanelState = 'blank', chatMode: workspaceChatMode = 'development', modeOverride = 'auto' }) {
   const [language, setLanguage] = useState<AppLanguage>('es');
-  const chatText = language === 'en' ? { greeting: 'What are we working on today', send: 'Send', cancel: 'Cancel generation', message: 'Message', attach: 'Attach', removeFiles: 'Remove added files', activeSkills: 'Active skills', activeExtensions: 'Active extensions', removeSkill: 'Remove skill from this session', removeExtension: 'Remove extension from this session', selected: 'Selected', provider: 'provider', model: 'model', project: 'project', skill: 'skill', extension: 'extension', command: 'command', searchProvider: 'Search provider', searchModel: 'Search active provider model', searchProject: 'Search project', searchSkill: 'Search skill', searchCommand: 'Search command', noProject: 'No project', slash: { provider: 'Provider', model: 'Model', project: 'Project', skill: 'Skill', providerDescription: 'Select provider', modelDescription: 'Select model', projectDescription: 'Select project', skillDescription: 'Load skill in this session' }, status: { idle: 'Ready when you are.', connecting: 'Connecting to provider...', streaming: 'Thinking...', tool_call: 'Using tool...', approval: 'Waiting for approval...', running: 'Running...', error: 'Something went wrong.' } } : { greeting: '�Qu� toca hoy', send: 'Enviar', cancel: 'Cancelar generaci�n', message: 'Mensaje', attach: 'Adjuntar', removeFiles: 'Quitar archivos a�adidos', activeSkills: 'Habilidades activas', activeExtensions: 'Extensiones activas', removeSkill: 'Quitar habilidad de esta sesi�n', removeExtension: 'Quitar extensi�n de esta sesi�n', selected: 'Seleccionado', provider: 'proveedor', model: 'modelo', project: 'proyecto', skill: 'habilidad', extension: 'extensi�n', command: 'comando', searchProvider: 'Buscar proveedor', searchModel: 'Buscar modelo del proveedor activo', searchProject: 'Buscar proyecto', searchSkill: 'Buscar habilidad', searchCommand: 'Buscar comando', noProject: 'Sin proyecto', slash: { provider: 'Proveedor', model: 'Modelo', project: 'Proyecto', skill: 'Habilidad', providerDescription: 'Seleccionar proveedor', modelDescription: 'Seleccionar modelo', projectDescription: 'Seleccionar proyecto', skillDescription: 'Cargar habilidad en esta sesi�n' }, status: { idle: 'Listo cuando t� lo est�s.', connecting: 'Conectando con el proveedor...', streaming: 'Pensando...', tool_call: 'Usando herramienta...', approval: 'Esperando aprobaci�n...', running: 'Ejecutando...', error: 'Algo sali� mal.' } };
+  const chatText = language === 'en' ? { greeting: 'What are we working on today', send: 'Send', cancel: 'Cancel generation', message: 'Message', attach: 'Attach', removeFiles: 'Remove added files', activeSkills: 'Active skills', activeExtensions: 'Active extensions', removeSkill: 'Remove skill from this session', removeExtension: 'Remove extension from this session', selected: 'Selected', provider: 'provider', model: 'model', project: 'project', skill: 'skill', extension: 'extension', command: 'command', searchProvider: 'Search provider', searchModel: 'Search active provider model', searchProject: 'Search project', searchSkill: 'Search skill', searchCommand: 'Search command', noProject: 'No project', slash: { provider: 'Provider', model: 'Model', project: 'Project', skill: 'Skill', providerDescription: 'Select provider', modelDescription: 'Select model', projectDescription: 'Select project', skillDescription: 'Load skill in this session' }, status: { idle: 'Ready when you are.', connecting: 'Connecting to provider...', streaming: 'Thinking...', tool_call: 'Using tool...', approval: 'Waiting for approval...', running: 'Running...', error: 'Something went wrong.' } } : { greeting: '¿Qué toca hoy', send: 'Enviar', cancel: 'Cancelar generación', message: 'Mensaje', attach: 'Adjuntar', removeFiles: 'Quitar archivos añadidos', activeSkills: 'Habilidades activas', activeExtensions: 'Extensiones activas', removeSkill: 'Quitar habilidad de esta sesión', removeExtension: 'Quitar extensión de esta sesión', selected: 'Seleccionado', provider: 'proveedor', model: 'modelo', project: 'proyecto', skill: 'habilidad', extension: 'extensión', command: 'comando', searchProvider: 'Buscar proveedor', searchModel: 'Buscar modelo del proveedor activo', searchProject: 'Buscar proyecto', searchSkill: 'Buscar habilidad', searchCommand: 'Buscar comando', noProject: 'Sin proyecto', slash: { provider: 'Proveedor', model: 'Modelo', project: 'Proyecto', skill: 'Habilidad', providerDescription: 'Seleccionar proveedor', modelDescription: 'Seleccionar modelo', projectDescription: 'Seleccionar proyecto', skillDescription: 'Cargar habilidad en esta sesión' }, status: { idle: 'Listo cuando tú lo estés.', connecting: 'Conectando con el proveedor...', streaming: 'Pensando...', tool_call: 'Usando herramienta...', approval: 'Esperando aprobación...', running: 'Ejecutando...', error: 'Algo salió mal.' } };
+  if (language === 'es') {
+    Object.assign(chatText, { greeting: '¿Qué toca hoy', cancel: 'Cancelar generación', removeFiles: 'Quitar archivos añadidos', removeSkill: 'Quitar habilidad de esta sesión', removeExtension: 'Quitar extensión de esta sesión' });
+    chatText.slash = { ...chatText.slash, skillDescription: 'Cargar habilidad en esta sesión' };
+    chatText.status = { ...chatText.status, idle: 'Listo cuando tú lo estés.', approval: 'Esperando aprobación...', error: 'Algo salió mal.' };
+  }
   const [messages, setMessages] = useState([]);
   const autonomousText = language === 'en'
     ? { label: 'Autonomous', description: 'Let the agent execute and verify the required tools', active: 'Active' }
-    : { label: 'Aut�nomo', description: 'Dej� que el agente ejecute y verifique las tools necesarias', active: 'Activo' };
+    : { label: 'Autónomo', description: 'Dejá que el agente ejecute y verifique las tools necesarias', active: 'Activo' };
   const projectsSlashLabel = language === 'en' ? 'Projects' : 'Proyectos';
   const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
   const [copiedToolLogIndex, setCopiedToolLogIndex] = useState<number | null>(null);
@@ -289,7 +331,8 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [recentArtifactIds, setRecentArtifactIds] = useState<Record<string, string[]>>({});
   const [terminalCount, setTerminalCount] = useState(0);
   const [activeChat, setActiveChat] = useState<{chatId: string, projectPath: string} | null>(null);
-  const activeChatRef = useRef<{chatId: string, projectPath: string} | null>(null);
+  const activeChatRef = useRef<{chatId: string, projectPath: string, projectName?: string, name?: string, customName?: boolean} | null>(null);
+  const automaticTitleRef = useRef<string>('');
   const chatRuntimesRef = useRef(new Map<string, ChatRuntime>());
   const lastSelectedProjectRef = useRef<{ projectPath: string; projectName: string } | null | undefined>(selectedProject || undefined);
   const projectChangeNoticeRef = useRef<string | null>(null);
@@ -332,16 +375,17 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     return () => window.removeEventListener('codeclub:extensions-changed', handleExtensionsChanged);
   }, []);
   const legacyAgentStatusText = {
-    idle: "Listo cuando t� lo est�s.",
+    idle: "Listo cuando tú lo estés.",
     connecting: "Conectando con el proveedor...",
     streaming: "Pensando...",
     tool_call: "Usando herramienta...",
-    approval: "Esperando aprobaci�n...",
+    approval: "Esperando aprobación...",
     running: "Ejecutando...",
-    error: "Algo sali� mal.",
-  }[agentState] || "Listo cuando t� lo est�s.";
+    error: "Algo salió mal.",
+  }[agentState] || "Listo cuando tú lo estés.";
   const agentStatusText = chatText.status[agentState as keyof typeof chatText.status] || chatText.status.idle;
   const isAgentBusy = isStreaming;
+  const sendButtonActive = isAgentBusy || Boolean(input.trim()) || attachedFiles.length > 0 || Boolean(credentialProvider);
   useEffect(() => {
     if (!isStreaming) { setAgentElapsedMs(0); return undefined; }
     const updateElapsed = () => setAgentElapsedMs(Math.max(0, Date.now() - agentStartedAtRef.current));
@@ -491,17 +535,9 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
           if (!wasDocked && parsed.length > 0) setComposerDocked(true);
           return;
         }
-        const { readTextFile, exists } = await import('@tauri-apps/plugin-fs');
-        const path = await getProjectChatPath(chat.projectPath, chat.chatId);
-        if (await exists(path)) {
-          const content = await readTextFile(path);
-          const lines = content.split('\n').filter(l => l.trim() !== '');
-          const parsed = lines.map(l => JSON.parse(l));
-          setMessages(parsed);
-          if (!wasDocked && parsed.length > 0) setComposerDocked(true);
-        } else {
-          setMessages([]);
-        }
+        const parsed = await readProjectChatHistory(chat.projectPath, chat.chatId);
+        setMessages(parsed);
+        if (!wasDocked && parsed.length > 0) setComposerDocked(true);
       } catch (err) {
         console.error("Error loading chat:", err);
       }
@@ -524,6 +560,18 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     };
     window.addEventListener('codeclub:open-empty-chat', handleOpenEmptyChat);
     return () => window.removeEventListener('codeclub:open-empty-chat', handleOpenEmptyChat);
+  }, []);
+
+  useEffect(() => {
+    const handleManualChatRename = (event: Event) => {
+      const detail = (event as CustomEvent<{ chatId?: string; newName?: string; automatic?: boolean }>).detail;
+      const current = activeChatRef.current;
+      if (!detail?.chatId || !detail.newName || detail.automatic || !current || current.chatId !== detail.chatId) return;
+      activeChatRef.current = { ...current, name: detail.newName, customName: true };
+      setActiveChat(activeChatRef.current);
+    };
+    window.addEventListener('codeclub:rename-chat', handleManualChatRename);
+    return () => window.removeEventListener('codeclub:rename-chat', handleManualChatRename);
   }, []);
 
   useEffect(() => {
@@ -787,6 +835,20 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     if (!composerDocked) return;
     messagesEndRef.current?.scrollIntoView({ block: 'end', behavior: 'auto' });
   }, [messages, isStreaming, pendingApprovals, composerDocked]);
+
+  useEffect(() => {
+    const chat = activeChatRef.current;
+    if (isStreaming || !chat || chat.customName) return;
+    const lastMessage = [...messages].reverse().find((message) => typeof message?.content === 'string' && message.content.trim());
+    const rawTitle = lastMessage?.content?.trim();
+    if (!rawTitle) return;
+    const title = rawTitle.length > 120 ? `${rawTitle.slice(0, 120)}...` : rawTitle;
+    if (automaticTitleRef.current === `${chat.chatId}:${title}`) return;
+    automaticTitleRef.current = `${chat.chatId}:${title}`;
+    window.dispatchEvent(new CustomEvent('codeclub:rename-chat', {
+      detail: { chatId: chat.chatId, newName: title, projectPath: chat.projectPath, automatic: true },
+    }));
+  }, [messages, isStreaming]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -1211,6 +1273,14 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       return;
     }
     try {
+      const desktopWriter = (window as any).codeclub?.writeProjectChat;
+      if (desktopWriter) {
+        const current = await readProjectChatHistory(chat.projectPath, chat.chatId);
+        await writeProjectChatHistory(chat.projectPath, chat.chatId, [...current, msg]);
+        await logPersistence('append_chat_message', 'ok', { role: msg.role, chatId: chat.chatId, projectPath: chat.projectPath });
+        await appendToTranscript(msg, chat);
+        return;
+      }
       const { writeTextFile, readTextFile, exists, mkdir } = await import('@tauri-apps/plugin-fs');
       await mkdir(await getProjectFilePath(chat.projectPath, 'chats'), { recursive: true });
       const path = await getProjectChatPath(chat.projectPath, chat.chatId);
@@ -1263,11 +1333,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       return;
     }
     try {
-      const { writeTextFile, mkdir } = await import('@tauri-apps/plugin-fs');
-      const dir = await getProjectFilePath(chat.projectPath, 'chats');
-      const path = await getProjectChatPath(chat.projectPath, chat.chatId);
-      await mkdir(dir, { recursive: true });
-      await writeTextFile(path, nextMessages.map((msg) => JSON.stringify(msg)).join('\n') + '\n');
+      await writeProjectChatHistory(chat.projectPath, chat.chatId, nextMessages);
       await logPersistence('rewrite_chat_history', 'ok', {
         chatId: chat.chatId,
         projectPath: chat.projectPath,
@@ -1300,6 +1366,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     }
     const abortController = new AbortController();
     const mcpClients: Array<{ close: () => Promise<void> }> = [];
+    let pluginMcpClose: (() => Promise<void>) | undefined;
     const generationStartedAt = Date.now();
     let chat = activeChatRef.current;
     if (!chat) {
@@ -1307,7 +1374,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       activeChatRef.current = chat;
       setActiveChat(chat);
       const globalChats = await readGlobalChats();
-      globalChats.push({ id: chat.chatId, name: 'Nuevo chat', projectPath: '', projectName: 'Sin proyecto' });
+      globalChats.push({ id: chat.chatId, name: 'Nuevo chat', customName: false, projectPath: '', projectName: 'Sin proyecto' });
       await writeGlobalChats(globalChats);
       window.dispatchEvent(new CustomEvent('codeclub:global-chat-changed'));
     }
@@ -1339,14 +1406,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       return new Promise((resolve) => runtime.approvalResolvers.set(approvalId, resolve));
     };
 
-    if (shouldRenameChat) {
-      window.dispatchEvent(new CustomEvent('codeclub:chat-created', { detail: { chatId: chat.chatId } }));
-      let title = content.trim();
-      if (title.length > 120) title = title.substring(0, 120) + '...';
-      window.dispatchEvent(new CustomEvent('codeclub:rename-chat', {
-        detail: { chatId: chat.chatId, newName: title, projectPath: chat.projectPath }
-      }));
-    }
+    if (shouldRenameChat) window.dispatchEvent(new CustomEvent('codeclub:chat-created', { detail: { chatId: chat.chatId } }));
 
     const attachmentParts = attachments.length > 0 ? await readAttachmentParts(attachments) : [];
     const userMessage = { role: 'user', content, attachments: attachments.map(({ path, name, mediaType, size, previewUrl }) => ({ path, name, mediaType, size, previewUrl })) };
@@ -1376,6 +1436,11 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       let apiKey = await getSetting(`${currentProvider.id}_api_key`, '');
       
       if ((!apiKey || apiKey === 'dummy-key') && currentProvider.id !== 'custom') {
+        setCredentialProvider(currentProvider);
+        setCredentialInput('');
+        setCommandKind('credential');
+        setMenuOpen(true);
+        window.setTimeout(() => credentialInputRef.current?.focus(), 0);
         throw new Error(`API Key no configurada para ${currentProvider.label || currentProvider.id}. Por favor agregala en la configuraci�n.`);
       }
       
@@ -1448,7 +1513,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         modelId: currentModel.id,
       });
       const externalMcpTools: Record<string, any> = {};
-      let pluginMcpClose: (() => Promise<void>) | undefined;
       try {
         const plugins = await loadAgentPlugins(contextProjectPath);
         const pluginMcp = await connectAllAgentPluginMcp(plugins);
@@ -1747,7 +1811,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       };
       const runAssistantWithRetry = async (instruction = '') => {
         let lastError: unknown;
-        for (let attempt = 0; attempt < 3; attempt += 1) {
+        for (let attempt = 0; attempt < 5; attempt += 1) {
           try {
             return await runAssistant(instruction);
           } catch (error) {
@@ -1842,7 +1906,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     } catch (error) {
       if (!isCurrentGeneration()) return;
       if (!abortController.signal.aborted) {
-        console.error(formatDebugError(error));
+        const isConfigurationError = String(error?.message || error).includes('API Key no configurada');
+        if (!isConfigurationError) console.error(formatDebugError(error));
         runtime.state = 'error';
         publishRuntime();
         if (isVisibleGeneration()) setAgentState('error');
@@ -1862,6 +1927,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               durationMs: Date.now() - generationStartedAt,
               status: 'error',
               errorName: error?.name || 'Error',
+              configuration: String(error?.message || error).includes('API Key no configurada'),
             },
           };
         }
@@ -1869,11 +1935,12 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       };
       runtime.messages = updateErrorMessages(runtime.messages);
       if (isVisibleGeneration()) setMessages(runtime.messages);
+      await writeChatJsonl(runtime.messages, chat);
     } finally {
       await Promise.all(mcpClients.map((client) => client.close().catch(() => undefined)));
       // Las sesiones stdio de plugins tienen un ciclo de vida separado del SDK MCP.
       // Se cierran incluso si una conexi�n remota fall�.
-      await pluginMcpClose?.().catch(() => undefined);
+      if (pluginMcpClose) await pluginMcpClose().catch(() => undefined);
       if (!isCurrentGeneration()) return;
       if (toolStateTimerRef.current) {
         clearTimeout(toolStateTimerRef.current);
@@ -1926,7 +1993,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       cancelGeneration();
     };
     let unlisten: (() => void) | undefined;
-    void listen('codeclub-computer-escape', () => {
+    void safeListen('codeclub-computer-escape', () => {
       if (computerUseActive) cancelGeneration();
     }).then((dispose) => { unlisten = dispose; });
     window.addEventListener('keydown', handleComputerEscape);
@@ -2042,9 +2109,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
   }, [panelId, isAgentBusy, sendMessage]);
 
   const handleCopyMessage = async (content, messageIndex) => {
-    if (!navigator.clipboard) return;
     try {
-      await navigator.clipboard.writeText(content);
+      if (!await copyText(content)) return;
       setCopiedMessageIndex(messageIndex);
       if (copyResetTimerRef.current) clearTimeout(copyResetTimerRef.current);
       copyResetTimerRef.current = setTimeout(() => {
@@ -2057,10 +2123,10 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
   };
 
   const handleCopyToolLog = async (tools: any[] = [], messageIndex: number) => {
-    if (!navigator.clipboard || !tools.length) return;
+    if (!tools.length) return;
     const log = tools.map((event) => `${event.at || ''} | ${event.name} | ${event.output?.status === 'running' ? 'running' : event.output?.error ? 'error' : 'completed'}\nInput: ${JSON.stringify(event.input ?? {}, null, 2)}\nOutput: ${JSON.stringify(event.output ?? {}, null, 2)}`).join('\n\n');
     try {
-      await navigator.clipboard.writeText(log);
+      if (!await copyText(log)) return;
       setCopiedToolLogIndex(messageIndex);
       window.setTimeout(() => setCopiedToolLogIndex((current) => current === messageIndex ? null : current), 3000);
     } catch (error) {
@@ -2090,13 +2156,13 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       let previewText: string | undefined;
       if (mediaType.startsWith('image/')) {
         try {
-          previewUrl = `data:${mediaType};base64,${bytesToBase64(await readFile(path))}`;
+          previewUrl = `data:${mediaType};base64,${bytesToBase64(await readDesktopFile(path))}`;
         } catch (error) {
           console.error(`No se pudo crear la preview de ${name}:`, error);
         }
-      } else if (/\.(md|markdown|html?|css|js|jsx|ts|tsx|json|xml|txt)$/i.test(name)) {
+      } else if (/\.(md|markdown|html?|css|scss|sass|less|js|mjs|cjs|jsx|ts|tsx|json|xml|yaml|yml|txt|csv|sql|py|rs|java|go|rb|php|sh|bat|ps1)$/i.test(name)) {
         try {
-          previewText = (await readTextFile(path)).slice(0, 220);
+          previewText = (await readDesktopTextFile(path)).slice(0, 220);
         } catch (error) {
           console.error(`No se pudo leer la preview de ${name}:`, error);
         }
@@ -2111,10 +2177,16 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
 
   const handleAttachFiles = async () => {
     try {
+      const desktopPicker = (window as any).codeclub?.selectFiles;
+      if (desktopPicker) {
+        const files = await desktopPicker();
+        if (files?.length) await addAttachmentPaths(files);
+        return;
+      }
       const selected = await open({
         multiple: true,
         directory: false,
-        title: 'A�adir archivos al chat',
+        title: 'Añadir archivos al chat',
       });
       if (!selected) return;
       const files = Array.isArray(selected) ? selected : [selected];
@@ -2145,7 +2217,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
 
   useEffect(() => {
     let unlisten: (() => void) | null = null;
-    void listen<{ paths?: string[]; position?: { x: number; y: number } }>('tauri://drag-drop', (event) => {
+    void safeListen<{ paths?: string[]; position?: { x: number; y: number } }>('tauri://drag-drop', (event) => {
       const rect = chatPanelRef.current?.getBoundingClientRect();
       const position = event.payload.position;
       const scale = window.devicePixelRatio || 1;
@@ -2161,7 +2233,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
   if (workspaceMode === 'blank' && !activeProject) {
     return (
       <div style={{ width: '100%', height: '100%', minHeight: '100%', display: 'grid', placeItems: 'center', textAlign: 'center', color: 'rgba(216, 216, 216, 0.42)', fontSize: '13px' }}>
-        Seleccion� un proyecto
+        Seleccioná un proyecto
       </div>
     );
   }
@@ -2241,7 +2313,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                       {query && (
                         <button
                           type="button"
-                          aria-label="Limpiar b�squeda"
+                          aria-label="Limpiar búsqueda"
                           onClick={() => setArtifactSearch((current) => ({ ...current, [kind]: '' }))}
                           className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-0 bg-transparent p-0 text-[#777777] hover:bg-[var(--color-surface-5)] hover:text-[#eeeeee]"
                         >
@@ -2310,7 +2382,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
 
     return (
       <div style={{ width: '100%', height: '100%', minHeight: '100%', display: 'grid', placeItems: 'center', textAlign: 'center', color: 'rgba(216, 216, 216, 0.42)', fontSize: '13px' }}>
-        Seleccion� un proyecto
+        Seleccioná un proyecto
       </div>
     );
   }
@@ -2320,11 +2392,11 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
   }
 
   return (
-    <div ref={chatPanelRef} className="chat-interface-container" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleComposerDrop} style={{ width: 'min(680px, calc(100% - 64px))', minWidth: 0, height: '100%', boxSizing: 'border-box', justifySelf: 'center', display: 'grid', gridTemplateRows: 'minmax(0, 1fr) auto', placeItems: 'stretch', gap: '10px', overflow: 'visible', paddingBottom: '5vh' }}>
+    <div ref={chatPanelRef} className="chat-interface-container mx-auto grid h-full w-full max-w-[680px] min-w-0 grid-rows-[minmax(0,1fr)_auto] place-items-stretch gap-2.5 overflow-visible pb-[5vh]" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleComposerDrop}>
       {/* Zona de mensajes */}
-      <div className="messages-area" style={{ position: 'relative', minHeight: 0, height: '100%', overflowY: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none', display: composerDocked ? 'flex' : 'none', flexDirection: 'column', gap: '6px', paddingBottom: '10px', overscrollBehavior: 'contain' }}>
-        <div aria-hidden="true" style={{ flex: '1 1 auto', minHeight: 0 }} />
-        {showEmptyGreeting && <div aria-hidden={messages.length > 0} style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', padding: '0 20px', color: '#eeeeee', fontSize: '18px', fontWeight: 500, letterSpacing: '-0.02em', opacity: messages.length === 0 ? 1 : 0, transform: messages.length === 0 ? 'none' : 'translateY(4px)', transition: 'opacity 280ms ease, transform 280ms ease', whiteSpace: 'nowrap', pointerEvents: 'none' }}>{chatText.greeting}, {username}?</div>}
+      <div className={`messages-area relative min-h-0 h-full flex-col gap-1.5 overflow-y-auto overscroll-contain pb-2.5 [scrollbar-width:none] ${composerDocked ? 'flex' : 'hidden'}`}>
+        <div aria-hidden="true" className="min-h-0 flex-1" />
+        {showEmptyGreeting && <div aria-hidden={messages.length > 0} className={`pointer-events-none absolute inset-0 grid place-items-center whitespace-nowrap px-5 text-lg font-medium tracking-[-0.02em] text-(--codeclub-text-strong) transition-[opacity,transform] duration-300 ${messages.length === 0 ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0'}`}>{chatText.greeting}, {username}?</div>}
         {messages.map((turnMessage, turnIndex) => {
           if (turnMessage.role !== 'user') return null;
           const assistantMessage = messages[turnIndex + 1]?.role === 'assistant' ? messages[turnIndex + 1] : null;
@@ -2334,16 +2406,17 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               const m = turnItem;
               const i = turnIndex + turnOffset;
               return <React.Fragment key={m.role === 'assistant' && isStreaming && i === messages.length - 1 ? `${i}-${m.content.length}` : i}>
-            {m.role === 'user' && isStreaming && messages[i + 1]?.role === 'assistant' && i + 1 === messages.length - 1 && <ProcessingStatus startedAt={agentStartedAtRef.current || Date.now()} provider={currentProvider?.label || currentProvider?.id || 'Proveedor'} model={currentModel?.label || currentModel?.id || 'Modelo'} />}
-            {m.role === 'user' && messages[i + 1]?.role === 'assistant' && messages[i + 1]?.meta && !(isStreaming && i + 1 === messages.length - 1) && <CompletedStatus language={language} provider={messages[i + 1].meta.provider} model={messages[i + 1].meta.model} durationMs={messages[i + 1].meta.durationMs} />}
+            {m.role === 'user' && isStreaming && agentState !== 'error' && messages[i + 1]?.role === 'assistant' && i + 1 === messages.length - 1 && <ProcessingStatusFixed startedAt={agentStartedAtRef.current || Date.now()} provider={currentProvider?.label || currentProvider?.id || 'Proveedor'} model={currentModel?.label || currentModel?.id || 'Modelo'} />}
+            {m.role === 'user' && messages[i + 1]?.role === 'assistant' && messages[i + 1]?.meta && !(isStreaming && i + 1 === messages.length - 1) && <CompletedStatusFixed language={language} provider={messages[i + 1].meta.provider} model={messages[i + 1].meta.model} durationMs={messages[i + 1].meta.durationMs} />}
             {m.role === 'user' && (
               <div aria-hidden="true" style={{ alignSelf: 'stretch', borderTop: '1px solid rgba(255, 255, 255, 0.08)', margin: '4px 0 38px' }} />
             )}
             <div className={m.role === 'assistant' ? 'chat-assistant-message' : 'chat-user-message'} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '5px', maxWidth: '80%', marginTop: m.role === 'assistant' ? '50px' : 0 }}>
+              {m.role === 'assistant' && m.meta?.status === 'error' && <ErrorRecoveryNotice configurationError={m.meta.configuration === true} />}
               {m.role === 'user' && m.attachments?.length > 0 && <div className="chat-attachments" aria-label="Archivos adjuntos">{m.attachments.map((file) => file.mediaType?.startsWith('image/') ? <div key={file.path || file.name} className="chat-attachment-card" title={file.name}><img src={file.previewUrl || convertFileSrc(file.path)} alt={file.name} /></div> : <div key={file.path || file.name} className="chat-attachment-card chat-attachment-file" title={file.name}>{file.previewText ? <pre className="chat-attachment-preview-text">{file.previewText}</pre> : <span>{file.name.split('.').pop()?.toUpperCase().slice(0, 6) || 'FILE'}</span>}</div>)}</div>}
-              <div style={{ background: m.role === 'user' && m.content.trim() ? '#2B2B2B' : 'transparent', padding: m.role === 'user' && m.content.trim() ? '14px 20px' : '0', borderRadius: m.role === 'user' && m.content.trim() ? '24px 24px 4px 24px' : '0', color: '#eee', fontSize: '14px', width: 'fit-content', maxWidth: '100%', lineHeight: 1.5, overflowWrap: 'anywhere', wordBreak: 'break-word', boxShadow: 'none' }}>
-                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{ p: ({ children }) => <p style={{ margin: m.role === 'user' ? 0 : '0 0 12px', lineHeight: m.role === 'user' ? 1.4 : 1.6 }}>{children}</p>, ul: ({ children }) => <ul style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ul>, ol: ({ children }) => <ol style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ol>, li: ({ children }) => <li style={{ margin: m.role === 'user' ? 0 : '4px 0' }}>{children}</li>, table: ({ children }) => <div style={{ overflowX: 'auto', margin: '12px 0' }}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>{children}</table></div>, th: ({ children }) => <th style={{ border: '1px solid #2b2b2b', padding: '7px 9px', background: '#1c1c1c', textAlign: 'left', fontWeight: 600 }}>{children}</th>, td: ({ children }) => <td style={{ border: '1px solid #2b2b2b', padding: '7px 9px', verticalAlign: 'top' }}>{children}</td>, h1: ({ children }) => <h1 style={{ margin: '18px 0 10px', fontSize: '20px' }}>{children}</h1>, h2: ({ children }) => <h2 style={{ margin: '16px 0 8px', fontSize: '17px' }}>{children}</h2>, h3: ({ children }) => <h3 style={{ margin: '14px 0 7px', fontSize: '15px' }}>{children}</h3> }}>{m.displayContent || m.content}</ReactMarkdown>
-                {m.role === 'assistant' && isStreaming && i === messages.length - 1 && <span className={!m.content ? 'chat-thinking-label' : undefined} style={{ display: 'inline-block', marginTop: m.content ? '2px' : 0, color: 'rgba(216, 216, 216, 0.58)', fontSize: '13px' }}>{m.content ? '▌' : 'Pensando'}</span>}
+              <div className={`w-fit max-w-full break-words text-sm leading-6 text-(--codeclub-text-strong) ${m.role === 'user' && m.content.trim() ? 'rounded-[24px_24px_4px_24px] bg-(--codeclub-user-bubble) px-5 py-3.5 leading-[1.4]' : ''}`}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{ p: ({ children }) => <p style={{ margin: m.role === 'user' ? 0 : '0 0 12px', lineHeight: m.role === 'user' ? 1.4 : 1.6 }}>{children}</p>, ul: ({ children }) => <ul style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ul>, ol: ({ children }) => <ol style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ol>, li: ({ children }) => <li style={{ margin: m.role === 'user' ? 0 : '4px 0' }}>{children}</li>, table: ({ children }) => <div style={{ overflowX: 'auto', margin: '12px 0' }}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>{children}</table></div>, th: ({ children }) => <th style={{ border: '1px solid #2b2b2b', padding: '7px 9px', background: '#1c1c1c', textAlign: 'left', fontWeight: 600 }}>{children}</th>, td: ({ children }) => <td style={{ border: '1px solid #2b2b2b', padding: '7px 9px', verticalAlign: 'top' }}>{children}</td>, h1: ({ children }) => <h1 style={{ margin: '18px 0 10px', fontSize: '20px' }}>{children}</h1>, h2: ({ children }) => <h2 style={{ margin: '16px 0 8px', fontSize: '17px' }}>{children}</h2>, h3: ({ children }) => <h3 style={{ margin: '14px 0 7px', fontSize: '15px' }}>{children}</h3> }}>{normalizeChatContent(m.displayContent || m.content)}</ReactMarkdown>
+                {m.role === 'assistant' && isStreaming && agentState !== 'error' && i === messages.length - 1 && !m.content && <span className="chat-thinking-label" style={{ display: 'inline-block', color: 'rgba(216, 216, 216, 0.58)', fontSize: '13px' }}>Pensando</span>}
               </div>
               {m.role === 'assistant' && <ExecutionTimeline timeline={m.timeline} active={isStreaming && i === messages.length - 1} />}
               {m.role === 'assistant' && <AskUserCards tools={m.tools} onSelect={(answer) => void sendMessage(answer)} disabled={isAgentBusy} />}
@@ -2367,10 +2440,10 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         <div ref={messagesEndRef} aria-hidden="true" />
       </div>
 
-      <div className="chat-composer" style={{ width: '100%', minWidth: 0, justifySelf: 'center', alignSelf: 'center', position: 'relative', display: 'grid', gap: '10px' }}>
-        <div className="composer-row" style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', minWidth: 0 }}>
-          <div className="composer-box [&>[aria-label='Referencia de artifact']]:relative [&>[aria-label='Referencia de artifact']]:z-50 [&>[aria-label='Referencia de artifact']>span]:hidden" style={{ minHeight: '40px', flex: '1 1 auto', minWidth: 0, padding: 0, borderRadius: '22px', background: '#2F2F2F', border: '1px solid #3A3A3A', boxShadow: 'none', overflow: 'hidden' } as React.CSSProperties}>
-          {artifactReference && <div className="flex min-h-[28px] items-center gap-2 px-4 py-1.5" aria-label="Referencia de artifact"><span className="shrink-0 text-[10px] uppercase tracking-[0.08em] text-[#666]">Referencia</span><button type="button" onClick={() => setArtifactReference(null)} className="min-w-0 max-w-[260px] truncate rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-left text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar referencia">@{artifactReference.kind} � {artifactReference.title}</button></div>}
+      <div className="chat-composer relative grid w-full min-w-0 justify-self-center gap-2.5">
+        <div className="composer-row flex w-full min-w-0 items-center gap-2">
+          <div className="composer-box min-h-10 min-w-0 flex-1 overflow-hidden rounded-[22px] border border-(--codeclub-border-soft) bg-(--codeclub-surface-raised) p-0 shadow-none [&>[aria-label='Referencia de artifact']]:relative [&>[aria-label='Referencia de artifact']]:z-50 [&>[aria-label='Referencia de artifact']>span]:hidden">
+          {artifactReference && <div className="flex min-h-[28px] items-center gap-2 px-4 py-1.5" aria-label="Referencia de artifact"><span className="shrink-0 text-[10px] uppercase tracking-[0.08em] text-[#666]">Referencia</span><button type="button" onClick={() => setArtifactReference(null)} className="min-w-0 max-w-[260px] truncate rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-left text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar referencia">@{artifactReference.kind} · {artifactReference.title}</button></div>}
           {browserReferences.length > 0 && (
             <div ref={browserRefContainerRef} className="file-preview-scrollbar flex min-h-[76px] w-full min-w-0 max-w-full flex-nowrap items-center gap-2 overflow-x-auto overflow-y-hidden border-b-0 px-3 py-1.5" aria-label="Referencias de navegador">
               {browserReferences.map((ref) => (
@@ -2384,7 +2457,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                   <span className="browser-reference-preview-icon">
                     {getBrowserReferenceFavicon(ref) ? <img src={getBrowserReferenceFavicon(ref)} alt="" onError={(event) => { event.currentTarget.style.display = 'none'; }} /> : <Globe size={18} strokeWidth={1.7} />}
                   </span>
-                  <span className="shrink-0 text-[#777] hover:text-[#eee]">�</span>
+                  <span className="shrink-0 text-[#777] hover:text-[#eee]">×</span>
                 </button>
               ))}
               {false && browserReferences.length > maxVisibleBrowserRefs && (
@@ -2400,19 +2473,19 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               )}
             </div>
           )}
-           {attachedFiles.length > 0 && <div className="file-preview-scrollbar flex min-h-[76px] w-full min-w-0 max-w-full flex-nowrap items-center gap-2 overflow-x-auto overflow-y-hidden border-b-0 px-3 py-1.5" aria-label="Archivos adjuntos">{attachedFiles.map((file, index) => file.mediaType.startsWith('image/') ? <button key={file.path} type="button" onClick={() => setAttachedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} className="attachment-image-preview relative h-16 w-16 shrink-0 overflow-hidden rounded-[10px] border-0 bg-[#161616]" title="Quitar imagen"><img src={file.previewUrl || convertFileSrc(file.path)} alt={file.name} className="attachment-image-preview-image h-full w-full object-cover" /><span aria-hidden="true" className="attachment-image-preview-close pointer-events-none absolute inset-0 grid place-items-center text-white"><X size={18} strokeWidth={2.2} /></span></button> : <button key={file.path} type="button" onClick={() => setAttachedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} className="attachment-file-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] text-[10px] font-semibold uppercase tracking-[0.04em] text-[#cfcfcf]" title={`Quitar ${file.name}`}>{file.previewText ? <pre className="attachment-file-preview-text">{file.previewText}</pre> : <span className="attachment-file-preview-extension">{file.name.split('.').pop()?.toUpperCase().slice(0, 6) || 'FILE'}</span>}<span aria-hidden="true" className="attachment-file-preview-close pointer-events-none absolute inset-0 grid place-items-center text-white"><X size={18} strokeWidth={2.2} /></span></button>)}</div>}
+           {attachedFiles.length > 0 && <div className="file-preview-scrollbar flex min-h-[76px] w-full min-w-0 max-w-full flex-nowrap items-center gap-2 overflow-x-auto overflow-y-hidden border-b-0 px-3 py-1.5" aria-label="Archivos adjuntos">{attachedFiles.map((file, index) => file.mediaType.startsWith('image/') ? <motion.button key={file.path} type="button" onClick={() => setAttachedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} transition={{ type: 'spring', stiffness: 420, damping: 28 }} className="attachment-image-preview relative h-16 w-16 shrink-0 overflow-hidden rounded-[10px] border-0 bg-[#161616]" title={`Quitar ${file.name}`}><img src={file.previewUrl} alt={file.name} onError={(event) => { event.currentTarget.style.display = 'none'; }} className="attachment-image-preview-image h-full w-full object-cover" /><span className="attachment-image-preview-name absolute inset-x-1 bottom-1 truncate text-center text-[9px] text-white/75">{file.name}</span><span aria-hidden="true" className="attachment-image-preview-close pointer-events-none absolute inset-0 grid place-items-center text-white"><X size={18} strokeWidth={2.2} /></span></motion.button> : <motion.button key={file.path} type="button" onClick={() => setAttachedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} transition={{ type: 'spring', stiffness: 420, damping: 28 }} className="attachment-file-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] text-[10px] font-semibold uppercase tracking-[0.04em] text-[#cfcfcf]" title={`Quitar ${file.name}`}>{file.previewText ? <pre className="attachment-file-preview-text">{file.previewText}</pre> : <span className="attachment-file-preview-name" title={file.name}>{file.name}</span>}<span aria-hidden="true" className="attachment-file-preview-close pointer-events-none absolute inset-0 grid place-items-center text-white"><X size={18} strokeWidth={2.2} /></span></motion.button>)}</div>}
           {activeSkills.length > 0 && <div className="flex min-h-[28px] items-center gap-1.5 overflow-x-auto border-b border-[#202020] px-3 py-1.5" aria-label={chatText.activeSkills}>
-            {activeSkills.map((skill) => <button key={skill.id} type="button" onClick={() => setActiveSkills((current) => current.filter((item) => item.id !== skill.id))} className="flex shrink-0 items-center gap-1 rounded-full border border-[#3d9bff]/50 bg-[#1687ff]/10 px-2.5 py-1 text-[10px] text-[#b9dcff] hover:bg-[#1687ff]/20" title="Quitar habilidad de esta sesi�n">
-              <span className="max-w-[150px] truncate">{skill.name}</span><span className="text-[#8bc7ff]/70">�</span>
+            {activeSkills.map((skill) => <button key={skill.id} type="button" onClick={() => setActiveSkills((current) => current.filter((item) => item.id !== skill.id))} className="flex shrink-0 items-center gap-1 rounded-full border border-[#3d9bff]/50 bg-[#1687ff]/10 px-2.5 py-1 text-[10px] text-[#b9dcff] hover:bg-[#1687ff]/20" title="Quitar habilidad de esta sesión">
+              <span className="max-w-[150px] truncate">{skill.name}</span><span className="text-[#8bc7ff]/70">×</span>
             </button>)}
           </div>}
           {activeExtensions.length > 0 && <div className="flex min-h-[28px] items-center gap-1.5 overflow-x-auto border-b border-[#202020] px-3 py-1.5" aria-label={chatText.activeExtensions}>
-            {activeExtensions.map((extension) => { const Icon = extensionIcons[extension.id] || Box; return <button key={extension.id} type="button" onClick={() => setActiveExtensions((current) => current.filter((item) => item.id !== extension.id))} className="flex shrink-0 items-center gap-1 rounded-full border border-[#3d9bff]/50 bg-[#1687ff]/10 px-2.5 py-1 text-[10px] text-[#b9dcff] hover:bg-[#1687ff]/20" title="Quitar complemento de esta sesi�n"><Icon size={11} /><span>{extension.name}</span><span className="text-[#8bc7ff]/70">�</span></button>; })}
+            {activeExtensions.map((extension) => { const Icon = extensionIcons[extension.id] || Box; return <button key={extension.id} type="button" onClick={() => setActiveExtensions((current) => current.filter((item) => item.id !== extension.id))} className="flex shrink-0 items-center gap-1 rounded-full border border-[#3d9bff]/50 bg-[#1687ff]/10 px-2.5 py-1 text-[10px] text-[#b9dcff] hover:bg-[#1687ff]/20" title="Quitar complemento de esta sesión"><Icon size={11} /><span>{extension.name}</span><span className="text-[#8bc7ff]/70">×</span></button>; })}
           </div>}
           <div ref={commandMenuHostRef} className="w-full" />
-          <form onSubmit={handleSubmit} className="composer-box-inner [&>button.absolute]:hidden" style={{ minHeight: '78px', width: '100%', minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '4px', padding: '8px 6px 7px 16px', border: 0, borderRadius: '21px', background: '#2F2F2F', position: 'relative' }}>
+          <form onSubmit={handleSubmit} className="composer-box-inner relative flex min-h-[70px] w-full min-w-0 flex-col items-stretch gap-1 rounded-[21px] border-0 bg-(--codeclub-surface-raised) px-1.5 pb-1 pl-4 pr-3 pt-2 [&>button.absolute]:hidden">
            {false && (
-          <button type="button" onClick={handleAttachFiles} className="text-white/40 hover:text-white transition-colors" aria-label="A�adir archivos" style={{ flex: '0 0 28px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, background: 'transparent', cursor: 'pointer' }}>
+          <button type="button" onClick={handleAttachFiles} className="text-white/40 hover:text-white transition-colors" aria-label="Añadir archivos" style={{ flex: '0 0 28px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, background: 'transparent', cursor: 'pointer' }}>
             <Paperclip size={16} strokeWidth={1.8} />
           </button>
           )}
@@ -2421,27 +2494,17 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               type="button"
               onClick={() => setAttachedFiles([])}
               className="shrink-0 bg-[var(--color-surface-3)] text-[#bdbdbd] hover:bg-[var(--color-surface-7)] hover:text-[#eeeeee] transition-colors"
-              aria-label="Quitar archivos a�adidos"
-              title="Quitar archivos a�adidos"
+              aria-label="Quitar archivos añadidos"
+              title="Quitar archivos añadidos"
               style={{ minHeight: '24px', display: 'flex', alignItems: 'center', padding: '0 9px', border: '1px solid var(--color-surface-8, #2b2b2b)', borderRadius: '999px', fontSize: '11px', cursor: 'pointer' }}
             >
-              A�adido {attachedFiles.length}
+              Añadido {attachedFiles.length}
             </button>
           )}
           {false && artifactReference && (
             <button type="button" onClick={() => setArtifactReference(null)} className="shrink-0 max-w-[160px] truncate rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar referencia">
-              @{artifactReference.kind} � {artifactReference.title}
+              @{artifactReference.kind} · {artifactReference.title}
             </button>
-          )}
-          {isAgentBusy && (
-            <div className="pointer-events-none absolute top-[8px] right-[46px] bottom-[38px] left-[16px] flex items-center gap-2 text-[12px] text-[#d8d8d8]/70">
-              <span className="truncate">{agentStatusText} <span className="tabular-nums text-[#d8d8d8]/45">{isAgentBusy ? formatDuration(agentElapsedMs) : ''}</span></span>
-            </div>
-          )}
-          {!input.trim() && !isAgentBusy && (
-            <div className="pointer-events-none absolute top-[8px] right-[46px] bottom-[38px] left-[16px] flex items-center gap-2 text-[12px] text-[#d8d8d8]/70">
-              <span className="truncate">{agentStatusText} <span className="tabular-nums text-[#d8d8d8]/45">{isAgentBusy ? formatDuration(agentElapsedMs) : ''}</span></span>
-            </div>
           )}
           <textarea
             ref={chatInputRef}
@@ -2463,8 +2526,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             onInput={(e) => {
               const target = e.currentTarget;
               target.style.height = 'auto';
-              target.style.height = `${Math.min(target.scrollHeight, 140)}px`;
-              target.style.overflowY = target.scrollHeight > 140 ? 'auto' : 'hidden';
+              target.style.height = `${Math.min(target.scrollHeight, 180)}px`;
+              target.style.overflowY = target.scrollHeight > 180 ? 'auto' : 'hidden';
             }}
             onKeyDown={(e) => {
               const slashMenuActive = ['command', 'provider', 'model', 'project', 'skill'].includes(commandKind) && (menuOpen || commandKind === 'command');
@@ -2487,17 +2550,17 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             onBlur={() => setInputFocused(false)}
             placeholder=""
             aria-label={chatText.message}
-            style={{ appearance: 'none', order: 1, flex: '1 1 auto', minWidth: 0, width: '100%', minHeight: '22px', height: '100%', maxHeight: '140px', alignSelf: 'stretch', resize: 'none', border: 0, outline: 'none', background: 'transparent', color: '#eeeeee', fontSize: '12px', lineHeight: 1.4, padding: '2px 10px 4px 0', fontFamily: 'inherit', overflowY: 'hidden', scrollbarWidth: 'none', opacity: isAgentBusy ? 0.55 : 1 }}
+            className={`order-1 min-h-[22px] h-auto max-h-[180px] w-full min-w-0 flex-none resize-none self-stretch overflow-y-hidden border-0 bg-transparent px-0 py-0.5 pr-2.5 text-xs leading-[1.4] text-(--codeclub-text-strong) outline-none placeholder:text-(--codeclub-text-muted) [scrollbar-width:none] ${isAgentBusy ? 'opacity-[0.55]' : 'opacity-100'}`}
+            placeholder={agentStatusText}
           />
-          {artifactReference && <button type="button" onClick={() => setArtifactReference(null)} className="absolute left-[16px] top-1/2 z-10 max-w-[130px] -translate-y-1/2 truncate rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar referencia">@{artifactReference.kind} � {artifactReference.title}</button>}
-          <div style={{ order: 2, display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '6px', minHeight: '30px' }}>
-            <button type="button" onClick={handleAttachFiles} aria-label={chatText.attach} title={chatText.attach} className="composer-action group" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, borderRadius: '8px', background: 'transparent', color: 'rgba(238, 238, 238, 0.62)' }}><Paperclip size={15} strokeWidth={1.8} /><span className="composer-action-label">{chatText.attach}</span></button>
-            <button type="button" data-command-menu-kind="provider" onClick={() => toggleCommandMenu('provider')} aria-label={chatText.slash.provider} title={chatText.slash.provider} className={`composer-action group ${menuOpen && commandKind === 'provider' ? 'is-active' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, borderRadius: '8px', background: menuOpen && commandKind === 'provider' ? '#3A3A3A' : 'transparent', color: 'rgba(238, 238, 238, 0.62)' }}><Layers size={15} strokeWidth={1.8} /><span className="composer-action-label">{chatText.slash.provider}</span></button>
-            <button type="button" data-command-menu-kind="model" onClick={() => toggleCommandMenu('model')} aria-label={chatText.slash.model} title={chatText.slash.model} className={`composer-action group ${menuOpen && commandKind === 'model' ? 'is-active' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, borderRadius: '8px', background: menuOpen && commandKind === 'model' ? '#3A3A3A' : 'transparent', color: 'rgba(238, 238, 238, 0.62)' }}><Box size={15} strokeWidth={1.8} /><span className="composer-action-label">{chatText.slash.model}</span></button>
-            <button type="button" data-command-menu-kind="project" onClick={() => toggleCommandMenu('project')} aria-label={chatText.slash.project} title={chatText.slash.project} className={`composer-action group ml-auto ${menuOpen && commandKind === 'project' ? 'is-active' : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', border: 0, borderRadius: '8px', background: menuOpen && commandKind === 'project' ? '#3A3A3A' : 'transparent', color: 'rgba(238, 238, 238, 0.62)' }}><Folder size={15} strokeWidth={1.8} /><span className="composer-action-label">{activeProject?.name || chatText.slash.project}</span><ChevronDown size={12} strokeWidth={1.8} /></button>
-            <button type={isAgentBusy ? 'button' : 'submit'} onClick={isAgentBusy ? cancelGeneration : undefined} disabled={!isAgentBusy && !input.trim() && attachedFiles.length === 0 && !credentialProvider} className="send-button transition-[background,opacity] duration-200 hover:opacity-85 disabled:cursor-not-allowed disabled:opacity-45" aria-label={isAgentBusy ? "Cancelar generaci�n" : credentialProvider ? "Guardar credencial" : "Enviar"} title={isAgentBusy ? "Cancelar generaci�n" : credentialProvider ? "Guardar credencial" : "Enviar"} style={{ flex: '0 0 30px', width: '30px', height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, borderRadius: '50%', background: '#3D9BFF', color: '#ffffff', boxShadow: 'none', cursor: 'pointer' }}>
-              {isAgentBusy ? <Square size={13} strokeWidth={2.4} fill="currentColor" /> : <ArrowUp size={15} strokeWidth={2.2} />}
-            </button>
+          {artifactReference && <button type="button" onClick={() => setArtifactReference(null)} className="absolute left-[16px] top-1/2 z-10 max-w-[130px] -translate-y-1/2 truncate rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar referencia">@{artifactReference.kind} · {artifactReference.title}</button>}
+          <div className="order-2 flex min-h-[30px] items-center justify-start gap-3">
+            <motion.button type="button" onClick={handleAttachFiles} aria-label={chatText.attach} title={chatText.attach} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} transition={{ type: 'spring', stiffness: 480, damping: 28 }} className="composer-action group flex items-center justify-center gap-1.5 rounded-lg border-0 bg-transparent text-(--codeclub-text-muted) hover:bg-(--codeclub-surface-raised) hover:text-(--codeclub-text-strong)"><Paperclip size={15} strokeWidth={1.8} /><motion.span initial={{ opacity: 0.72 }} whileHover={{ opacity: 1 }} className="composer-action-label text-[11px]">{chatText.attach}</motion.span></motion.button>
+            <motion.button type="button" data-command-menu-kind="provider" onClick={() => toggleCommandMenu('provider')} aria-label={chatText.slash.provider} title={chatText.slash.provider} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} transition={{ type: 'spring', stiffness: 480, damping: 28 }} className={`composer-action group flex items-center justify-center gap-1.5 rounded-lg border-0 text-(--codeclub-text-muted) hover:bg-(--codeclub-surface-raised) hover:text-(--codeclub-text-strong) ${menuOpen && commandKind === 'provider' ? 'bg-(--codeclub-surface-raised) text-(--codeclub-text-strong)' : 'bg-transparent'}`}><Layers size={15} strokeWidth={1.8} /><motion.span initial={{ opacity: 0.72 }} animate={{ opacity: menuOpen && commandKind === 'provider' ? 1 : 0.72 }} className="composer-action-label text-[11px]">{chatText.slash.provider}</motion.span></motion.button>
+            <motion.button type="button" data-command-menu-kind="model" onClick={() => toggleCommandMenu('model')} aria-label={chatText.slash.model} title={chatText.slash.model} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} transition={{ type: 'spring', stiffness: 480, damping: 28 }} className={`composer-action group flex items-center justify-center gap-1.5 rounded-lg border-0 text-(--codeclub-text-muted) hover:bg-(--codeclub-surface-raised) hover:text-(--codeclub-text-strong) ${menuOpen && commandKind === 'model' ? 'bg-(--codeclub-surface-raised) text-(--codeclub-text-strong)' : 'bg-transparent'}`}><Box size={15} strokeWidth={1.8} /><motion.span initial={{ opacity: 0.72 }} animate={{ opacity: menuOpen && commandKind === 'model' ? 1 : 0.72 }} className="composer-action-label text-[11px]">{chatText.slash.model}</motion.span></motion.button>
+            <motion.button type={isAgentBusy ? 'button' : 'submit'} onClick={isAgentBusy ? cancelGeneration : undefined} disabled={!sendButtonActive} animate={{ scale: sendButtonActive ? 1 : 0.94, opacity: sendButtonActive ? 1 : 0.62 }} whileHover={{ scale: sendButtonActive ? 1.06 : 0.98 }} whileTap={{ scale: 0.9 }} transition={{ type: 'spring', stiffness: 460, damping: 28 }} className={`send-button ml-auto flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full text-(--codeclub-text-strong) shadow-none transition-colors disabled:cursor-not-allowed ${sendButtonActive ? 'border border-(--codeclub-border-soft) bg-(--codeclub-send-active-radial)' : 'border border-transparent bg-(--codeclub-surface-raised)'}`} aria-label={isAgentBusy ? "Cancelar generación" : credentialProvider ? "Guardar credencial" : "Enviar"} title={isAgentBusy ? "Cancelar generación" : credentialProvider ? "Guardar credencial" : "Enviar"}>
+            {isAgentBusy ? <Square size={13} strokeWidth={2.4} fill="currentColor" /> : <ArrowUp size={15} strokeWidth={2.2} />}
+            </motion.button>
           </div>
           </form>
           </div>
@@ -2531,7 +2594,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 value={credentialInput}
                 onChange={(event) => setCredentialInput(event.target.value)}
                 onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); saveCredential(); } }}
-                placeholder={`Escrib� tu credencial de ${credentialProvider?.label || credentialProvider?.id}`}
+                placeholder={`Escribí tu credencial de ${credentialProvider?.label || credentialProvider?.id}`}
                 className="credential-menu-input"
                 style={{ boxSizing: 'border-box', width: '100%', height: '34px', padding: '0 32px 0 10px', border: 0, borderRadius: '8px', background: 'transparent', color: '#eeeeee', fontSize: '12px', outline: 'none' }}
               />
@@ -2706,6 +2769,44 @@ function ProcessingStatus({ startedAt, provider, model }: { startedAt: number; p
 
 function CompletedStatus({ language, provider, model, durationMs }: { language: AppLanguage; provider: string; model: string; durationMs: number }) {
   return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', alignSelf: 'stretch', margin: '20px 0 -6px', color: 'rgba(216, 216, 216, 0.52)', fontSize: '12px', letterSpacing: '0.01em' }}><span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{provider} � {model}</span><span style={{ flexShrink: 0 }}>{language === 'en' ? 'Completed in' : 'Completado en'} {formatProcessingDuration(durationMs)}</span></div>;
+}
+
+function ProcessingStatusFixed({ startedAt, provider, model }: { startedAt: number; provider: string; model: string }) {
+  const [elapsed, setElapsed] = useState(() => Math.max(0, Date.now() - startedAt));
+  useEffect(() => {
+    const timer = window.setInterval(() => setElapsed(Math.max(0, Date.now() - startedAt)), 1000);
+    return () => window.clearInterval(timer);
+  }, [startedAt]);
+  return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', padding: '0 0 12px', color: '#999', fontSize: '12px' }}><span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#777' }}>{provider} · {model}</span><span style={{ flexShrink: 0 }}>Procesando desde hace {formatProcessingDuration(elapsed)}</span></div>;
+}
+
+function CompletedStatusFixed({ language, provider, model, durationMs }: { language: AppLanguage; provider: string; model: string; durationMs: number }) {
+  return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', alignSelf: 'stretch', margin: '20px 0 -6px', color: 'rgba(216, 216, 216, 0.52)', fontSize: '12px', letterSpacing: '0.01em' }}><span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{provider} · {model}</span><span style={{ flexShrink: 0 }}>{language === 'en' ? 'Completed in' : 'Completado en'} {formatProcessingDuration(durationMs)}</span></div>;
+}
+
+const ERROR_RECOVERY_TIPS = [
+  'Consejo: verificá que la API key corresponda al proveedor seleccionado.',
+  'Consejo: algunos proveedores tardan unos segundos en aceptar una conexión nueva.',
+  'Consejo: revisá la URL base y el modelo activo antes de volver a intentar.',
+  'Consejo: si el error aparece de forma intermitente, puede ser una demora de red.',
+  'Consejo: probá seleccionar nuevamente el proveedor y el modelo.',
+];
+
+function ErrorRecoveryNotice({ configurationError }: { configurationError: boolean }) {
+  const [step, setStep] = useState(configurationError ? 5 : 0);
+  const [tip] = useState(() => ERROR_RECOVERY_TIPS[Math.floor(Math.random() * ERROR_RECOVERY_TIPS.length)]);
+
+  useEffect(() => {
+    if (configurationError || step >= 5) return;
+    const timer = window.setTimeout(() => setStep((current) => Math.min(5, current + 1)), 420);
+    return () => window.clearTimeout(timer);
+  }, [configurationError, step]);
+
+  const label = step < 5 ? `Reconectando ${step + 1}/5` : tip;
+  return <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '8px 0 2px', color: 'rgba(216, 216, 216, 0.58)', fontSize: '12px', lineHeight: 1.4 }}>
+    {step < 5 ? <Wifi size={15} strokeWidth={1.7} aria-hidden="true" /> : <CircleHelp size={15} strokeWidth={1.7} aria-hidden="true" />}
+    <span>{label}</span>
+  </div>;
 }
 
 function ExecutionTimeline({ timeline = [], active }: { timeline?: any[]; active: boolean }) {
@@ -3232,8 +3333,3 @@ function ProjectDiffView({ kind, projectPath }: { kind: 'diff' | 'folders'; proj
     </div>
   );
 }
-
-
-
-
-

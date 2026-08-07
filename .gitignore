@@ -2,6 +2,9 @@ sub project/
 .agents/
 
 node_modules/
+.next/
+electron-dist/
+out/
 dist/
 dist-ssr/
 .astro/
