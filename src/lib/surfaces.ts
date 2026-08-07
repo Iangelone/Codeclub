@@ -40,7 +40,7 @@ class BrowserSurfaceController {
     const creating = !this.nativeWindowOpen;
     if (creating) {
       await invoke('codeclub_browser_close').catch(() => undefined);
-      await invoke('codeclub_browser_window_open', {
+      await invoke('codeclub_browser_create', {
         url: this.url,
         x: bounds.left,
         y: bounds.top,
@@ -50,7 +50,7 @@ class BrowserSurfaceController {
       this.nativeWindowOpen = true;
       return;
     }
-    await invoke('codeclub_browser_window_bounds', {
+    await invoke('codeclub_browser_set_bounds', {
       x: bounds.left,
       y: bounds.top,
       width: bounds.width,

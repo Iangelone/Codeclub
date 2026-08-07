@@ -21,7 +21,7 @@ use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT};
 #[cfg(windows)]
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_ESCAPE};
 #[cfg(windows)]
-use windows::Win32::UI::WindowsAndMessaging::{EnumChildWindows, GetCursorPos, GetWindowRect, HWND_TOP, LoadCursorFromFileW, SetSystemCursor, SetWindowPos, SystemParametersInfoW, OCR_NORMAL, SPI_SETCURSORS, SPIF_SENDCHANGE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE};
+use windows::Win32::UI::WindowsAndMessaging::{EnumChildWindows, GetCursorPos, GetWindowRect, HWND_TOP, LoadCursorFromFileW, SetSystemCursor, SetWindowPos, ShowWindow, SystemParametersInfoW, OCR_NORMAL, SPI_SETCURSORS, SPIF_SENDCHANGE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_SHOW};
 #[cfg(windows)]
 use windows::core::{BOOL, PCWSTR};
 
@@ -36,6 +36,8 @@ fn computer_automation() -> Result<UIAutomation, String> {
 static COMPUTER_AUTOMATION_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 #[cfg(windows)]
 static COMPUTER_OVERLAY_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+static BROWSER_WEBVIEW: OnceLock<tauri::Webview> = OnceLock::new();
 
 #[cfg(windows)]
 fn lock_computer_automation() -> Result<std::sync::MutexGuard<'static, ()>, String> {
@@ -270,6 +272,12 @@ struct NativeChildMatch {
 }
 
 #[cfg(windows)]
+struct NativeZeroChildMatch {
+    target: RECT,
+    matched: Option<HWND>,
+}
+
+#[cfg(windows)]
 unsafe extern "system" fn find_native_child(hwnd: HWND, lparam: LPARAM) -> BOOL {
     let state = unsafe { &mut *(lparam.0 as *mut NativeChildMatch) };
     let mut rect = RECT::default();
@@ -281,6 +289,49 @@ unsafe extern "system" fn find_native_child(hwnd: HWND, lparam: LPARAM) -> BOOL 
         return BOOL(0);
     }
     BOOL(1)
+}
+
+#[cfg(windows)]
+unsafe extern "system" fn find_native_zero_child(hwnd: HWND, lparam: LPARAM) -> BOOL {
+    let state = unsafe { &mut *(lparam.0 as *mut NativeZeroChildMatch) };
+    let mut rect = RECT::default();
+    if unsafe { GetWindowRect(hwnd, &mut rect) }.is_ok()
+        && rect.left == state.target.left
+        && rect.top == state.target.top
+        && rect.right == rect.left
+        && rect.bottom == rect.top
+    {
+        state.matched = Some(hwnd);
+        return BOOL(0);
+    }
+    BOOL(1)
+}
+
+#[cfg(windows)]
+fn repair_browser_child(main: &tauri::WebviewWindow, x: f64, y: f64, width: f64, height: f64) {
+    let Ok(scale) = main.scale_factor() else { return; };
+    let Ok(origin) = main.outer_position() else { return; };
+    let target = RECT {
+        left: origin.x + (x * scale).round() as i32,
+        top: origin.y + (y * scale).round() as i32,
+        right: origin.x + ((x + width) * scale).round() as i32,
+        bottom: origin.y + ((y + height) * scale).round() as i32,
+    };
+    let mut outer = NativeChildMatch { target, matched: None };
+    let Ok(parent) = main.hwnd() else { return; };
+    unsafe {
+        let _ = EnumChildWindows(Some(parent), Some(find_native_child), LPARAM((&mut outer as *mut NativeChildMatch) as isize));
+        let Some(outer) = outer.matched else { return; };
+        let mut inner = NativeZeroChildMatch { target, matched: None };
+        let _ = EnumChildWindows(Some(outer), Some(find_native_zero_child), LPARAM((&mut inner as *mut NativeZeroChildMatch) as isize));
+        if let Some(inner) = inner.matched {
+            let px_width = ((width * scale).round() as i32).max(1);
+            let px_height = ((height * scale).round() as i32).max(1);
+            let _ = SetWindowPos(inner, Some(HWND_TOP), 0, 0, px_width, px_height, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+            let _ = ShowWindow(inner, SW_SHOW);
+            eprintln!("[browser] repaired native content hwnd={inner:?} size={px_width}x{px_height}");
+        }
+    }
 }
 
 #[cfg(windows)]
@@ -351,7 +402,8 @@ fn codeclub_menu_overlay(
         WebviewUrl::App("menu-overlay".into())
     };
     if let Some(window) = app.get_webview_window(overlay_label) {
-        window.close().map_err(|error| error.to_string())?;
+        // Ocultar conserva la instancia precargada para poder reutilizarla.
+        window.hide().map_err(|error| error.to_string())?;
     }
     // El menú comparte jerarquía con el navegador. Al crearlo después, Windows
     // conserva el orden Z correcto sin congelar ni recalcular el WebView.
@@ -507,6 +559,11 @@ fn codeclub_browser_window_bounds(
 }
 
 fn codeclub_browser_webview(app: &AppHandle) -> Result<tauri::Webview, String> {
+    // El navegador se precarga como WebView hijo; conservar este handle es
+    // necesario porque get_webview() puede no registrar hijos de add_child.
+    if let Some(webview) = BROWSER_WEBVIEW.get() {
+        return Ok(webview.clone());
+    }
     app.get_webview("codeclub-browser")
         .or_else(|| {
             app.get_window("main")?.webviews().into_iter().find(|webview| {
@@ -517,30 +574,110 @@ fn codeclub_browser_webview(app: &AppHandle) -> Result<tauri::Webview, String> {
 }
 
 #[tauri::command]
-fn codeclub_browser_create(app: AppHandle, url: String, x: f64, y: f64, width: f64, height: f64) -> Result<(), String> {
-    if let Some(existing) = app.get_webview("codeclub-browser") {
-        let _ = existing.close();
-    }
+fn codeclub_browser_create_on_main_thread(
+    app: AppHandle,
+    parsed_url: tauri::Url,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
     let window = app.get_window("main").ok_or_else(|| "No se encontró la ventana principal.".to_string())?;
-    let parsed_url: tauri::Url = url.parse().map_err(|error| format!("URL inválida: {error}"))?;
-    if !matches!(parsed_url.scheme(), "http" | "https") || parsed_url.host().is_none() {
-        return Err("Solo se permiten URLs http(s) con dominio válido.".to_string());
+    // Reutilizar el WebView evita que close() bloquee el hilo nativo de
+    // WebView2 y evita recreaciones/cargas duplicadas durante syncBounds.
+    if let Some(existing) = BROWSER_WEBVIEW.get() {
+        eprintln!("[browser] reuse existing");
+        existing
+            .set_position(LogicalPosition::new(x, y))
+            .map_err(|error| format!("No se pudo reposicionar WebView2 existente: {error}"))?;
+        existing
+            .set_size(LogicalSize::new(width, height))
+            .map_err(|error| format!("No se pudo redimensionar WebView2 existente: {error}"))?;
+        existing.show().map_err(|error| error.to_string())?;
+        existing
+            .navigate(parsed_url)
+            .map_err(|error| format!("No se pudo navegar WebView2 existente: {error}"))?;
+        eprintln!("[browser] reuse navigate ok");
+        #[cfg(windows)]
+        if let Some(main) = app.get_webview_window("main") {
+            repair_browser_child(&main, x, y, width, height);
+        }
+        return Ok(());
     }
-    let builder = WebviewBuilder::new("codeclub-browser", WebviewUrl::External(parsed_url))
+    eprintln!("[browser] no existing child; add_child begin");
+    let builder = WebviewBuilder::new("codeclub-browser", WebviewUrl::External(parsed_url.clone()))
+        .focused(false)
+        .on_navigation(|url| {
+            eprintln!("[browser] navigation url={url}");
+            true
+        })
         .on_page_load(|webview, payload| {
-            if matches!(payload.event(), PageLoadEvent::Finished) {
-                let _ = webview.emit("codeclub-browser-page-loaded", payload.url().to_string());
+            let page_url = payload.url().to_string();
+            match payload.event() {
+                PageLoadEvent::Started => {
+                    eprintln!("[browser] page-load started url={page_url}");
+                }
+                PageLoadEvent::Finished => {
+                    eprintln!("[browser] page-load finished url={page_url}");
+                    let _ = webview.emit("codeclub-browser-page-loaded", page_url);
+                }
             }
         });
     let webview = window
         .add_child(builder, LogicalPosition::new(x, y), LogicalSize::new(width, height))
         .map_err(|error| error.to_string())?;
+    eprintln!("[browser] add_child ok");
+    webview
+        .set_auto_resize(true)
+        .map_err(|error| format!("No se pudo activar auto-resize de WebView2: {error}"))?;
+    eprintln!("[browser] auto_resize ok");
+    webview
+        .set_position(LogicalPosition::new(x, y))
+        .map_err(|error| format!("No se pudo posicionar WebView2: {error}"))?;
+    eprintln!("[browser] position ok");
+    webview
+        .set_size(LogicalSize::new(width, height))
+        .map_err(|error| format!("No se pudo dimensionar WebView2: {error}"))?;
+    eprintln!("[browser] size ok");
     webview.show().map_err(|error| error.to_string())?;
+    eprintln!("[browser] show ok");
+    webview
+        .navigate(parsed_url)
+        .map_err(|error| format!("No se pudo iniciar navegación WebView2: {error}"))?;
+    eprintln!("[browser] navigate call ok");
+    #[cfg(windows)]
+    if let Some(main) = app.get_webview_window("main") {
+        eprintln!("[browser] repair begin");
+        repair_browser_child(&main, x, y, width, height);
+        eprintln!("[browser] repair end");
+    }
+    if let Ok(bounds) = webview.bounds() {
+        eprintln!("[browser] child bounds after init={bounds:?}");
+    }
+    eprintln!("[browser] child shown label=codeclub-browser");
     Ok(())
 }
 
 #[tauri::command]
+fn codeclub_browser_create(app: AppHandle, url: String, x: f64, y: f64, width: f64, height: f64) -> Result<(), String> {
+    eprintln!("[browser] create url={url} bounds=({x},{y},{width},{height})");
+    let parsed_url: tauri::Url = url.parse().map_err(|error| format!("URL inválida: {error}"))?;
+    if !matches!(parsed_url.scheme(), "http" | "https") || parsed_url.host().is_none() {
+        return Err("Solo se permiten URLs http(s) con dominio válido.".to_string());
+    }
+    let app_for_main = app.clone();
+    app.run_on_main_thread(move || {
+        eprintln!("[browser] main-thread callback begin");
+        if let Err(error) = codeclub_browser_create_on_main_thread(app_for_main, parsed_url, x, y, width, height) {
+            eprintln!("[browser] main-thread create failed: {error}");
+        }
+    })
+    .map_err(|error| format!("No se pudo despachar creación de WebView2 al hilo principal: {error}"))
+}
+
+#[tauri::command]
 fn codeclub_browser_navigate(app: AppHandle, url: String) -> Result<(), String> {
+    eprintln!("[browser] navigate url={url}");
     let parsed_url: tauri::Url = url.parse().map_err(|error| format!("URL invÃ¡lida: {error}"))?;
     if !matches!(parsed_url.scheme(), "http" | "https") || parsed_url.host().is_none() {
         return Err("Solo se permiten URLs http(s) con dominio vÃ¡lido.".to_string());
@@ -557,7 +694,7 @@ fn codeclub_browser_close(app: AppHandle) -> Result<(), String> {
         return Ok(());
     }
     if let Ok(webview) = codeclub_browser_webview(&app) {
-        webview.close().map_err(|error| error.to_string())?;
+        webview.hide().map_err(|error| error.to_string())?;
     }
     Ok(())
 }
@@ -590,15 +727,18 @@ fn codeclub_browser_set_bounds(
     width: f64,
     height: f64,
 ) -> Result<(), String> {
-    let webview = app
-        .get_webview("codeclub-browser")
-        .ok_or_else(|| "El WebView del navegador no está disponible.".to_string())?;
+    let webview = codeclub_browser_webview(&app)?;
     webview
         .set_position(LogicalPosition::new(x, y))
         .map_err(|error| error.to_string())?;
     webview
         .set_size(LogicalSize::new(width, height))
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    #[cfg(windows)]
+    if let Some(main) = app.get_webview_window("main") {
+        repair_browser_child(&main, x, y, width, height);
+    }
+    Ok(())
 }
 
 #[derive(Default)]
@@ -1881,6 +2021,27 @@ pub fn run() {
                 .map_err(|error| format!("No se pudo crear el overlay de Computer Use: {error}"))?;
             overlay.set_ignore_cursor_events(true).map_err(|error| format!("No se pudo hacer click-through el overlay: {error}"))?;
             overlay.set_position(PhysicalPosition::new(monitor_x, monitor_y)).map_err(|error| error.to_string())?;
+
+            // Crear el WebView hijo durante setup evita el deadlock de WebView2
+            // cuando add_child se invoca desde un comando IPC posterior.
+            if let Some(main) = app.get_window("main") {
+                let browser_url = WebviewUrl::External("about:blank".parse().map_err(|error| format!("URL invalida para el navegador: {error}"))?);
+                let browser = main
+                    .add_child(
+                        WebviewBuilder::new("codeclub-browser", browser_url).focused(false),
+                        LogicalPosition::new(0.0, 0.0),
+                        LogicalSize::new(1.0, 1.0),
+                    )
+                    .map_err(|error| format!("No se pudo precargar el WebView2 del navegador: {error}"))?;
+                browser.hide().map_err(|error| error.to_string())?;
+                // El handle debe vivir durante toda la sesión; si se descarta
+                // al salir de setup, el manager deja de encontrar el hijo y el
+                // siguiente create vuelve a entrar en add_child (que bloquea).
+                BROWSER_WEBVIEW
+                    .set(browser)
+                    .map_err(|_| "El WebView2 del navegador ya estaba precargado.".to_string())?;
+                eprintln!("[browser] preload child ok");
+            }
             Ok(())
         })
         .manage(TerminalRegistry::default())

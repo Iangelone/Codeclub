@@ -721,6 +721,7 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
   const selectionKeyRef = useRef('');
   const browserCursorDataUrlRef = useRef('');
   const browserStateRef = useRef<BrowserState | null>(null);
+  const navigationPollInFlightRef = useRef(false);
   useEffect(() => {
     if (window.localStorage.getItem(LANGUAGE_STORAGE_KEY) === 'en') setLanguage('en');
     const handleLanguageChange = (event: Event) => {
@@ -1003,6 +1004,8 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
     const closeBeforeReload = () => { void surfaces.browser.dispose(); };
     window.addEventListener('beforeunload', closeBeforeReload);
     const navigationPoll = window.setInterval(async () => {
+      if (navigationPollInFlightRef.current) return;
+      navigationPollInFlightRef.current = true;
       try {
         const currentUrl = await surfaces.browser.getUrl();
         const selectionMarker = currentUrl.indexOf(browserSelectionHash);
@@ -1029,6 +1032,9 @@ function NativeBrowserView({ initialUrl = 'https://www.google.com' }: { initialU
         }
         if (inspectModeRef.current) void installInspector(true);
       } catch { /* El WebView todavía puede estar navegando o cerrado. */ }
+      finally {
+        navigationPollInFlightRef.current = false;
+      }
     }, 700);
     return () => {
       resizeObserver.disconnect();

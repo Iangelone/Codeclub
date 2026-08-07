@@ -129,10 +129,6 @@ import ChatPanel from "../components/ChatPanel.astro";
           if (computerOverlayActive) void setComputerOverlay(false);
         });
         
-        document.querySelector('#minimize')?.addEventListener('click', () => { appWindow.minimize(); });
-        document.querySelector('#maximize')?.addEventListener('click', () => { appWindow.toggleMaximize(); });
-        document.querySelector('#close')?.addEventListener('click', () => { appWindow.close(); });
-        document.querySelector('.drag-area')?.addEventListener('dblclick', () => { appWindow.toggleMaximize(); });
         const toggleFullscreen = async (event) => {
           if (event?.type === 'keydown' && event.key !== 'F11') return;
           event?.preventDefault();

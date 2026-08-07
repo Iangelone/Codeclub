@@ -127,6 +127,7 @@ const t = topbarTranslations.es;
 </header>
 
 <script>
+  import { getCurrentWindow } from '@tauri-apps/api/window';
   import { surfaces } from '../lib/surfaces';
   import { LANGUAGE_STORAGE_KEY, topbarTranslations, type AppLanguage } from '../lib/i18n';
 
@@ -231,6 +232,12 @@ const t = topbarTranslations.es;
     if (key && key in topbarTranslations[language]) overlayButton.textContent = topbarTranslations[language][key];
   };
   window.addEventListener('codeclub:computer-overlay-state', (event) => updateOverlayButton(Boolean((event as CustomEvent<{ active?: boolean }>).detail?.active)));
+
+  const appWindow = getCurrentWindow();
+  document.querySelector('#minimize')?.addEventListener('click', () => { void appWindow.minimize(); });
+  document.querySelector('#maximize')?.addEventListener('click', () => { void appWindow.toggleMaximize(); });
+  document.querySelector('#close')?.addEventListener('click', () => { void appWindow.close(); });
+  document.querySelector('.drag-area')?.addEventListener('dblclick', () => { void appWindow.toggleMaximize(); });
 </script>
 
 <style>
