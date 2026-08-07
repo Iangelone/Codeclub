@@ -34,11 +34,10 @@ It is **local-first**: all data lives on your filesystem. No cloud, no vendor lo
 | `askUser` | Request structured human decisions |
 | `createPlan` / `updatePlan` / `todo` / `getTaskStatus` | Persistent planning and TODOs |
 | `subagent` | Delegate to specialized read-only agents (developer, explorer, frontend, backend, QA, security, docs) |
-| `remember` / `recall` / `forget` | Persistent memory per project |
 | `getExecutionLog` | Auditable tool execution history |
 
 ### Agent Tools (Business / Economy)
-Provides development tools for files, terminal, browser, memory, plans, TODOs and agent delegation.
+Provides development tools for files, terminal, browser, plans, TODOs and agent delegation.
 
 ### Panels & Views
 - **Left sidebar**: project management, chat history, file explorer with CRUD, drag-and-drop
@@ -129,7 +128,6 @@ AI SDK documentation: https://ai-sdk.dev/docs
 - **Comercial paga**: empresas, corporaciones, uso comercial, SaaS, freelancers (> USD 60k/año).
 
 Contacto para licencias comerciales: **codeclubide@gmail.com**
-
 
 
 

@@ -30,7 +30,6 @@ import { runStream } from '../lib/engine/run';
 import { getProjectFilePath, getSetting, logPersistence, setSetting } from '../lib/persistence';
 import { appendGenerationUsage, type GenerationUsageRecord } from '../lib/usage';
 import { appendExecutionLog } from '../lib/execution-log';
-import { enrichMemoryIndex, searchMemory } from '../lib/engine/memory';
 import { appendGlobalChatTranscript, getProjectChatPath, getProjectTranscriptPath, readGlobalChatHistory, readGlobalChats, readProjectIndex, readProjectMeta, writeGlobalChatHistory, writeGlobalChats, writeProjectMeta } from '../lib/projectManager';
 import { codeclubExtensions, type CodeclubExtension } from '../lib/extensions';
 import { LANGUAGE_STORAGE_KEY, type AppLanguage } from '../lib/i18n';
@@ -1521,25 +1520,11 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         apiKey,
         fetch: tauriModelFetch,
       });
-      const embeddingModel = typeof provider.embeddingModel === 'function' ? provider.embeddingModel('text-embedding-3-small') : undefined;
-
       const contextProjectPath = activeProject?.projectPath || '';
-      const autonomousMemories = autonomousMode ? await (async () => {
-        try {
-          const [globalMemories, projectMemories] = await Promise.all([
-            searchMemory('', content, embeddingModel),
-            contextProjectPath ? searchMemory(contextProjectPath, content, embeddingModel) : Promise.resolve([]),
-          ]);
-          const unique = new Map([...globalMemories, ...projectMemories].map((memory) => [memory.key + memory.projectPath, memory]));
-          return [...unique.values()].slice(0, 8);
-        } catch {
-          return [];
-        }
-      })() : [];
-      const autonomousMemoryContext = autonomousMemories.length > 0
+      /* removed legacy memory context
         ? `Memoria recuperada autom�ticamente para este prompt:\n${autonomousMemories.map((memory) => `- [${memory.status || 'new'}] ${memory.key}: ${memory.content}`).join('\n')}`
-        : '';
       const projectChangeNotice = projectChangeNoticeRef.current;
+      */
       projectChangeNoticeRef.current = null;
       let runMode: AgentMode = 'development';
       let routeSpecialist: AgentSpecialist = 'primary';
@@ -1575,7 +1560,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       const indexedProjects = await readProjectIndex();
       const developmentTools = createTools({
         projectPath: toolProjectPath,
-        memoryProjectPath: contextProjectPath,
         projectScoped: Boolean(contextProjectPath),
         recordToolEvent,
         setAgentState: guardedSetAgentState,
@@ -1653,9 +1637,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         });
         tools = {
           ...routing.tools,
-          remember: selectedToolset.remember,
-          recall: selectedToolset.recall,
-          forget: selectedToolset.forget,
           searchTools: dynamicToolAccess.searchTools,
           executeTool: dynamicToolAccess.executeTool,
         };
@@ -1665,9 +1646,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         const fallbackTools = selectToolsForPrompt(routedToolset, runMode, content);
         tools = {
           ...fallbackTools,
-          remember: selectedToolset.remember,
-          recall: selectedToolset.recall,
-          forget: selectedToolset.forget,
           searchTools: dynamicToolAccess.searchTools,
           executeTool: dynamicToolAccess.executeTool,
         };
@@ -1725,7 +1703,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         projectChangeNotice,
         activeSkillsContext,
         activeExtensionsContext,
-        autonomousMemoryContext,
         autonomousMode ? 'En modo Aut�nomo, al cerrar el turno evalu� decisiones, preferencias y pendientes durables con remember; si hay contradicciones, marc� conflict o supersedes con evidencia y no sobrescribas silenciosamente.' : '',
         `Sos el Padre de Codeclub en modo ${runMode === 'business' ? 'Econom�a' : 'Desarrollo'}. Tu trabajo es entender el objetivo, coordinar una colmena de hijos y entregar un resultado comprobable. Report� siempre los errores reales de las tools, incluso si luego te recuper�s; nunca describas una ejecuci�n como "sin errores" si hubo una llamada fallida.`,
         `Contexto: proyecto ${contextProjectPath || 'sin proyecto'}; proyectos indexados: ${indexedProjects.map((project) => `${project.name} (${project.path})`).join(', ') || 'ninguno'}.`,
@@ -1934,7 +1911,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       }
 
       if (!isCurrentGeneration() || abortController.signal.aborted) return;
-      if (autonomousMode && selectedToolset.remember) {
+      /*
+      if (false) {
         try {
           await runStream({
             model: provider(currentModel.id),
@@ -1948,10 +1926,11 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           console.warn('No se pudo capturar memoria aut�noma:', error);
         }
         void Promise.all([
-          enrichMemoryIndex('', embeddingModel),
-          contextProjectPath ? enrichMemoryIndex(contextProjectPath, embeddingModel) : Promise.resolve({ indexed: 0, stale: 0 }),
         ]).catch((error) => console.warn('No se pudo enriquecer el �ndice de memoria:', error));
       }
+      }
+      }
+      */
       const changes = contextProjectPath ? summarizeWorkspaceDelta(beforeWorkspaceSnapshot, await readWorkspaceSnapshot(toolProjectPath)) : null;
       const assistantMessage = { role: 'assistant', content: assistantContent || 'La ejecuci�n termin� sin texto final, pero las evidencias quedaron registradas.', timeline: assistantTimeline, tools: assistantTools, agentName: 'Desarrollo', meta: { provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt, status: 'completed', changes, usage: latestUsage ? { inputTokens: latestUsage.inputTokens, outputTokens: latestUsage.outputTokens, totalTokens: latestUsage.totalTokens, reasoningTokens: latestUsage.reasoningTokens } : null } };
       // La respuesta ya se muestra progresivamente durante el stream. Al finalizar

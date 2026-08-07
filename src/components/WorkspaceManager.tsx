@@ -5,17 +5,13 @@ import ChatInterface from './ChatInterface.tsx';
 import ProjectsPanel from './ProjectsPanel.tsx';
 import ExtensionsPanel from './ExtensionsPanel.tsx';
 import SettingsPanel from './SettingsPanel.tsx';
-import AgentPanel from './AgentPanel.tsx';
 import { readProjectIndex, type ProjectEntry } from '../lib/projectManager';
 
 type SelectedProject = { projectPath: string; projectName?: string };
-const CHAT_AVATAR_GRADIENT = 'linear-gradient(145deg, #8BC7FF 0%, #3D9BFF 44%, #1687FF 100%)';
-const AgentCreature = ({ creatureRef }: { creatureRef: React.RefObject<HTMLDivElement | null> }) => <div ref={creatureRef} aria-hidden="true" className="relative grid h-[88px] w-[88px] place-items-center rounded-[26px] shadow-[0_10px_24px_rgba(22,135,255,0.18)]" style={{ background: CHAT_AVATAR_GRADIENT }}><div className="flex items-center gap-4"><span className="h-9 w-5 rounded-full bg-white shadow-[0_0_4px_rgba(255,255,255,0.48)] transition-transform duration-100 ease-out" style={{ transform: 'translate(var(--agent-eye-x, 0px), var(--agent-eye-y, 0px))' }} /><span className="h-9 w-5 rounded-full bg-white shadow-[0_0_4px_rgba(255,255,255,0.48)] transition-transform duration-100 ease-out" style={{ transform: 'translate(var(--agent-eye-x, 0px), var(--agent-eye-y, 0px))' }} /></div></div>;
 
 export default function WorkspaceManager({ catalog, defaultProvider, defaultModel, initialView = 'projects' }: { catalog: any; defaultProvider: any; defaultModel: any; initialView?: 'projects' | 'chat' }) {
   const [selectedProject, setSelectedProject] = useState<SelectedProject | null>(null);
   const [showProjects, setShowProjects] = useState(initialView !== 'chat');
-  const [showAgent, setShowAgent] = useState(false);
   const [showExtensions, setShowExtensions] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [dockVisible, setDockVisible] = useState(false);
@@ -26,22 +22,6 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
   const [activeChatId, setActiveChatId] = useState<string | undefined>(activeChatStore.get().id);
   const pendingChatRef = useRef<any>(null);
   const [chatOpenVersion, setChatOpenVersion] = useState(0);
-  const agentCreatureRef = useRef<HTMLDivElement>(null);
-
-  const moveAgentEyes = (event: React.MouseEvent<HTMLDivElement>) => {
-    const creature = agentCreatureRef.current;
-    if (!creature) return;
-    const bounds = creature.getBoundingClientRect();
-    const x = (event.clientX - (bounds.left + bounds.width / 2)) / (bounds.width / 2);
-    const y = (event.clientY - (bounds.top + bounds.height / 2)) / (bounds.height / 2);
-    creature.style.setProperty('--agent-eye-x', `${Math.max(-6, Math.min(6, x * 6))}px`);
-    creature.style.setProperty('--agent-eye-y', `${Math.max(-4, Math.min(4, y * 4))}px`);
-  };
-
-  const resetAgentEyes = () => {
-    agentCreatureRef.current?.style.setProperty('--agent-eye-x', '0px');
-    agentCreatureRef.current?.style.setProperty('--agent-eye-y', '0px');
-  };
 
   useEffect(() => {
     const updateRecentChats = (chats: GlobalChat[]) => {
@@ -129,38 +109,32 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
   useEffect(() => {
     const handleOpenProjects = () => {
       setShowProjects(true);
-      setShowAgent(false);
       setShowExtensions(false);
       setShowSettings(false);
       setSelectedProject(null);
     };
     const handleOpenExtensions = () => {
       setShowExtensions(true);
-      setShowAgent(false);
       setShowProjects(false);
       setShowSettings(false);
       setSelectedProject(null);
     };
-    const handleOpenSettings = () => { setShowProjects(false); setShowAgent(false); setShowExtensions(false); setShowSettings(true); setSelectedProject(null); };
-    const handleOpenAgent = () => { setShowProjects(false); setShowAgent(true); setShowExtensions(false); setShowSettings(false); };
+    const handleOpenSettings = () => { setShowProjects(false); setShowExtensions(false); setShowSettings(true); setSelectedProject(null); };
     const handleOpenChat = (event: Event) => {
       pendingChatRef.current = (event as CustomEvent).detail || null;
       setShowProjects(false);
-      setShowAgent(false);
       setShowExtensions(false);
       setShowSettings(false);
       setChatOpenVersion((version) => version + 1);
     };
-    const handleOpenEmptyChat = () => { setShowProjects(false); setShowAgent(false); setShowExtensions(false); setShowSettings(false); };
+    const handleOpenEmptyChat = () => { setShowProjects(false); setShowExtensions(false); setShowSettings(false); };
     window.addEventListener('codeclub:open-chat', handleOpenChat);
     window.addEventListener('codeclub:open-projects', handleOpenProjects);
-    window.addEventListener('codeclub:open-agent', handleOpenAgent);
     window.addEventListener('codeclub:open-extensions', handleOpenExtensions);
     window.addEventListener('codeclub:open-settings', handleOpenSettings);
     window.addEventListener('codeclub:open-empty-chat', handleOpenEmptyChat);
     return () => {
       window.removeEventListener('codeclub:open-projects', handleOpenProjects);
-      window.removeEventListener('codeclub:open-agent', handleOpenAgent);
       window.removeEventListener('codeclub:open-extensions', handleOpenExtensions);
       window.removeEventListener('codeclub:open-settings', handleOpenSettings);
       window.removeEventListener('codeclub:open-empty-chat', handleOpenEmptyChat);
@@ -169,16 +143,16 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
   }, []);
 
   useEffect(() => {
-    if (showProjects || showAgent || showExtensions || showSettings || !pendingChatRef.current) return;
+    if (showProjects || showExtensions || showSettings || !pendingChatRef.current) return;
     const detail = pendingChatRef.current;
     pendingChatRef.current = null;
     const timer = window.setTimeout(() => window.dispatchEvent(new CustomEvent('codeclub:panel-left:open-chat', { detail })), 0);
     return () => window.clearTimeout(timer);
-  }, [showProjects, showAgent, showExtensions, showSettings, chatOpenVersion]);
+  }, [showProjects, showExtensions, showSettings, chatOpenVersion]);
 
   useEffect(() => {
-    if (!showProjects && !showAgent && !showExtensions && !showSettings && !activeChatStore.get().id) window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
-  }, [showProjects, showAgent, showExtensions, showSettings]);
+    if (!showProjects && !showExtensions && !showSettings && !activeChatStore.get().id) window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
+  }, [showProjects, showExtensions, showSettings]);
 
   useEffect(() => {
     const toggleDock = () => setDockVisible((visible) => !visible);
@@ -236,8 +210,8 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
         </div>}
       </div>
       <div className="workspace-pane acrylic-panel min-h-0 min-w-0 flex-1 overflow-hidden">
-        <div key={showProjects ? 'projects' : showAgent ? 'agent' : showExtensions ? 'extensions' : showSettings ? 'settings' : 'chat'} className="workspace-panel-content h-full min-h-0 min-w-0">
-          {showProjects ? <ProjectsPanel /> : showAgent ? <div aria-label="Agente" onMouseMove={moveAgentEyes} onMouseLeave={resetAgentEyes} className="flex h-full w-full justify-center overflow-y-auto"><div className="w-full"><AgentPanel projectPath={selectedProject?.projectPath} creature={<AgentCreature creatureRef={agentCreatureRef} />} /></div></div> : showExtensions ? <ExtensionsPanel selectedProject={selectedProject} /> : showSettings ? <SettingsPanel /> : <ChatInterface
+        <div key={showProjects ? 'projects' : showExtensions ? 'extensions' : showSettings ? 'settings' : 'chat'} className="workspace-panel-content h-full min-h-0 min-w-0">
+          {showProjects ? <ProjectsPanel /> : showExtensions ? <ExtensionsPanel selectedProject={selectedProject} /> : showSettings ? <SettingsPanel /> : <ChatInterface
             catalog={catalog}
             defaultProvider={defaultProvider}
             defaultModel={defaultModel}
@@ -297,5 +271,3 @@ function DeveloperLoopPreviewOld({ onClose }: { onClose: () => void }) {
     </div>
   </aside>;
 }
-
-

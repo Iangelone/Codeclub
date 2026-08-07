@@ -2,7 +2,6 @@ import { nativeInvoke as invoke } from '../runtime';
 import { jsonSchema, Output, tool } from 'ai';
 import type { ToolContext } from './types';
 import { runStream } from './run';
-import { saveMemory, searchMemory, deleteMemory } from './memory';
 import { createId, readAgentState, writeAgentState, type TaskStatus } from './planning';
 import { appendGenerationUsage, readGenerationUsage, summarizeGenerationUsage } from '../usage';
 import { readExecutionLog } from '../execution-log';
@@ -299,9 +298,6 @@ export function createDynamicToolAccess(availableTools: Record<string, any>, rec
     computerOcr: ['ocr', 'texto visible', 'leer pantalla', 'leer texto', 'reconocer texto', 'coordenadas'],
     computerAction: ['mouse', 'teclado', 'click', 'clic', 'escribir', 'enfocar', 'activar ventana', 'controlar', 'windows', 'pc'],
     switchProject: ['proyecto', 'proyectos', 'cambiar', 'seleccionar', 'workspace', 'sin proyecto'],
-    remember: ['memoria', 'guardar', 'recordar', 'nota', 'remember'],
-    recall: ['memoria', 'recuperar', 'recordar', 'buscar memoria'],
-    forget: ['memoria', 'eliminar', 'olvidar', 'borrar'],
     getExecutionLog: ['log', 'registro', 'ejecucion', 'auditoria', 'tiempos', 'rendimiento'],
     getTaskStatus: ['tareas', 'estado', 'plan', 'status'],
     askUser: ['preguntar', 'usuario', 'aclaracion'],
@@ -534,7 +530,7 @@ export async function verifyToolExecutionWithAI({ model, prompt, goal, verificat
 }
 
 export function createTools(ctx: ToolContext) {
-  const { projectPath, memoryProjectPath = projectPath, projectScoped = false, recordToolEvent, setAgentState, requestToolApproval, provider, modelId } = ctx;
+  const { projectPath, projectScoped = false, recordToolEvent, setAgentState, requestToolApproval, provider, modelId } = ctx;
 
   return wrapToolSet({
     ...createSwarmTool({ projectPath, recordToolEvent, setAgentState, requestToolApproval, provider, modelId }),
@@ -1241,72 +1237,6 @@ export function createTools(ctx: ToolContext) {
         return resultHandoff;
       },
     }),
-    remember: tool({
-      description: 'Save a durable, atomic fact, preference, decision or pending item to project memory. Use only when the conversation provides enough evidence; do not save arbitrary requests or temporary text. Tags link memories to items. Duplicate keys update existing.',
-      inputSchema: jsonSchema({
-        type: 'object',
-        properties: {
-          key: { type: 'string', description: 'Unique memory key.' },
-          content: { type: 'string', description: 'Content to remember.' },
-          tags: { type: 'array', items: { type: 'string' }, description: 'Optional tags like ["chat:id", "preference"].' },
-          status: { type: 'string', enum: ['new', 'confirmed', 'stale', 'conflict'], description: 'Memory lifecycle status.' },
-          confidence: { type: 'number', minimum: 0, maximum: 1, description: 'Confidence from 0 to 1 based on evidence.' },
-          scope: { type: 'string', enum: ['personal', 'project'], description: 'Whether it applies to the user or this project.' },
-          supersedes: { type: 'string', description: 'Key of an older memory this one replaces, if applicable.' },
-          expiresAt: { type: 'string', description: 'Optional ISO timestamp after which the memory should be treated as stale.' },
-        },
-        required: ['key', 'content'],
-        additionalProperties: false,
-      }),
-      execute: async ({ key, content, tags, status, confidence, scope, supersedes, expiresAt }) => {
-        setAgentState('tool_call');
-        const memory = await saveMemory(memoryProjectPath, key, content, tags || [], {
-          source: 'tool',
-          ...(status ? { status } : {}),
-          ...(typeof confidence === 'number' ? { confidence: Math.max(0, Math.min(1, confidence)) } : {}),
-          ...(scope ? { scope } : {}),
-          ...(supersedes ? { supersedes } : {}),
-          ...(expiresAt ? { expires_at: expiresAt } : {}),
-        });
-        const duplicate = memory.duplicateOf ? { duplicateOf: memory.duplicateOf } : {};
-        recordToolEvent('remember', { key, tags, status, confidence, scope, supersedes, expiresAt }, { ok: true, memory, ...duplicate });
-        return { ok: true, memory, ...duplicate };
-      },
-    }),
-    recall: tool({
-      description: 'Retrieve memories by exact key or search by tag keyword. Returns matching entries.',
-      inputSchema: jsonSchema({
-        type: 'object',
-        properties: {
-          query: { type: 'string', description: 'Key or tag text to search.' },
-        },
-        required: ['query'],
-        additionalProperties: false,
-      }),
-      execute: async ({ query }) => {
-        setAgentState('tool_call');
-        const results = await searchMemory(memoryProjectPath, query);
-        recordToolEvent('recall', { query }, { count: results.length });
-        return results;
-      },
-    }),
-    forget: tool({
-      description: 'Delete a specific memory by its exact key.',
-      inputSchema: jsonSchema({
-        type: 'object',
-        properties: {
-          key: { type: 'string', description: 'Exact memory key to delete.' },
-        },
-        required: ['key'],
-        additionalProperties: false,
-      }),
-      execute: async ({ key }) => {
-        setAgentState('tool_call');
-        const ok = await deleteMemory(memoryProjectPath, key);
-        recordToolEvent('forget', { key }, { ok });
-        return { ok };
-      },
-    }),
   });
 }
 
@@ -1326,5 +1256,3 @@ export function createParentTools(ctx: ToolContext & { availableTools: Record<st
     }),
   });
 }
-
-
