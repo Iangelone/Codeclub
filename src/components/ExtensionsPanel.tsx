@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { getSetting, setSetting } from '../lib/persistence';
 import { protectedExtensionIds, type CodeclubExtension } from '../lib/extensions';
 import { LANGUAGE_STORAGE_KEY, type AppLanguage } from '../lib/i18n';
+import { loadAgentPlugins, type AgentPlugin } from '../lib/agent-plugins';
 
 const extensions = [
   { id: 'documents', name: 'Documents', description: 'Create and edit document artifacts', icon: FileText, color: '#1687FF' },
@@ -20,7 +21,8 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
   const [query, setQuery] = useState('');
   const [enabled, setEnabled] = useState<Record<string, boolean>>(() => Object.fromEntries(extensions.map(({ name }) => [name, true])));
   const [skills, setSkills] = useState<Array<{ id: string; name: string; description: string; source: string }>>([]);
-  const [mcpServers, setMcpServers] = useState<Array<{ id: string; name: string; url: string; enabled: boolean }>>([]);
+  const [mcpServers, setMcpServers] = useState<Array<{ id: string; name: string; url: string; enabled: boolean; source?: string }>>([]);
+  const [plugins, setPlugins] = useState<AgentPlugin[]>([]);
   const [customExtensions, setCustomExtensions] = useState<CodeclubExtension[]>([]);
   const [mcpUrl, setMcpUrl] = useState('');
   const [mcpError, setMcpError] = useState('');
@@ -41,7 +43,13 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
     void Promise.all(allExtensions.map(async (extension) => [extension.name, await getSetting(`codeclub_extension_enabled_${extension.id}`, 'true') !== 'false'] as const))
       .then((entries) => setEnabled(Object.fromEntries(entries)));
     void getSetting('codeclub_custom_extensions', '[]').then((raw) => { try { setCustomExtensions(JSON.parse(raw || '[]')); } catch { setCustomExtensions([]); } });
-    void invoke<any[]>('codeclub_list_skills', { projectPath: selectedProject?.projectPath || '' }).then((items) => setSkills((items || []).map(({ id, name, description, source }) => ({ id, name, description, source })))).catch(() => setSkills([]));
+    void Promise.all([invoke<any[]>('codeclub_list_skills', { projectPath: selectedProject?.projectPath || '' }), loadAgentPlugins(selectedProject?.projectPath || '')]).then(([items, discovered]) => {
+      setPlugins(discovered || []);
+      const pluginSkills = (discovered || []).flatMap((plugin) => plugin.skills.map((skill) => ({ id: `${plugin.id}:${skill.id}`, name: skill.name, description: skill.description, source: `plugin:${plugin.name}` })));
+      setSkills([...(items || []).map(({ id, name, description, source }) => ({ id, name, description, source })), ...pluginSkills]);
+      const pluginServers = (discovered || []).flatMap((plugin) => Object.entries(plugin.mcpServers || {}).map(([name, server]) => ({ id: `${plugin.id}:${name}`, name: `${plugin.name} · ${name}`, url: server.url || `${server.type} · ${server.command || ''}`, enabled: true, source: 'plugin' })));
+      setMcpServers((current) => [...current.filter((server) => server.source !== 'plugin'), ...pluginServers]);
+    }).catch(() => { setSkills([]); setPlugins([]); });
     const refreshMcp = () => { void getSetting('codeclub_mcp_servers', '[]').then((raw) => { try { setMcpServers(JSON.parse(raw || '[]')); } catch { setMcpServers([]); } }); };
     void refreshMcp();
     const refreshExtensions = () => { void getSetting('codeclub_custom_extensions', '[]').then((raw) => { try { setCustomExtensions(JSON.parse(raw || '[]')); } catch { setCustomExtensions([]); } }); };
@@ -102,7 +110,7 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
           {filteredExtensions.length === 0 && <div className="py-12 text-center text-sm text-[#777777]">{text.empty}</div>}
         </section>}
         {tab === 'skills' && <section className="mt-9 grid min-w-0 gap-1.5" aria-label="Habilidades disponibles">
-          {skills.filter((skill) => `${skill.name} ${skill.description}`.toLowerCase().includes(query.toLowerCase())).map((skill) => <div key={`${skill.source}-${skill.id}`} className="flex min-h-[60px] min-w-0 items-center gap-3 overflow-hidden rounded-lg px-3 transition-colors hover:bg-[#202020]"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] border border-[#2d2d2d] bg-[#151515]"><Box size={19} strokeWidth={1.7} className="text-[#8bc7ff]" /></div><div className="min-w-0 w-0 flex-1"><h2 className="m-0 truncate text-[14px] font-semibold text-[#eeeeee]">{skill.name}</h2><p className="mt-0.5 truncate text-[13px] text-[#888888]">{skill.description}</p></div><span className="shrink-0 text-[11px] text-[#777777]">Codeclub</span></div>)}
+          {skills.filter((skill) => `${skill.name} ${skill.description}`.toLowerCase().includes(query.toLowerCase())).map((skill) => <div key={`${skill.source}-${skill.id}`} className="flex min-h-[60px] min-w-0 items-center gap-3 overflow-hidden rounded-lg px-3 transition-colors hover:bg-[#202020]"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] border border-[#2d2d2d] bg-[#151515]"><Box size={19} strokeWidth={1.7} className="text-[#8bc7ff]" /></div><div className="min-w-0 w-0 flex-1"><h2 className="m-0 truncate text-[14px] font-semibold text-[#eeeeee]">{skill.name}</h2><p className="mt-0.5 truncate text-[13px] text-[#888888]">{skill.description}</p></div><span className="shrink-0 text-[11px] text-[#777777]">{skill.source.startsWith('plugin:') ? skill.source.slice(7) : 'Codeclub'}</span></div>)}
           {skills.length === 0 && <div className="py-12 text-center text-sm text-[#777777]">No hay SKILL.md disponibles.</div>}
         </section>}
         {tab === 'mcp' && <section className="mt-9 grid min-w-0 gap-4" aria-label="Servidores MCP">

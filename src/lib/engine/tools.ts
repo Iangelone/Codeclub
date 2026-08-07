@@ -1023,19 +1023,53 @@ export function createTools(ctx: ToolContext) {
       },
     }),
     createSkill: tool({
-      description: 'Create a reusable Codeclub skill in the active project at .codeclub/skills/<name>/SKILL.md. The skill becomes available in /habilidad during the same session after creation.',
+      description: 'Create a complete Agent Plugins package in the active project at .codeclub/plugins/<name>, including plugin.json and skills/<skillName>/SKILL.md.',
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
-          name: { type: 'string', description: 'Stable kebab-case skill identifier, for example frontend-review.' },
-          description: { type: 'string', description: 'Short description shown in the skills menu.' },
-          instructions: { type: 'string', description: 'Complete Markdown instructions that the agent should follow when the skill is loaded.' },
+          name: { type: 'string', description: 'Plugin name in lowercase kebab/dot format.' },
+          skillName: { type: 'string', description: 'Optional skill name. Defaults to the plugin name.' },
+          description: { type: 'string', description: 'Plugin and skill description.' },
+          instructions: { type: 'string', description: 'Complete Markdown instructions for the skill.' },
+          version: { type: 'string', description: 'Optional plugin version.' },
+          author: { type: 'string', description: 'Optional author name.' },
+          license: { type: 'string', description: 'Optional SPDX license identifier.' },
+          homepage: { type: 'string', description: 'Optional plugin homepage URL.' },
         },
         required: ['name', 'description', 'instructions'],
         additionalProperties: false,
       }),
-      execute: async ({ name, description, instructions }) => {
+      execute: async ({ name, skillName: requestedSkillNameInput, description, instructions, version, author, license, homepage }) => {
         setAgentState('running');
+        if (!projectScoped) return { ok: false, error: 'Seleccioná un proyecto antes de crear un plugin.' };
+        const pluginName = String(name || '').trim().toLowerCase();
+        const pluginSkillName = String(requestedSkillNameInput || pluginName).trim().toLowerCase();
+        const pluginDescription = String(description || '').trim().replace(/[\r\n]+/g, ' ');
+        const pluginInstructions = String(instructions || '').trim();
+        if (!/^[a-z0-9]+(?:[-.][a-z0-9]+)*$/.test(pluginName) || pluginName.length > 64 || pluginName.includes('--') || pluginName.includes('..')) return { ok: false, error: 'El nombre del plugin debe usar minúsculas, números, guiones o puntos.' };
+        if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(pluginSkillName) || pluginSkillName.length > 64 || pluginSkillName.includes('--')) return { ok: false, error: 'El nombre de la skill debe usar kebab-case.' };
+        if (!pluginDescription || pluginDescription.length > 1024) return { ok: false, error: 'La descripción debe tener entre 1 y 1024 caracteres.' };
+        if (!pluginInstructions || pluginInstructions.length > 180000) return { ok: false, error: 'Las instrucciones deben tener entre 1 y 180000 caracteres.' };
+        const pluginPath = `.codeclub/plugins/${pluginName}`;
+        const manifestPath = `${pluginPath}/plugin.json`;
+        const schema = 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json';
+        let manifest: any = { '$schema': schema, name: pluginName };
+        try { manifest = JSON.parse(String(await invoke('codeclub_read_file', { projectPath, path: manifestPath }))); } catch { /* paquete nuevo */ }
+        if (manifest.name !== pluginName || manifest['$schema'] !== schema) return { ok: false, error: 'El plugin existente tiene un manifest incompatible.' };
+        manifest.version = String(version || manifest.version || '0.1.0');
+        manifest.description = String(manifest.description || pluginDescription);
+        if (author) manifest.author = { name: String(author).trim().slice(0, 200) };
+        if (license) manifest.license = String(license).trim().slice(0, 80);
+        if (homepage) manifest.homepage = String(homepage).trim().slice(0, 500);
+        const pluginSkillContent = `---\nname: ${pluginSkillName}\ndescription: ${pluginDescription}\n---\n\n${pluginInstructions}\n`;
+        const pluginSkillPath = `${pluginPath}/skills/${pluginSkillName}/SKILL.md`;
+        await invoke('codeclub_write_file', { projectPath, path: manifestPath, content: JSON.stringify(manifest, null, 2) + '\n' });
+        await invoke('codeclub_write_file', { projectPath, path: pluginSkillPath, content: pluginSkillContent });
+        const pluginOutput = { ok: true, plugin: pluginName, pluginPath, manifestPath, skillName: pluginSkillName, skillPath: pluginSkillPath, workspace: projectPath, availableInSession: true, format: 'agent-plugins-1.0.0' };
+        recordToolEvent('createSkill', { name: pluginName, skillName: pluginSkillName, description: pluginDescription, pluginPath }, pluginOutput);
+        window.dispatchEvent(new CustomEvent('codeclub:skills-changed', { detail: { projectPath, pluginName, skillName: pluginSkillName } }));
+        return pluginOutput;
+        /* Legacy skill writer retained only as migration history; never executed.
         if (!projectScoped) return { ok: false, error: 'Seleccioná un proyecto antes de crear una skill.' };
         const skillName = String(name || '').trim().toLowerCase();
         const skillDescription = String(description || '').trim().replace(/[\r\n]+/g, ' ');
@@ -1044,19 +1078,37 @@ export function createTools(ctx: ToolContext) {
         if (!skillDescription || skillDescription.length > 300) return { ok: false, error: 'La descripción debe tener entre 1 y 300 caracteres.' };
         if (!skillInstructions || skillInstructions.length > 180000) return { ok: false, error: 'Las instrucciones deben tener entre 1 y 180000 caracteres.' };
         const content = `---\nname: ${skillName}\ndescription: ${skillDescription}\n---\n\n${skillInstructions}\n`;
-        const path = `.codeclub/skills/${skillName}/SKILL.md`;
+        const path = `.codeclub/plugins/${skillName}/skills/${skillName}/SKILL.md`;
         await invoke('codeclub_write_file', { projectPath, path, content });
         const output = { ok: true, name: skillName, path, workspace: projectPath, availableInSession: true };
         recordToolEvent('createSkill', { name: skillName, description: skillDescription, path }, output);
         window.dispatchEvent(new CustomEvent('codeclub:skills-changed', { detail: { projectPath, skillName } }));
         return output;
+        */
       },
     }),
     createExtension: tool({
-      description: 'Create a custom Codeclub extension that appears in Complementos and the slash menu during the same session.',
+      description: 'Create a complete Agent Plugins package with one skill. Agent Plugins is the canonical format for new extensions.',
       inputSchema: jsonSchema({ type: 'object', properties: { name: { type: 'string' }, description: { type: 'string' }, instructions: { type: 'string' } }, required: ['name', 'description', 'instructions'], additionalProperties: false }),
       execute: async ({ name, description, instructions }) => {
         setAgentState('running');
+        if (!projectScoped) return { ok: false, error: 'Seleccioná un proyecto antes de crear un plugin.' };
+        const pluginName = String(name || '').trim().toLowerCase().replace(/[^a-z0-9.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64);
+        const pluginDescription = String(description || '').trim().replace(/[\r\n]+/g, ' ').slice(0, 1024);
+        const pluginInstructions = String(instructions || '').trim();
+        if (!/^[a-z0-9]+(?:[-.][a-z0-9]+)*$/.test(pluginName) || !pluginDescription || !pluginInstructions) return { ok: false, error: 'El plugin requiere nombre, descripción e instrucciones válidas.' };
+        const pluginPath = `.codeclub/plugins/${pluginName}`;
+        const schema = 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json';
+        const manifest = { '$schema': schema, name: pluginName, version: '0.1.0', description: pluginDescription };
+        const skillContent = `---\nname: ${pluginName}\ndescription: ${pluginDescription}\n---\n\n${pluginInstructions}\n`;
+        await invoke('codeclub_write_file', { projectPath, path: `${pluginPath}/plugin.json`, content: JSON.stringify(manifest, null, 2) + '\n' });
+        await invoke('codeclub_write_file', { projectPath, path: `${pluginPath}/skills/${pluginName}/SKILL.md`, content: skillContent });
+        const pluginOutput = { ok: true, plugin: pluginName, pluginPath, format: 'agent-plugins-1.0.0', availableInSession: true };
+        recordToolEvent('createExtension', { name: pluginName, description: pluginDescription }, pluginOutput);
+        window.dispatchEvent(new CustomEvent('codeclub:skills-changed', { detail: { projectPath, pluginName } }));
+        return pluginOutput;
+        /* Legacy extension settings are no longer written.
+        // Legacy settings are retained only for reading old installations.
         const id = String(name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 64);
         if (!id || protectedExtensionIds.has(id)) return { ok: false, error: 'Ese nombre estÃ¡ reservado para un complemento integrado.' };
         const raw = await getSetting('codeclub_custom_extensions', '[]');
@@ -1067,43 +1119,100 @@ export function createTools(ctx: ToolContext) {
         window.dispatchEvent(new CustomEvent('codeclub:extensions-changed'));
         recordToolEvent('createExtension', { name, description }, extension);
         return { ok: true, extension, availableInSession: true };
+        */
       },
     }),
     deleteExtension: tool({
-      description: 'Delete a custom Codeclub extension. Built-in extensions are protected and cannot be deleted.',
+      description: 'Delete an Agent Plugins package from the active project.',
       inputSchema: jsonSchema({ type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' } }, additionalProperties: false }),
       execute: async ({ id, name }) => {
         setAgentState('running');
+        if (!projectScoped) return { ok: false, error: 'Seleccioná un proyecto antes de eliminar un plugin.' };
+        const pluginId = String(id || name || '').replace(/^custom-/, '').trim().toLowerCase();
+        if (!/^[a-z0-9]+(?:[-.][a-z0-9]+)*$/.test(pluginId)) return { ok: false, error: 'Indicá el nombre válido del plugin.' };
+        try { await invoke('codeclub_delete_agent_plugin', { projectPath, pluginId }); } catch (error) { return { ok: false, error: String(error) }; }
+        const pluginOutput = { ok: true, deleted: pluginId, format: 'agent-plugins-1.0.0' };
+        recordToolEvent('deleteExtension', { id, name, pluginId }, pluginOutput);
+        window.dispatchEvent(new CustomEvent('codeclub:skills-changed', { detail: { projectPath, pluginId } }));
+        return pluginOutput;
+        /* Legacy extension deletion is retained only for old settings.
         if (protectedExtensionIds.has(String(id || '').replace(/^custom-/, ''))) return { ok: false, error: 'Los complementos integrados estÃ¡n protegidos.' };
         const raw = await getSetting('codeclub_custom_extensions', '[]'); let items: any[] = []; try { items = JSON.parse(raw || '[]'); } catch { items = []; }
         const next = items.filter((item) => item.id !== id && item.name !== name);
         if (next.length === items.length) return { ok: false, error: 'No se encontrÃ³ el complemento personalizado.' };
         await setSetting('codeclub_custom_extensions', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('codeclub:extensions-changed'));
         const output = { ok: true, deleted: id || name }; recordToolEvent('deleteExtension', { id, name }, output); return output;
+        */
       },
     }),
     createMcpServer: tool({
-      description: 'Register a custom HTTP(S) MCP server in Codeclub so its tools can be loaded in the next session message.',
-      inputSchema: jsonSchema({ type: 'object', properties: { name: { type: 'string' }, url: { type: 'string' } }, required: ['name', 'url'], additionalProperties: false }),
-      execute: async ({ name, url }) => {
-        setAgentState('running'); const cleanUrl = String(url || '').trim();
+      description: 'Create a complete Agent Plugins package containing an MCP stdio, Streamable HTTP, or legacy SSE server.',
+      inputSchema: jsonSchema({ type: 'object', properties: { name: { type: 'string', description: 'MCP server display name.' }, pluginName: { type: 'string', description: 'Optional Agent Plugin name.' }, type: { type: 'string', enum: ['stdio', 'streamable-http', 'sse'] }, url: { type: 'string' }, command: { type: 'string', description: 'Executable token for stdio.' }, args: { type: 'array', items: { type: 'string' } }, env: { type: 'object', additionalProperties: { type: 'string' } }, cwd: { type: 'string' } }, required: ['name'], additionalProperties: false }),
+      execute: async ({ name, pluginName, url, type, command, args, env, cwd }) => {
+        setAgentState('running');
+        if (!projectScoped) return { ok: false, error: 'Seleccioná un proyecto antes de crear un plugin MCP.' };
+        let cleanUrl = 'https://stdio.invalid';
+        const serverName = String(name || 'server').trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-|-$/g, '').slice(0, 64) || 'server';
+        const mcpPluginName = String(pluginName || `mcp-${serverName}`).trim().toLowerCase();
+        const transport = type || (command ? 'stdio' : 'streamable-http');
+        if (!['stdio', 'streamable-http', 'sse'].includes(transport)) return { ok: false, error: 'Transporte MCP no soportado.' };
+        let serverConfig: any;
+        if (transport === 'stdio') {
+          const executable = String(command || '').trim();
+          const serverArgs = Array.isArray(args) ? args.map((value) => String(value)) : [];
+          const serverEnv = env && typeof env === 'object' ? Object.fromEntries(Object.entries(env).map(([key, value]) => [key, String(value)])) : {};
+          const serverCwd = cwd === undefined ? undefined : String(cwd).trim();
+          if (!executable || /\s/.test(executable) || executable.includes('..')) return { ok: false, error: 'stdio requiere command como un único token seguro.' };
+          if (Object.keys(serverEnv).some((key) => key === 'PLUGIN_ROOT' || key === 'PLUGIN_DATA')) return { ok: false, error: 'PLUGIN_ROOT y PLUGIN_DATA son variables reservadas.' };
+          if (serverCwd && ((!serverCwd.startsWith('./') && !serverCwd.startsWith('${PLUGIN_ROOT}') && !serverCwd.startsWith('${PLUGIN_DATA}')) || serverCwd.includes('..'))) return { ok: false, error: 'cwd debe usar ./, PLUGIN_ROOT o PLUGIN_DATA sin escapar.' };
+          serverConfig = { type: 'stdio', command: executable, ...(serverArgs.length ? { args: serverArgs } : {}), ...(Object.keys(serverEnv).length ? { env: serverEnv } : {}), ...(serverCwd ? { cwd: serverCwd } : {}) };
+        } else {
+          cleanUrl = String(url || '').trim();
+          if (!/^https:\/\/\S+$/i.test(cleanUrl) && !/^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(?:\/\S*)?$/i.test(cleanUrl)) return { ok: false, error: 'El endpoint MCP debe usar HTTPS; HTTP solo está permitido para loopback.' };
+          serverConfig = { type: transport === 'sse' ? 'sse' : 'streamable-http', url: cleanUrl };
+        }
+        if (!/^[a-z0-9]+(?:[-.][a-z0-9]+)*$/.test(mcpPluginName) || mcpPluginName.length > 64 || mcpPluginName.includes('--') || mcpPluginName.includes('..')) return { ok: false, error: 'El nombre del plugin debe usar minúsculas, números, guiones o puntos.' };
+        if (!/^https:\/\/\S+$/i.test(cleanUrl) && !/^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(?:\/\S*)?$/i.test(cleanUrl)) return { ok: false, error: 'El endpoint MCP debe usar HTTPS; HTTP solo está permitido para loopback.' };
+        const pluginPath = `.codeclub/plugins/${mcpPluginName}`;
+        const manifest = { '$schema': 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json', name: mcpPluginName, version: '0.1.0', description: `MCP server ${serverName}` };
+        const mcpConfig = { '$schema': 'https://agent-plugins.org/schemas/1.0.0/mcp.schema.json', mcpServers: { [serverName]: serverConfig } };
+        await invoke('codeclub_write_file', { projectPath, path: `${pluginPath}/plugin.json`, content: JSON.stringify(manifest, null, 2) + '\n' });
+        await invoke('codeclub_write_file', { projectPath, path: `${pluginPath}/mcp.json`, content: JSON.stringify(mcpConfig, null, 2) + '\n' });
+        const pluginServer = { ok: true, plugin: mcpPluginName, pluginPath, serverName, ...serverConfig, format: 'agent-plugins-1.0.0', availableNextMessage: true };
+        recordToolEvent('createMcpServer', { name, pluginName: mcpPluginName, ...serverConfig }, pluginServer);
+        window.dispatchEvent(new CustomEvent('codeclub:mcp-changed', { detail: { projectPath, pluginName: mcpPluginName } }));
+        return pluginServer;
+        /* Legacy MCP settings are no longer written.
+        // Legacy settings are retained only for reading old installations.
         if (!/^https?:\/\/\S+$/i.test(cleanUrl)) return { ok: false, error: 'La URL debe ser HTTP(S).' };
         const raw = await getSetting('codeclub_mcp_servers', '[]'); let items: any[] = []; try { items = JSON.parse(raw || '[]'); } catch { items = []; }
         if (items.some((item) => item.url === cleanUrl)) return { ok: false, error: 'Ese MCP ya estÃ¡ registrado.' };
         const server = { id: crypto.randomUUID(), name: String(name || new URL(cleanUrl).hostname).trim().slice(0, 80), url: cleanUrl, enabled: true, custom: true };
         await setSetting('codeclub_mcp_servers', JSON.stringify([...items, server])); window.dispatchEvent(new CustomEvent('codeclub:mcp-changed'));
         recordToolEvent('createMcpServer', { name, url: cleanUrl }, server); return { ok: true, server, availableNextMessage: true };
+        */
       },
     }),
     deleteMcpServer: tool({
-      description: 'Delete a registered custom MCP server by id, name, or URL.',
+      description: 'Delete an Agent Plugins MCP package from the active project by plugin name.',
       inputSchema: jsonSchema({ type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' }, url: { type: 'string' } }, additionalProperties: false }),
       execute: async ({ id, name, url }) => {
-        setAgentState('running'); const raw = await getSetting('codeclub_mcp_servers', '[]'); let items: any[] = []; try { items = JSON.parse(raw || '[]'); } catch { items = []; }
+        setAgentState('running');
+        if (!projectScoped) return { ok: false, error: 'Seleccioná un proyecto antes de eliminar un plugin MCP.' };
+        const pluginId = String(id || name || '').trim().toLowerCase();
+        if (!/^[a-z0-9]+(?:[-.][a-z0-9]+)*$/.test(pluginId)) return { ok: false, error: 'Indicá el nombre válido del plugin MCP.' };
+        try { await invoke('codeclub_delete_agent_plugin', { projectPath, pluginId }); } catch (error) { return { ok: false, error: String(error) }; }
+        const pluginOutput = { ok: true, deleted: pluginId, format: 'agent-plugins-1.0.0' };
+        recordToolEvent('deleteMcpServer', { id, name, url, pluginId }, pluginOutput);
+        window.dispatchEvent(new CustomEvent('codeclub:mcp-changed', { detail: { projectPath, pluginId } }));
+        return pluginOutput;
+        /* Legacy MCP deletion is retained only for old settings.
+        const raw = await getSetting('codeclub_mcp_servers', '[]'); let items: any[] = []; try { items = JSON.parse(raw || '[]'); } catch { items = []; }
         const next = items.filter((item) => item.id !== id && item.name !== name && item.url !== url);
         if (next.length === items.length) return { ok: false, error: 'No se encontrÃ³ el servidor MCP.' };
         await setSetting('codeclub_mcp_servers', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('codeclub:mcp-changed'));
         const output = { ok: true, deleted: id || name || url }; recordToolEvent('deleteMcpServer', { id, name, url }, output); return output;
+        */
       },
     }),
     runCommand: tool({

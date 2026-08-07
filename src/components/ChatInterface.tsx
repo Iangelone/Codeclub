@@ -33,6 +33,7 @@ import { enrichMemoryIndex, searchMemory } from '../lib/engine/memory';
 import { appendGlobalChatTranscript, getProjectChatPath, getProjectTranscriptPath, readGlobalChatHistory, readGlobalChats, readProjectIndex, readProjectMeta, writeGlobalChatHistory, writeGlobalChats, writeProjectMeta } from '../lib/projectManager';
 import { codeclubExtensions, type CodeclubExtension } from '../lib/extensions';
 import { LANGUAGE_STORAGE_KEY, type AppLanguage } from '../lib/i18n';
+import { connectAllAgentPluginMcp, loadAgentPlugins } from '../lib/agent-plugins';
 
 const SPINNER_FRAMES = {
   chat: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"],
@@ -297,9 +298,16 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [selectedStructurePath, setSelectedStructurePath] = useState('');
 
   useEffect(() => {
-    const loadSkills = () => invoke<SessionSkill[]>('codeclub_list_skills', { projectPath: activeProject?.projectPath || '' })
-      .then((skills) => setSkillOptions(skills || []))
-      .catch(() => setSkillOptions([]));
+    const loadSkills = async () => {
+      try {
+        const [legacy, plugins] = await Promise.all([
+          invoke<SessionSkill[]>('codeclub_list_skills', { projectPath: activeProject?.projectPath || '' }),
+          loadAgentPlugins(activeProject?.projectPath || ''),
+        ]);
+        const pluginSkills = plugins.flatMap((plugin) => plugin.skills.map((skill) => ({ ...skill, id: `${plugin.id}:${skill.id}`, source: `plugin:${plugin.name}`, pluginRoot: plugin.root })));
+        setSkillOptions([...(legacy || []), ...pluginSkills]);
+      } catch { setSkillOptions([]); }
+    };
     const handleSkillsChanged = (event: Event) => {
       const projectPath = (event as CustomEvent).detail?.projectPath;
       if (!projectPath || projectPath === activeProject?.projectPath) void loadSkills();
@@ -1440,6 +1448,15 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         modelId: currentModel.id,
       });
       const externalMcpTools: Record<string, any> = {};
+      let pluginMcpClose: (() => Promise<void>) | undefined;
+      try {
+        const plugins = await loadAgentPlugins(contextProjectPath);
+        const pluginMcp = await connectAllAgentPluginMcp(plugins);
+        Object.assign(externalMcpTools, pluginMcp.tools);
+        pluginMcpClose = pluginMcp.close;
+      } catch (error) {
+        console.warn('No se pudieron cargar los plugins Agent Plugins:', error);
+      }
       try {
         const rawMcpServers = await getSetting('codeclub_mcp_servers', '[]');
         const mcpServers = JSON.parse(rawMcpServers || '[]').filter((server) => server?.enabled && /^https?:\/\//i.test(server?.url));
@@ -1854,6 +1871,9 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       if (isVisibleGeneration()) setMessages(runtime.messages);
     } finally {
       await Promise.all(mcpClients.map((client) => client.close().catch(() => undefined)));
+      // Las sesiones stdio de plugins tienen un ciclo de vida separado del SDK MCP.
+      // Se cierran incluso si una conexión remota falló.
+      await pluginMcpClose?.().catch(() => undefined);
       if (!isCurrentGeneration()) return;
       if (toolStateTimerRef.current) {
         clearTimeout(toolStateTimerRef.current);
