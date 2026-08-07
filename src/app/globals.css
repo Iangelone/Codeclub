@@ -35,3 +35,14 @@ body {
 .codeclub-resize-indicator {
   background: linear-gradient(to bottom, transparent 0%, var(--codeclub-accent) 32%, var(--codeclub-accent) 68%, transparent 100%);
 }
+
+.codeclub-panel-shell {
+  border-top: 1px solid var(--codeclub-border-faint);
+  border-left: 1px solid var(--codeclub-border-faint);
+  border-top-left-radius: 16px;
+}
+
+.codeclub-panel-edge {
+  border-top: 1px solid var(--codeclub-border-faint);
+  border-left: 1px solid var(--codeclub-border-faint);
+}

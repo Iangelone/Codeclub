@@ -123,7 +123,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
       <PanelManager />
 
       {rightOpen && <ResizeHandle side="right" onStart={startResize('right')} />}
-      <motion.aside animate={{ width: rightOpen ? rightWidth : 0, opacity: rightOpen ? 1 : 0 }} transition={resizing ? { type: 'spring', stiffness: 900, damping: 58, mass: 0.22 } : { type: 'spring', stiffness: 340, damping: 30 }} className="flex min-h-0 shrink-0 flex-col overflow-hidden border-l border-t border-(--codeclub-border-soft) bg-(--codeclub-center)" aria-label="Sidebar derecha" aria-hidden={!rightOpen}>
+      <motion.aside animate={{ width: rightOpen ? rightWidth : 0, opacity: rightOpen ? 1 : 0 }} transition={resizing ? { type: 'spring', stiffness: 900, damping: 58, mass: 0.22 } : { type: 'spring', stiffness: 340, damping: 30 }} className="codeclub-panel-edge flex min-h-0 shrink-0 flex-col overflow-hidden bg-(--codeclub-center)" aria-label="Sidebar derecha" aria-hidden={!rightOpen}>
         <div className="flex h-10 shrink-0 items-center justify-end gap-2 border-b border-(--codeclub-border-soft) px-3 text-xs font-medium text-(--codeclub-text-muted)">Sidebar derecha <PanelRight size={14} /></div>
         <div className="flex-1 p-3"><div className="h-20 rounded-lg border border-(--codeclub-border-soft) bg-(--codeclub-surface)" /></div>
       </motion.aside>
@@ -135,7 +135,7 @@ function PanelManager() {
   const [activePanelId] = useState(panels[0].id);
   const activePanel = panels.find((panel) => panel.id === activePanelId) ?? panels[0];
   return <main className="codeclub-graphite relative min-h-0 min-w-0 flex-1 overflow-hidden backdrop-blur-xl" aria-label="Gestor de paneles">
-    <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-tl-md border-l border-t border-(--codeclub-border-faint) bg-(--codeclub-center)">
+    <div className="codeclub-panel-shell flex h-full w-full items-center justify-center overflow-hidden bg-(--codeclub-center)">
       <AnimatePresence mode="wait">
         <motion.div key={activePanel.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.18 }} className="px-6 text-center">
           <p className="text-sm font-medium text-(--codeclub-text-muted)">{activePanel.title}</p>
