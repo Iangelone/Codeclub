@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { CircleHelp, CirclePlus, Fingerprint, Folder, Grid2X2, PanelLeft, PanelRight, Pencil } from 'lucide-react';
+import { Bolt, CircleHelp, CirclePlus, Clock, Grid2X2, PanelLeft, PanelRight, Pencil } from 'lucide-react';
 import { motion } from 'motion/react';
 import ChatPanel from './ChatPanel';
 import { readGlobalChats, readProjectMeta, writeGlobalChats, writeProjectMeta } from '../lib/projectManager';
@@ -219,9 +219,9 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
           <div className="flex items-center gap-1 px-1.5">{editingProjectName ? <input autoFocus value={projectNameDraft} onChange={(event) => setProjectNameDraft(event.target.value)} onBlur={() => void commitProjectName()} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void commitProjectName(); } if (event.key === 'Escape') { setProjectNameDraft(activeProjectName); setEditingProjectName(false); } }} className="min-w-0 flex-1 rounded-md border border-(--codeclub-border-soft) bg-(--codeclub-surface-raised) px-1.5 py-0.5 text-[15px] font-semibold tracking-tight text-(--codeclub-text-strong) outline-none" aria-label="Nombre del proyecto" /> : <span className="min-w-0 truncate text-[15px] font-semibold tracking-tight text-(--codeclub-text-strong)">{activeProjectName}</span>}{activeProjectId !== 'home' && !editingProjectName && <button type="button" onClick={() => setEditingProjectName(true)} className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-(--codeclub-text-muted) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Cambiar nombre del proyecto" title="Cambiar nombre"><Pencil size={13} aria-hidden="true" /></button>}</div>
           <nav className="mt-4 space-y-0.5" aria-label="Navegación principal">
             <SidebarItem active={activeSection === 'new-chat' && !activeChatId} icon={<CirclePlus />} label="Nuevo chat" onClick={() => selectSidebarSection('new-chat')} />
-            <SidebarItem active={activeSection === 'projects'} icon={<Folder />} label="Proyectos" onClick={() => selectSidebarSection('projects')} />
-            <SidebarItem active={activeSection === 'scheduled'} icon={<Fingerprint />} label="Programadas" onClick={() => selectSidebarSection('scheduled')} />
+            <SidebarItem active={activeSection === 'scheduled'} icon={<Clock />} label="Programadas" onClick={() => selectSidebarSection('scheduled')} />
             <SidebarItem active={activeSection === 'extensions'} icon={<Grid2X2 />} label="Extensiones" onClick={() => selectSidebarSection('extensions')} />
+            <SidebarItem active={activeSection === 'projects'} icon={<Bolt />} label="Synapse" onClick={() => selectSidebarSection('projects')} />
           </nav>
           <div className="mt-5 min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {recentChats.length > 0 && <div className="pb-3"><p className="px-1.5 text-[13px] font-semibold text-(--codeclub-text-muted)">Recientes</p><div className="mt-2 space-y-1">{recentChats.map((chat) => <button key={chat.id} type="button" onContextMenu={(event) => { if (!chat.customName) return; event.preventDefault(); setChatContextMenu({ chat, x: event.clientX, y: event.clientY }); }} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: { chatId: chat.id, name: chat.title, customName: chat.customName, projectId: activeProjectId, projectPath: chat.projectPath ?? activeProjectPath, projectName: chat.projectName ?? activeProjectName } }))} className={`flex w-full min-w-0 items-center justify-between rounded-lg px-2.5 py-2 text-left text-[13px] text-(--codeclub-text-strong) ${activeChatId === chat.id ? 'bg-(--codeclub-acrylic-active)' : 'bg-transparent hover:bg-(--codeclub-hover)'}`}><span className="min-w-0 truncate">{chat.title}</span></button>)}</div></div>}
