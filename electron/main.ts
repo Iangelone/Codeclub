@@ -69,6 +69,21 @@ app.whenReady().then(async () => {
   ipcMain.handle('projects:list', () => projects);
   ipcMain.handle('projects:select-folder', async () => { const result = await dialog.showOpenDialog({ properties: ['openDirectory'] }); if (result.canceled || !result.filePaths[0]) return null; const project = registerProject(result.filePaths[0]); await saveProjects(); return project; });
   ipcMain.handle('projects:switch', async (_event, id: string) => { const project = projects.find((item) => item.id === id); if (!project) throw new Error('Proyecto no encontrado.'); project.lastOpenedAt = new Date().toISOString(); await saveProjects(); return project; });
+  ipcMain.handle('projects:rename', async (_event, id: string, name: string) => {
+    const project = projects.find((item) => item.id === id);
+    const nextName = name.trim();
+    if (!project) throw new Error('Proyecto no encontrado.');
+    if (!nextName) throw new Error('El nombre no puede estar vacío.');
+    if (/[<>:"/\\|?*\u0000-\u001f]/.test(nextName) || /[. ]$/.test(nextName)) throw new Error('El nombre contiene caracteres no válidos para Windows.');
+    const nextPath = path.join(path.dirname(project.path), nextName);
+    if (nextPath.toLowerCase() !== project.path.toLowerCase()) {
+      try { await fs.rename(project.path, nextPath); } catch (error) { throw new Error(`No se pudo renombrar la carpeta: ${error instanceof Error ? error.message : 'error desconocido'}`); }
+      project.path = nextPath;
+    }
+    project.name = nextName;
+    await saveProjects();
+    return project;
+  });
   ipcMain.handle('window:minimize', (event) => BrowserWindow.fromWebContents(event.sender)?.minimize());
   ipcMain.handle('window:maximize', (event) => { const window = BrowserWindow.fromWebContents(event.sender); if (window?.isMaximized()) window.unmaximize(); else window?.maximize(); });
   ipcMain.handle('window:close', (event) => BrowserWindow.fromWebContents(event.sender)?.close());

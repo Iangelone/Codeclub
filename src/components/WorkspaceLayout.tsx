@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { CircleHelp, CirclePlus, Fingerprint, Folder, Grid2X2, PanelLeft, PanelRight } from 'lucide-react';
+import { CircleHelp, CirclePlus, Fingerprint, Folder, Grid2X2, PanelLeft, PanelRight, Pencil } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 
 const MIN_WIDTH = 220;
@@ -31,6 +31,9 @@ function ResizeHandle({ side, onStart }: { side: Side; onStart: (event: React.Po
 
 export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boolean; rightOpen: boolean }) {
   const [activeProjectId, setActiveProjectId] = useState('home');
+  const [activeProjectName, setActiveProjectName] = useState('Codeclub');
+  const [editingProjectName, setEditingProjectName] = useState(false);
+  const [projectNameDraft, setProjectNameDraft] = useState('Codeclub');
   const [chatsByProject, setChatsByProject] = useState<Record<string, RecentChat[]>>({ home: [{ id: 'confirm-skills-mcp', title: 'Confirmar skills y MCP' }] });
   const [leftWidth, setLeftWidth] = useState(DEFAULT_LEFT);
   const [rightWidth, setRightWidth] = useState(DEFAULT_RIGHT);
@@ -66,9 +69,13 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
 
   useEffect(() => {
     const handleProjectSwitch = (event: Event) => {
-      const project = (event as CustomEvent<{ id?: string }>).detail;
+      const project = (event as CustomEvent<{ id?: string; name?: string }>).detail;
       if (!project?.id) return;
       setActiveProjectId(project.id);
+      const nextName = project.name ?? (project.id === 'home' ? 'Codeclub' : activeProjectName);
+      setActiveProjectName(nextName);
+      setProjectNameDraft(nextName);
+      setEditingProjectName(false);
       setChatsByProject((current) => current[project.id] ? current : { ...current, [project.id]: [] });
     };
     window.addEventListener('codeclub:project-switch', handleProjectSwitch);
@@ -83,11 +90,24 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
     setResizing(side);
   };
 
+  const commitProjectName = async () => {
+    const nextName = projectNameDraft.trim();
+    if (!nextName || activeProjectId === 'home') { setProjectNameDraft(activeProjectName); setEditingProjectName(false); return; }
+    try {
+      const project = await (window as any).codeclub?.renameProject?.(activeProjectId, nextName);
+      const savedName = project?.name ?? nextName;
+      setActiveProjectName(savedName);
+      setProjectNameDraft(savedName);
+      window.dispatchEvent(new CustomEvent('codeclub:project-renamed', { detail: { id: activeProjectId, name: savedName, path: project?.path } }));
+    } catch (error) { console.error('No se pudo renombrar el proyecto', error); setProjectNameDraft(activeProjectName); }
+    setEditingProjectName(false);
+  };
+
   return <section className="codeclub-graphite grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] overflow-hidden" aria-label="Espacio de trabajo">
     <div className="flex min-h-0 min-w-0 overflow-hidden">
       <motion.aside animate={{ width: leftOpen ? leftWidth : 0, opacity: leftOpen ? 1 : 0 }} transition={resizing ? { type: 'spring', stiffness: 900, damping: 58, mass: 0.22 } : { type: 'spring', stiffness: 340, damping: 30 }} className="codeclub-graphite flex min-h-0 shrink-0 flex-col overflow-hidden" aria-label="Sidebar izquierda" aria-hidden={!leftOpen}>
         <div className="flex min-h-0 flex-1 flex-col px-2.5 py-2.5 text-(--codeclub-text)">
-          <div className="px-1.5"><button type="button" className="flex items-center text-[15px] font-semibold tracking-tight text-(--codeclub-text-strong)" aria-label="Codeclub">Codeclub</button></div>
+          <div className="flex items-center gap-1 px-1.5">{editingProjectName ? <input autoFocus value={projectNameDraft} onChange={(event) => setProjectNameDraft(event.target.value)} onBlur={() => void commitProjectName()} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void commitProjectName(); } if (event.key === 'Escape') { setProjectNameDraft(activeProjectName); setEditingProjectName(false); } }} className="min-w-0 flex-1 rounded-md border border-(--codeclub-border-soft) bg-(--codeclub-surface-raised) px-1.5 py-0.5 text-[15px] font-semibold tracking-tight text-(--codeclub-text-strong) outline-none" aria-label="Nombre del proyecto" /> : <span className="min-w-0 truncate text-[15px] font-semibold tracking-tight text-(--codeclub-text-strong)">{activeProjectName}</span>}{activeProjectId !== 'home' && !editingProjectName && <button type="button" onClick={() => setEditingProjectName(true)} className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-(--codeclub-text-muted) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Cambiar nombre del proyecto" title="Cambiar nombre"><Pencil size={13} aria-hidden="true" /></button>}</div>
           <nav className="mt-4 space-y-0.5" aria-label="Navegación principal">
             <SidebarItem icon={<CirclePlus />} label="Nuevo chat" />
             <SidebarItem icon={<Folder />} label="Proyectos" />
