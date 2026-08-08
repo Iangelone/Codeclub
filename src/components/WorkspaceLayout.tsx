@@ -16,14 +16,29 @@ type RecentChat = { id: string; title: string; customName?: boolean; projectPath
 type SidebarSection = 'new-chat' | 'projects' | 'scheduled' | 'extensions';
 type ChatContextMenu = { chat: RecentChat; x: number; y: number };
 
-function ResizeHandle({ side, onStart }: { side: Side; onStart: (event: React.PointerEvent<HTMLDivElement>) => void }) {
+function ResizeHandle({ side, value, onStart, onKeyboardResize }: { side: Side; value: number; onStart: (event: React.PointerEvent<HTMLDivElement>) => void; onKeyboardResize: (value: number) => void }) {
   const isLeft = side === 'left';
+  const resizeWithKeyboard = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const direction = isLeft ? 1 : -1;
+    let next = value;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next += 16 * direction;
+    else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next -= 16 * direction;
+    else if (event.key === 'Home') next = MIN_WIDTH;
+    else if (event.key === 'End') next = MAX_WIDTH;
+    else return;
+    event.preventDefault();
+    onKeyboardResize(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, next)));
+  };
   return <div
     role="separator"
     aria-orientation="vertical"
     aria-label={`Redimensionar sidebar ${isLeft ? 'izquierda' : 'derecha'}`}
+    aria-valuemin={MIN_WIDTH}
+    aria-valuemax={MAX_WIDTH}
+    aria-valuenow={value}
     tabIndex={0}
     onPointerDown={onStart}
+    onKeyDown={resizeWithKeyboard}
     className={`group relative z-10 w-1 shrink-0 cursor-col-resize bg-transparent focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${isLeft ? '-mr-1' : '-ml-1'}`}
   >
     <motion.span initial={{ opacity: 0 }} whileHover={{ opacity: 1 }} className="codeclub-resize-indicator absolute top-1/2 left-1/2 h-[65%] w-px -translate-x-1/2 -translate-y-1/2 rounded-full" />
@@ -232,7 +247,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
 
   return <section className="codeclub-graphite grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] overflow-hidden" aria-label="Espacio de trabajo">
     <div className="flex min-h-0 min-w-0 overflow-hidden">
-      <motion.aside animate={{ width: leftOpen ? leftWidth : 0, opacity: leftOpen ? 1 : 0 }} transition={resizing ? { type: 'spring', stiffness: 900, damping: 58, mass: 0.22 } : { type: 'spring', stiffness: 340, damping: 30 }} className="codeclub-graphite flex min-h-0 shrink-0 flex-col overflow-hidden" aria-label="Sidebar izquierda" aria-hidden={!leftOpen}>
+      <motion.aside id="codeclub-left-sidebar" animate={{ width: leftOpen ? leftWidth : 0, opacity: leftOpen ? 1 : 0 }} transition={resizing ? { type: 'spring', stiffness: 900, damping: 58, mass: 0.22 } : { type: 'spring', stiffness: 340, damping: 30 }} className="codeclub-graphite flex min-h-0 shrink-0 flex-col overflow-hidden" aria-label="Sidebar izquierda" aria-hidden={!leftOpen}>
         <div className="flex min-h-0 flex-1 flex-col px-2.5 py-2.5 text-(--codeclub-text)">
           <div className="flex items-center gap-1 px-1.5">{editingProjectName ? <input autoFocus value={projectNameDraft} onChange={(event) => setProjectNameDraft(event.target.value)} onBlur={() => void commitProjectName()} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void commitProjectName(); } if (event.key === 'Escape') { setProjectNameDraft(activeProjectName); setEditingProjectName(false); } }} className="min-w-0 flex-1 rounded-md border border-(--codeclub-border-soft) bg-(--codeclub-surface-raised) px-1.5 py-0.5 text-[15px] font-semibold tracking-tight text-(--codeclub-text-strong) outline-none" aria-label="Nombre del proyecto" /> : <span className="min-w-0 truncate text-[15px] font-semibold tracking-tight text-(--codeclub-text-strong)">{activeProjectName}</span>}{activeProjectId !== 'home' && !editingProjectName && <button type="button" onClick={() => setEditingProjectName(true)} className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-(--codeclub-text-muted) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Cambiar nombre del proyecto" title="Cambiar nombre"><Pencil size={13} aria-hidden="true" /></button>}</div>
           <nav className="mt-4 space-y-0.5" aria-label="Navegación principal">
@@ -248,12 +263,12 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
         </div>
       </motion.aside>
       {chatContextMenu && <div ref={chatContextMenuRef} className="fixed z-[100] grid w-40 gap-0.5 rounded-lg border border-(--codeclub-border-soft) bg-(--codeclub-surface-raised) p-1 shadow-2xl" style={{ left: chatContextMenu.x, top: chatContextMenu.y }} role="menu" aria-label="Menú del chat"><button type="button" onClick={renameFromContextMenu} className="rounded-md px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem">Renombrar chat</button><button type="button" onClick={() => void deleteFromContextMenu()} className="rounded-md px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem">Eliminar chat</button></div>}
-      {leftOpen && <ResizeHandle side="left" onStart={startResize('left')} />}
+      {leftOpen && <ResizeHandle side="left" value={leftWidth} onStart={startResize('left')} onKeyboardResize={setLeftWidth} />}
 
       <PanelManager activeSection={activeSection} />
 
-      {rightOpen && <ResizeHandle side="right" onStart={startResize('right')} />}
-      <motion.aside animate={{ width: rightOpen ? rightWidth : 0, opacity: rightOpen ? 1 : 0 }} transition={resizing ? { type: 'spring', stiffness: 900, damping: 58, mass: 0.22 } : { type: 'spring', stiffness: 340, damping: 30 }} className="codeclub-panel-edge flex min-h-0 shrink-0 flex-col overflow-hidden bg-(--codeclub-center)" aria-label="Sidebar derecha" aria-hidden={!rightOpen}>
+      {rightOpen && <ResizeHandle side="right" value={rightWidth} onStart={startResize('right')} onKeyboardResize={setRightWidth} />}
+      <motion.aside id="codeclub-right-sidebar" animate={{ width: rightOpen ? rightWidth : 0, opacity: rightOpen ? 1 : 0 }} transition={resizing ? { type: 'spring', stiffness: 900, damping: 58, mass: 0.22 } : { type: 'spring', stiffness: 340, damping: 30 }} className="codeclub-panel-edge flex min-h-0 shrink-0 flex-col overflow-hidden bg-(--codeclub-center)" aria-label="Sidebar derecha" aria-hidden={!rightOpen}>
         <div className="flex h-10 shrink-0 items-center justify-end gap-2 border-b border-(--codeclub-border-soft) px-3 text-xs font-medium text-(--codeclub-text-muted)">Sidebar derecha <PanelRight size={14} /></div>
         <div className="flex-1 p-3"><div className="h-20 rounded-lg border border-(--codeclub-border-soft) bg-(--codeclub-surface)" /></div>
       </motion.aside>
@@ -263,12 +278,12 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
 
 function PanelManager({ activeSection }: { activeSection: SidebarSection }) {
   const chatVisible = activeSection === 'new-chat';
-  return <main className="codeclub-graphite relative min-h-0 min-w-0 flex-1 overflow-hidden backdrop-blur-xl" aria-label="Gestor de paneles">
+  return <section role="region" className="codeclub-graphite relative min-h-0 min-w-0 flex-1 overflow-hidden backdrop-blur-xl" aria-label="Gestor de paneles" aria-live="polite">
     <div className="codeclub-panel-shell h-full w-full overflow-hidden bg-(--codeclub-center)">
       <div className={`h-full min-h-0 min-w-0 ${chatVisible ? 'block' : 'hidden'}`} aria-hidden={!chatVisible}><ChatPanel /></div>
       {!chatVisible && <div className="grid h-full min-h-0 place-items-center bg-(--codeclub-center) px-6 text-center"><div><p className="text-sm font-medium text-(--codeclub-text-strong)">Panel sin contenido</p><p className="mt-1 text-xs text-(--codeclub-text-muted)">Este espacio se adaptará cuando agreguemos esta sección.</p></div></div>}
     </div>
-  </main>;
+  </section>;
 }
 
 function SidebarItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {

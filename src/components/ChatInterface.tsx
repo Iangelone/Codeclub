@@ -2429,16 +2429,16 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
   }
 
   return (
-    <div ref={chatPanelRef} className="chat-interface-container mx-auto grid h-full w-full max-w-[680px] min-w-0 grid-rows-[minmax(0,1fr)_auto] place-items-stretch gap-2.5 overflow-visible pb-[5vh]" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleComposerDrop}>
+    <div ref={chatPanelRef} role="region" aria-label={`Chat${activeChat?.name ? `: ${activeChat.name}` : ''}`} className="chat-interface-container mx-auto grid h-full w-full max-w-[680px] min-w-0 grid-rows-[minmax(0,1fr)_auto] place-items-stretch gap-2.5 overflow-visible pb-[5vh]" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleComposerDrop}>
       {/* Zona de mensajes */}
-      <div className={`messages-area relative min-h-0 h-full flex-col gap-1.5 overflow-y-auto overscroll-contain pb-2.5 [scrollbar-width:none] ${composerDocked ? 'flex' : 'hidden'}`}>
+      <div className={`messages-area relative min-h-0 h-full flex-col gap-1.5 overflow-y-auto overscroll-contain pb-2.5 [scrollbar-width:none] ${composerDocked ? 'flex' : 'hidden'}`} role="log" aria-label="Mensajes del chat" aria-live="polite" aria-relevant="additions text">
         <div aria-hidden="true" className="min-h-0 flex-1" />
         {showEmptyGreeting && <div aria-hidden={messages.length > 0} className={`pointer-events-none absolute inset-0 grid place-items-center whitespace-nowrap px-5 text-lg font-medium tracking-[-0.02em] text-(--codeclub-text-strong) transition-[opacity,transform] duration-300 ${messages.length === 0 ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0'}`}>{chatText.greeting}, {username}?</div>}
         {messages.map((turnMessage, turnIndex) => {
           if (turnMessage.role !== 'user') return null;
           const assistantMessage = messages[turnIndex + 1]?.role === 'assistant' ? messages[turnIndex + 1] : null;
           const turnMessages = assistantMessage ? [turnMessage, assistantMessage] : [turnMessage];
-          return <div className="chat-turn" key={`turn-${turnIndex}`} style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: turnIndex > 0 ? '32px' : 0 }}>
+          return <div className="chat-turn" key={`turn-${turnIndex}`} role="article" aria-label={`Intercambio ${turnIndex + 1}`} style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: turnIndex > 0 ? '32px' : 0 }}>
             {turnMessages.map((turnItem, turnOffset) => {
               const m = turnItem;
               const i = turnIndex + turnOffset;
@@ -2519,7 +2519,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             {activeExtensions.map((extension) => { const Icon = extensionIcons[extension.id] || Box; return <button key={extension.id} type="button" onClick={() => setActiveExtensions((current) => current.filter((item) => item.id !== extension.id))} className="flex shrink-0 items-center gap-1 rounded-full border border-[#3d9bff]/50 bg-[#1687ff]/10 px-2.5 py-1 text-[10px] text-[#b9dcff] hover:bg-[#1687ff]/20" title="Quitar complemento de esta sesión"><Icon size={11} /><span>{extension.name}</span><span className="text-[#8bc7ff]/70">×</span></button>; })}
           </div>}
           <div ref={commandMenuHostRef} className="w-full" />
-          <form onSubmit={handleSubmit} className="composer-box-inner relative flex min-h-[70px] w-full min-w-0 flex-col items-stretch gap-1 rounded-[21px] border-0 bg-(--codeclub-surface-raised) px-1.5 pb-1 pl-4 pr-3 pt-2 [&>button.absolute]:hidden">
+          <form onSubmit={handleSubmit} aria-label="Compositor de mensaje" className="composer-box-inner relative flex min-h-[70px] w-full min-w-0 flex-col items-stretch gap-1 rounded-[21px] border-0 bg-(--codeclub-surface-raised) px-1.5 pb-1 pl-4 pr-3 pt-2 [&>button.absolute]:hidden">
            {false && (
           <button type="button" onClick={handleAttachFiles} className="text-white/40 hover:text-white transition-colors" aria-label="Añadir archivos" style={{ flex: '0 0 28px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, background: 'transparent', cursor: 'pointer' }}>
             <Paperclip size={16} strokeWidth={1.8} />
@@ -2542,10 +2542,13 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               @{artifactReference.kind} · {artifactReference.title}
             </button>
           )}
+          <span id="chat-input-help" className="sr-only">Escribí un mensaje. Usa Shift+Enter para una nueva línea y / para abrir comandos.</span>
           <textarea
             ref={chatInputRef}
             disabled={isAgentBusy}
             rows={1}
+            aria-multiline="true"
+            aria-describedby="chat-input-help"
             value={input}
             onChange={(e) => {
               const value = e.target.value;
@@ -2606,6 +2609,9 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           ref={commandMenuRef}
           tabIndex={-1}
           onKeyDown={handleCommandMenuKeyDown}
+          role="listbox"
+          aria-label="Comandos disponibles"
+          aria-activedescendant={activeCommandIndex >= 0 ? `command-option-${activeCommandIndex}` : undefined}
           className={`command-menu ${menuOpen ? 'is-open' : ''}`}
           initial={false}
           animate={{ opacity: menuOpen ? 1 : 0, y: menuOpen ? 0 : -6, scale: menuOpen ? 1 : 0.985 }}
@@ -2662,6 +2668,9 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             {commandMenuItems.map((item, index) => (
               <motion.button
                 key={item.id}
+                id={`command-option-${index}`}
+                role="option"
+                aria-selected={index === activeCommandIndex}
                 className={`command-menu-item ${index === activeCommandIndex ? 'is-active' : ''}`}
                 type="button"
                 data-command-index={index}

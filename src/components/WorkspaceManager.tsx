@@ -190,7 +190,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
 
   return (
     <div className="workspace-panels group relative flex h-full w-full min-w-0 min-h-0 flex-col overflow-hidden">
-      <div className="absolute left-0 top-0 z-[60] h-12 w-full" aria-label="Accesos rápidos">
+      <div className="absolute left-0 top-0 z-[60] h-12 w-full" role="toolbar" aria-label="Accesos rápidos">
         <div className={`codeclub-motion-panel absolute left-1/2 top-1 flex h-11 -translate-x-1/2 items-start justify-center rounded-2xl px-1.5 pt-1.5 ${dockVisible ? 'pointer-events-auto translate-y-0 scale-100 opacity-100' : 'pointer-events-none translate-y-0 scale-100 opacity-0'}`}>
         <div className="flex items-center gap-1 rounded-[14px] border border-[#3A3A3A] bg-[#2F2F2F] p-1">
           <button type="button" aria-label="Nuevo chat" title="Nuevo chat" onClick={() => window.dispatchEvent(new CustomEvent('codeclub:request-new-chat'))} className="grid h-7 w-7 place-items-center rounded-[9px] border-0 bg-transparent text-[#777777] transition-colors hover:bg-[#1e1e1e] hover:text-[#eeeeee]"><House size={14} strokeWidth={1.8} /></button>
