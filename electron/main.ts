@@ -292,6 +292,20 @@ async function invokeNativeCommand(command: string, args: any = {}) {
     case 'codeclub_computer_screenshot': return computerScreenshot();
     case 'codeclub_computer_get_state': return { focused_window: null, focused_element: null, elements: [], note: 'UI Automation profundo no disponible; use computerScreenshot.' };
     case 'codeclub_computer_action': return computerAction(args.request || {});
+    case 'codeclub_http_fetch': {
+      const request = args.request || {};
+      const url = String(request.url || '');
+      if (!/^https?:\/\//i.test(url)) throw new Error('Solo se permiten URLs HTTP o HTTPS.');
+      const response = await fetch(url, {
+        method: String(request.method || 'GET'),
+        headers: Object.fromEntries(Array.isArray(request.headers) ? request.headers.map((header: any) => [String(header.name), String(header.value)]) : []),
+        body: request.body == null ? undefined : String(request.body),
+      });
+      const headers: Array<{ name: string; value: string }> = [];
+      response.headers.forEach((value, name) => headers.push({ name, value }));
+      return { status: response.status, status_text: response.statusText, headers, body: await response.text() };
+    }
+    case 'codeclub_get_system_root': return process.platform === 'win32' ? `${process.env.SystemDrive || 'C:'}\\` : '/';
     default: throw new Error(`El comando nativo ${command} todavía no está implementado en Electron.`);
   }
 }
@@ -342,6 +356,8 @@ function createWindow() {
 }
 
 app.setAppUserModelId('com.codeclub.desktop');
+// Expone el árbol de accesibilidad de Chromium a UI Automation/Computer Use.
+app.commandLine.appendSwitch('force-renderer-accessibility');
 app.whenReady().then(async () => {
   await loadProjects();
   ipcMain.handle('projects:list', () => projects);
