@@ -1,5 +1,3 @@
-export const isTauriRuntime = () => false;
-
 /** Native command bridge for the Electron desktop runtime. */
 export const nativeInvoke = async <T = unknown>(command: string, args?: Record<string, unknown>): Promise<T> => {
   if (typeof window !== 'undefined' && typeof (window as any).codeclub?.invoke === 'function') {

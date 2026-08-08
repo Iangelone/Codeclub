@@ -6,15 +6,15 @@ La aplicación usa Next.js **16.3.0** fijado explícitamente. La migración debe
 
 ## Objetivo
 
-Migrar Codeclub desde Astro + Tauri hacia una aplicación de escritorio basada en Next.js y Electron, conservando la lógica de producto, el motor de IA y la compatibilidad con Agent Plugins y MCP.
+Dejar Codeclub como una aplicación de escritorio basada en Next.js y Electron, conservando la lógica de producto, el motor de IA y la compatibilidad con Agent Plugins y MCP.
 
 ## Decisión
 
 No se rehace el producto desde cero. Se conserva la lógica de dominio y se reemplazan progresivamente:
 
-- Astro por Next.js.
-- Tauri/Rust por Electron y un proceso main en Node.js/TypeScript.
-- `invoke` y eventos Tauri por IPC tipado entre renderer y main.
+- La interfaz anterior por Next.js.
+- El backend nativo anterior por Electron y un proceso main en Node.js/TypeScript.
+- `invoke` y eventos anteriores por IPC tipado entre renderer y main.
 - La estructura visual se migra a React/Next.js.
 
 ## Arquitectura objetivo
@@ -62,7 +62,7 @@ Agregar:
 - Ventana principal y ciclo de desarrollo/producción.
 - Configuración de empaquetado.
 
-### 3. Extraer servicios del backend Rust
+### 3. Consolidar servicios nativos en Electron
 
 Migrar por módulos, manteniendo la misma API conceptual:
 
@@ -88,9 +88,9 @@ Cada módulo debe tener:
 - Prueba en Windows.
 - Manejo de errores y cancelación.
 
-### 6. Retirar Tauri/Astro
+### 6. Retirar restos de la migración
 
-Eliminar dependencias y archivos de Tauri/Astro únicamente después de que Electron y Next.js cubran todas las capacidades.
+Eliminar archivos y referencias antiguas únicamente después de que Electron y Next.js cubran todas las capacidades.
 
 ## Reglas técnicas
 
@@ -103,7 +103,7 @@ Eliminar dependencias y archivos de Tauri/Astro únicamente después de que Elec
 
 ## Riesgos
 
-- Diferencias de seguridad entre Tauri y Electron.
+- Diferencias de seguridad entre la arquitectura anterior y Electron.
 - IPC mal tipado o demasiado amplio.
 - Regresiones en terminales, navegador y computer use.
 - Cambios de empaquetado y actualizaciones automáticas.
@@ -118,4 +118,4 @@ La migración termina cuando:
 - Todas las tools del agente funcionan.
 - Agent Plugins y MCP pasan las pruebas de descubrimiento y ejecución.
 - La persistencia existente se conserva o migra sin pérdida.
-- Tauri y Astro pueden eliminarse sin regresiones.
+- Los restos de la arquitectura anterior pueden eliminarse sin regresiones.

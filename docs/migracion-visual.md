@@ -92,7 +92,7 @@ Los cambios de Electron no deben alterar los componentes visuales.
 
 Cada pantalla migrada requiere:
 
-1. Captura de referencia de Astro/Tauri.
+1. Captura de referencia del prototipo anterior.
 2. Captura equivalente de Next.js/Electron.
 3. Comparación lado a lado.
 4. Comparación superpuesta con transparencia.
@@ -129,4 +129,3 @@ Una pantalla está migrada cuando:
 ## Regla de bloqueo
 
 Si una decisión técnica mejora la arquitectura pero altera visualmente la experiencia, se pausa la migración de esa pantalla y se corrige la paridad antes de avanzar.
-

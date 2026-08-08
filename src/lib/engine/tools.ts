@@ -454,7 +454,7 @@ export function inferAgentSpecialist(prompt: string, mode: AgentMode): AgentSpec
   if (/navegador|browser|pc|mouse|teclado|edge|youtube/.test(text)) return 'computer_use';
   if (/test|qa|probar|error|bug|falla/.test(text)) return 'qa';
   if (/ui|ux|dise�o|css|componente|interfaz/.test(text)) return 'frontend';
-  if (/api|backend|servidor|rust|tauri|base de datos/.test(text)) return 'backend';
+  if (/api|backend|servidor|base de datos/.test(text)) return 'backend';
   if (/document|readme|explicar/.test(text)) return 'documentation';
   return 'developer';
 }
@@ -501,7 +501,7 @@ export function inferAgentSpecialist(prompt: string, _mode: AgentMode): AgentSpe
   if (/navegador|browser|pc|mouse|teclado|edge|youtube/.test(text)) return 'computer_use';
   if (/test|qa|probar|error|bug|falla/.test(text)) return 'qa';
   if (/ui|ux|dise�o|css|componente|interfaz/.test(text)) return 'frontend';
-  if (/api|backend|servidor|rust|tauri|base de datos/.test(text)) return 'backend';
+  if (/api|backend|servidor|base de datos/.test(text)) return 'backend';
   if (/document|readme|explicar/.test(text)) return 'documentation';
   return 'developer';
 }

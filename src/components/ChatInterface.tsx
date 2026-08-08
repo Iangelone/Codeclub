@@ -1252,7 +1252,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     return sections.filter(Boolean).join('\n\n');
   };
 
-  const tauriModelFetch = async (input, init = {}) => {
+  const desktopModelFetch = async (input, init = {}) => {
     const request = input instanceof Request ? new Request(input, init) : new Request(input, init);
     let requestBody = ['GET', 'HEAD'].includes(request.method) ? undefined : await request.clone().text();
     if (requestBody && currentProvider?.id === 'custom' && customToolsFormat === 'xml') {
@@ -1510,7 +1510,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         name: currentProvider.id,
         baseURL: currentProvider.api || 'https://api.openai.com/v1',
         apiKey,
-        fetch: tauriModelFetch,
+        fetch: desktopModelFetch,
       });
       const contextProjectPath = activeProject?.projectPath || '';
       const projectChangeNotice = projectChangeNoticeRef.current;
@@ -2251,21 +2251,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     const paths = droppedFiles.map((file) => file.path).filter(Boolean) as string[];
     if (paths.length > 0) void addAttachmentPaths(paths);
   };
-
-  useEffect(() => {
-    let unlisten: (() => void) | null = null;
-    void safeListen<{ paths?: string[]; position?: { x: number; y: number } }>('tauri://drag-drop', (event) => {
-      const rect = chatPanelRef.current?.getBoundingClientRect();
-      const position = event.payload.position;
-      const scale = window.devicePixelRatio || 1;
-      const x = position ? position.x / scale : null;
-      const y = position ? position.y / scale : null;
-      const insideComposer = !position || !rect || (x !== null && y !== null && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom);
-      if (!insideComposer || !event.payload.paths?.length) return;
-      void addAttachmentPaths(event.payload.paths);
-    }).then((stop) => { unlisten = stop; });
-    return () => unlisten?.();
-  }, []);
 
   if (workspaceMode === 'blank' && !activeProject) {
     return (

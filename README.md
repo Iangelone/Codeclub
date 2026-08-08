@@ -46,7 +46,7 @@ Provides development tools for files, terminal, browser, plans, TODOs and agent 
 - **Code editor**: CodeMirror 6 with syntax highlighting (JS/TS/HTML/CSS/JSON/MD/Python/Rust/SQL/XML)
 
 ### Built-in Browser
-- Embedded Tauri WebView with URL bar, back/forward navigation
+- Embedded Electron browser with URL bar, back/forward navigation
 - **DOM inspector**: click elements in the browser, inspect HTML, and reference selections in chat
 - Visibility toggle and resize support
 
@@ -74,11 +74,11 @@ Provides development tools for files, terminal, browser, plans, TODOs and agent 
 ChatInterface.tsx (React orchestrator)
   ├── createTools()  — AI agent tools
   ├── runStream() → streamText (AI SDK v7)   — core agent loop
-  └── Tool execution backed by Tauri commands (Rust → native OS)
+  └── Tool execution backed by Electron IPC (Node.js → native OS)
 ```
 
-**Frontend**: Astro 7 + React 19 + TypeScript + Tailwind CSS 4
-**Backend**: Rust + Tauri 2 (filesystem, terminal, HTTP fetch, browser)
+**Frontend**: Next.js 16.3 + React 19 + TypeScript + Tailwind CSS 4
+**Desktop**: Electron + Node.js/TypeScript (filesystem, terminal, HTTP fetch, browser)
 **Runtime**: Node.js 24 + npm 11
 **AI**: AI SDK v7 (`ai`, `@ai-sdk/openai-compatible`, `@ai-sdk/react`)
 
@@ -86,7 +86,6 @@ ChatInterface.tsx (React orchestrator)
 
 ### Prerequisites
 - [Node.js](https://nodejs.org) 24+
-- [Rust](https://rustup.rs) (for Tauri native backend)
 
 ### Install & Run
 
@@ -128,7 +127,6 @@ AI SDK documentation: https://ai-sdk.dev/docs
 - **Comercial paga**: empresas, corporaciones, uso comercial, SaaS, freelancers (> USD 60k/año).
 
 Contacto para licencias comerciales: **codeclubide@gmail.com**
-
 
 
 

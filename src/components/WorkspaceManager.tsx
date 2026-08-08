@@ -252,7 +252,7 @@ function DeveloperLoopPreviewOld({ onClose }: { onClose: () => void }) {
     { role: 'tool', label: 'Terminal', text: '$ npm run typecheck\n> Revisando tipos…' },
     { role: 'assistant', label: 'Ask user', text: 'Encontré dos variantes posibles. ¿Preferís mantener el diseño actual o usar tarjetas más compactas?' },
     { role: 'user', text: 'Mantené el diseño actual y hacelo más claro.' },
-    { role: 'tool', label: 'Verificación', text: '$ npm run web:build\n✓ Build completado sin errores' },
+    { role: 'tool', label: 'Verificación', text: '$ npm run desktop:build\n✓ Build completado sin errores' },
     { role: 'assistant', label: 'Entregar', text: 'Listo. Apliqué la mejora, actualicé el TODO y verifiqué que el proyecto compile.' },
   ] as const;
 
