@@ -1,8 +1,17 @@
 import { spawn } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import http from 'node:http';
 
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const env = { ...process.env, FORCE_COLOR: '1' };
+
+function cleanupStaleNext() {
+  if (process.platform !== 'win32') return;
+  const script = `$connections = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue; foreach ($connection in $connections) { $process = Get-CimInstance Win32_Process -Filter \"ProcessId = $($connection.OwningProcess)\" -ErrorAction SilentlyContinue; if ($process -and ($process.Name -match 'node|npm' -or $process.CommandLine -match 'next|desktop-dev')) { Stop-Process -Id $connection.OwningProcess -Force -ErrorAction SilentlyContinue } }; $electron = Get-CimInstance Win32_Process -Filter \"Name = 'electron.exe'\" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -match 'Proyectos\\Codeclub' }; foreach ($process in $electron) { Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue }`;
+  try { execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { stdio: 'ignore', windowsHide: true }); } catch { /* Si no hay proceso viejo, continuamos normalmente. */ }
+}
+
+cleanupStaleNext();
 const next = spawn(npmCommand, ['run', 'next:dev'], { stdio: 'inherit', env, shell: process.platform === 'win32' });
 let electron = null;
 let stopping = false;

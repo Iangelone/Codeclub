@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Bolt, CircleHelp, CirclePlus, Clock, Grid2X2, PanelLeft, PanelRight, Pencil } from 'lucide-react';
-import { motion } from 'motion/react';
+import { AppWindowMac, ArrowRightToLine, Bolt, CircleHelp, CirclePlus, Clock, CopyX, FolderOpen, FolderPen, FolderTree, GitCompare, Globe, Grid2X2, ListTodo, PanelLeft, PanelRight, Pencil, SquareTerminal, X } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import ChatPanel from './ChatPanel';
+import { ProjectPanelView } from './ChatInterface';
 import { readGlobalChats, readProjectMeta, writeGlobalChats, writeProjectMeta } from '../lib/projectManager';
 
 const MIN_WIDTH = 220;
@@ -15,6 +16,17 @@ type Side = 'left' | 'right';
 type RecentChat = { id: string; title: string; customName?: boolean; projectPath?: string; projectName?: string };
 type SidebarSection = 'new-chat' | 'projects' | 'scheduled' | 'extensions';
 type ChatContextMenu = { chat: RecentChat; x: number; y: number };
+type RightPanelTab = 'files' | 'review' | 'browser' | 'artifacts' | 'terminals';
+type RightPanelInstance = { instanceId: string; tab: RightPanelTab; label: string };
+type RightPanelContextMenu = { panel: RightPanelInstance; x: number; y: number };
+
+const rightPanelTabs: Array<{ id: RightPanelTab; label: string; icon: typeof FolderTree }> = [
+  { id: 'files', label: 'Archivos', icon: FolderPen },
+  { id: 'review', label: 'Revisar', icon: GitCompare },
+  { id: 'browser', label: 'Navegador', icon: AppWindowMac },
+  { id: 'artifacts', label: 'Artifacts', icon: ListTodo },
+  { id: 'terminals', label: 'Terminales', icon: SquareTerminal },
+];
 
 function ResizeHandle({ side, value, onStart, onKeyboardResize }: { side: Side; value: number; onStart: (event: React.PointerEvent<HTMLDivElement>) => void; onKeyboardResize: (value: number) => void }) {
   const isLeft = side === 'left';
@@ -58,6 +70,14 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
   const chatContextMenuRef = useRef<HTMLDivElement | null>(null);
   const [leftWidth, setLeftWidth] = useState(DEFAULT_LEFT);
   const [rightWidth, setRightWidth] = useState(DEFAULT_RIGHT);
+  const [rightPanels, setRightPanels] = useState<RightPanelInstance[]>([{ instanceId: 'files', tab: 'files', label: 'Archivos' }]);
+  const [activeRightPanelId, setActiveRightPanelId] = useState('files');
+  const [filesTreeVisible, setFilesTreeVisible] = useState(true);
+  const [rightMenuOpen, setRightMenuOpen] = useState(false);
+  const rightMenuRef = useRef<HTMLDivElement | null>(null);
+  const [rightContextMenu, setRightContextMenu] = useState<RightPanelContextMenu | null>(null);
+  const rightContextMenuRef = useRef<HTMLDivElement | null>(null);
+  const rightPanelSequence = useRef(0);
   const [resizing, setResizing] = useState<Side | null>(null);
   const [sizesReady, setSizesReady] = useState(false);
   const resizeRef = useRef<{ side: Side; startX: number; startWidth: number } | null>(null);
@@ -180,6 +200,81 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
   }, [chatContextMenu]);
 
   useEffect(() => {
+    if (!rightMenuOpen) return undefined;
+    const closeMenu = (event: PointerEvent) => {
+      if (!rightMenuRef.current?.contains(event.target as Node)) setRightMenuOpen(false);
+    };
+    const closeWithEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setRightMenuOpen(false); };
+    window.addEventListener('pointerdown', closeMenu);
+    window.addEventListener('keydown', closeWithEscape);
+    return () => {
+      window.removeEventListener('pointerdown', closeMenu);
+      window.removeEventListener('keydown', closeWithEscape);
+    };
+  }, [rightMenuOpen]);
+
+  useEffect(() => {
+    if (!rightContextMenu) return undefined;
+    rightContextMenuRef.current?.setAttribute('aria-label', `Menú de ${rightContextMenu.panel.label}`);
+    const closeMenu = (event: PointerEvent) => { if (!rightContextMenuRef.current?.contains(event.target as Node)) setRightContextMenu(null); };
+    const closeWithEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setRightContextMenu(null); };
+    window.addEventListener('pointerdown', closeMenu);
+    window.addEventListener('keydown', closeWithEscape);
+    return () => {
+      window.removeEventListener('pointerdown', closeMenu);
+      window.removeEventListener('keydown', closeWithEscape);
+    };
+  }, [rightContextMenu]);
+
+  useEffect(() => {
+    const root = document.getElementById('codeclub-right-sidebar');
+    if (!root) return undefined;
+    const tabList = root.querySelector<HTMLElement>('[role="tablist"]');
+    if (tabList) {
+      tabList.setAttribute('aria-orientation', 'horizontal');
+      const tabs = Array.from(tabList.querySelectorAll<HTMLButtonElement>('button[role="tab"]'));
+      tabs.forEach((tab, index) => {
+        tab.tabIndex = tab.getAttribute('aria-selected') === 'true' ? 0 : -1;
+        tab.setAttribute('aria-posinset', String(index + 1));
+        tab.setAttribute('aria-setsize', String(tabs.length));
+        const move = (event: KeyboardEvent) => {
+          if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+          event.preventDefault();
+          const nextIndex = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+          tabs[nextIndex]?.focus();
+          tabs[nextIndex]?.click();
+        };
+        tab.addEventListener('keydown', move);
+        tab.dataset.codeclubTabKeyboard = 'true';
+        (tab as HTMLButtonElement & { codeclubMove?: (event: KeyboardEvent) => void }).codeclubMove = move;
+      });
+      root.querySelectorAll<HTMLElement>('[role="tablist"] > div').forEach((item) => item.setAttribute('role', 'presentation'));
+      const panelMenu = root.querySelector<HTMLElement>('[role="menu"]');
+      panelMenu?.setAttribute('aria-label', 'Paneles de la sidebar derecha');
+      const treeToggle = root.querySelector<HTMLButtonElement>('button[aria-pressed]');
+      if (treeToggle) {
+        const label = filesTreeVisible ? 'Ocultar árbol de archivos' : 'Mostrar árbol de archivos';
+        treeToggle.setAttribute('aria-label', label);
+        treeToggle.setAttribute('title', label);
+      }
+      const fileTree = root.querySelector<HTMLElement>('aside');
+      if (fileTree) {
+        fileTree.setAttribute('role', 'tree');
+        fileTree.setAttribute('aria-label', 'Árbol de archivos del proyecto');
+        fileTree.querySelectorAll<HTMLButtonElement>('button').forEach((item) => {
+          item.setAttribute('role', 'treeitem');
+          item.setAttribute('aria-label', item.textContent?.trim() || 'Elemento del proyecto');
+        });
+      }
+      return () => tabs.forEach((tab) => {
+        const move = (tab as HTMLButtonElement & { codeclubMove?: (event: KeyboardEvent) => void }).codeclubMove;
+        if (move) tab.removeEventListener('keydown', move);
+      });
+    }
+    return undefined;
+  }, [rightPanels, activeRightPanelId, filesTreeVisible]);
+
+  useEffect(() => {
     const showChat = (event: Event) => {
       setActiveSection('new-chat');
       setActiveChatId((event as CustomEvent<{ chatId?: string }>).detail?.chatId);
@@ -232,6 +327,46 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
     setResizing(side);
   };
 
+  const openRightPanel = (tab: RightPanelTab) => {
+    const existing = rightPanels.find((panel) => panel.tab === tab && tab !== 'browser' && tab !== 'terminals');
+    if (existing) {
+      setActiveRightPanelId(existing.instanceId);
+      setRightMenuOpen(false);
+      return;
+    }
+    const base = rightPanelTabs.find((item) => item.id === tab)?.label ?? tab;
+    const count = rightPanels.filter((panel) => panel.tab === tab).length + 1;
+    rightPanelSequence.current += 1;
+    const panel = { instanceId: `${tab}-${rightPanelSequence.current}`, tab, label: tab === 'browser' || tab === 'terminals' ? `${base} ${count}` : base };
+    setRightPanels((current) => [...current, panel]);
+    setActiveRightPanelId(panel.instanceId);
+    setRightMenuOpen(false);
+  };
+
+  const closeRightPanel = (instanceId: string) => {
+    if (rightPanels.length === 1) return;
+    const index = rightPanels.findIndex((panel) => panel.instanceId === instanceId);
+    const next = rightPanels.filter((panel) => panel.instanceId !== instanceId);
+    setRightPanels(next);
+    if (activeRightPanelId === instanceId) setActiveRightPanelId(next[Math.min(index, next.length - 1)].instanceId);
+    setRightContextMenu(null);
+  };
+
+  const closeOtherRightPanels = (instanceId: string) => {
+    setRightPanels((current) => current.filter((panel) => panel.instanceId === instanceId));
+    setActiveRightPanelId(instanceId);
+    setRightContextMenu(null);
+  };
+
+  const closeRightPanelsToRight = (instanceId: string) => {
+    const index = rightPanels.findIndex((panel) => panel.instanceId === instanceId);
+    if (index < 0) return;
+    const remaining = rightPanels.slice(0, index + 1);
+    setRightPanels(remaining);
+    if (!remaining.some((panel) => panel.instanceId === activeRightPanelId)) setActiveRightPanelId(instanceId);
+    setRightContextMenu(null);
+  };
+
   const commitProjectName = async () => {
     const nextName = projectNameDraft.trim();
     if (!nextName || activeProjectId === 'home') { setProjectNameDraft(activeProjectName); setEditingProjectName(false); return; }
@@ -263,14 +398,28 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
         </div>
       </motion.aside>
       {chatContextMenu && <div ref={chatContextMenuRef} className="fixed z-[100] grid w-40 gap-0.5 rounded-lg border border-(--codeclub-border-soft) bg-(--codeclub-surface-raised) p-1 shadow-2xl" style={{ left: chatContextMenu.x, top: chatContextMenu.y }} role="menu" aria-label="Menú del chat"><button type="button" onClick={renameFromContextMenu} className="rounded-md px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem">Renombrar chat</button><button type="button" onClick={() => void deleteFromContextMenu()} className="rounded-md px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem">Eliminar chat</button></div>}
+      {rightContextMenu && <div ref={rightContextMenuRef} className="fixed z-[100] grid w-52 gap-0.5 rounded-xl border border-white/[0.08] bg-[#2C2C2C]/90 p-1 shadow-2xl backdrop-blur-xl" style={{ left: rightContextMenu.x, top: rightContextMenu.y }} role="menu" aria-label={`Menú de ${rightContextMenu.panel.label}`}><button type="button" onClick={() => closeRightPanel(rightContextMenu.panel.instanceId)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><X size={14} aria-hidden="true" />Cerrar</button><button type="button" onClick={() => closeOtherRightPanels(rightContextMenu.panel.instanceId)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><CopyX size={14} aria-hidden="true" />Cerrar otras pestañas</button><button type="button" onClick={() => closeRightPanelsToRight(rightContextMenu.panel.instanceId)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><ArrowRightToLine size={14} aria-hidden="true" />Cerrar a la derecha</button></div>}
       {leftOpen && <ResizeHandle side="left" value={leftWidth} onStart={startResize('left')} onKeyboardResize={setLeftWidth} />}
 
       <PanelManager activeSection={activeSection} />
 
       {rightOpen && <ResizeHandle side="right" value={rightWidth} onStart={startResize('right')} onKeyboardResize={setRightWidth} />}
-      <motion.aside id="codeclub-right-sidebar" animate={{ width: rightOpen ? rightWidth : 0, opacity: rightOpen ? 1 : 0 }} transition={resizing ? { type: 'spring', stiffness: 900, damping: 58, mass: 0.22 } : { type: 'spring', stiffness: 340, damping: 30 }} className="codeclub-panel-edge flex min-h-0 shrink-0 flex-col overflow-hidden bg-(--codeclub-center)" aria-label="Sidebar derecha" aria-hidden={!rightOpen}>
-        <div className="flex h-10 shrink-0 items-center justify-end gap-2 border-b border-(--codeclub-border-soft) px-3 text-xs font-medium text-(--codeclub-text-muted)">Sidebar derecha <PanelRight size={14} /></div>
-        <div className="flex-1 p-3"><div className="h-20 rounded-lg border border-(--codeclub-border-soft) bg-(--codeclub-surface)" /></div>
+      <motion.aside id="codeclub-right-sidebar" animate={{ width: rightOpen ? rightWidth : 0, opacity: rightOpen ? 1 : 0 }} transition={resizing ? { type: 'spring', stiffness: 900, damping: 58, mass: 0.22 } : { type: 'spring', stiffness: 340, damping: 30 }} className="codeclub-panel-edge flex min-h-0 shrink-0 flex-col overflow-visible bg-(--codeclub-center)" aria-label="Sidebar derecha" aria-hidden={!rightOpen}>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div ref={rightMenuRef} className="relative flex h-11 min-w-0 shrink-0 items-center gap-2 px-2">
+            <div role="tablist" aria-label="Paneles abiertos" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {rightPanels.map((panel) => { const item = rightPanelTabs.find((candidate) => candidate.id === panel.tab) ?? rightPanelTabs[0]; const Icon = item.icon; const active = activeRightPanelId === panel.instanceId; return <div key={panel.instanceId} className={`group flex h-8 min-w-0 shrink-0 items-center rounded-lg transition-colors ${active ? 'bg-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-md hover:bg-white/[0.12]' : 'hover:bg-white/[0.06]'}`}><button type="button" role="tab" aria-selected={active} aria-controls={`right-panel-${panel.instanceId}`} onClick={() => setActiveRightPanelId(panel.instanceId)} onContextMenu={(event) => { event.preventDefault(); setRightMenuOpen(false); setRightContextMenu({ panel, x: event.clientX, y: event.clientY }); }} className={`flex h-full min-w-0 items-center gap-2 rounded-lg px-2.5 text-[12px] font-medium focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${active ? 'text-(--codeclub-text-strong)' : 'text-(--codeclub-text-muted)'}`}><Icon size={15} strokeWidth={1.8} aria-hidden="true" /><span className="max-w-[150px] truncate">{panel.label}</span></button><button type="button" onClick={() => closeRightPanel(panel.instanceId)} className={`mr-1 grid h-5 w-5 shrink-0 place-items-center rounded-md transition-opacity hover:bg-white/[0.1] hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${active ? 'text-(--codeclub-text-strong) opacity-100' : 'text-(--codeclub-text-muted) opacity-0 group-hover:opacity-100'}`} aria-label={`Cerrar ${panel.label}`}><X size={12} strokeWidth={2} aria-hidden="true" /></button></div>; })}
+              <button type="button" onClick={() => setRightMenuOpen((open) => !open)} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-transparent text-(--codeclub-text-strong) transition-colors hover:bg-white/[0.08] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Abrir paneles de la sidebar derecha" aria-haspopup="menu" aria-expanded={rightMenuOpen}><CirclePlus size={17} strokeWidth={1.8} aria-hidden="true" /></button>
+            </div>
+            <AnimatePresence>
+              {rightMenuOpen && <motion.div initial={{ opacity: 0, y: -5, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -5, scale: 0.98 }} transition={{ duration: 0.14, ease: 'easeOut' }} className="absolute top-[42px] left-2 z-30 w-[220px] max-w-[calc(100vw-24px)] rounded-xl border border-white/[0.08] bg-[#2C2C2C]/90 p-1 shadow-2xl backdrop-blur-xl" role="menu" aria-label="Paneles de la sidebar derecha">
+                {rightPanelTabs.map(({ id, label, icon: Icon }) => { const selected = rightPanels.some((panel) => panel.tab === id); const canOpenMultiple = id === 'browser' || id === 'terminals'; const disabled = selected && !canOpenMultiple; return <button key={id} type="button" role="menuitemradio" aria-checked={selected} aria-disabled={disabled} disabled={disabled} onClick={() => openRightPanel(id)} className={`flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[12px] transition-colors focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${disabled ? 'cursor-not-allowed text-(--codeclub-text-muted) opacity-40' : selected ? 'bg-[#2B2B2B] text-(--codeclub-text-strong)' : 'text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)'}`}><Icon size={15} strokeWidth={1.8} aria-hidden="true" /><span className="min-w-0 truncate">{label}</span></button>; })}
+              </motion.div>}
+            </AnimatePresence>
+            {rightPanels.find((panel) => panel.instanceId === activeRightPanelId)?.tab === 'files' && <button type="button" onClick={() => setFilesTreeVisible((visible) => !visible)} className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-transparent transition-colors hover:bg-white/[0.08] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${filesTreeVisible ? 'text-(--codeclub-text-strong)' : 'text-(--codeclub-text-muted)'}`} aria-label={filesTreeVisible ? 'Ocultar árbol de archivos' : 'Mostrar árbol de archivos'} aria-pressed={filesTreeVisible} title={filesTreeVisible ? 'Ocultar árbol de archivos' : 'Mostrar árbol de archivos'}><FolderOpen size={16} strokeWidth={1.8} aria-hidden="true" /></button>}
+          </div>
+          {rightPanels.map((panel) => <div key={panel.instanceId} className={`min-h-0 flex-1 ${activeRightPanelId === panel.instanceId ? 'block' : 'hidden'}`}><RightSidebarContent panel={panel} projectName={activeProjectName} projectPath={activeProjectPath} filesTreeVisible={filesTreeVisible} onToggleFilesTree={() => setFilesTreeVisible((visible) => !visible)} /></div>)}
+        </div>
       </motion.aside>
     </div>
   </section>;
@@ -284,6 +433,23 @@ function PanelManager({ activeSection }: { activeSection: SidebarSection }) {
       {!chatVisible && <div className="grid h-full min-h-0 place-items-center bg-(--codeclub-center) px-6 text-center"><div><p className="text-sm font-medium text-(--codeclub-text-strong)">Panel sin contenido</p><p className="mt-1 text-xs text-(--codeclub-text-muted)">Este espacio se adaptará cuando agreguemos esta sección.</p></div></div>}
     </div>
   </section>;
+}
+
+function RightSidebarContent({ panel, projectName, projectPath, filesTreeVisible, onToggleFilesTree }: { panel: RightPanelInstance; projectName: string; projectPath?: string; filesTreeVisible: boolean; onToggleFilesTree: () => void }) {
+  const { tab } = panel;
+  const current = rightPanelTabs.find((item) => item.id === tab) ?? rightPanelTabs[0];
+  const Icon = current.icon;
+  const descriptions: Record<RightPanelTab, string> = {
+    files: 'Explorá los archivos del proyecto activo.',
+    review: 'Revisá cambios y actividad del workspace.',
+    browser: 'Abrí y controlá páginas dentro de Electron.',
+    artifacts: 'Consultá planes, TODOs y resultados de la IA.',
+    terminals: 'Gestioná terminales persistentes de la sesión.',
+  };
+  if (tab === 'files') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-hidden">{projectPath ? <ProjectPanelView projectPath={projectPath} showFileTree={filesTreeVisible} onToggleFileTree={onToggleFilesTree} /> : <div className="flex h-full flex-col items-center justify-start px-5 pt-10 text-center"><div><FolderPen size={28} strokeWidth={1.3} className="mx-auto text-(--codeclub-text-muted)" aria-hidden="true" /><p className="mt-3 mb-0 text-[12px] text-(--codeclub-text-strong)">Sin proyecto activo</p><p className="mt-1 mb-0 text-[11px] leading-5 text-(--codeclub-text-muted)">Vinculá una carpeta para explorar sus archivos.</p></div></div>}</motion.section>;
+  return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-auto px-3 py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="mt-5 grid min-h-[180px] place-items-center rounded-xl bg-transparent px-5 text-center"><div><Icon size={28} strokeWidth={1.3} className="mx-auto text-(--codeclub-text-muted)" aria-hidden="true" /><p className="mt-3 mb-0 text-[12px] text-(--codeclub-text-strong)">{projectPath ? projectName : 'Sin proyecto activo'}</p><p className="mt-1 mb-0 text-[11px] leading-5 text-(--codeclub-text-muted)">{descriptions[tab]}</p></div></div>
+  </motion.section>;
 }
 
 function SidebarItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {

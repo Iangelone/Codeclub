@@ -734,3 +734,18 @@ html.is-windows #app-background {
   .chat-turn > .chat-assistant-message { animation: none; }
   .chat-thinking-label { animation: none; color: #777 !important; background: none; }
 }
+
+/* Estado vacío compacto del visor de archivos. */
+#codeclub-right-sidebar main > div:last-child > svg { width: 32px; height: 32px; }
+#codeclub-right-sidebar main > div:last-child > div > p:first-child { font-size: 14px; line-height: 20px; }
+#codeclub-right-sidebar main > div:last-child > div > p:last-child { max-width: 280px; font-size: 12px; line-height: 20px; color: #a7a7a7; visibility: hidden; }
+#codeclub-right-sidebar main > div:last-child > div > p:last-child::after { content: 'Selecciona un archivo del \00E1rbol del espacio de trabajo'; visibility: visible; display: block; }
+
+#codeclub-right-sidebar main,
+#codeclub-right-sidebar main > div:last-child { background: var(--codeclub-center) !important; }
+#codeclub-right-sidebar main > div:last-child { gap: 0.75rem !important; padding-inline: 1.25rem !important; }
+#codeclub-right-sidebar main > div:last-child > div { max-width: 280px !important; }
+#codeclub-right-sidebar main > div:last-child > div > p:first-child { margin: 0 !important; font-size: 14px !important; font-weight: 500 !important; line-height: 20px !important; }
+#codeclub-right-sidebar main > div:last-child > div > p:last-child { margin: 0.5rem 0 0 !important; max-width: 280px !important; font-size: 0 !important; line-height: 20px !important; color: transparent !important; visibility: visible !important; }
+#codeclub-right-sidebar main > div:last-child > div > p:last-child::after { content: 'Selecciona un archivo del \00E1rbol del espacio de trabajo'; display: block; font-size: 12px; line-height: 20px; color: #a7a7a7; visibility: visible; }
+#codeclub-right-sidebar main > div:last-child { justify-content: flex-start !important; padding-top: 2.5rem !important; }

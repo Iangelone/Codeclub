@@ -3188,7 +3188,7 @@ function AppleFoldersView({ projectPath, initialSelectedPath = '' }: { projectPa
   </div>;
 }
 
-function TabbedProjectView({ projectPath, initialSelectedPath = '' }: { projectPath?: string; initialSelectedPath?: string }) {
+function TabbedProjectView({ projectPath, initialSelectedPath = '', showFileTree, onToggleFileTree }: { projectPath?: string; initialSelectedPath?: string; showFileTree: boolean; onToggleFileTree?: () => void }) {
   const [loading, setLoading] = useState(true);
   const [entries, setEntries] = useState<ProjectFileEntry[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -3199,6 +3199,7 @@ function TabbedProjectView({ projectPath, initialSelectedPath = '' }: { projectP
   const panelRef = useRef<HTMLDivElement>(null);
   const draggedFileRef = useRef<{ projectPath: string; path: string } | null>(null);
   const [error, setError] = useState('');
+  const setShowFileTree = onToggleFileTree ?? (() => undefined);
 
   const loadProject = async () => {
     if (!projectPath) return;
@@ -3324,7 +3325,7 @@ function TabbedProjectView({ projectPath, initialSelectedPath = '' }: { projectP
     </React.Fragment>;
   });
 
-  return <div ref={panelRef} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleFileDrop} className="flex h-full w-full min-w-0 flex-col overflow-hidden bg-[#171717] text-[#eeeeee]">
+  return <div ref={panelRef} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleFileDrop} className="flex h-full w-full min-w-0 flex-col overflow-hidden bg-[#171717] text-[#eeeeee] [&>div:first-child]:hidden">
     <div className="flex h-9 shrink-0 items-center justify-between border-b border-[#2b2b2b] px-4"><span className="text-[13px] leading-none">/</span><button type="button" onClick={() => setShowFileTree((visible) => !visible)} className="grid h-7 w-7 place-items-center rounded-[9px] bg-[#202020] text-[#eeeeee] hover:bg-[#2b2b2b]" title="Mostrar u ocultar �rbol del workspace" aria-label="Mostrar u ocultar �rbol del workspace"><FolderOpen size={16} /></button></div>
     {loading ? <div className="flex flex-1 items-center justify-center text-xs text-[#777777]">Cargando proyecto...</div> : <div className="flex min-h-0 flex-1">
       <main className="flex min-w-0 flex-1 flex-col bg-[#171717]">{tabs.length ? <><div className="flex h-8 shrink-0 items-end gap-1 overflow-x-auto border-b border-[#2b2b2b] bg-[#171717] px-2">{tabs.map((path) => <div key={path} className={`group flex h-7 max-w-[190px] min-w-[110px] items-center gap-2 border-x border-t px-3 text-[11px] ${selectedPath === path ? 'border-[#2b2b2b] bg-[#1c1c1c] text-[#eeeeee]' : 'border-transparent text-[#777777]'}`}><button type="button" onClick={() => setSelectedPath(path)} className="min-w-0 flex-1 truncate bg-transparent text-left">{path.split(/[\\/]/).pop()}</button><button type="button" onClick={() => closeFile(path)} className="rounded p-0.5 text-[#666666] hover:bg-white/10 hover:text-white" title="Cerrar archivo" aria-label={`Cerrar ${path}`}><X size={12} /></button></div>)}</div><div className="min-h-0 flex-1 overflow-hidden bg-transparent">{files[selectedPath] ? <FilePreview projectPath={projectPath || ''} file={files[selectedPath]} onChange={(content) => handleContentChange(selectedPath, content)} /> : <div className="p-4 text-xs text-[#777777]">Cargando archivo...</div>}</div></> : <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center"><FolderOpen size={44} strokeWidth={1.4} className="text-[#a7a7a7]" /><div><p className="m-0 text-[18px] font-semibold text-[#eeeeee]">Abrir archivo</p><p className="m-0 mt-3 max-w-[360px] text-[16px] leading-6 text-[#a7a7a7]">Selecciona un archivo del �rbol del espacio de trabajo</p></div></div>}</main>
@@ -3333,8 +3334,8 @@ function TabbedProjectView({ projectPath, initialSelectedPath = '' }: { projectP
   </div>;
 }
 
-function ProjectPanelView({ projectPath, selectedPath }: { projectPath?: string; selectedPath?: string }) {
-  return <TabbedProjectView projectPath={projectPath} initialSelectedPath={selectedPath} />;
+export function ProjectPanelView({ projectPath, selectedPath, showFileTree = true, onToggleFileTree }: { projectPath?: string; selectedPath?: string; showFileTree?: boolean; onToggleFileTree?: () => void }) {
+  return <TabbedProjectView projectPath={projectPath} initialSelectedPath={selectedPath} showFileTree={showFileTree} onToggleFileTree={onToggleFileTree} />;
 }
 
 function ProjectDiffView({ kind, projectPath }: { kind: 'diff' | 'folders'; projectPath?: string }) {
