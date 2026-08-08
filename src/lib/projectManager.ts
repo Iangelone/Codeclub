@@ -1,7 +1,5 @@
-import { appConfigDir } from "@tauri-apps/api/path";
-import { exists, mkdir, readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
+import { appConfigDir, fileExists as exists, makeDirectory as mkdir, readDesktopText as readTextFile, writeDesktopText as writeTextFile, nativeInvoke as invoke } from './runtime';
 import { getAppConfigFilePath, getProjectFilePath, getSetting, logPersistence, migrateLegacyProjectData, setSetting } from "./persistence.ts";
-import { invoke } from "@tauri-apps/api/core";
 
 const PROJECTS_INDEX = "projects.json";
 const PROJECTS_BACKUP_INDEX = "projects.backup.json";

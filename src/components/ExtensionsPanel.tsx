@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Blocks, Box, FileText, FileType2, LayoutTemplate, Network, PlugZap, Plus, Presentation, Search, Table2, Trash2, WandSparkles } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
 import { getSetting, setSetting } from '../lib/persistence';
 import { protectedExtensionIds, type CodeclubExtension } from '../lib/extensions';
 import { LANGUAGE_STORAGE_KEY, type AppLanguage } from '../lib/i18n';
@@ -43,10 +42,10 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
     void Promise.all(allExtensions.map(async (extension) => [extension.name, await getSetting(`codeclub_extension_enabled_${extension.id}`, 'true') !== 'false'] as const))
       .then((entries) => setEnabled(Object.fromEntries(entries)));
     void getSetting('codeclub_custom_extensions', '[]').then((raw) => { try { setCustomExtensions(JSON.parse(raw || '[]')); } catch { setCustomExtensions([]); } });
-    void Promise.all([invoke<any[]>('codeclub_list_skills', { projectPath: selectedProject?.projectPath || '' }), loadAgentPlugins(selectedProject?.projectPath || '')]).then(([items, discovered]) => {
+    void loadAgentPlugins(selectedProject?.projectPath || '').then((discovered) => {
       setPlugins(discovered || []);
       const pluginSkills = (discovered || []).flatMap((plugin) => plugin.skills.map((skill) => ({ id: `${plugin.id}:${skill.id}`, name: skill.name, description: skill.description, source: `plugin:${plugin.name}` })));
-      setSkills([...(items || []).map(({ id, name, description, source }) => ({ id, name, description, source })), ...pluginSkills]);
+      setSkills(pluginSkills);
       const pluginServers = (discovered || []).flatMap((plugin) => Object.entries(plugin.mcpServers || {}).map(([name, server]) => ({ id: `${plugin.id}:${name}`, name: `${plugin.name} · ${name}`, url: server.url || `${server.type} · ${server.command || ''}`, enabled: true, source: 'plugin' })));
       setMcpServers((current) => [...current.filter((server) => server.source !== 'plugin'), ...pluginServers]);
     }).catch(() => { setSkills([]); setPlugins([]); });

@@ -1,6 +1,4 @@
-import { appCacheDir, appConfigDir, join } from "@tauri-apps/api/path";
-import { copyFile, exists, mkdir, readDir, readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
-import { isTauriRuntime } from './runtime';
+import { appCacheDir, appConfigDir, fileExists as exists, joinPath as join, makeDirectory as mkdir, readDesktopText as readTextFile, writeDesktopText as writeTextFile } from './runtime';
 
 const PERSISTENCE_LOG = "persistence-log.jsonl";
 const SETTINGS_FILE = "settings.json";
@@ -23,11 +21,13 @@ let projectMigrationQueue = Promise.resolve();
 const migrateDirectory = async (source: string, target: string): Promise<void> => {
   if (!(await exists(source))) return;
   await mkdir(target, { recursive: true });
-  for (const entry of await readDir(source)) {
+  const desktop = (typeof window !== 'undefined' ? (window as any).codeclub : undefined);
+  if (!desktop?.listDirectory) return;
+  for (const entry of await desktop.listDirectory(source)) {
     const sourceEntry = await join(source, entry.name);
     const targetEntry = await join(target, entry.name);
     if (entry.isDirectory) await migrateDirectory(sourceEntry, targetEntry);
-    else if (!(await exists(targetEntry))) await copyFile(sourceEntry, targetEntry);
+    else if (!(await exists(targetEntry))) await writeTextFile(targetEntry, await readTextFile(sourceEntry));
   }
 };
 
@@ -78,10 +78,7 @@ let settingsWriteQueue = Promise.resolve();
 
 const loadSettings = async (): Promise<Record<string, unknown>> => {
   if (settingsCache) return settingsCache;
-  if (!isTauriRuntime()) {
-    try { settingsCache = JSON.parse(window.localStorage.getItem(browserSettingsKey) ?? '{}'); } catch { settingsCache = {}; }
-    return settingsCache;
-  }
+  try { settingsCache = JSON.parse(window.localStorage.getItem(browserSettingsKey) ?? '{}'); } catch { settingsCache = {}; }
   const path = await getAppConfigFilePath(SETTINGS_FILE);
   try {
     settingsCache = (await exists(path)) ? JSON.parse(await readTextFile(path)) : {};
@@ -100,13 +97,12 @@ export const setSetting = async (key: string, value: unknown) => {
   const operation = settingsWriteQueue.then(async () => {
     const settings = await loadSettings();
     settings[key] = value;
-    if (!isTauriRuntime()) {
-      window.localStorage.setItem(browserSettingsKey, JSON.stringify(settings));
-      return;
-    }
+    window.localStorage.setItem(browserSettingsKey, JSON.stringify(settings));
     const configPath = await appConfigDir();
-    await mkdir(configPath, { recursive: true });
-    await writeTextFile(await getAppConfigFilePath(SETTINGS_FILE), JSON.stringify(settings));
+    if (configPath) {
+      await mkdir(configPath);
+      await writeTextFile(await getAppConfigFilePath(SETTINGS_FILE), JSON.stringify(settings));
+    }
   });
   settingsWriteQueue = operation.catch(() => undefined);
   return operation;

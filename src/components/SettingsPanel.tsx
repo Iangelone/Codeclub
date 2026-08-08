@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Keyboard, Monitor, Palette, UserRound } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
+import { nativeInvoke as invoke } from '../lib/runtime';
 import { LANGUAGE_STORAGE_KEY, type AppLanguage } from '../lib/i18n';
 
 export default function SettingsPanel() {

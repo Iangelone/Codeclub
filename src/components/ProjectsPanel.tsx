@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { MoreVertical, Plus } from "lucide-react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { selectDesktopFolder } from '../lib/runtime';
 import { ensureProjectMeta, indexProjectContents, readProjectIndex, saveProjectIndex, type ProjectEntry } from "../lib/projectManager";
 import { LANGUAGE_STORAGE_KEY, type AppLanguage } from "../lib/i18n";
 
@@ -61,8 +61,9 @@ export default function ProjectsPanel() {
     if (adding) return;
     setAdding(true);
     try {
-      const selectedPath = await open({ directory: true, multiple: false, title: text.folder });
-      if (!selectedPath || Array.isArray(selectedPath)) return;
+      const selectedProject = await selectDesktopFolder();
+      const selectedPath = selectedProject?.path;
+      if (!selectedPath) return;
       const name = selectedPath.split(/[\\/]/).filter(Boolean).pop() || "Proyecto";
       await ensureProjectMeta(selectedPath, name);
       await indexProjectContents(name, selectedPath);

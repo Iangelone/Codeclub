@@ -1,5 +1,4 @@
-import { appConfigDir, join } from '@tauri-apps/api/path';
-import { exists, mkdir, readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
+import { appConfigDir, joinPath as join, fileExists as exists, makeDirectory as mkdir, readDesktopText as readTextFile, writeDesktopText as writeTextFile } from './runtime';
 import { getProjectFilePath, migrateLegacyProjectData } from './persistence';
 
 export interface ExecutionLogRecord {

@@ -13,10 +13,7 @@ import { rust } from '@codemirror/lang-rust';
 import { sql } from '@codemirror/lang-sql';
 import { xml } from '@codemirror/lang-xml';
 import { oneDark } from '@codemirror/theme-one-dark';
-import { convertFileSrc, invoke } from '@tauri-apps/api/core';
-import { copyText, safeListen } from '../lib/runtime';
-import { exists, mkdir, readFile, readTextFile, remove, writeTextFile } from '@tauri-apps/plugin-fs';
-import { open } from '@tauri-apps/plugin-dialog';
+import { copyText, safeListen, desktopFileUrl as convertFileSrc, nativeInvoke as invoke, fileExists as exists, makeDirectory as mkdir, readDesktopBytes as readFile, readDesktopText as readTextFile, removeDesktopFile as remove, writeDesktopText as writeTextFile, selectDesktopFiles as open } from '../lib/runtime';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { jsonSchema, Output } from 'ai';
 import ReactMarkdown from 'react-markdown';
@@ -83,7 +80,6 @@ const getBrowserReferenceFavicon = (reference: { title: string; url?: string }) 
 };
 
 type ChatAttachment = { path: string; name: string; mediaType: string; size?: number; previewUrl?: string; previewText?: string };
-type SessionSkill = { id: string; name: string; description: string; source: string; content: string };
 const extensionIcons: Record<string, any> = { documents: FileText, pdf: FileType2, spreadsheets: Table2, presentations: Presentation, 'template-creator': LayoutTemplate };
 type ChatRuntime = {
   controller: AbortController;
@@ -353,11 +349,9 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   useEffect(() => {
     const loadSkills = async () => {
       try {
-        let legacy: SessionSkill[] = [];
-        try { legacy = await invoke<SessionSkill[]>('codeclub_list_skills', { projectPath: activeProject?.projectPath || '' }); } catch { /* Electron usa Agent Plugins como fuente nativa. */ }
         const plugins = await loadAgentPlugins(activeProject?.projectPath || '');
         const pluginSkills = plugins.flatMap((plugin) => plugin.skills.map((skill) => ({ ...skill, id: `${plugin.id}:${skill.id}`, source: `plugin:${plugin.name}`, pluginRoot: plugin.root })));
-        setSkillOptions([...(legacy || []), ...pluginSkills]);
+        setSkillOptions(pluginSkills);
       } catch { setSkillOptions([]); }
     };
     const handleSkillsChanged = (event: Event) => {
@@ -1350,7 +1344,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         await appendToTranscript(msg, chat);
         return;
       }
-      const { writeTextFile, readTextFile, exists, mkdir } = await import('@tauri-apps/plugin-fs');
       await mkdir(await getProjectFilePath(chat.projectPath, 'chats'), { recursive: true });
       const path = await getProjectChatPath(chat.projectPath, chat.chatId);
       let content = '';
@@ -1386,7 +1379,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       await appendGlobalChatTranscript(chat.chatId, markdown);
       return;
     }
-    const { readTextFile, exists, mkdir } = await import('@tauri-apps/plugin-fs');
     const dir = await getProjectFilePath(chat.projectPath, 'chats');
     const path = getProjectTranscriptPath(chat.projectPath, chat.chatId);
     await mkdir(dir, { recursive: true });
@@ -1521,10 +1513,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         fetch: tauriModelFetch,
       });
       const contextProjectPath = activeProject?.projectPath || '';
-      /* removed legacy memory context
-        ? `Memoria recuperada autom�ticamente para este prompt:\n${autonomousMemories.map((memory) => `- [${memory.status || 'new'}] ${memory.key}: ${memory.content}`).join('\n')}`
       const projectChangeNotice = projectChangeNoticeRef.current;
-      */
       projectChangeNoticeRef.current = null;
       let runMode: AgentMode = 'development';
       let routeSpecialist: AgentSpecialist = 'primary';
@@ -1703,10 +1692,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         projectChangeNotice,
         activeSkillsContext,
         activeExtensionsContext,
-        autonomousMode ? 'En modo Aut�nomo, al cerrar el turno evalu� decisiones, preferencias y pendientes durables con remember; si hay contradicciones, marc� conflict o supersedes con evidencia y no sobrescribas silenciosamente.' : '',
         `Sos el Padre de Codeclub en modo ${runMode === 'business' ? 'Econom�a' : 'Desarrollo'}. Tu trabajo es entender el objetivo, coordinar una colmena de hijos y entregar un resultado comprobable. Report� siempre los errores reales de las tools, incluso si luego te recuper�s; nunca describas una ejecuci�n como "sin errores" si hubo una llamada fallida.`,
         `Contexto: proyecto ${contextProjectPath || 'sin proyecto'}; proyectos indexados: ${indexedProjects.map((project) => `${project.name} (${project.path})`).join(', ') || 'ninguno'}.`,
-        'Memoria: administr� la memoria exclusivamente con las tools remember, recall y forget. Antes de responder sobre decisiones, preferencias o contexto previo, us� recall. Despu�s de cada mensaje evalu� si existe un dato durable y �til; solo si la evidencia es suficiente, guard� una memoria at�mica con remember. No guardes solicitudes, texto arbitrario ni datos temporales por defecto; si no hay una memoria clara, no llames ninguna tool de memoria.',
         'Para capacidades operativas, consult� searchTools con palabras clave, le� el schema exacto y ejecut� la elegida mediante executeTool. No inventes nombres ni par�metros.',
         'Pod�s ejecutar directamente las tools de artifacts necesarias y verific� cada resultado antes de responder.',
         'La �nica IA es responsable de ejecutar acciones y persistir planes, TODOs y artifacts.',
@@ -1916,9 +1903,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         try {
           await runStream({
             model: provider(currentModel.id),
-            system: 'Sos el extractor de memoria de Codeclub. Analiz� el turno terminado y llam� remember �nicamente si contiene una decisi�n, preferencia, pendiente o contexto durable y �til. No guardes solicitudes temporales, saludos, secretos ni texto arbitrario. Si existe una contradicci�n, us� status conflict o supersedes con evidencia. Si no hay nada durable, no llames ninguna tool y respond� NO_MEMORY.',
             messages: [{ role: 'user', content: JSON.stringify({ user: content, assistant: assistantContent, project: contextProjectPath || null }) }],
-            tools: { remember: selectedToolset.remember },
             callbacks: { onTextDelta: () => {}, onUsage: () => {} },
             signal: abortController.signal,
           });
@@ -2138,7 +2123,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         'assistant-computer': 'Usa Computer Use sobre la aplicacion de escritorio de ChatGPT, no el navegador embebido y no openBrowser. Ejecuta las tools una por vez: primero computerListWindows; luego enfoca ChatGPT con computerAction focus y targetName; consulta computerGetState. Si solo devuelve Pane o no muestra TextBox/Input, ejecuta computerScreenshot, ubica visualmente el campo, haz computerAction click con x/y, luego computerAction type con "Hola GPT, te saluda Codeclub." y computerAction key con {ENTER}. Verifica el resultado real y no inventes que se envio si una tool falla.',
         'dev-computer': 'Hac� una verificaci�n segura de Computer Use de forma secuencial, una tool por vez: primero computerListWindows, despu�s computerGetState y al final computerScreenshot. No paralelices las tools. No hagas clicks, no escribas y no modifiques nada. Mostr� la evidencia real de cada tool.',
         'dev-inspect': 'Inspeccion� el workspace actual. List� archivos, busc� algunos TODO y le� un archivo peque�o. Resum� qu� herramientas usaste, cu�nto tard� cada paso y qu� evidencia encontraste. No modifiques nada.',
-        'dev-memory': 'Cre� tres memorias persistentes de prueba en el proyecto actual usando remember y no las elimines: una con key "debug-confirmed" y status "confirmed", otra con key "debug-new" y status "new", y otra con key "debug-conflict" y status "conflict". Us� contenido distinto, tags ["debug", "filters"] y una confianza realista para cada una. Mostr� el resultado real de cada llamada y confirm� que quedaron guardadas.',
         'dev-plan': 'Cre� un plan breve para verificar el workspace con tres pasos, actualiz� el primer paso y consult� el estado final. Us� las tools directamente y devolv� los IDs y estados reales.',
         'dev-edit': 'Cre� un archivo temporal dentro del workspace con una l�nea de texto, leelo para comprobarlo y despu�s elimin�lo. Verific� cada resultado y no toques archivos existentes.',
         'dev-browser': 'Abr� https://example.com, observ� el estado del navegador y verific� que el t�tulo o contenido principal est� disponible. No hagas acciones destructivas ni inventes resultados.',
@@ -2781,7 +2765,7 @@ const TOOL_BRAILLE_FRAMES: Record<string, string[]> = {
   writeFile: ['⠒', '⠓', '⠒', '⠑'], runCommand: ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧'], terminal: ['⠙', '⠋', '⠹', '⠸', '⠼', '⠴'],
   openBrowser: ['⠳', '⠲', '⠦', '⠴', '⠳'], getBrowserState: ['⠼', '⠾', '⠿', '⠾', '⠼'], browserAction: ['⠦', '⠴', '⠲', '⠦'],
   askUser: ['⠴', '⠦', '⠴', '⠦'], createPlan: ['⠇', '⠧', '⠷', '⠇'], createExecutionPlan: ['⠇', '⠧', '⠷', '⠇'], updatePlan: ['⠸', '⠼', '⠸'],
-  todo: ['⠺', '⠻', '⠺', '⠻'], getTaskStatus: ['⠾', '⠿', '⠾'], remember: ['⠘', '⠸', '⠘'], recall: ['⠨', '⠸', '⠨'], forget: ['⠊', '⠉', '⠊'], getExecutionLog: ['⠫', '⠪', '⠫'],
+  todo: ['⠺', '⠻', '⠺', '⠻'], getTaskStatus: ['⠾', '⠿', '⠾'], getExecutionLog: ['⠫', '⠪', '⠫'],
   getBusinessWorkspace: ['⠍', '⠝', '⠍'], updateBusinessWorkspace: ['⠮', '⠯', '⠮'], getAIUsageMetrics: ['⠰', '⠸', '⠰'], createQuote: ['⠹', '⠺', '⠹'], createBudget: ['⠭', '⠮', '⠭'],
   listIndexedProjects: ['⠪', '⠫', '⠪'], delegateBusinessSpecialist: ['⠈', '⠉', '⠋', '⠙'], subagent: ['⠈', '⠉', '⠋', '⠙'],
 };

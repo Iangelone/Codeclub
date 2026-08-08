@@ -1,21 +1,33 @@
-import { listen } from '@tauri-apps/api/event';
-import { invoke as tauriInvoke } from '@tauri-apps/api/core';
+export const isTauriRuntime = () => false;
 
-export const isTauriRuntime = () => typeof window !== 'undefined' && Boolean((window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
-
-/** Native command bridge shared by Electron and the legacy Tauri runtime. */
+/** Native command bridge for the Electron desktop runtime. */
 export const nativeInvoke = async <T = unknown>(command: string, args?: Record<string, unknown>): Promise<T> => {
   if (typeof window !== 'undefined' && typeof (window as any).codeclub?.invoke === 'function') {
     return (window as any).codeclub.invoke(command, args || {}) as Promise<T>;
   }
-  if (isTauriRuntime()) return tauriInvoke<T>(command, args);
   throw new Error(`No hay bridge nativo disponible para ${command}.`);
 };
 
 export const safeListen = async <T>(event: string, handler: (event: T) => void) => {
-  if (!isTauriRuntime()) return () => undefined;
-  return listen<T>(event, handler);
+  if (typeof window === 'undefined') return () => undefined;
+  const listener = handler as EventListener;
+  window.addEventListener(event, listener);
+  return () => window.removeEventListener(event, listener);
 };
+
+const desktop = () => (typeof window !== 'undefined' ? (window as any).codeclub : undefined);
+export const appConfigDir = async () => desktop()?.appConfigDir?.() ?? '';
+export const appCacheDir = async () => desktop()?.appCacheDir?.() ?? '';
+export const joinPath = async (...parts: string[]) => desktop()?.joinPath ? desktop().joinPath(...parts) : parts.join('/');
+export const fileExists = async (path: string) => desktop()?.fileExists ? Boolean(await desktop().fileExists(path)) : false;
+export const makeDirectory = async (path: string) => desktop()?.makeDirectory ? desktop().makeDirectory(path) : undefined;
+export const readDesktopBytes = async (path: string) => desktop()?.readFile ? new Uint8Array(await desktop().readFile(path)) : new Uint8Array();
+export const readDesktopText = async (path: string) => desktop()?.readTextFile ? String(await desktop().readTextFile(path)) : '';
+export const writeDesktopText = async (path: string, content: string) => desktop()?.writeTextFile ? desktop().writeTextFile(path, content) : undefined;
+export const removeDesktopFile = async (path: string) => desktop()?.removeFile ? desktop().removeFile(path) : undefined;
+export const selectDesktopFiles = async () => desktop()?.selectFiles ? (await desktop().selectFiles()) : [];
+export const selectDesktopFolder = async () => desktop()?.selectProjectFolder ? (await desktop().selectProjectFolder()) : null;
+export const desktopFileUrl = (path: string) => path.startsWith('file://') || path.startsWith('data:') ? path : `file:///${path.replace(/\\/g, '/').replace(/^\/+/, '')}`;
 
 export const copyText = async (value: string) => {
   if (typeof document === 'undefined') return false;

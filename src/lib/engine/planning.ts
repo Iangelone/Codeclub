@@ -1,4 +1,5 @@
 import { getProjectFilePath, migrateLegacyProjectData } from '../persistence';
+import { fileExists, makeDirectory, readDesktopText, writeDesktopText } from '../runtime';
 
 export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled' | 'blocked';
 
@@ -35,12 +36,11 @@ export interface AgentState {
 const statePath = (projectPath: string) => getProjectFilePath(projectPath, 'agent-state.json');
 
 export async function readAgentState(projectPath: string): Promise<AgentState> {
-  const { exists, readTextFile } = await import('@tauri-apps/plugin-fs');
   await migrateLegacyProjectData(projectPath);
   const path = await statePath(projectPath);
-  if (!(await exists(path))) return { plan: null, plans: [], todos: [] };
+  if (!(await fileExists(path))) return { plan: null, plans: [], todos: [] };
   try {
-    const data = JSON.parse(await readTextFile(path));
+    const data = JSON.parse(await readDesktopText(path));
     const plans = Array.isArray(data.plans) ? data.plans : data.plan ? [data.plan] : [];
     return { ...data, plans, plan: plans[plans.length - 1] || null, todos: Array.isArray(data.todos) ? data.todos : [] };
   } catch {
@@ -49,10 +49,9 @@ export async function readAgentState(projectPath: string): Promise<AgentState> {
 }
 
 export async function writeAgentState(projectPath: string, state: AgentState): Promise<void> {
-  const { mkdir, writeTextFile } = await import('@tauri-apps/plugin-fs');
   const path = await statePath(projectPath);
-  await mkdir(await getProjectFilePath(projectPath), { recursive: true });
-  await writeTextFile(path, JSON.stringify(state));
+  await makeDirectory(await getProjectFilePath(projectPath));
+  await writeDesktopText(path, JSON.stringify(state));
 }
 
 export const createId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

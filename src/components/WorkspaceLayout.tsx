@@ -84,9 +84,27 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
       setProjectNameDraft(nextName);
       setEditingProjectName(false);
       setChatsByProject((current) => current[project.id] ? current : { ...current, [project.id]: [] });
+      if (project.path) window.localStorage.setItem('codeclub:active-project', JSON.stringify({ id: project.id, name: nextName, path: project.path }));
+      else window.localStorage.removeItem('codeclub:active-project');
     };
     window.addEventListener('codeclub:project-switch', handleProjectSwitch);
     return () => window.removeEventListener('codeclub:project-switch', handleProjectSwitch);
+  }, []);
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem('codeclub:active-project') || 'null') as { id?: string; name?: string; path?: string } | null;
+      if (!saved?.id || !saved.path) return;
+      setActiveProjectId(saved.id);
+      setActiveProjectPath(saved.path);
+      setActiveProjectName(saved.name || 'Proyecto');
+      setProjectNameDraft(saved.name || 'Proyecto');
+      setChatsByProject((current) => current[saved.id!] ? current : { ...current, [saved.id!]: [] });
+      window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('codeclub:project-selection-changed', { detail: { selected: true, projectPath: saved.path, projectName: saved.name || 'Proyecto' } }));
+        window.dispatchEvent(new CustomEvent('codeclub:active-project', { detail: { projectPath: saved.path, projectName: saved.name || 'Proyecto' } }));
+      }, 0);
+    } catch { /* Si no hay proyecto guardado, inicia en Codeclub. */ }
   }, []);
 
   useEffect(() => {

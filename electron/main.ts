@@ -208,6 +208,7 @@ async function createBrowserSurface(url: string, x: number, y: number, width: nu
 
 async function invokeNativeCommand(command: string, args: any = {}) {
   switch (command) {
+    case 'codeclub_get_username': return process.env.CODECLUB_USERNAME || 'Usuario';
     case 'codeclub_list_files': return listProjectFiles(args.projectPath, Math.min(Number(args.maxFiles) || 400, 1200));
     case 'codeclub_read_file': return fs.readFile(projectFile(args.projectPath, args.path), 'utf8');
     case 'codeclub_search_text': return searchProjectText(args.projectPath, args.query, Math.min(Number(args.maxMatches) || 80, 200));
@@ -348,6 +349,13 @@ app.whenReady().then(async () => {
   ipcMain.handle('files:select', async () => { const result = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] }); return result.canceled ? [] : result.filePaths; });
   ipcMain.handle('files:read', async (_event, filePath: string) => Array.from(await fs.readFile(filePath)));
   ipcMain.handle('files:read-text', async (_event, filePath: string) => fs.readFile(filePath, 'utf8'));
+  ipcMain.handle('files:exists', async (_event, filePath: string) => { try { await fs.access(filePath); return true; } catch { return false; } });
+  ipcMain.handle('files:mkdir', async (_event, directory: string) => { await fs.mkdir(directory, { recursive: true }); return true; });
+  ipcMain.handle('files:write-text', async (_event, filePath: string, content: string) => { await fs.mkdir(path.dirname(filePath), { recursive: true }); await fs.writeFile(filePath, String(content ?? ''), 'utf8'); return true; });
+  ipcMain.handle('files:remove', async (_event, filePath: string) => { await fs.rm(filePath, { recursive: true, force: true }); return true; });
+  ipcMain.handle('path:join', (_event, parts: string[]) => path.join(...(Array.isArray(parts) ? parts : [])));
+  ipcMain.handle('path:app-config', () => app.getPath('userData'));
+  ipcMain.handle('path:app-cache', () => path.join(app.getPath('userData'), 'cache'));
   ipcMain.handle('native:invoke', async (_event, payload: { command: string; args?: Record<string, unknown> }) => invokeNativeCommand(payload.command, payload.args));
   ipcMain.handle('chats:read-project', async (_event, projectPath: string, chatId: string) => {
     try { return await fs.readFile(projectChatFile(projectPath, chatId), 'utf8'); } catch { return ''; }
