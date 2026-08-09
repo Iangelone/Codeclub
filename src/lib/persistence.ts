@@ -55,7 +55,7 @@ const loadSettings = async (): Promise<Record<string, unknown>> => {
   } catch {
     settingsCache = {};
   }
-  return settingsCache;
+  return settingsCache ?? {};
 };
 
 export const getSetting = async <T>(key: string, fallback: T): Promise<T> => {

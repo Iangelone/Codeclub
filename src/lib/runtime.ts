@@ -18,7 +18,7 @@ export const appConfigDir = async () => desktop()?.appConfigDir?.() ?? '';
 export const appCacheDir = async () => desktop()?.appCacheDir?.() ?? '';
 export const joinPath = async (...parts: string[]) => desktop()?.joinPath ? desktop().joinPath(...parts) : parts.join('/');
 export const fileExists = async (path: string) => desktop()?.fileExists ? Boolean(await desktop().fileExists(path)) : false;
-export const makeDirectory = async (path: string) => desktop()?.makeDirectory ? desktop().makeDirectory(path) : undefined;
+export const makeDirectory = async (path: string, _options?: { recursive?: boolean }) => desktop()?.makeDirectory ? desktop().makeDirectory(path) : undefined;
 export const readDesktopBytes = async (path: string) => desktop()?.readFile ? new Uint8Array(await desktop().readFile(path)) : new Uint8Array();
 export const readDesktopText = async (path: string) => desktop()?.readTextFile ? String(await desktop().readTextFile(path)) : '';
 export const writeDesktopText = async (path: string, content: string) => desktop()?.writeTextFile ? desktop().writeTextFile(path, content) : undefined;

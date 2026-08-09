@@ -115,14 +115,15 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
     const handleProjectSwitch = (event: Event) => {
       const project = (event as CustomEvent<{ id?: string; name?: string; path?: string }>).detail;
       if (!project?.id) return;
-      setActiveProjectId(project.id);
+      const projectId = project.id;
+      setActiveProjectId(projectId);
       setActiveProjectPath(project.path);
       const nextName = project.name ?? (project.id === 'home' ? 'Codeclub' : activeProjectName);
       setActiveProjectName(nextName);
       setProjectNameDraft(nextName);
       setEditingProjectName(false);
-      setChatsByProject((current) => current[project.id] ? current : { ...current, [project.id]: [] });
-      if (project.path) window.localStorage.setItem('codeclub:active-project', JSON.stringify({ id: project.id, name: nextName, path: project.path }));
+      setChatsByProject((current) => current[projectId] ? current : { ...current, [projectId]: [] });
+      if (project.path) window.localStorage.setItem('codeclub:active-project', JSON.stringify({ id: projectId, name: nextName, path: project.path }));
       else window.localStorage.removeItem('codeclub:active-project');
     };
     window.addEventListener('codeclub:project-switch', handleProjectSwitch);

@@ -20,9 +20,12 @@ export default function Topbar({ leftOpen, rightOpen, onToggleLeft, onToggleRigh
       if (!project?.id) return;
       setActiveProjectId(project.id);
       if (project.id === 'home' || !project.path) return;
-      setProjects((current) => current.some((item) => item.id === project.id)
-        ? current.map((item) => item.id === project.id ? { ...item, name: project.name ?? item.name, path: project.path ?? item.path } : item)
-        : [...current, { id: project.id, name: project.name ?? project.id, path: project.path }]);
+      const projectId = project.id as string;
+      const projectName = project.name || projectId;
+      const projectPath = project.path as string;
+      setProjects((current) => current.some((item) => item.id === projectId)
+        ? current.map((item) => item.id === projectId ? { ...item, name: projectName, path: projectPath || item.path } : item)
+        : [...current, { id: projectId, name: projectName, path: projectPath }]);
     };
     window.addEventListener('codeclub:project-switch', handleProjectSwitch);
     return () => window.removeEventListener('codeclub:project-switch', handleProjectSwitch);
@@ -33,9 +36,10 @@ export default function Topbar({ leftOpen, rightOpen, onToggleLeft, onToggleRigh
     let project;
     try { project = await api.selectProjectFolder(); } catch (error) { console.error('No se pudo seleccionar la carpeta del proyecto', error); return; }
     if (!project) return;
-    setProjects((current) => [...current.filter((item) => item.id !== project.id), project]);
-    setActiveProjectId(project.id);
-    window.dispatchEvent(new CustomEvent('codeclub:project-switch', { detail: project }));
+    const selectedProject = project as { id: string; name: string; path: string };
+    setProjects((current) => [...current.filter((item) => item.id !== selectedProject.id), selectedProject]);
+    setActiveProjectId(selectedProject.id);
+    window.dispatchEvent(new CustomEvent('codeclub:project-switch', { detail: selectedProject }));
   };
   const selectProject = async (project: { id: string; name: string; path: string }) => {
     setActiveProjectId(project.id);

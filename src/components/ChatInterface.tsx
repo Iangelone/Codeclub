@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUp, ArrowUpRight, Box, Bug, Camera, Check, ChevronDown, ChevronRight, CircleHelp, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Languages, LayoutTemplate, Lightbulb, ListChecks, ListTodo, MessageSquare, Monitor, MousePointer2, Orbit, Paperclip, Pencil, Presentation, Radar, RotateCcw, Search, ScrollText, Square, Table2, Terminal, Folder, FolderTree, RefreshCw, WandSparkles, Wifi, X } from 'lucide-react';
+import { ArrowUp, ArrowUpRight, Box, Bug, Camera, Check, ChevronDown, ChevronRight, CircleHelp, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, GitCompare, Globe, KeyRound, Languages, LayoutTemplate, Lightbulb, ListChecks, ListTodo, MessageSquare, Monitor, MousePointer2, Orbit, Paperclip, Pencil, Presentation, Radar, RotateCcw, Search, ScrollText, Square, Table2, Terminal, Folder, FolderTree, RefreshCw, WandSparkles, Wifi, X } from 'lucide-react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -80,6 +80,11 @@ const getBrowserReferenceFavicon = (reference: { title: string; url?: string }) 
 };
 
 type ChatAttachment = { path: string; name: string; mediaType: string; size?: number; previewUrl?: string; previewText?: string };
+type ChatMessage = { role: string; content: string; attachments: ChatAttachment[]; [key: string]: any };
+type CatalogItem = { id: string; type?: string; label?: string; name?: string; description?: string; aliases?: string[]; source?: string; [key: string]: any };
+type ProjectOption = CatalogItem & { path?: string; projectPath?: string | null; projectId?: string; isNone?: boolean };
+type SessionSkill = CatalogItem & { name: string; source: string; content: string; pluginRoot?: string };
+type ChatInterfaceProps = { catalog: CatalogItem[]; defaultProvider: CatalogItem; defaultModel: CatalogItem; panelId?: string; eventPrefix?: string; selectedProject?: { projectPath: string; projectName?: string } | null; blockedPanelState?: string };
 const extensionIcons: Record<string, any> = { documents: FileText, pdf: FileType2, spreadsheets: Table2, presentations: Presentation, 'template-creator': LayoutTemplate };
 type ChatRuntime = {
   controller: AbortController;
@@ -134,7 +139,7 @@ const getAttachmentMediaType = (name: string) => {
     txt: 'text/plain', md: 'text/markdown', mdx: 'text/markdown', json: 'application/json', csv: 'text/csv',
     js: 'text/javascript', jsx: 'text/javascript', ts: 'text/typescript', tsx: 'text/typescript', css: 'text/css',
     html: 'text/html', htm: 'text/html', rs: 'text/plain', py: 'text/x-python', sql: 'text/plain',
-    svg: 'image/svg+xml', bmp: 'image/bmp', ico: 'image/x-icon', avif: 'image/avif', webp: 'image/webp', tif: 'image/tiff', tiff: 'image/tiff',
+    svg: 'image/svg+xml', bmp: 'image/bmp', ico: 'image/x-icon', avif: 'image/avif', tif: 'image/tiff', tiff: 'image/tiff',
     pdf: 'application/pdf', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   };
   return types[extension || ''] || 'application/octet-stream';
@@ -224,7 +229,7 @@ const formatToolExecutionFallback = (mode: AgentMode, specialist: AgentSpecialis
   return `Ejecución completada con evidencia real.\n\nModo: ${mode}\nEspecialista: ${specialist}\nTools usadas: ${completed.map((event) => event.name).join(', ')}\n\nResultados:\n${details}`;
 };
 
-export default function ChatInterface({ catalog, defaultProvider, defaultModel, panelId = 'left', eventPrefix = 'codeclub', selectedProject, blockedPanelState = 'blank' }) {
+export default function ChatInterface({ catalog, defaultProvider, defaultModel, panelId = 'left', eventPrefix = 'codeclub', selectedProject, blockedPanelState = 'blank' }: ChatInterfaceProps) {
   const [language, setLanguage] = useState<AppLanguage>('es');
   const chatText = language === 'en' ? { greeting: 'What are we working on today', send: 'Send', cancel: 'Cancel generation', message: 'Message', attach: 'Attach', removeFiles: 'Remove added files', activeSkills: 'Active skills', activeExtensions: 'Active extensions', removeSkill: 'Remove skill from this session', removeExtension: 'Remove extension from this session', selected: 'Selected', provider: 'provider', model: 'model', project: 'project', skill: 'skill', extension: 'extension', command: 'command', searchProvider: 'Search provider', searchModel: 'Search active provider model', searchProject: 'Search project', searchSkill: 'Search skill', searchCommand: 'Search command', noProject: 'No project', slash: { provider: 'Provider', model: 'Model', project: 'Project', skill: 'Skill', providerDescription: 'Select provider', modelDescription: 'Select model', projectDescription: 'Select project', skillDescription: 'Load skill in this session' }, status: { idle: 'Ready when you are.', connecting: 'Connecting to provider...', streaming: 'Thinking...', tool_call: 'Using tool...', approval: 'Waiting for approval...', running: 'Running...', error: 'Something went wrong.' } } : { greeting: '¿Qué toca hoy', send: 'Enviar', cancel: 'Cancelar generación', message: 'Mensaje', attach: 'Adjuntar', removeFiles: 'Quitar archivos añadidos', activeSkills: 'Habilidades activas', activeExtensions: 'Extensiones activas', removeSkill: 'Quitar habilidad de esta sesión', removeExtension: 'Quitar extensión de esta sesión', selected: 'Seleccionado', provider: 'proveedor', model: 'modelo', project: 'proyecto', skill: 'habilidad', extension: 'extensión', command: 'comando', searchProvider: 'Buscar proveedor', searchModel: 'Buscar modelo del proveedor activo', searchProject: 'Buscar proyecto', searchSkill: 'Buscar habilidad', searchCommand: 'Buscar comando', noProject: 'Sin proyecto', slash: { provider: 'Proveedor', model: 'Modelo', project: 'Proyecto', skill: 'Habilidad', providerDescription: 'Seleccionar proveedor', modelDescription: 'Seleccionar modelo', projectDescription: 'Seleccionar proyecto', skillDescription: 'Cargar habilidad en esta sesión' }, status: { idle: 'Listo cuando tú lo estés.', connecting: 'Conectando con el proveedor...', streaming: 'Pensando...', tool_call: 'Usando herramienta...', approval: 'Esperando aprobación...', running: 'Ejecutando...', error: 'Algo salió mal.' } };
   if (language === 'es') {
@@ -232,7 +237,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     chatText.slash = { ...chatText.slash, skillDescription: 'Cargar habilidad en esta sesión' };
     chatText.status = { ...chatText.status, idle: 'Listo cuando tú lo estés.', approval: 'Esperando aprobación...', error: 'Algo salió mal.' };
   }
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const autonomousText = language === 'en'
     ? { label: 'Autonomous', description: 'Let the agent execute and verify the required tools', active: 'Active' }
     : { label: 'Autónomo', description: 'Dejá que el agente ejecute y verifique las tools necesarias', active: 'Activo' };
@@ -250,7 +255,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [copiedToolLogIndex, setCopiedToolLogIndex] = useState<number | null>(null);
   const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [input, setInput] = useState('');
-  const [artifactReference, setArtifactReference] = useState<{ kind: 'plan' | 'todo'; id: string; title: string } | null>(null);
+  const [artifactReference, setArtifactReference] = useState<any>(null);
   const [browserReferences, setBrowserReferences] = useState<{ id: string; title: string; text: string; url?: string }[]>([]);
   const browserRefContainerRef = useRef<HTMLDivElement>(null);
   const [maxVisibleBrowserRefs, setMaxVisibleBrowserRefs] = useState(3);
@@ -264,7 +269,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const agentStartedAtRef = useRef(0);
   const [activeToolName, setActiveToolName] = useState('');
   const [computerUseActive, setComputerUseActive] = useState(false);
-  const [pendingApprovals, setPendingApprovals] = useState([]);
+  const [pendingApprovals, setPendingApprovals] = useState<Array<{ id: string; toolName: string; input: unknown; summary: string }>>([]);
   const toolStateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const visualAnimationRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -286,7 +291,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [settingsReady, setSettingsReady] = useState(false);
   const [username, setUsername] = useState('Usuario');
   const [showEmptyGreeting, setShowEmptyGreeting] = useState(true);
-  const [credentialProvider, setCredentialProvider] = useState(null);
+  const [credentialProvider, setCredentialProvider] = useState<CatalogItem | null>(null);
   const [credentialInput, setCredentialInput] = useState('');
   const credentialInputRef = useRef<HTMLInputElement>(null);
   const [customToolsFormat, setCustomToolsFormat] = useState<'json' | 'xml'>('json');
@@ -302,7 +307,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [commandKind, setCommandKind] = useState('');
   const [shiningAction, setShiningAction] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [projectOptions, setProjectOptions] = useState<any[]>([]);
+  const [projectOptions, setProjectOptions] = useState<ProjectOption[]>([]);
   const [skillOptions, setSkillOptions] = useState<SessionSkill[]>([]);
   const [activeSkills, setActiveSkills] = useState<SessionSkill[]>([]);
   const [autonomousMode, setAutonomousMode] = useState(false);
@@ -310,18 +315,18 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [availableExtensions, setAvailableExtensions] = useState<CodeclubExtension[]>(codeclubExtensions);
   const [enabledExtensions, setEnabledExtensions] = useState<Record<string, boolean>>(() => Object.fromEntries(codeclubExtensions.map((extension) => [extension.id, true])));
   const [activeCommandIndex, setActiveCommandIndex] = useState(0);
-  const [activeProject, setActiveProject] = useState<{projectPath: string, name: string} | null>(() => selectedProject ? { projectPath: selectedProject.projectPath, name: selectedProject.projectName || 'Proyecto' } : null);
-  const [projectMeta, setProjectMeta] = useState<{chats: any[]} | null>(null);
+  const [activeProject, setActiveProject] = useState<any>(() => selectedProject ? { projectPath: selectedProject.projectPath, name: selectedProject.projectName || 'Proyecto' } : null);
+  const [projectMeta, setProjectMeta] = useState<Record<string, any[]> | null>(null);
   const [expandedMenu, setExpandedMenu] = useState<'chat' | null>(null);
   const [newArtifactName, setNewArtifactName] = useState('');
   const [artifactSearch, setArtifactSearch] = useState<Record<string, string>>({});
   const [recentArtifactIds, setRecentArtifactIds] = useState<Record<string, string[]>>({});
   const [terminalCount, setTerminalCount] = useState(0);
-  const [activeChat, setActiveChat] = useState<{chatId: string, projectPath: string} | null>(null);
+  const [activeChat, setActiveChat] = useState<{chatId: string, projectPath: string, name?: string} | null>(null);
   const activeChatRef = useRef<{chatId: string, projectPath: string, projectName?: string, name?: string, customName?: boolean} | null>(null);
   const automaticTitleRef = useRef<string>('');
   const chatRuntimesRef = useRef(new Map<string, ChatRuntime>());
-  const lastSelectedProjectRef = useRef<{ projectPath: string; projectName: string } | null | undefined>(selectedProject || undefined);
+  const lastSelectedProjectRef = useRef<{ projectPath: string; projectName: string } | null | undefined>(selectedProject ? { projectPath: selectedProject.projectPath, projectName: selectedProject.projectName || 'Proyecto' } : undefined);
   const projectChangeNoticeRef = useRef<string | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState('blank');
   const [selectedStructurePath, setSelectedStructurePath] = useState('');
@@ -331,7 +336,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       try {
         const plugins = await loadAgentPlugins(activeProject?.projectPath || '');
         const pluginSkills = plugins.flatMap((plugin) => plugin.skills.map((skill) => ({ ...skill, id: `${plugin.id}:${skill.id}`, source: `plugin:${plugin.name}`, pluginRoot: plugin.root })));
-        setSkillOptions(pluginSkills);
+        setSkillOptions(pluginSkills as SessionSkill[]);
       } catch { setSkillOptions([]); }
     };
     const handleSkillsChanged = (event: Event) => {
@@ -408,13 +413,13 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     window.addEventListener('codeclub:browser-reference', handleBrowserReference);
     return () => window.removeEventListener('codeclub:browser-reference', handleBrowserReference);
   }, []);
-  const approvalResolversRef = useRef(new Map());
-  const lastModelFetchRef = useRef(null);
-  const commandMenuRef = useRef(null);
-  const commandMenuHostRef = useRef<HTMLDivElement>(null);
-  const searchInputRef = useRef(null);
-  const chatInputRef = useRef(null);
-  const messagesEndRef = useRef(null);
+  const approvalResolversRef = useRef(new Map<string, (approved: boolean) => void>());
+  const lastModelFetchRef = useRef<{ method: string; url: string; requestBody?: string; status?: number; statusText?: string; responseHeaders?: unknown; responseBody?: unknown; transportError?: string } | null>(null);
+  const commandMenuRef = useRef<HTMLDivElement | null>(null);
+  const commandMenuHostRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const rememberRecentArtifact = (kind: 'chat', detail: any) => {
     if (!detail?.projectPath || !detail?.[`${kind}Id`]) return;
     const key = `${detail.projectPath}:${kind}`;
@@ -453,8 +458,8 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
         ? `El usuario cambió el proyecto seleccionado a "${selectedProject?.projectName || 'Proyecto'}". Usá este proyecto como contexto de trabajo para este mensaje.`
         : 'El usuario quitó el proyecto seleccionado. Trabajá solo con contexto global hasta que elija otro.';
     }
-    lastSelectedProjectRef.current = selectedProject || null;
-    setActiveProject((current) => {
+    lastSelectedProjectRef.current = selectedProject ? { projectPath: selectedProject.projectPath, projectName: selectedProject.projectName || 'Proyecto' } : null;
+    setActiveProject((current: any) => {
       if (!selectedProject) return null;
       if (current?.projectPath === selectedProject.projectPath) return current;
       return { projectPath: selectedProject.projectPath, name: selectedProject.projectName || 'Proyecto' };
@@ -590,8 +595,8 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
           const globalChats = await readGlobalChats();
           await writeGlobalChats(globalChats.filter((chat) => chat.id !== current.chatId));
         }
-        const newMeta = await readProjectMeta(newPath) || { name: detail.projectName || 'Proyecto', path: newPath, created_at: new Date().toISOString(), chats: [] };
-        if (!newMeta.chats.some((chat) => chat.id === current.chatId)) newMeta.chats.push({ id: current.chatId, name: chatName });
+        const newMeta: any = await readProjectMeta(newPath) || { name: detail.projectName || 'Proyecto', path: newPath, created_at: new Date().toISOString(), chats: [] };
+        if (!newMeta.chats.some((chat: any) => chat.id === current.chatId)) newMeta.chats.push({ id: current.chatId, name: chatName });
         await writeProjectMeta(newPath, newMeta);
         window.dispatchEvent(new CustomEvent('codeclub:project-meta-changed', { detail: { projectPath: oldPath } }));
         window.dispatchEvent(new CustomEvent('codeclub:project-meta-changed', { detail: { projectPath: newPath } }));
@@ -629,7 +634,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
 
   useEffect(() => {
     const handleActiveProject = (e: any) => {
-      setActiveProject(e.detail?.projectPath ? (current) => current?.projectPath === e.detail.projectPath ? current : e.detail : null);
+      setActiveProject(e.detail?.projectPath ? (current: any) => current?.projectPath === e.detail.projectPath ? current : e.detail : null);
       setExpandedMenu(null);
     };
     window.addEventListener('codeclub:active-project', handleActiveProject);
@@ -649,7 +654,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     if (workspaceMode === 'blank' && activeProject) {
       const loadMeta = async () => {
         try {
-          setProjectMeta(await readProjectMeta(activeProject.projectPath));
+          setProjectMeta(await readProjectMeta(activeProject.projectPath) as any);
         } catch (e) {
           console.error(e);
           setProjectMeta(null);
@@ -700,7 +705,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     if (settingsReady && currentModel) void setSetting('codeclub_last_model_id', currentModel.id);
   }, [currentModel, settingsReady]);
 
-  const openCommandMenu = (kind) => {
+  const openCommandMenu = (kind: string) => {
     setCommandKind(kind);
     setMenuOpen(true);
     setSearchQuery('');
@@ -717,7 +722,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     return readProjectIndex();
   };
 
-  const toggleCommandMenu = (kind) => {
+  const toggleCommandMenu = (kind: string) => {
     if (menuOpen && commandKind === kind) {
       setMenuOpen(false);
       setCommandKind('');
@@ -725,7 +730,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     }
     if (kind === 'project') {
       void readProjectsForCommandMenu().then((projects) => {
-        setProjectOptions([{ id: '__none__', label: chatText.noProject, type: 'project', projectPath: null, isNone: true }, ...projects.map((project) => ({ id: project.id || project.path, label: project.name, type: 'project', projectPath: project.path, projectId: project.id }))]);
+        setProjectOptions([{ id: '__none__', label: chatText.noProject, type: 'project', projectPath: null, isNone: true }, ...projects.map((project: any) => ({ id: project.id || project.path, label: project.name, type: 'project', projectPath: project.path, projectId: project.id }))]);
         openCommandMenu(kind);
       });
       return;
@@ -761,7 +766,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
           return;
         }
         void readProjectsForCommandMenu().then((projects) => {
-          setProjectOptions([{ id: '__none__', label: chatText.noProject, type: 'project', projectPath: null, isNone: true }, ...projects.map((project) => ({ id: project.id || project.path, label: project.name, type: 'project', projectPath: project.path, projectId: project.id }))]);
+          setProjectOptions([{ id: '__none__', label: chatText.noProject, type: 'project', projectPath: null, isNone: true }, ...projects.map((project: any) => ({ id: project.id || project.path, label: project.name, type: 'project', projectPath: project.path, projectId: project.id }))]);
           openCommandMenu('project');
         });
       }
@@ -775,7 +780,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     return () => window.removeEventListener('codeclub:open-command-menu', handleOpenCommandMenu);
   }, [menuOpen, commandKind]);
 
-  const commandOptions = commandKind === 'project' ? projectOptions : commandKind === 'skill' ? skillOptions.map((skill) => ({ ...skill, type: 'skill', label: skill.name })) : commandKind === 'language' ? languageOptions : commandKind === 'development' ? developmentOptions : catalog;
+  const commandOptions: CatalogItem[] = commandKind === 'project' ? projectOptions : commandKind === 'skill' ? skillOptions.map((skill) => ({ ...skill, type: 'skill', label: skill.name })) : commandKind === 'language' ? languageOptions : commandKind === 'development' ? developmentOptions : catalog;
   const filteredCatalog = commandOptions.filter((item) => {
     const matchesKind = item.type === commandKind;
     const itemLabel = item.label || item.id || '';
@@ -784,7 +789,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     return matchesKind && matchesQuery && matchesProvider;
   });
   const activeSelection = commandKind === 'provider' ? currentProvider : commandKind === 'model' ? currentModel : commandKind === 'project' && activeProject ? { id: activeProject.projectPath, label: activeProject.name } : commandKind === 'language' ? { id: language, label: language === 'en' ? 'English' : 'Español' } : commandKind === 'command' && autonomousMode ? { id: 'autonomo', label: autonomousText.label } : null;
-  const slashCommands = [
+  const slashCommands: CatalogItem[] = [
     { id: 'proveedor', label: chatText.slash.provider, description: chatText.slash.providerDescription, aliases: ['proveedor', 'provider'], type: 'command', icon: Radar },
     { id: 'modelo', label: chatText.slash.model, description: chatText.slash.modelDescription, aliases: ['modelo', 'model'], type: 'command', icon: Box },
     { id: 'proyecto', label: projectsSlashLabel, description: chatText.slash.projectDescription, aliases: ['proyecto', 'proyectos', 'project', 'projects'], type: 'command', icon: Folder },
@@ -793,7 +798,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     { id: 'desarrollo', label: language === 'en' ? 'Development' : 'Desarrollo', description: language === 'en' ? 'Insert a development prompt' : 'Inyectar un prompt de desarrollo', aliases: ['desarrollo', 'desarrollar', 'development', 'develop'], type: 'command', icon: Code2 },
     { id: 'autonomo', label: autonomousText.label, description: autonomousText.description, aliases: ['autonomo', 'autonomous'], type: 'command', icon: Orbit },
     ...availableExtensions.filter((extension) => enabledExtensions[extension.id]).map((extension) => ({ id: extension.id, label: extension.name, description: extension.description, type: 'extension' as const, icon: extensionIcons[extension.id] || Box, extension })),
-  ].filter((command) => command.label.toLowerCase().includes(searchQuery.toLowerCase()) || command.aliases?.some((alias) => alias.includes(searchQuery.toLowerCase())));
+  ].filter((command: CatalogItem) => command.label?.toLowerCase().includes(searchQuery.toLowerCase()) || command.aliases?.some((alias: string) => alias.includes(searchQuery.toLowerCase())));
   const commandMenuItems = commandKind === 'command'
     ? slashCommands
     : filteredCatalog.filter((item) => {
@@ -836,10 +841,10 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   useEffect(() => {
     if (!menuOpen) return;
 
-    const handlePointerDown = (event) => {
+    const handlePointerDown = (event: PointerEvent) => {
       const button = (event.target as HTMLElement).closest('button') as HTMLButtonElement | null;
       const isCommandDockButton = ['provider', 'model', 'project'].includes(button?.dataset.commandMenuKind || '') || /^(Proveedor|Modelo|Proyecto):/.test(button?.getAttribute('aria-label') || '');
-      if (commandMenuRef.current?.contains(event.target) || button?.title === 'Proveedor, modelo y proyecto' || isCommandDockButton) return;
+      if (commandMenuRef.current?.contains(event.target as Node) || button?.title === 'Proveedor, modelo y proyecto' || isCommandDockButton) return;
       setMenuOpen(false);
     };
 
@@ -847,7 +852,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     return () => window.removeEventListener('pointerdown', handlePointerDown);
   }, [menuOpen]);
 
-  const handleItemClick = (item) => {
+  const handleItemClick = (item: CatalogItem) => {
     if (item.type === 'command') {
       if (item.id === 'proveedor' || item.id === 'modelo') {
         setInput('');
@@ -857,7 +862,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       }
       if (item.id === 'proyecto') {
         void readProjectsForCommandMenu().then((projects) => {
-          setProjectOptions([{ id: '__none__', label: 'Sin proyecto', type: 'project', projectPath: null, isNone: true }, ...projects.map((project) => ({ id: project.id || project.path, label: project.name, type: 'project', projectPath: project.path, projectId: project.id }))]);
+          setProjectOptions([{ id: '__none__', label: 'Sin proyecto', type: 'project', projectPath: null, isNone: true }, ...projects.map((project: any) => ({ id: project.id || project.path, label: project.name, type: 'project', projectPath: project.path, projectId: project.id }))]);
           openCommandMenu('project');
         });
         return;
@@ -895,7 +900,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       return;
     }
     if (item.type === 'skill') {
-      setActiveSkills((current) => current.some((skill) => skill.id === item.id) ? current : [...current, item]);
+      setActiveSkills((current) => current.some((skill) => skill.id === item.id) ? current : [...current, item as SessionSkill]);
       setInput('');
       setSearchQuery('');
       setMenuOpen(false);
@@ -940,7 +945,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
         window.dispatchEvent(new CustomEvent('codeclub:project-switch', { detail: { id: 'home', name: 'Codeclub' } }));
         window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
       } else {
-        setActiveProject({ projectPath: item.projectPath, name: item.label });
+        setActiveProject({ projectPath: item.projectPath || '', name: item.label || item.id });
         window.dispatchEvent(new CustomEvent('codeclub:project-selection-changed', { detail: { selected: true, projectPath: item.projectPath, projectName: item.label } }));
         window.dispatchEvent(new CustomEvent('codeclub:active-project', { detail: { projectPath: item.projectPath, projectName: item.label } }));
         window.dispatchEvent(new CustomEvent('codeclub:project-switch', { detail: { id: item.projectId || item.projectPath, name: item.label, path: item.projectPath } }));
@@ -969,7 +974,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
           setCurrentProvider((current) => current ? { ...current, api: url } : current);
         });
       }
-      setCurrentModel(null);
+      setCurrentModel(defaultModel);
     } else if (item.type === 'model') {
       setCurrentModel(item);
       setCredentialProvider(null);
@@ -990,7 +995,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     }
   };
 
-  const handleSearchKeyDown = (e) => {
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Escape') {
       setMenuOpen(false);
       chatInputRef.current?.focus();
@@ -1002,7 +1007,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     }
   };
 
-  const handleCommandMenuKeyDown = (e) => {
+  const handleCommandMenuKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
     const selectableItems = commandMenuItems;
     if (e.key === 'Escape') {
       e.preventDefault();
@@ -1059,7 +1064,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     chatInputRef.current?.focus();
   };
 
-const compactJson = (value) => {
+  const compactJson = (value: unknown) => {
     try {
       return JSON.stringify(value).slice(0, 260);
     } catch {
@@ -1156,14 +1161,14 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
   return { additions, deletions, files };
 };
 
-  const escapeXml = (value) => String(value ?? '')
+  const escapeXml = (value: unknown) => String(value ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;');
 
-  const toolsAsXml = (tools) => {
+  const toolsAsXml = (tools: unknown) => {
     const items = Array.isArray(tools) ? tools : [];
     return `<tools>${items.map((item) => {
       const fn = item?.function || item || {};
@@ -1172,15 +1177,15 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     }).join('')}</tools>`;
   };
 
-  const clipDebug = (value, max = 20000) => {
+  const clipDebug = (value: unknown, max = 20000) => {
     const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
     if (!text) return '';
     return text.length > max ? `${text.slice(0, max)}\n...[truncated ${text.length - max} chars]` : text;
   };
 
-  const errorChain = (error) => {
+  const errorChain = (error: unknown) => {
     const lines = [];
-    let current = error;
+    let current: any = error;
     let depth = 0;
     while (current && depth < 5) {
       const name = current?.name || typeof current;
@@ -1192,7 +1197,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     return lines.join('\n');
   };
 
-  const formatDebugError = (error) => {
+  const formatDebugError = (error: unknown) => {
     const fetch = lastModelFetchRef.current;
     const sections = [errorChain(error)];
 
@@ -1211,7 +1216,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     return sections.filter(Boolean).join('\n\n');
   };
 
-  const desktopModelFetch = async (input, init = {}) => {
+  const desktopModelFetch = async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const request = input instanceof Request ? new Request(input, init) : new Request(input, init);
     let requestBody = ['GET', 'HEAD'].includes(request.method) ? undefined : await request.clone().text();
     if (requestBody && currentProvider?.id === 'custom' && customToolsFormat === 'xml') {
@@ -1233,7 +1238,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     lastModelFetchRef.current = fetchDebug;
 
     try {
-      const response = await invoke('codeclub_http_fetch', {
+      const response = await invoke<{ body: string; status: number; status_text?: string; headers?: Array<{ name: string; value: string }> }>('codeclub_http_fetch', {
         request: {
           url: request.url,
           method: request.method,
@@ -1241,7 +1246,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           body: requestBody || null,
         },
       });
-      const headers = new Headers((response.headers || []).map((header) => [header.name, header.value]));
+      const headers = new Headers((response.headers || []).map((header) => [header.name, header.value] as [string, string]));
       lastModelFetchRef.current = {
         ...fetchDebug,
         status: response.status,
@@ -1257,13 +1262,13 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     } catch (error) {
       lastModelFetchRef.current = {
         ...fetchDebug,
-        transportError: error?.message || String(error),
+        transportError: error instanceof Error ? error.message : String(error),
       };
       throw error;
     }
   };
 
-  const resolveToolApproval = (approvalId, approved) => {
+  const resolveToolApproval = (approvalId: string, approved: boolean) => {
     const resolver = approvalResolversRef.current.get(approvalId);
     if (!resolver) return;
     approvalResolversRef.current.delete(approvalId);
@@ -1271,7 +1276,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     resolver(approved);
   };
 
-  const requestToolApproval = ({ toolName, input, summary }) => {
+  const requestToolApproval = ({ toolName, input, summary }: { toolName: string; input: any; summary: string }) => {
     const approvalId = crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`;
     setAgentState('approval');
     setPendingApprovals((items) => [
@@ -1285,7 +1290,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
   };
 
 
-  const appendToJsonl = async (msg, chatOverride = activeChatRef.current) => {
+  const appendToJsonl = async (msg: any, chatOverride = activeChatRef.current) => {
     const chat = chatOverride;
     if (!chat) return;
     if (!chat.projectPath) {
@@ -1325,12 +1330,12 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         role: msg.role,
         chatId: chat?.chatId,
         projectPath: chat?.projectPath,
-        error: e?.message || String(e),
+        error: e instanceof Error ? e.message : String(e),
       });
     }
   };
 
-  const appendToTranscript = async (msg, chat) => {
+  const appendToTranscript = async (msg: any, chat: typeof activeChatRef.current) => {
     if (!chat || !['user', 'assistant'].includes(msg?.role) || typeof msg?.content !== 'string' || !msg.content.trim()) return;
     const heading = msg.role === 'user' ? 'Usuario' : 'Codeclub';
     const markdown = `\n## ${heading} · ${new Date().toLocaleString()}\n\n${msg.content.trim()}\n`;
@@ -1339,13 +1344,13 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       return;
     }
     const dir = await getProjectFilePath(chat.projectPath, 'chats');
-    const path = getProjectTranscriptPath(chat.projectPath, chat.chatId);
+    const path = await getProjectTranscriptPath(chat.projectPath, chat.chatId);
     await mkdir(dir, { recursive: true });
     const previous = (await exists(path)) ? await readTextFile(path) : `# Conversación ${chat.chatId}\n`;
     await writeTextFile(path, `${previous}${markdown}`);
   };
 
-  const writeChatJsonl = async (nextMessages, chatOverride = activeChatRef.current) => {
+  const writeChatJsonl = async (nextMessages: any[], chatOverride = activeChatRef.current) => {
     const chat = chatOverride;
     if (!chat) return;
     if (!chat.projectPath) {
@@ -1357,18 +1362,18 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       await logPersistence('rewrite_chat_history', 'ok', {
         chatId: chat.chatId,
         projectPath: chat.projectPath,
-        path,
+        path: await getProjectChatPath(chat.projectPath, chat.chatId),
       });
     } catch (e) {
       await logPersistence('rewrite_chat_history', 'error', {
         chatId: chat?.chatId,
         projectPath: chat?.projectPath,
-        error: e?.message || String(e),
+        error: e instanceof Error ? e.message : String(e),
       });
     }
   };
 
-  const sendMessage = async (content, baseMessages = messages, shouldRenameChat = messages.length === 0, replaceHistory = false, attachments: ChatAttachment[] = []) => {
+  const sendMessage = async (content: string, baseMessages: any[] = messages, shouldRenameChat = messages.length === 0, replaceHistory = false, attachments: ChatAttachment[] = []) => {
     if (visualAnimationRef.current) {
       clearInterval(visualAnimationRef.current);
       visualAnimationRef.current = null;
@@ -1385,7 +1390,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       setBrowserReferences([]);
     }
     const abortController = new AbortController();
-    let pluginMcpClose: (() => Promise<void>) | undefined;
+    let pluginMcpClose: (() => Promise<unknown>) | undefined;
     const generationStartedAt = Date.now();
     let chat = activeChatRef.current;
     if (!chat) {
@@ -1411,7 +1416,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       publishRuntime();
       if (isVisibleGeneration()) setAgentState(state);
     };
-    const guardedRequestToolApproval = ({ toolName, input, summary }) => {
+    const guardedRequestToolApproval = ({ toolName, input, summary }: { toolName: string; input: any; summary: string }): Promise<boolean> => {
       if (!isCurrentGeneration()) return Promise.resolve(false);
       const approvalId = crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`;
       const approval = { id: approvalId, toolName, input, summary: summary || compactJson(input) };
@@ -1422,7 +1427,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         setAgentState('approval');
         setPendingApprovals(runtime.pendingApprovals);
       }
-      return new Promise((resolve) => runtime.approvalResolvers.set(approvalId, resolve));
+      return new Promise<boolean>((resolve) => runtime.approvalResolvers.set(approvalId, resolve));
     };
 
     if (shouldRenameChat) window.dispatchEvent(new CustomEvent('codeclub:chat-created', { detail: { chatId: chat.chatId } }));
@@ -1477,15 +1482,15 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       let routeSpecialist: AgentSpecialist = 'primary';
       let assistantContent = '';
       let assistantReasoning = '';
-      let assistantTools = [];
+      let assistantTools: any[] = [];
       let assistantTimeline: any[] = [];
       let executionStartedAt = Date.now();
-      let latestUsage: GenerationUsageRecord | null = null;
+      let latestUsage: any = null;
       const updateAssistantMessage = () => {
         runtime.messages = [...newMessages, { role: 'assistant', content: assistantContent, reasoning: assistantReasoning, timeline: assistantTimeline, tools: assistantTools, agentName: 'Desarrollo' }];
         if (isVisibleGeneration()) setMessages(runtime.messages);
       };
-      const recordToolEvent = (name, input, output) => {
+      const recordToolEvent = (name: string, input: any, output: any) => {
         runtime.tool = name;
         publishRuntime();
         if (isVisibleGeneration()) setActiveToolName(name);
@@ -1668,7 +1673,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 projectPath: contextProjectPath,
                 chatId: chat?.chatId,
                 tool: 'generation.step',
-                input: { stepNumber, tools: (toolCalls || []).map((toolCall) => toolCall.toolName) },
+                input: { stepNumber, tools: (toolCalls || []).map((toolCall: any) => toolCall.toolName) },
                 output: { finishReason, usage, performance: { stepTimeMs: performance?.stepTimeMs, responseTimeMs: performance?.responseTimeMs, outputTokensPerSecond: performance?.outputTokensPerSecond } },
               });
             },
@@ -1796,6 +1801,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
 
       if (!isCurrentGeneration() || abortController.signal.aborted) return;
       const changes = contextProjectPath ? summarizeWorkspaceDelta(beforeWorkspaceSnapshot, await readWorkspaceSnapshot(toolProjectPath)) : null;
+      const usage = latestUsage as any;
       const assistantMessage = { role: 'assistant', content: assistantContent || 'La ejecución terminó sin texto final, pero las evidencias quedaron registradas.', timeline: assistantTimeline, tools: assistantTools, agentName: 'Desarrollo', meta: { provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt, status: 'completed', changes, usage: latestUsage ? { inputTokens: latestUsage.inputTokens, outputTokens: latestUsage.outputTokens, totalTokens: latestUsage.totalTokens, reasoningTokens: latestUsage.reasoningTokens } : null } };
       // La respuesta ya se muestra progresivamente durante el stream. Al finalizar
       // conservamos el contenido completo para evitar una burbuja vacíoa si la
@@ -1825,13 +1831,14 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       if (chatRuntimesRef.current.get(chatId)?.controller !== abortController) return;
       const wasCancelled = abortController.signal.aborted;
       if (!wasCancelled) {
-        const isConfigurationError = String(error?.message || error).includes('API Key no configurada');
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const isConfigurationError = errorMessage.includes('API Key no configurada');
         if (!isConfigurationError) console.error(formatDebugError(error));
         runtime.state = 'error';
         publishRuntime();
         if (isVisibleGeneration()) setAgentState('error');
       }
-      const updateErrorMessages = (prev) => {
+      const updateErrorMessages = (prev: any[]) => {
         const updated = [...prev];
         const last = updated[updated.length - 1];
         if (last?.role === 'assistant' && last.content === '') {
@@ -1843,8 +1850,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               model: currentModel.label || currentModel.id,
               durationMs: Date.now() - generationStartedAt,
               status: wasCancelled ? 'cancelled' : 'error',
-              errorName: error?.name || 'Error',
-              configuration: String(error?.message || error).includes('API Key no configurada'),
+              errorName: error instanceof Error ? error.name : 'Error',
+              configuration: (error instanceof Error ? error.message : String(error)).includes('API Key no configurada'),
             },
           };
         }
@@ -1930,7 +1937,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     if (visualAnimationRef.current) clearInterval(visualAnimationRef.current);
   }, []);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if ((!input.trim() && attachedFiles.length === 0) || isAgentBusy) return;
 
@@ -2018,7 +2025,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     return () => window.removeEventListener('codeclub:testing-action', handleTestingAction);
   }, [panelId, isAgentBusy, sendMessage]);
 
-  const handleCopyMessage = async (content, messageIndex) => {
+  const handleCopyMessage = async (content: string, messageIndex: number) => {
     try {
       if (!await copyText(content)) return;
       setCopiedMessageIndex(messageIndex);
@@ -2044,7 +2051,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     }
   };
 
-  const handleRetryMessage = async (messageIndex) => {
+  const handleRetryMessage = async (messageIndex: number) => {
     if (isAgentBusy) return;
     const message = messages[messageIndex];
     if (!message || message.role !== 'user') return;
@@ -2093,11 +2100,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         if (files?.length) await addAttachmentPaths(files);
         return;
       }
-      const selected = await open({
-        multiple: true,
-        directory: false,
-        title: 'Añadir archivos al chat',
-      });
+      const selected = await open();
       if (!selected) return;
       const files = Array.isArray(selected) ? selected : [selected];
       await addAttachmentPaths(files);
@@ -2133,7 +2136,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     );
   }
 
-  if (workspaceMode === 'blank' && false) {
+  if (workspaceMode === 'blank' && activeProject && false) {
     if (activeProject) {
       const createNewArtifact = async (customName: string) => {
         if (!customName.trim()) {
@@ -2445,7 +2448,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             }}
             onFocus={() => { setInputFocused(true); if (commandKind !== 'credential') setMenuOpen(false); }}
             onBlur={() => setInputFocused(false)}
-            placeholder=""
             aria-label={chatText.message}
             className={`order-1 min-h-[22px] h-auto max-h-[180px] w-full min-w-0 flex-none resize-none self-stretch overflow-y-hidden border-0 bg-transparent px-0 py-0.5 pr-2.5 text-xs leading-[1.4] text-(--codeclub-text-strong) outline-none placeholder:text-(--codeclub-text-muted) [scrollbar-width:none] ${isAgentBusy ? 'opacity-[0.55]' : 'opacity-100'}`}
             placeholder={agentStatusText}
@@ -2898,7 +2900,7 @@ function TodoCards({ tools = [] }: { tools?: any[] }) {
     <div style={{ display: 'grid', gap: '6px', padding: '8px 10px', border: '1px solid #2b2b2b', borderRadius: '9px', background: '#151515' }}>
       <div style={{ color: '#d8d8d8', fontSize: '11px', fontWeight: 600 }}>TODO</div>
       {todos.map((todo: any) => {
-        const status = todo.status || 'pending';
+        const status = (todo.status || 'pending') as keyof typeof statusIcon;
         const color = '#999';
         return <div key={todo.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, minHeight: '30px', padding: '4px 7px', borderRadius: '7px', background: '#111' }}>
           <span aria-hidden="true" style={{ display: 'grid', placeItems: 'center', flex: '0 0 16px', width: '16px', height: '16px', color, fontSize: '14px', lineHeight: 1 }}>{statusIcon[status] || '·'}</span>
@@ -3052,6 +3054,7 @@ function AppleFoldersView({ projectPath, initialSelectedPath = '' }: { projectPa
     ));
   const renderTree = (_nodes: FileTreeNode[]): React.ReactNode => renderFlat(entries);
   const tree = buildFileTree(entries);
+  const selectedContent = openFiles[selectedPath]?.content || '';
   const selectedParts = selectedPath.split('/').filter(Boolean);
   return <div className={`flex h-full w-full min-w-0 flex-col overflow-hidden text-[#d8d8d8] [&>div>aside>div:first-child]:hidden ${tree.length ? '' : '[&>div>aside]:hidden'}`}>
     {loading ? <div className="flex flex-1 items-center justify-center text-xs text-[#777777]">Cargando proyecto...</div> : <div className="flex min-h-0 flex-1"><aside className="flex w-[250px] shrink-0 flex-col border-r border-[var(--color-surface-8)] bg-transparent"><div className="flex items-center justify-between px-3 py-3"><span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#777777]">Archivos</span><span className="text-[10px] text-[#555555]">{entries.length}</span></div><div className="min-h-0 flex-1 overflow-auto px-2 pb-3 [scrollbar-width:none]">{error ? <div className="rounded-lg bg-[#2b1e1e] p-3 text-xs text-[#c28d8d]">{error}</div> : tree.length ? renderTree(tree) : <div className="p-3 text-xs text-[#777777]">No se encontraron archivos.</div>}</div></aside><main className="flex min-w-0 flex-1 flex-col bg-transparent">{selectedPath ? <><div className="flex h-10 shrink-0 items-center gap-1 border-b border-[var(--color-surface-8)] px-4 text-[11px] text-[#777777]">{selectedParts.map((part, index) => <React.Fragment key={`${part}-${index}`}><span className={index === selectedParts.length - 1 ? 'text-[#eeeeee]' : ''}>{part}</span>{index < selectedParts.length - 1 && <ChevronRight size={12} className="text-[#4d4d4d]" />}</React.Fragment>)}</div><div className="min-h-0 flex-1 overflow-hidden"><CodeMirrorFileEditor path={selectedPath} content={selectedContent} /></div></> : <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center"><div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[var(--color-surface-8)] bg-[var(--color-surface-3)] text-[#777777]"><FileCode2 size={20} /></div><div><p className="m-0 text-sm text-[#bdbdbd]">Elegí un archivo</p><p className="m-1 text-xs text-[#666666]">Hacé click en cualquier archivo para abrirlo acá</p></div></div>}</main></div>}
@@ -3069,7 +3072,7 @@ function TabbedProjectView({ projectPath, initialSelectedPath = '', showFileTree
   const panelRef = useRef<HTMLDivElement>(null);
   const draggedFileRef = useRef<{ projectPath: string; path: string } | null>(null);
   const [error, setError] = useState('');
-  const setShowFileTree = onToggleFileTree ?? (() => undefined);
+  const setShowFileTree = (_toggle?: (visible: boolean) => boolean) => onToggleFileTree?.();
 
   const loadProject = async () => {
     if (!projectPath) return;
@@ -3183,6 +3186,7 @@ function TabbedProjectView({ projectPath, initialSelectedPath = '', showFileTree
   };
 
   const tree = buildFileTree(entries);
+  const selectedContent = files[selectedPath]?.content || '';
   const renderTree = (nodes: FileTreeNode[], depth = 0): React.ReactNode => nodes.map((node) => {
     const isOpen = expanded.has(node.path);
     return <React.Fragment key={node.path}>

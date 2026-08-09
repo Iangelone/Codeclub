@@ -1,10 +1,10 @@
-import { smoothStream, stepCountIs, streamText } from 'ai';
+import { smoothStream, stepCountIs, streamText, type ModelMessage } from 'ai';
 import type { EngineCallbacks } from './types';
 
 type RunStreamArgs = {
   model: any;
   system: string;
-  messages: { role: string; content: any }[];
+  messages: ModelMessage[];
   tools: Record<string, any>;
   structuredOutput?: any;
   callbacks: EngineCallbacks;
@@ -92,7 +92,7 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
     outputTokens: usage.outputTokens,
     totalTokens: usage.totalTokens,
     reasoningTokens: usage.outputTokenDetails?.reasoningTokens,
-    model: response.model,
+    model: response.modelId,
     durationMs: Date.now() - startedAt,
   });
 

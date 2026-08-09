@@ -1,7 +1,13 @@
+import { nativeInvoke as invoke } from '../runtime';
+import { jsonSchema as aiJsonSchema, tool } from 'ai';
+import type { ToolContext } from './types';
+import { runStream } from './run';
 import { createId, readAgentState, writeAgentState, type TaskStatus } from './planning';
 import { appendGenerationUsage, readGenerationUsage, summarizeGenerationUsage } from '../usage';
 import { readExecutionLog } from '../execution-log';
 import { readProjectIndex } from '../projectManager';
+
+const jsonSchema = (schema: unknown) => aiJsonSchema<any>(schema as any);
 
 const specialistHandoff = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, 500);
 
@@ -200,7 +206,7 @@ function createSwarmTool(ctx: { projectPath: string; projectScoped?: boolean; re
           const selectedTools = template === 'read_only'
             ? Object.fromEntries(Object.entries(childTools).filter(([name]) => ['listFiles', 'readFile', 'searchText'].includes(name)))
             : requestedTools?.length
-              ? Object.fromEntries(requestedTools.filter((name) => childTools[name] && !PARENT_ONLY_TOOLS.has(name) && !['swarm', 'subagent'].includes(name)).map((name) => [name, childTools[name]]))
+              ? Object.fromEntries(requestedTools.filter((name: string) => childTools[name] && !PARENT_ONLY_TOOLS.has(name) && !['swarm', 'subagent'].includes(name)).map((name: string) => [name, childTools[name]]))
               : Object.fromEntries(Object.entries(childTools).filter(([name]) => !PARENT_ONLY_TOOLS.has(name) && !['swarm', 'subagent', 'listAvailableTools'].includes(name)));
           const originalTools = Object.keys(childTools);
           Object.assign(child as any, { toolNames: Object.keys(selectedTools), availableToolNames: originalTools });
@@ -960,7 +966,7 @@ export function createTools(ctx: ToolContext) {
         try {
           const image = `data:${screenshot.mimeType};base64,${screenshot.data}`;
           const result = await worker.recognize(image);
-          const words = (result.data.words || []).map((word: any) => ({
+          const words = (((result.data as any).words || []) as any[]).map((word: any) => ({
             text: word.text,
             confidence: word.confidence,
             bounds: { x: word.bbox.x0, y: word.bbox.y0, width: word.bbox.x1 - word.bbox.x0, height: word.bbox.y1 - word.bbox.y0 },
@@ -1049,10 +1055,11 @@ export function createTools(ctx: ToolContext) {
         recordToolEvent('subagent', { specialist, task }, { status: 'running' });
 
         const developmentTools = createTools({ projectPath, recordToolEvent, setAgentState, requestToolApproval, provider, modelId });
+        const indexedTools = developmentTools as Record<string, any>;
         const subTools = specialist === 'developer'
-          ? Object.fromEntries(['listFiles', 'readFile', 'searchText', 'writeFile', 'runCommand', 'terminal'].map((name) => [name, developmentTools[name]]).filter(([, toolDefinition]) => toolDefinition))
+          ? Object.fromEntries(['listFiles', 'readFile', 'searchText', 'writeFile', 'runCommand', 'terminal'].map((name) => [name, indexedTools[name]]).filter(([, toolDefinition]) => toolDefinition))
           : specialist === 'computer_use'
-            ? Object.fromEntries(['computerListWindows', 'computerGetState', 'computerScreenshot', 'computerOcr', 'computerAction', 'openBrowser', 'getBrowserState', 'browserAction', 'runCommand'].map((name) => [name, developmentTools[name]]).filter(([, toolDefinition]) => toolDefinition))
+            ? Object.fromEntries(['computerListWindows', 'computerGetState', 'computerScreenshot', 'computerOcr', 'computerAction', 'openBrowser', 'getBrowserState', 'browserAction', 'runCommand'].map((name) => [name, indexedTools[name]]).filter(([, toolDefinition]) => toolDefinition))
             : createSubagentTools({ projectPath, recordToolEvent, setAgentState });
 
         const specialistSystem = specialist === 'computer_use'
