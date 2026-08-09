@@ -1,5 +1,5 @@
 import { appConfigDir, joinPath as join, fileExists as exists, makeDirectory as mkdir, readDesktopText as readTextFile, writeDesktopText as writeTextFile } from './runtime';
-import { getProjectFilePath, migrateLegacyProjectData } from './persistence';
+import { getProjectFilePath } from './persistence';
 
 export interface GenerationUsageRecord {
   id: string;
@@ -28,7 +28,6 @@ const usagePath = async (projectPath: string) => projectPath
 
 export const appendGenerationUsage = async (record: GenerationUsageRecord) => {
   const operation = usageWriteQueue.then(async () => {
-    await migrateLegacyProjectData(record.projectPath);
     const path = await usagePath(record.projectPath);
     const parent = path.slice(0, Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/')));
     if (parent) await mkdir(parent, { recursive: true });
@@ -41,7 +40,6 @@ export const appendGenerationUsage = async (record: GenerationUsageRecord) => {
 };
 
 export const readGenerationUsage = async (projectPath: string): Promise<GenerationUsageRecord[]> => {
-  await migrateLegacyProjectData(projectPath);
   const path = await usagePath(projectPath);
   if (!(await exists(path))) return [];
   try {

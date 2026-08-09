@@ -1,5 +1,5 @@
 import { appConfigDir, fileExists as exists, makeDirectory as mkdir, readDesktopText as readTextFile, writeDesktopText as writeTextFile, nativeInvoke as invoke } from './runtime';
-import { getAppConfigFilePath, getProjectFilePath, getSetting, logPersistence, migrateLegacyProjectData, setSetting } from "./persistence.ts";
+import { getAppConfigFilePath, getProjectFilePath, getSetting, logPersistence, setSetting } from "./persistence.ts";
 
 const PROJECTS_INDEX = "projects.json";
 const PROJECTS_BACKUP_INDEX = "projects.backup.json";
@@ -64,7 +64,6 @@ export const getProjectChatPath = (projectPath: string, chatId: string) => getPr
 export const getProjectTranscriptPath = (projectPath: string, chatId: string) => getProjectFilePath(projectPath, "chats", `${chatId}.md`);
 
 export const readProjectMeta = async (projectPath: string): Promise<ProjectMeta | null> => {
-  await migrateLegacyProjectData(projectPath);
   const path = await getProjectMetaPath(projectPath);
   if (!(await exists(path))) return null;
   try {
@@ -103,7 +102,6 @@ export const saveProjectIndex = async (name: string, projectPath: string) => {
 };
 
 export const ensureCodeclubFolder = async (projectPath: string) => {
-  await migrateLegacyProjectData(projectPath);
   await mkdir(await getProjectFilePath(projectPath), { recursive: true });
 };
 

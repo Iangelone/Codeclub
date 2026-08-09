@@ -18,11 +18,11 @@ type NativeMcpSession = { child: ReturnType<typeof spawn>; nextId: number; pendi
 const nativeMcpSessions = new Map<string, NativeMcpSession>();
 type NativeTerminal = { child: ReturnType<typeof spawn>; info: any; buffer: string };
 const nativeTerminals = new Map<string, NativeTerminal>();
-let browserWindow: BrowserWindow | null = null;
 
 const projectsFile = () => path.join(app.getPath('userData'), 'projects.json');
 const projectChatFile = (projectPath: string, chatId: string) => path.join(app.getPath('userData'), 'chat-history', encodeURIComponent(projectPath), `${encodeURIComponent(chatId)}.jsonl`);
 const projectId = (value: string) => value.toLowerCase().replace(/[\\/:*?"<>|\s]+/g, '-');
+const projectStorageKey = (value: string) => encodeURIComponent(path.resolve(value));
 
 async function loadProjects() { try { projects = JSON.parse(await fs.readFile(projectsFile(), 'utf8')); } catch { projects = []; } }
 async function saveProjects() { await fs.mkdir(path.dirname(projectsFile()), { recursive: true }); await fs.writeFile(projectsFile(), JSON.stringify(projects, null, 2) + '\n', 'utf8'); }
@@ -107,12 +107,36 @@ async function startMcpSession(request: any) {
   return { sessionId, tools: tools?.tools || [] };
 }
 
+type PluginScope = 'global' | 'project';
+const validPluginId = (value: string) => /^[a-z0-9]+(?:[-.][a-z0-9]+)*$/.test(value) && value.length <= 64 && !value.includes('..');
+const normalizePluginScope = (value: unknown, projectPath: string): PluginScope => {
+  const scope = String(value || '').trim().toLowerCase();
+  if (scope === 'global') return 'global';
+  if (scope === 'project' && String(projectPath || '').trim()) return 'project';
+  if (scope === 'project') throw new Error('Se necesita un proyecto activo para usar el alcance del proyecto.');
+  return String(projectPath || '').trim() ? 'project' : 'global';
+};
+const pluginRoot = (scope: PluginScope, projectPath: string) => scope === 'global'
+  ? path.join(app.getPath('userData'), 'plugins')
+  : path.join(app.getPath('userData'), 'projects', projectStorageKey(projectPath), 'plugins');
+const pluginDirectory = (scope: PluginScope, projectPath: string, pluginId: string) => {
+  if (!validPluginId(pluginId)) throw new Error('El identificador del plugin no es válido.');
+  return path.join(pluginRoot(scope, projectPath), pluginId);
+};
+const pluginFile = (scope: PluginScope, projectPath: string, pluginId: string, relativePath: string) => {
+  const root = pluginDirectory(scope, projectPath, pluginId);
+  const target = path.resolve(root, relativePath || '.');
+  if (target !== root && !target.startsWith(`${root}${path.sep}`)) throw new Error('La ruta queda fuera del plugin.');
+  return target;
+};
+
 async function listAgentPlugins(projectPath: string) {
   const roots = [
-    ...(String(projectPath || '').trim() ? [{ root: path.join(projectPath, '.codeclub', 'plugins'), source: 'project' }] : []),
-    { root: path.join(app.getPath('userData'), 'plugins'), source: 'global' },
+    ...(String(projectPath || '').trim() ? [{ root: pluginRoot('project', projectPath), scope: 'project' as PluginScope }] : []),
+    { root: pluginRoot('global', projectPath), scope: 'global' as PluginScope },
   ];
   const plugins: any[] = [];
+  const seen = new Set<string>();
   for (const entry of roots) {
     let children: any[] = [];
     try { children = await fs.readdir(entry.root, { withFileTypes: true }); } catch { continue; }
@@ -121,6 +145,9 @@ async function listAgentPlugins(projectPath: string) {
       const root = path.join(entry.root, child.name);
       try {
         const manifest = JSON.parse(await fs.readFile(path.join(root, 'plugin.json'), 'utf8'));
+        const id = String(manifest.name || child.name);
+        if (seen.has(id)) continue;
+        seen.add(id);
         const skills: any[] = [];
         const skillsRoot = path.join(root, 'skills');
         for (const skill of await fs.readdir(skillsRoot, { withFileTypes: true }).catch(() => [] as any[])) {
@@ -130,12 +157,12 @@ async function listAgentPlugins(projectPath: string) {
             const content = await fs.readFile(skillPath, 'utf8');
             const name = content.match(/^name:\s*(.+)$/m)?.[1]?.trim();
             const description = content.match(/^description:\s*(.+)$/m)?.[1]?.trim();
-            if (name && description) skills.push({ id: skill.name, name, description, content, pluginName: manifest.name || child.name });
+            if (name && description) skills.push({ id: skill.name, name, description, content, pluginName: id, scope: entry.scope });
           } catch { /* Skill incompleta: se omite. */ }
         }
         let mcpServers: Record<string, unknown> = {};
         try { const mcp = JSON.parse(await fs.readFile(path.join(root, 'mcp.json'), 'utf8')); mcpServers = mcp.mcpServers || {}; } catch { /* MCP opcional. */ }
-        plugins.push({ id: manifest.name || child.name, name: manifest.name || child.name, version: manifest.version, description: manifest.description, root, source: entry.source, skills, mcpServers, warnings: [] });
+        plugins.push({ id, name: id, version: manifest.version, description: manifest.description, root, source: entry.scope, scope: entry.scope, projectPath: entry.scope === 'project' ? path.resolve(projectPath) : undefined, skills, mcpServers, warnings: [] });
       } catch { /* Manifest inválido: no se carga. */ }
     }
   }
@@ -188,24 +215,6 @@ function createNativeTerminal(request: any) {
   return info;
 }
 
-async function createBrowserSurface(url: string, x: number, y: number, width: number, height: number) {
-  if (browserWindow && !browserWindow.isDestroyed()) browserWindow.close();
-  const parentBounds = mainWindow?.getBounds() || { x: 0, y: 0 };
-  browserWindow = new BrowserWindow({
-    parent: mainWindow || undefined,
-    frame: false,
-    show: false,
-    x: Math.round(parentBounds.x + x),
-    y: Math.round(parentBounds.y + y),
-    width: Math.max(1, Math.round(width)),
-    height: Math.max(1, Math.round(height)),
-    webPreferences: { contextIsolation: true, nodeIntegration: false },
-  });
-  browserWindow.on('closed', () => { browserWindow = null; });
-  await browserWindow.loadURL(url);
-  browserWindow.show();
-}
-
 async function invokeNativeCommand(command: string, args: any = {}) {
   switch (command) {
     case 'codeclub_get_username': return process.env.CODECLUB_USERNAME || 'Usuario';
@@ -241,9 +250,36 @@ async function invokeNativeCommand(command: string, args: any = {}) {
       return null;
     }
     case 'codeclub_agent_plugin_data': {
-      const target = path.join(app.getPath('userData'), 'agent-plugins', String(args.pluginId));
+      const pluginId = String(args.pluginId || '').trim().toLowerCase();
+      const scope = normalizePluginScope(args.scope, String(args.projectPath || ''));
+      const dataRoot = scope === 'project' ? path.join('projects', projectStorageKey(String(args.projectPath || ''))) : 'global';
+      if (!validPluginId(pluginId)) throw new Error('El identificador del plugin no es válido.');
+      const target = path.join(app.getPath('userData'), 'agent-plugins', dataRoot, pluginId);
       await fs.mkdir(target, { recursive: true });
       return target;
+    }
+    case 'codeclub_agent_plugin_read_file': {
+      const projectPath = String(args.projectPath || '');
+      const scope = normalizePluginScope(args.scope, projectPath);
+      const target = pluginFile(scope, projectPath, String(args.pluginId || '').trim().toLowerCase(), String(args.path || ''));
+      return { content: await fs.readFile(target, 'utf8'), scope, pluginPath: pluginDirectory(scope, projectPath, String(args.pluginId || '').trim().toLowerCase()) };
+    }
+    case 'codeclub_agent_plugin_write_file': {
+      const projectPath = String(args.projectPath || '');
+      const scope = normalizePluginScope(args.scope, projectPath);
+      const pluginId = String(args.pluginId || '').trim().toLowerCase();
+      const target = pluginFile(scope, projectPath, pluginId, String(args.path || ''));
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.writeFile(target, String(args.content ?? ''), 'utf8');
+      return { ok: true, path: String(args.path || ''), scope, pluginPath: pluginDirectory(scope, projectPath, pluginId) };
+    }
+    case 'codeclub_delete_agent_plugin': {
+      const projectPath = String(args.projectPath || '');
+      const scope = normalizePluginScope(args.scope, projectPath);
+      const pluginId = String(args.pluginId || '').trim().toLowerCase();
+      const target = pluginDirectory(scope, projectPath, pluginId);
+      await fs.rm(target, { recursive: true, force: true });
+      return { ok: true, deleted: pluginId, scope, pluginPath: target };
     }
     case 'codeclub_list_agent_plugins': return listAgentPlugins(String(args.projectPath || ''));
     case 'codeclub_terminal_list': return Array.from(nativeTerminals.values()).map((session) => session.info);
@@ -275,19 +311,6 @@ async function invokeNativeCommand(command: string, args: any = {}) {
       if (session) { session.child.kill(); nativeTerminals.delete(String(args.id)); }
       return null;
     }
-    case 'codeclub_browser_create': return createBrowserSurface(String(args.url), Number(args.x) || 0, Number(args.y) || 0, Number(args.width) || 800, Number(args.height) || 600);
-    case 'codeclub_browser_set_bounds': {
-      if (!browserWindow || browserWindow.isDestroyed()) return null;
-      const parentBounds = mainWindow?.getBounds() || { x: 0, y: 0 };
-      browserWindow.setBounds({ x: Math.round(parentBounds.x + Number(args.x || 0)), y: Math.round(parentBounds.y + Number(args.y || 0)), width: Math.max(1, Math.round(Number(args.width) || 800)), height: Math.max(1, Math.round(Number(args.height) || 600)) });
-      return null;
-    }
-    case 'codeclub_browser_navigate': { if (browserWindow && !browserWindow.isDestroyed()) await browserWindow.loadURL(String(args.url)); return null; }
-    case 'codeclub_browser_close': { if (browserWindow && !browserWindow.isDestroyed()) browserWindow.close(); browserWindow = null; return null; }
-    case 'codeclub_browser_set_visible': { if (browserWindow && !browserWindow.isDestroyed()) args.visible ? browserWindow.show() : browserWindow.hide(); return null; }
-    case 'codeclub_browser_eval': return browserWindow && !browserWindow.isDestroyed() ? browserWindow.webContents.executeJavaScript(String(args.script)) : null;
-    case 'codeclub_browser_get_url': return browserWindow && !browserWindow.isDestroyed() ? browserWindow.webContents.getURL() : '';
-    case 'codeclub_popup_window': return null;
     case 'codeclub_computer_list_windows': return computerListWindows();
     case 'codeclub_computer_screenshot': return computerScreenshot();
     case 'codeclub_computer_get_state': return { focused_window: null, focused_element: null, elements: [], note: 'UI Automation profundo no disponible; use computerScreenshot.' };

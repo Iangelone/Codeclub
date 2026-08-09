@@ -1,5 +1,5 @@
 import { appConfigDir, joinPath as join, fileExists as exists, makeDirectory as mkdir, readDesktopText as readTextFile, writeDesktopText as writeTextFile } from './runtime';
-import { getProjectFilePath, migrateLegacyProjectData } from './persistence';
+import { getProjectFilePath } from './persistence';
 
 export interface ExecutionLogRecord {
   id: string;
@@ -22,7 +22,6 @@ const compact = (value: unknown) => {
 
 export const appendExecutionLog = async (record: Omit<ExecutionLogRecord, 'id' | 'at'>) => {
   const operation = writeQueue.then(async () => {
-    await migrateLegacyProjectData(record.projectPath);
     const path = await logPath(record.projectPath);
     const parent = path.slice(0, Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/')));
     if (parent) await mkdir(parent, { recursive: true });
@@ -35,7 +34,6 @@ export const appendExecutionLog = async (record: Omit<ExecutionLogRecord, 'id' |
 };
 
 export const readExecutionLog = async (projectPath: string, limit = 100) => {
-  await migrateLegacyProjectData(projectPath);
   const path = await logPath(projectPath);
   if (!(await exists(path))) return [];
   try { return (await readTextFile(path)).split(/\r?\n/).filter(Boolean).slice(-Math.min(Math.max(limit, 1), 500)).map((line) => JSON.parse(line)); } catch { return []; }

@@ -31,7 +31,7 @@ Construir una sidebar derecha de escritorio, minimalista y redimensionable, inte
 
 ### Artifacts
 
-- Planes, TODOs, cotizaciones y resultados generados por la IA.
+- Planes, TODOs y resultados generados por la IA.
 - Filtros por tipo.
 - Persistencia por proyecto.
 - Apertura desde una respuesta del chat.

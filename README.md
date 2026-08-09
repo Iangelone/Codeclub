@@ -6,7 +6,7 @@ Open source desktop IDE for building applications with AI, made in Argentina.
 
 ## What is Codeclub
 
-Codeclub is an AI agent workspace that helps developers build applications with AI while producing auditable evidence — plans, TODOs, token usage, estimated costs — that supports commercial proposals, scoping, and pricing conversations.
+Codeclub is an AI agent workspace that helps developers build applications with AI while producing auditable evidence — plans, TODOs, token usage, and execution history.
 
 It is **local-first**: all data lives on your filesystem. No cloud, no vendor lock-in, no telemetry.
 
@@ -15,7 +15,7 @@ It is **local-first**: all data lives on your filesystem. No cloud, no vendor lo
 ### AI Agent
 - Multi-step agent with filesystem access, terminal execution, and browser control
 - Supports any OpenAI-compatible provider (live catalog from [models.dev](https://models.dev))
-- **Two modes**: Development (code creation) and Business (commercial analysis)
+- Development-first agent for code, files, terminals, browsers and Windows automation
 - Provider-agnostic `Custom` endpoint for self-hosted or private models
 - AI-powered tool router selects the right tools based on user intent
 - AI-powered tool verification checks whether executed tools accomplished the goal
@@ -36,12 +36,9 @@ It is **local-first**: all data lives on your filesystem. No cloud, no vendor lo
 | `subagent` | Delegate to specialized read-only agents (developer, explorer, frontend, backend, QA, security, docs) |
 | `getExecutionLog` | Auditable tool execution history |
 
-### Agent Tools (Business / Economy)
-Provides development tools for files, terminal, browser, plans, TODOs and agent delegation.
-
 ### Panels & Views
 - **Left sidebar**: project management, chat history, file explorer with CRUD, drag-and-drop
-- **Right sidebar** (resizable): file browser, git review, embedded WebView browser, artifacts (plans/TODOs/quotes)
+- **Right sidebar** (resizable): file browser, git review, embedded WebView browser, and artifacts (plans/TODOs)
 - **Terminal dock**: multi-tab floating terminal (PowerShell, CMD, Git Bash, WSL2), draggable and resizable
 - **Code editor**: CodeMirror 6 with syntax highlighting (JS/TS/HTML/CSS/JSON/MD/Python/Rust/SQL/XML)
 
@@ -49,13 +46,6 @@ Provides development tools for files, terminal, browser, plans, TODOs and agent 
 - Embedded Electron browser with URL bar, back/forward navigation
 - **DOM inspector**: click elements in the browser, inspect HTML, and reference selections in chat
 - Visibility toggle and resize support
-
-### Business Dashboard
-- Aggregates AI usage: generations, tokens, estimated cost, duration
-- Tracks business metrics: revenue, expenses, hours, monthly fees
-- Charts powered by **Recharts**: area, bar, line, pie, radar, radial
-- Project-level filtering and date-range analysis
-- Business workspace: quotes, invoices, expenses, milestones, time entries, payments
 
 ### Usage Tracking
 - Every AI generation records to `usage.jsonl`: provider, model, tokens, cost, duration
@@ -127,8 +117,6 @@ AI SDK documentation: https://ai-sdk.dev/docs
 - **Comercial paga**: empresas, corporaciones, uso comercial, SaaS, freelancers (> USD 60k/año).
 
 Contacto para licencias comerciales: **codeclubide@gmail.com**
-
-
 
 
 

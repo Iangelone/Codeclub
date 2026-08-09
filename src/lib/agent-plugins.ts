@@ -1,6 +1,8 @@
 import { nativeInvoke as invoke } from './runtime';
 import { jsonSchema } from 'ai';
 
+export type AgentPluginScope = 'global' | 'project';
+
 export type AgentPluginSkill = {
   id: string;
   name: string;
@@ -8,6 +10,7 @@ export type AgentPluginSkill = {
   content: string;
   pluginName: string;
   pluginRoot?: string;
+  scope: AgentPluginScope;
 };
 
 export type AgentPluginServer = {
@@ -26,7 +29,9 @@ export type AgentPlugin = {
   version?: string;
   description?: string;
   root: string;
-  source: string;
+  source: AgentPluginScope;
+  scope: AgentPluginScope;
+  projectPath?: string;
   skills: AgentPluginSkill[];
   mcpServers: Record<string, AgentPluginServer>;
   warnings: string[];
@@ -74,7 +79,7 @@ export async function connectAgentPluginMcp(plugin: AgentPlugin) {
   const tools: Record<string, any> = {};
   const closeCallbacks: Array<() => Promise<void>> = [];
   const sessions: string[] = [];
-  const dataPath = await invoke<string>('codeclub_agent_plugin_data', { pluginId: plugin.id });
+  const dataPath = await invoke<string>('codeclub_agent_plugin_data', { pluginId: plugin.id, scope: plugin.scope, projectPath: plugin.projectPath || '' });
   for (const [serverName, server] of Object.entries(plugin.mcpServers || {})) {
     try {
       if (server.type === 'stdio') {

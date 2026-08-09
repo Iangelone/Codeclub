@@ -86,30 +86,6 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
   const resizeRef = useRef<{ side: Side; startX: number; startWidth: number } | null>(null);
 
   useEffect(() => {
-    const root = document.getElementById('codeclub-right-sidebar');
-    if (!root) return undefined;
-    const repairEncoding = () => {
-      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-      let node: Node | null;
-      while ((node = walker.nextNode())) {
-        if (!node.nodeValue) continue;
-        const normalized = node.nodeValue
-          .replaceAll(String.fromCodePoint(0xEF, 0xBF, 0xBD), String.fromCodePoint(0xE1))
-          .replaceAll(String.fromCodePoint(0xC3, 0xAF, 0xC2, 0xBF, 0xC2, 0xBD), String.fromCodePoint(0xE1))
-          .replaceAll(String.fromCodePoint(0xFFFD), String.fromCodePoint(0xE1));
-        if (normalized !== node.nodeValue) node.nodeValue = normalized;
-        continue;
-        const repaired = node.nodeValue.replaceAll('ï¿½', 'á').replaceAll('�', 'á');
-        if (repaired !== node.nodeValue) node.nodeValue = repaired;
-      }
-    };
-    repairEncoding();
-    const observer = new MutationObserver(repairEncoding);
-    observer.observe(root, { childList: true, characterData: true, subtree: true });
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('codeclub:sidebar-sizes') ?? '{}') as { left?: number; right?: number };
       if (typeof saved.left === 'number') setLeftWidth(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, saved.left)));

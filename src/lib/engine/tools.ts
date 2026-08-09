@@ -1,13 +1,7 @@
-import { nativeInvoke as invoke } from '../runtime';
-import { jsonSchema, Output, tool } from 'ai';
-import type { ToolContext } from './types';
-import { runStream } from './run';
 import { createId, readAgentState, writeAgentState, type TaskStatus } from './planning';
 import { appendGenerationUsage, readGenerationUsage, summarizeGenerationUsage } from '../usage';
 import { readExecutionLog } from '../execution-log';
 import { readProjectIndex } from '../projectManager';
-import { getSetting, setSetting } from '../persistence';
-import { protectedExtensionIds } from '../extensions';
 
 const specialistHandoff = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, 500);
 
@@ -15,30 +9,30 @@ const TOOL_GUIDANCE: Record<string, string> = {
   computerGetState: 'Si la app solo expone un Pane o no devuelve un TextBox/Input, no esperes otro control: ejecuta computerScreenshot y usa la imagen para ubicar el input. Para interactuar por coordenadas, hace computerAction click con x/y y luego computerAction type o key.',
   computerScreenshot: 'Usa la imagen para ubicar visualmente el control cuando UI Automation no exponga elementos. Despues hace click con x/y, escribi y verifica con otra captura.',
   computerOcr: 'Usa el texto y las cajas devueltas por OCR para convertir una etiqueta visible en coordenadas. La confianza es orientativa, no garantiza reconocimiento perfecto.',
-  listFiles: 'Us� la lista como evidencia del workspace y, si necesit�s detalles, le� los archivos relevantes.',
-  readFile: 'Basate �nicamente en el contenido le�do; no afirmes cambios sin una tool de escritura o verificaci�n.',
-  searchText: 'Si hay coincidencias, cit� rutas y l�neas; si est� vac�o, inform� que no hubo resultados.',
-  writeFile: 'Verific� el archivo escrito leyendo o inspeccionando el estado posterior antes de afirmar que qued� correcto.',
-  runCommand: 'Interpret� la salida real, incluyendo errores y c�digo de salida; no conviertas un intento en �xito.',
-  terminal: 'La terminal puede quedar ejecut�ndose; observ� su estado o salida antes de declarar el proceso listo.',
-  openBrowser: 'Despu�s de abrir, consult� el estado del navegador para confirmar URL, t�tulo y contenido.',
-  getBrowserState: 'Us� URL, t�tulo, texto y elementos observables como evidencia; no inventes contenido ausente.',
-  browserAction: 'Despu�s de actuar, observ� nuevamente el navegador para verificar el efecto real de la acci�n.',
-  createPlan: 'Us� el plan creado para coordinar pasos y actualizalo cuando cambie el estado real.',
-  updatePlan: 'Report� el estado devuelto por la tool y no marques pasos como completados sin evidencia.',
-  getTaskStatus: 'Compar� el estado actual con el objetivo y se�al� planes o pasos pendientes y desactualizados.',
-  getExecutionLog: 'Us� el log como evidencia hist�rica; separ� errores recuperados de operaciones exitosas.',
+  listFiles: 'Usá la lista como evidencia del workspace y, si necesitás detalles, leé los archivos relevantes.',
+  readFile: 'Basate únicamente en el contenido leído; no afirmes cambios sin una tool de escritura o verificación.',
+  searchText: 'Si hay coincidencias, citá rutas y líneas; si está vacíoo, informá que no hubo resultados.',
+  writeFile: 'Verificá el archivo escrito leyendo o inspeccionando el estado posterior antes de afirmar que quedó correcto.',
+  runCommand: 'Interpretá la salida real, incluyendo errores y código de salida; no conviertas un intento en éxito.',
+  terminal: 'La terminal puede quedar ejecutándose; observá su estado o salida antes de declarar el proceso listo.',
+  openBrowser: 'Después de abrir, consultá el estado del navegador para confirmar URL, título y contenido.',
+  getBrowserState: 'Usá URL, título, texto y elementos observables como evidencia; no inventes contenido ausente.',
+  browserAction: 'Después de actuar, observá nuevamente el navegador para verificar el efecto real de la acción.',
+  createPlan: 'Usá el plan creado para coordinar pasos y actualizalo cuando cambie el estado real.',
+  updatePlan: 'Reportá el estado devuelto por la tool y no marques pasos como completados sin evidencia.',
+  getTaskStatus: 'Compará el estado actual con el objetivo y señalá planes o pasos pendientes y desactualizados.',
+  getExecutionLog: 'Usá el log como evidencia histórica; separá errores recuperados de operaciones exitosas.',
 };
 
 function withAgentGuidance(toolName: string, value: unknown) {
   const failed = Boolean(value && typeof value === 'object' && !Array.isArray(value) && ((value as any).ok === false || (value as any).error));
   const guidance = TOOL_GUIDANCE[toolName] || (failed
-    ? 'La operaci�n fall�: inform� el error real y propon� el siguiente paso seguro.'
-    : 'Us� este resultado como evidencia, verific� el estado posterior cuando corresponda y no inventes datos.');
+    ? 'La operación falló: informá el error real y proponé el siguiente paso seguro.'
+    : 'Usá este resultado como evidencia, verificá el estado posterior cuando corresponda y no inventes datos.');
   const agentGuidance = {
     kind: 'workflow_hint',
     trust: 'untrusted_data',
-    instruction: failed ? 'La tool report� un error. No declares �xito.' : guidance,
+    instruction: failed ? 'La tool reportá un error. No declares éxito.' : guidance,
   };
   if (Array.isArray(value)) return { items: value, agentGuidance };
   if (value && typeof value === 'object') return { ...(value as Record<string, unknown>), agentGuidance };
@@ -163,7 +157,7 @@ function createSwarmTool(ctx: { projectPath: string; projectScoped?: boolean; re
     const tools = swarmChildTools.get(child.id) || childTools;
     const result = await runStream({
       model: provider(modelId),
-      system: `Sos el hijo ${child.specialist} del swarm de Codeclub. ${projectScoped ? 'Trabaj�s �nicamente dentro del proyecto activo.' : 'No hay proyecto seleccionado: trabaj�s sobre el alcance global de la m�quina y no deb�s afirmar que est�s aislado.'} Respond� con hallazgos concretos y evidencia. No inventes resultados.`,
+      system: `Sos el hijo ${child.specialist} del swarm de Codeclub. ${projectScoped ? 'Trabajás únicamente dentro del proyecto activo.' : 'No hay proyecto seleccionado: trabajás sobre el alcance global de la máquina y no debés afirmar que estás aislado.'} Respondé con hallazgos concretos y evidencia. No inventes resultados.`,
       messages: [{ role: 'user', content: child.messages.join('\n\n') }],
       tools,
       callbacks: { onTextDelta: () => {}, onUsage: (usage) => persistSubagentUsage(projectPath, modelId, `swarm-${child.specialist}`, usage) },
@@ -206,8 +200,8 @@ function createSwarmTool(ctx: { projectPath: string; projectScoped?: boolean; re
           const selectedTools = template === 'read_only'
             ? Object.fromEntries(Object.entries(childTools).filter(([name]) => ['listFiles', 'readFile', 'searchText'].includes(name)))
             : requestedTools?.length
-              ? Object.fromEntries(requestedTools.filter((name) => childTools[name] && !PARENT_ONLY_TOOLS.has(name) && !['swarm', 'subagent', 'delegateBusinessSpecialist'].includes(name)).map((name) => [name, childTools[name]]))
-              : Object.fromEntries(Object.entries(childTools).filter(([name]) => !PARENT_ONLY_TOOLS.has(name) && !['swarm', 'subagent', 'delegateBusinessSpecialist', 'listAvailableTools'].includes(name)));
+              ? Object.fromEntries(requestedTools.filter((name) => childTools[name] && !PARENT_ONLY_TOOLS.has(name) && !['swarm', 'subagent'].includes(name)).map((name) => [name, childTools[name]]))
+              : Object.fromEntries(Object.entries(childTools).filter(([name]) => !PARENT_ONLY_TOOLS.has(name) && !['swarm', 'subagent', 'listAvailableTools'].includes(name)));
           const originalTools = Object.keys(childTools);
           Object.assign(child as any, { toolNames: Object.keys(selectedTools), availableToolNames: originalTools });
           swarm.children[child.id] = child;
@@ -246,28 +240,19 @@ export function selectToolsForPrompt(toolset: Record<string, any>, _mode: 'devel
 
   const add = (...names: string[]) => names.forEach((name) => keys.add(name));
   const has = (...terms: string[]) => terms.some((term) => text.includes(term));
-  if (has('controlar la pc', 'control de pc', 'computadora', 'mouse', 'teclado', 'windows', 'notepad', 'bloc de notas', 'chatgpt', 'app de escritorio', 'aplicaci�n de escritorio', 'aplicacion de escritorio')) add('computerListWindows', 'computerGetState', 'computerScreenshot', 'computerOcr', 'computerAction');
+  if (has('controlar la pc', 'control de pc', 'computadora', 'mouse', 'teclado', 'windows', 'notepad', 'bloc de notas', 'chatgpt', 'app de escritorio', 'aplicación de escritorio', 'aplicacion de escritorio')) add('computerListWindows', 'computerGetState', 'computerScreenshot', 'computerOcr', 'computerAction');
 
-  if (false) {
-    if (has('cotiz', 'presupuesto', 'propuesta', 'precio', 'tarifa', 'estim')) add('createQuote', 'createBudget', 'updateBusinessWorkspace');
-    if (has('plan', 'hito', 'roadmap', 'estrateg')) add('createExecutionPlan', 'updateBusinessWorkspace');
-    if (has('panel', 'dashboard', 'mostrar', 'ocultar', 'esconder', 'visibilidad')) add('getBusinessWorkspace', 'updateBusinessWorkspace');
-    if (has('proyecto', 'portfolio', 'cartera')) add('listIndexedProjects');
-    if (has('log', 'auditar', 'ejecuci�n', 'ejecucion', 'herramientas')) add('getExecutionLog');
-    if (has('sub-ia', 'subia', 'especialista', 'deleg', 'investig')) add('delegateBusinessSpecialist');
-  } else {
-    // Failsafe de escritura: el router IA sigue siendo la decisi�n principal.
-    if (has('editar', 'modific', 'crear', 'crea', 'cre�', 'armar', 'arm�', 'hacer', 'hac�', 'agregar', 'agrega', 'agreg�', 'meter', 'mete', 'met�', 'carpeta', 'archivo', 'txt', 'escrib', 'implement', 'fix', 'correg', 'refactor', 'cambio')) add('writeFile');
-    if (has('habilidad', 'skill', '.codeclub')) add('createSkill');
-    if (has('complemento', 'extension', 'plugin')) add('createExtension', 'deleteExtension');
-    if (has('mcp', 'servidor de tools', 'model context protocol')) add('createMcpServer', 'deleteMcpServer');
-    if (has('terminal', 'comando', 'ejecut', 'build', 'compil', 'test', 'prueba', 'git', 'servidor', 'background', 'proceso', 'bloc', 'notepad', 'pc', 'computadora')) add('runCommand', 'terminal');
-    if (has('sub-ia', 'subia', 'subagente', 'especialista', 'deleg')) add('subagent');
-    if (has('navegador', 'browser', 'web', 'url', 'dom', 'elemento', 'bot�n', 'boton', 'click', 'clic', 'escrib')) add('openBrowser', 'getBrowserState', 'browserAction');
-    if (has('log', 'auditar', 'ejecuci�n', 'ejecucion', 'herramientas', 'debug')) add('getExecutionLog');
-  }
+  // Failsafe de escritura: el router IA sigue siendo la decisión principal.
+  if (has('editar', 'modific', 'crear', 'crea', 'creá', 'armar', 'armá', 'hacer', 'hacé', 'agregar', 'agrega', 'agregá', 'meter', 'mete', 'meté', 'carpeta', 'archivo', 'txt', 'escrib', 'implement', 'fix', 'correg', 'refactor', 'cambio')) add('writeFile');
+  if (has('habilidad', 'skill', 'agent plugin')) add('createSkill');
+  if (has('complemento', 'extension', 'plugin')) add('createExtension', 'deleteExtension');
+  if (has('mcp', 'servidor de tools', 'model context protocol')) add('createMcpServer', 'deleteMcpServer');
+  if (has('terminal', 'comando', 'ejecut', 'build', 'compil', 'test', 'prueba', 'git', 'servidor', 'background', 'proceso', 'bloc', 'notepad', 'pc', 'computadora')) add('runCommand', 'terminal');
+  if (has('sub-ia', 'subia', 'subagente', 'especialista', 'deleg')) add('subagent');
+  if (has('navegador', 'browser', 'web', 'url', 'dom', 'elemento', 'botón', 'boton', 'click', 'clic', 'escrib')) add('openBrowser', 'getBrowserState', 'browserAction');
+  if (has('log', 'auditar', 'ejecución', 'ejecucion', 'herramientas', 'debug')) add('getExecutionLog');
 
-  if (_mode === 'development' && has('control de pc', 'computadora', 'mouse', 'teclado', 'navegador', 'edge', 'notepad', 'bloc de notas', 'chatgpt', 'app de escritorio', 'aplicaci�n de escritorio', 'aplicacion de escritorio')) add('subagent', 'runCommand', 'openBrowser', 'getBrowserState', 'browserAction');
+  if (_mode === 'development' && has('control de pc', 'computadora', 'mouse', 'teclado', 'navegador', 'edge', 'notepad', 'bloc de notas', 'chatgpt', 'app de escritorio', 'aplicación de escritorio', 'aplicacion de escritorio')) add('subagent', 'runCommand', 'openBrowser', 'getBrowserState', 'browserAction');
 
   return Object.fromEntries([...keys].filter((name) => toolset[name]).map((name) => [name, toolset[name]]));
 }
@@ -303,10 +288,10 @@ export function createDynamicToolAccess(availableTools: Record<string, any>, rec
     try { return schema ? JSON.parse(JSON.stringify(schema)) : null; } catch { return { type: 'object', properties: {}, additionalProperties: true }; }
   };
   const entries = Object.entries(availableTools)
-    .filter(([name, definition]) => definition && !['swarm', 'subagent', 'listAvailableTools', 'delegateBusinessSpecialist'].includes(name))
+    .filter(([name, definition]) => definition && !['swarm', 'subagent', 'listAvailableTools'].includes(name))
     .map(([name, definition]) => ({
       name,
-      description: String(definition.description || 'Sin descripci�n'),
+      description: String(definition.description || 'Sin descripción'),
       keywords: keywordMap[name] || [],
       schema: plainSchema(definition.inputSchema),
     }));
@@ -357,7 +342,7 @@ export function createDynamicToolAccess(availableTools: Record<string, any>, rec
         try {
           const result = await definition.execute(input || {});
           const nextStep = name === 'computerAction' && input?.action === 'focus'
-            ? 'Continu� inmediatamente con computerGetState. Si no devuelve TextBox/Input, ejecut� computerScreenshot o computerOcr; despu�s hac� click con x/y, type y key {ENTER}.'
+            ? 'Continuá inmediatamente con computerGetState. Si no devuelve TextBox/Input, ejecutá computerScreenshot o computerOcr; después hacé click con x/y, type y key {ENTER}.'
             : undefined;
           const output = { ok: true, tool: name, durationMs: Math.round(performance.now() - startedAt), result, ...(nextStep ? { nextStep } : {}) };
           recordToolEvent?.('executeTool', { name, input: input || {} }, output);
@@ -372,126 +357,12 @@ export function createDynamicToolAccess(availableTools: Record<string, any>, rec
   });
 }
 
-/* Legacy economy-aware routing removed. Development is the only agent mode now.
-const TOOL_ROUTER_CATALOG: Record<'business' | 'development', Record<string, string>> = {
-  development: {
-  },
-  business: {
-    listProjectFiles: 'listar archivos del proyecto', readProjectFile: 'leer archivos del proyecto', searchProjectText: 'buscar texto en el proyecto', getBusinessWorkspace: 'leer datos econ�micos y configuraci�n del panel', getAIUsageMetrics: 'medir tokens, duraci�n y costos', updateBusinessWorkspace: 'actualizar datos econ�micos o visibilidad de paneles', createQuote: 'crear cotizaciones', createBudget: 'crear presupuestos', createExecutionPlan: 'crear planes de ejecuci�n', listIndexedProjects: 'listar proyectos', getExecutionLog: 'auditar ejecuciones y tools', delegateBusinessSpecialist: 'delegar investigaci�n comercial',
-  },
-};
-
-const toolRouterOutput = Output.object({
-  schema: jsonSchema({
-    type: 'object',
-    properties: {
-      tools: { type: 'array', items: { type: 'string' } },
-      confidence: { type: 'number' },
-      reason: { type: 'string' },
-      requiresAction: { type: 'boolean' },
-      goal: { type: 'string' },
-      verification: { type: 'string' },
-    },
-    required: ['tools', 'confidence', 'reason', 'requiresAction', 'goal', 'verification'],
-    additionalProperties: false,
-  }),
-});
-
-export type AgentMode = 'development' | 'business';
-export type AgentSpecialist = 'primary' | 'developer' | 'explorer' | 'frontend' | 'backend' | 'qa' | 'security' | 'documentation' | 'computer_use' | 'commercial' | 'pricing' | 'finance' | 'operations' | 'strategy';
-
-const agentRouteOutput = Output.object({
-  schema: jsonSchema({
-    type: 'object',
-    properties: {
-      mode: { type: 'string', enum: ['development', 'business'] },
-      specialist: { type: 'string', enum: ['primary', 'developer', 'explorer', 'frontend', 'backend', 'qa', 'security', 'documentation', 'computer_use', 'commercial', 'pricing', 'finance', 'operations', 'strategy'] },
-      confidence: { type: 'number' },
-      reason: { type: 'string' },
-    },
-    required: ['mode', 'specialist', 'confidence', 'reason'],
-    additionalProperties: false,
-  }),
-});
-
-export async function resolveAgentRouteWithAI({ model, prompt, modeOverride, signal, onUsage }: { model: any; prompt: string; modeOverride?: 'auto' | AgentMode; signal?: AbortSignal; onUsage?: (usage: any) => void | Promise<void> }) {
-  let route: { mode?: AgentMode; specialist?: AgentSpecialist; confidence?: number; reason?: string } | null = null;
-  await runStream({
-    model,
-    system: 'You are Codeclub\'s agent orchestrator. Select the best mode and specialist for the request. Return only structured JSON. Use primary when the main agent can solve it. Use business for economics, pricing, sales, clients, quotes, ROI or the business panel; use development for code, files, tests, browser or PC control.',
-    messages: [{ role: 'user', content: JSON.stringify({ prompt, modeOverride: modeOverride && modeOverride !== 'auto' ? modeOverride : null }) }],
-    tools: {},
-    structuredOutput: agentRouteOutput,
-    signal,
-    callbacks: {
-      onTextDelta: () => {},
-      onStructuredOutput: (output) => { route = output; },
-      onUsage,
-    },
-  });
-  if (!route?.mode || !route.specialist) throw new Error('La orquestadora no devolvio un modo y especialista validos.');
-  const mode = modeOverride && modeOverride !== 'auto' ? modeOverride : route.mode;
-  const businessSpecialists = new Set<AgentSpecialist>(['commercial', 'pricing', 'finance', 'operations', 'strategy']);
-  const developmentSpecialists = new Set<AgentSpecialist>(['developer', 'explorer', 'frontend', 'backend', 'qa', 'security', 'documentation', 'computer_use']);
-  const specialist = mode === 'business' && developmentSpecialists.has(route.specialist) || mode === 'development' && businessSpecialists.has(route.specialist) ? 'primary' : route.specialist;
-  return { mode, specialist, confidence: route.confidence ?? 0, reason: route.reason || 'Ruta seleccionada por la orquestadora.' };
-}
-
-export function inferAgentMode(prompt: string): AgentMode {
-  const text = prompt.toLowerCase();
-  return /econom|precio|cotiz|presupuesto|propuesta|valor|fee|margen|roi|cliente|venta|negocio|comercial|factur|ingreso|gasto|rentab|panel/.test(text) ? 'business' : 'development';
-}
-
-export function inferAgentSpecialist(prompt: string, mode: AgentMode): AgentSpecialist {
-  const text = prompt.toLowerCase();
-  if (mode === 'business') {
-    if (/cotiz|precio|pricing|valor|fee|margen|roi/.test(text)) return 'pricing';
-    if (/cliente|venta|comercial/.test(text)) return 'commercial';
-    if (/finanz|gasto|ingreso|costo|rentab|presupuesto/.test(text)) return 'finance';
-    if (/operaci|proceso|hito|entrega/.test(text)) return 'operations';
-    return 'strategy';
-  }
-  if (/navegador|browser|pc|mouse|teclado|edge|youtube/.test(text)) return 'computer_use';
-  if (/test|qa|probar|error|bug|falla/.test(text)) return 'qa';
-  if (/ui|ux|dise�o|css|componente|interfaz/.test(text)) return 'frontend';
-  if (/api|backend|servidor|base de datos/.test(text)) return 'backend';
-  if (/document|readme|explicar/.test(text)) return 'documentation';
-  return 'developer';
-}
-
-export async function resolveToolsWithAI({ model, mode, prompt, toolset, signal, onUsage }: { model: any; mode: 'business' | 'development'; prompt: string; toolset: Record<string, any>; signal?: AbortSignal; onUsage?: (usage: any) => void | Promise<void> }) {
-  return { tools: toolset, confidence: 1, reason: 'El agente principal recibe todas las tools.', requiresAction: false, goal: prompt, verification: '' };
-  const catalog = TOOL_ROUTER_CATALOG[mode];
-  let decision: { tools?: string[]; confidence?: number; reason?: string; requiresAction?: boolean; goal?: string; verification?: string } | null = null;
-  await runStream({
-    model,
-    system: `Sos el router de herramientas de Codeclub para el modo ${mode === 'business' ? 'Econom�a' : 'Desarrollo'}. Analiz� la intenci�n del usuario y eleg� �nicamente las tools necesarias del cat�logo. No ejecutes tools ni respondas al usuario. Si una acci�n puede requerir escritura o terminal, habilitala. Siempre inclu� las tools base de inspecci�n y organizaci�n cuando sean relevantes. Devolv� JSON estructurado. Cat�logo: ${Object.entries(catalog).map(([name, description]) => `${name}: ${description}`).join('; ')}`,
-    messages: [{ role: 'user', content: `ROUTER CONTRACT: no respondas al usuario; devolve solo JSON. Elegi la menor cantidad de tools suficiente. En Economia prioriza datos comerciales y workspace antes que codigo. No delegues si el agente principal puede resolverlo. Si hay escritura, guardado, cotizacion, plan o ejecucion, marca requiresAction=true y define evidencia observable.\n\nINTENCION: ${prompt}` }],
-    tools: {},
-    structuredOutput: toolRouterOutput,
-    signal,
-    callbacks: {
-      onTextDelta: () => {},
-      onStructuredOutput: (output) => { decision = output; },
-      onUsage,
-    },
-  });
-  const allowed = new Set(Object.keys(toolset));
-  const aliases: Record<string, string> = { write_file: 'writeFile', run_command: 'runCommand', ask_user: 'askUser', create_plan: 'createPlan', update_plan: 'updatePlan' };
-  const selected = (decision?.tools || []).map((name) => aliases[name] || name).filter((name) => allowed.has(name));
-  if (!selected.length) throw new Error('El router IA no habilit� ninguna tool v�lida.');
-  const actionTools = ['writeFile', 'runCommand', 'terminal', 'subagent'].filter((name) => allowed.has(name));
-  const resolved = [...new Set(decision?.requiresAction ? [...selected, ...actionTools] : selected)];
-  return { tools: Object.fromEntries(resolved.map((name) => [name, toolset[name]])), confidence: decision?.confidence ?? 0, reason: decision?.reason || 'intenci�n detectada', requiresAction: decision?.requiresAction === true, goal: decision?.goal || prompt, verification: decision?.verification || 'La tool correspondiente debe devolver un resultado exitoso.' };
-}
-
-*/
 
 export type AgentMode = 'development';
 export type AgentSpecialist = 'primary' | 'developer' | 'explorer' | 'frontend' | 'backend' | 'qa' | 'security' | 'documentation' | 'computer_use';
 
 export async function resolveAgentRouteWithAI({ prompt }: { model?: any; prompt: string; modeOverride?: 'auto' | AgentMode; signal?: AbortSignal; onUsage?: (usage: any) => void | Promise<void> }) {
-  return { mode: 'development' as const, specialist: inferAgentSpecialist(prompt, 'development'), confidence: 1, reason: 'Desarrollo es el modo �nico de Codeclub.' };
+  return { mode: 'development' as const, specialist: inferAgentSpecialist(prompt, 'development'), confidence: 1, reason: 'Desarrollo es el modo único de Codeclub.' };
 }
 
 export function inferAgentMode(_prompt: string): AgentMode { return 'development'; }
@@ -500,32 +371,45 @@ export function inferAgentSpecialist(prompt: string, _mode: AgentMode): AgentSpe
   const text = prompt.toLowerCase();
   if (/navegador|browser|pc|mouse|teclado|edge|youtube/.test(text)) return 'computer_use';
   if (/test|qa|probar|error|bug|falla/.test(text)) return 'qa';
-  if (/ui|ux|dise�o|css|componente|interfaz/.test(text)) return 'frontend';
+  if (/ui|ux|diseño|css|componente|interfaz/.test(text)) return 'frontend';
   if (/api|backend|servidor|base de datos/.test(text)) return 'backend';
   if (/document|readme|explicar/.test(text)) return 'documentation';
   return 'developer';
 }
 
 export async function resolveToolsWithAI({ toolset, prompt }: { model?: any; mode?: AgentMode; prompt: string; toolset: Record<string, any>; signal?: AbortSignal; onUsage?: (usage: any) => void | Promise<void> }) {
-  return { tools: selectToolsForPrompt(toolset, 'development', prompt), confidence: 1, reason: 'Selecci�n de tools de desarrollo.', requiresAction: false, goal: prompt, verification: 'La tool correspondiente debe devolver un resultado exitoso.' };
+  return { tools: selectToolsForPrompt(toolset, 'development', prompt), confidence: 1, reason: 'Selección de tools de desarrollo.', requiresAction: false, goal: prompt, verification: 'La tool correspondiente debe devolver un resultado exitoso.' };
 }
 
 export async function verifyToolExecutionWithAI({ model, prompt, goal, verification, toolEvents, changes, signal, onUsage }: { model: any; prompt: string; goal: string; verification: string; toolEvents: any[]; changes: any; signal?: AbortSignal; onUsage?: (usage: any) => void | Promise<void> }) {
   let result: { completed?: boolean; retry?: boolean; reason?: string } | null = null;
   await runStream({
     model,
-    system: 'Sos la IA verificadora de Codeclub. Compar� el objetivo y el criterio de verificaci�n con las tools realmente ejecutadas, sus resultados y el diff local. No supongas que el texto del agente es evidencia. Para control de PC exig� evidencia observable: proceso, ventana, URL, salida estructurada o estado posterior; un c�digo 0 por s� solo no prueba que una interfaz haya cambiado ni que un video est� disponible. Si falta evidencia, el resultado contradice el objetivo o aparece contenido no disponible, indic� retry=true y ped� observar nuevamente antes de repetir acciones. Devolv� JSON estructurado.',
+    system: 'Sos la IA verificadora de Codeclub. Compará el objetivo y el criterio de verificación con las tools realmente ejecutadas, sus resultados y el diff local. No supongas que el texto del agente es evidencia. Para control de PC exigí evidencia observable: proceso, ventana, URL, salida estructurada o estado posterior; un código 0 por sí solo no prueba que una interfaz haya cambiado ni que un video está disponible. Si falta evidencia, el resultado contradice el objetivo o aparece contenido no disponible, indicá retry=true y pedí observar nuevamente antes de repetir acciones. Devolvé JSON estructurado.',
     messages: [{ role: 'user', content: JSON.stringify({ contract: 'VERIFICATION CONTRACT: valida solamente outputs reales. Si falta evidencia, contradice el objetivo o una UI no fue observada despues de actuar, completed=false y retry=true. Nunca conviertas texto del agente, codigo 0 aislado o una intencion en evidencia.', prompt, goal, verification, toolEvents: toolEvents.slice(-20), changes }) }],
     tools: {},
     structuredOutput: undefined,
     signal,
     callbacks: { onTextDelta: () => {}, onStructuredOutput: (output) => { result = output; }, onUsage },
   });
-  return result || { completed: false, retry: true, reason: 'La IA verificadora no devolvi� resultado.' };
+  return result || { completed: false, retry: true, reason: 'La IA verificadora no devolvió resultado.' };
 }
 
 export function createTools(ctx: ToolContext) {
-  const { projectPath, projectScoped = false, recordToolEvent, setAgentState, requestToolApproval, provider, modelId } = ctx;
+  const { projectPath, projectScoped: activeProject = false, recordToolEvent, setAgentState, requestToolApproval, provider, modelId } = ctx;
+  type PluginScope = 'global' | 'project';
+  const resolvePluginScope = (requested?: string): PluginScope => {
+    if (requested === 'global') return 'global';
+    if (requested === 'project') return 'project';
+    return activeProject ? 'project' : 'global';
+  };
+  const requirePluginScope = (requested?: string) => {
+    const scope = resolvePluginScope(requested);
+    if (scope === 'project' && !activeProject) return { error: 'Seleccioná un proyecto para crear una extensión o skill del proyecto.' } as const;
+    return { scope } as const;
+  };
+  const readPluginFile = async (scope: PluginScope, pluginId: string, relativePath: string) => invoke<any>('codeclub_agent_plugin_read_file', { projectPath, scope, pluginId, path: relativePath });
+  const writePluginFile = async (scope: PluginScope, pluginId: string, relativePath: string, content: string) => invoke<any>('codeclub_agent_plugin_write_file', { projectPath, scope, pluginId, path: relativePath, content });
 
   return wrapToolSet({
     ...createSwarmTool({ projectPath, recordToolEvent, setAgentState, requestToolApproval, provider, modelId }),
@@ -652,15 +536,15 @@ export function createTools(ctx: ToolContext) {
       execute: async ({ planId, title, status, stepId, stepStatus }) => {
         setAgentState('tool_call');
         const state = await readAgentState(projectPath);
-        if (!state.plan || (planId && state.plan.id !== planId)) return { ok: false, error: 'No se encontr� el plan indicado.' };
+        if (!state.plan || (planId && state.plan.id !== planId)) return { ok: false, error: 'No se encontró el plan indicado.' };
         const plans = state.plans || (state.plan ? [state.plan] : []);
         const target = planId ? plans.find((item) => item.id === planId) : plans[plans.length - 1];
-        if (!target) return { ok: false, error: 'No se encontr� el plan indicado.' };
+        if (!target) return { ok: false, error: 'No se encontró el plan indicado.' };
         if (title) target.title = title;
         if (status) target.status = status as TaskStatus;
         if (stepId && stepStatus) {
           const step = target.steps.find((item) => item.id === stepId);
-          if (!step) return { ok: false, error: 'No se encontr� el paso indicado.' };
+          if (!step) return { ok: false, error: 'No se encontró el paso indicado.' };
           step.status = stepStatus as TaskStatus;
         }
         target.updatedAt = new Date().toISOString();
@@ -693,7 +577,7 @@ export function createTools(ctx: ToolContext) {
           state.todos.push({ id: createId('todo'), title, description, status: (status || 'pending') as TaskStatus, createdAt: now, updatedAt: now });
         } else if (action === 'update' && id) {
           const todo = state.todos.find((item) => item.id === id);
-          if (!todo) return { ok: false, error: 'No se encontr� el TODO indicado.' };
+          if (!todo) return { ok: false, error: 'No se encontró el TODO indicado.' };
           if (title) todo.title = title;
           if (description !== undefined) todo.description = description;
           if (status) todo.status = status as TaskStatus;
@@ -749,7 +633,7 @@ export function createTools(ctx: ToolContext) {
       },
     }),
     createSkill: tool({
-      description: 'Create a complete Agent Plugins package in the active project at .codeclub/plugins/<name>, including plugin.json and skills/<skillName>/SKILL.md.',
+      description: 'Create a complete Agent Plugins package globally or in the active project, including plugin.json and skills/<skillName>/SKILL.md.',
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
@@ -761,26 +645,30 @@ export function createTools(ctx: ToolContext) {
           author: { type: 'string', description: 'Optional author name.' },
           license: { type: 'string', description: 'Optional SPDX license identifier.' },
           homepage: { type: 'string', description: 'Optional plugin homepage URL.' },
+          scope: { type: 'string', enum: ['global', 'project'], description: 'Where to install it. Defaults to project when one is active, otherwise global.' },
         },
         required: ['name', 'description', 'instructions'],
         additionalProperties: false,
       }),
-      execute: async ({ name, skillName: requestedSkillNameInput, description, instructions, version, author, license, homepage }) => {
+      execute: async ({ name, skillName: requestedSkillNameInput, description, instructions, version, author, license, homepage, scope: requestedScope }) => {
         setAgentState('running');
-        if (!projectScoped) return { ok: false, error: 'Seleccion� un proyecto antes de crear un plugin.' };
+        // El alcance se valida con requirePluginScope; un plugin global no necesita proyecto.
+        const scopeResult = requirePluginScope(requestedScope);
+        if ('error' in scopeResult) return { ok: false, error: scopeResult.error };
+        const scope = scopeResult.scope;
         const pluginName = String(name || '').trim().toLowerCase();
         const pluginSkillName = String(requestedSkillNameInput || pluginName).trim().toLowerCase();
         const pluginDescription = String(description || '').trim().replace(/[\r\n]+/g, ' ');
         const pluginInstructions = String(instructions || '').trim();
-        if (!/^[a-z0-9]+(?:[-.][a-z0-9]+)*$/.test(pluginName) || pluginName.length > 64 || pluginName.includes('--') || pluginName.includes('..')) return { ok: false, error: 'El nombre del plugin debe usar min�sculas, n�meros, guiones o puntos.' };
+        if (!/^[a-z0-9]+(?:[-.][a-z0-9]+)*$/.test(pluginName) || pluginName.length > 64 || pluginName.includes('--') || pluginName.includes('..')) return { ok: false, error: 'El nombre del plugin debe usar minúsculas, números, guiones o puntos.' };
         if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(pluginSkillName) || pluginSkillName.length > 64 || pluginSkillName.includes('--')) return { ok: false, error: 'El nombre de la skill debe usar kebab-case.' };
-        if (!pluginDescription || pluginDescription.length > 1024) return { ok: false, error: 'La descripci�n debe tener entre 1 y 1024 caracteres.' };
+        if (!pluginDescription || pluginDescription.length > 1024) return { ok: false, error: 'La descripción debe tener entre 1 y 1024 caracteres.' };
         if (!pluginInstructions || pluginInstructions.length > 180000) return { ok: false, error: 'Las instrucciones deben tener entre 1 y 180000 caracteres.' };
-        const pluginPath = `.codeclub/plugins/${pluginName}`;
+        const pluginPath = scope === 'project' ? `project/plugins/${pluginName}` : `global/plugins/${pluginName}`;
         const manifestPath = `${pluginPath}/plugin.json`;
         const schema = 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json';
         let manifest: any = { '$schema': schema, name: pluginName };
-        try { manifest = JSON.parse(String(await invoke('codeclub_read_file', { projectPath, path: manifestPath }))); } catch { /* paquete nuevo */ }
+        try { manifest = JSON.parse(String((await readPluginFile(scope, pluginName, 'plugin.json')).content)); } catch { /* paquete nuevo */ }
         if (manifest.name !== pluginName || manifest['$schema'] !== schema) return { ok: false, error: 'El plugin existente tiene un manifest incompatible.' };
         manifest.version = String(version || manifest.version || '0.1.0');
         manifest.description = String(manifest.description || pluginDescription);
@@ -789,94 +677,63 @@ export function createTools(ctx: ToolContext) {
         if (homepage) manifest.homepage = String(homepage).trim().slice(0, 500);
         const pluginSkillContent = `---\nname: ${pluginSkillName}\ndescription: ${pluginDescription}\n---\n\n${pluginInstructions}\n`;
         const pluginSkillPath = `${pluginPath}/skills/${pluginSkillName}/SKILL.md`;
-        await invoke('codeclub_write_file', { projectPath, path: manifestPath, content: JSON.stringify(manifest, null, 2) + '\n' });
-        await invoke('codeclub_write_file', { projectPath, path: pluginSkillPath, content: pluginSkillContent });
-        const pluginOutput = { ok: true, plugin: pluginName, pluginPath, manifestPath, skillName: pluginSkillName, skillPath: pluginSkillPath, workspace: projectPath, availableInSession: true, format: 'agent-plugins-1.0.0' };
+        await writePluginFile(scope, pluginName, 'plugin.json', JSON.stringify(manifest, null, 2) + '\n');
+        await writePluginFile(scope, pluginName, `skills/${pluginSkillName}/SKILL.md`, pluginSkillContent);
+        const pluginOutput = { ok: true, plugin: pluginName, pluginPath, manifestPath, skillName: pluginSkillName, skillPath: `${pluginPath}/skills/${pluginSkillName}/SKILL.md`, scope, workspace: scope === 'project' ? projectPath : null, availableInSession: true, format: 'agent-plugins-1.0.0' };
         recordToolEvent('createSkill', { name: pluginName, skillName: pluginSkillName, description: pluginDescription, pluginPath }, pluginOutput);
         window.dispatchEvent(new CustomEvent('codeclub:skills-changed', { detail: { projectPath, pluginName, skillName: pluginSkillName } }));
         return pluginOutput;
-        /* Legacy skill writer retained only as migration history; never executed.
-        if (!projectScoped) return { ok: false, error: 'Seleccion� un proyecto antes de crear una skill.' };
-        const skillName = String(name || '').trim().toLowerCase();
-        const skillDescription = String(description || '').trim().replace(/[\r\n]+/g, ' ');
-        const skillInstructions = String(instructions || '').trim();
-        if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(skillName) || skillName.length > 64) return { ok: false, error: 'El nombre debe usar kebab-case, solo letras min�sculas, n�meros y guiones.' };
-        if (!skillDescription || skillDescription.length > 300) return { ok: false, error: 'La descripci�n debe tener entre 1 y 300 caracteres.' };
-        if (!skillInstructions || skillInstructions.length > 180000) return { ok: false, error: 'Las instrucciones deben tener entre 1 y 180000 caracteres.' };
-        const content = `---\nname: ${skillName}\ndescription: ${skillDescription}\n---\n\n${skillInstructions}\n`;
-        const path = `.codeclub/plugins/${skillName}/skills/${skillName}/SKILL.md`;
-        await invoke('codeclub_write_file', { projectPath, path, content });
-        const output = { ok: true, name: skillName, path, workspace: projectPath, availableInSession: true };
-        recordToolEvent('createSkill', { name: skillName, description: skillDescription, path }, output);
-        window.dispatchEvent(new CustomEvent('codeclub:skills-changed', { detail: { projectPath, skillName } }));
-        return output;
-        */
       },
     }),
     createExtension: tool({
       description: 'Create a complete Agent Plugins package with one skill. Agent Plugins is the canonical format for new extensions.',
-      inputSchema: jsonSchema({ type: 'object', properties: { name: { type: 'string' }, description: { type: 'string' }, instructions: { type: 'string' } }, required: ['name', 'description', 'instructions'], additionalProperties: false }),
-      execute: async ({ name, description, instructions }) => {
+      inputSchema: jsonSchema({ type: 'object', properties: { name: { type: 'string' }, description: { type: 'string' }, instructions: { type: 'string' }, scope: { type: 'string', enum: ['global', 'project'] } }, required: ['name', 'description', 'instructions'], additionalProperties: false }),
+      execute: async ({ name, description, instructions, scope: requestedScope }) => {
         setAgentState('running');
-        if (!projectScoped) return { ok: false, error: 'Seleccion� un proyecto antes de crear un plugin.' };
+        const scopeResult = requirePluginScope(requestedScope);
+        if ('error' in scopeResult) return { ok: false, error: scopeResult.error };
+        const scope = scopeResult.scope;
         const pluginName = String(name || '').trim().toLowerCase().replace(/[^a-z0-9.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64);
         const pluginDescription = String(description || '').trim().replace(/[\r\n]+/g, ' ').slice(0, 1024);
         const pluginInstructions = String(instructions || '').trim();
-        if (!/^[a-z0-9]+(?:[-.][a-z0-9]+)*$/.test(pluginName) || !pluginDescription || !pluginInstructions) return { ok: false, error: 'El plugin requiere nombre, descripci�n e instrucciones v�lidas.' };
-        const pluginPath = `.codeclub/plugins/${pluginName}`;
+        if (!/^[a-z0-9]+(?:[-.][a-z0-9]+)*$/.test(pluginName) || !pluginDescription || !pluginInstructions) return { ok: false, error: 'El plugin requiere nombre, descripción e instrucciones válidas.' };
+        const pluginPath = scope === 'project' ? `project/plugins/${pluginName}` : `global/plugins/${pluginName}`;
         const schema = 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json';
         const manifest = { '$schema': schema, name: pluginName, version: '0.1.0', description: pluginDescription };
         const skillContent = `---\nname: ${pluginName}\ndescription: ${pluginDescription}\n---\n\n${pluginInstructions}\n`;
-        await invoke('codeclub_write_file', { projectPath, path: `${pluginPath}/plugin.json`, content: JSON.stringify(manifest, null, 2) + '\n' });
-        await invoke('codeclub_write_file', { projectPath, path: `${pluginPath}/skills/${pluginName}/SKILL.md`, content: skillContent });
-        const pluginOutput = { ok: true, plugin: pluginName, pluginPath, format: 'agent-plugins-1.0.0', availableInSession: true };
+        await writePluginFile(scope, pluginName, 'plugin.json', JSON.stringify(manifest, null, 2) + '\n');
+        await writePluginFile(scope, pluginName, `skills/${pluginName}/SKILL.md`, skillContent);
+        const pluginOutput = { ok: true, plugin: pluginName, pluginPath, scope, workspace: scope === 'project' ? projectPath : null, format: 'agent-plugins-1.0.0', availableInSession: true };
         recordToolEvent('createExtension', { name: pluginName, description: pluginDescription }, pluginOutput);
         window.dispatchEvent(new CustomEvent('codeclub:skills-changed', { detail: { projectPath, pluginName } }));
         return pluginOutput;
-        /* Legacy extension settings are no longer written.
-        // Legacy settings are retained only for reading old installations.
-        const id = String(name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 64);
-        if (!id || protectedExtensionIds.has(id)) return { ok: false, error: 'Ese nombre está reservado para un complemento integrado.' };
-        const raw = await getSetting('codeclub_custom_extensions', '[]');
-        let items: any[] = []; try { items = JSON.parse(raw || '[]'); } catch { items = []; }
-        const extension = { id: `custom-${id}`, name: String(name).trim().slice(0, 80), description: String(description).trim().slice(0, 300), slash: `/${id}`, instruction: String(instructions).trim().slice(0, 180000), custom: true };
-        if (items.some((item) => item.id === extension.id)) return { ok: false, error: 'Ya existe un complemento con ese nombre.' };
-        await setSetting('codeclub_custom_extensions', JSON.stringify([...items, extension]));
-        window.dispatchEvent(new CustomEvent('codeclub:extensions-changed'));
-        recordToolEvent('createExtension', { name, description }, extension);
-        return { ok: true, extension, availableInSession: true };
-        */
       },
     }),
     deleteExtension: tool({
-      description: 'Delete an Agent Plugins package from the active project.',
-      inputSchema: jsonSchema({ type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' } }, additionalProperties: false }),
-      execute: async ({ id, name }) => {
+      description: 'Delete an Agent Plugins package from global scope or the active project.',
+      inputSchema: jsonSchema({ type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' }, scope: { type: 'string', enum: ['global', 'project'] } }, additionalProperties: false }),
+      execute: async ({ id, name, scope: requestedScope }) => {
         setAgentState('running');
-        if (!projectScoped) return { ok: false, error: 'Seleccion� un proyecto antes de eliminar un plugin.' };
+        const scopeResult = requirePluginScope(requestedScope);
+        if ('error' in scopeResult) return { ok: false, error: scopeResult.error };
+        const scope = scopeResult.scope;
         const pluginId = String(id || name || '').replace(/^custom-/, '').trim().toLowerCase();
-        if (!/^[a-z0-9]+(?:[-.][a-z0-9]+)*$/.test(pluginId)) return { ok: false, error: 'Indic� el nombre v�lido del plugin.' };
-        try { await invoke('codeclub_delete_agent_plugin', { projectPath, pluginId }); } catch (error) { return { ok: false, error: String(error) }; }
-        const pluginOutput = { ok: true, deleted: pluginId, format: 'agent-plugins-1.0.0' };
+        if (!/^[a-z0-9]+(?:[-.][a-z0-9]+)*$/.test(pluginId)) return { ok: false, error: 'Indicá el nombre válido del plugin.' };
+        try { await invoke('codeclub_delete_agent_plugin', { projectPath, pluginId, scope }); } catch (error) { return { ok: false, error: String(error) }; }
+        const pluginOutput = { ok: true, deleted: pluginId, scope, format: 'agent-plugins-1.0.0' };
         recordToolEvent('deleteExtension', { id, name, pluginId }, pluginOutput);
         window.dispatchEvent(new CustomEvent('codeclub:skills-changed', { detail: { projectPath, pluginId } }));
         return pluginOutput;
-        /* Legacy extension deletion is retained only for old settings.
-        if (protectedExtensionIds.has(String(id || '').replace(/^custom-/, ''))) return { ok: false, error: 'Los complementos integrados están protegidos.' };
-        const raw = await getSetting('codeclub_custom_extensions', '[]'); let items: any[] = []; try { items = JSON.parse(raw || '[]'); } catch { items = []; }
-        const next = items.filter((item) => item.id !== id && item.name !== name);
-        if (next.length === items.length) return { ok: false, error: 'No se encontró el complemento personalizado.' };
-        await setSetting('codeclub_custom_extensions', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('codeclub:extensions-changed'));
-        const output = { ok: true, deleted: id || name }; recordToolEvent('deleteExtension', { id, name }, output); return output;
-        */
       },
     }),
     createMcpServer: tool({
-      description: 'Create a complete Agent Plugins package containing an MCP stdio, Streamable HTTP, or legacy SSE server.',
-      inputSchema: jsonSchema({ type: 'object', properties: { name: { type: 'string', description: 'MCP server display name.' }, pluginName: { type: 'string', description: 'Optional Agent Plugin name.' }, type: { type: 'string', enum: ['stdio', 'streamable-http', 'sse'] }, url: { type: 'string' }, command: { type: 'string', description: 'Executable token for stdio.' }, args: { type: 'array', items: { type: 'string' } }, env: { type: 'object', additionalProperties: { type: 'string' } }, cwd: { type: 'string' } }, required: ['name'], additionalProperties: false }),
-      execute: async ({ name, pluginName, url, type, command, args, env, cwd }) => {
+      description: 'Create a complete Agent Plugins package containing an MCP server globally or in the active project.',
+      inputSchema: jsonSchema({ type: 'object', properties: { name: { type: 'string', description: 'MCP server display name.' }, pluginName: { type: 'string', description: 'Optional Agent Plugin name.' }, type: { type: 'string', enum: ['stdio', 'streamable-http', 'sse'] }, url: { type: 'string' }, command: { type: 'string', description: 'Executable token for stdio.' }, args: { type: 'array', items: { type: 'string' } }, env: { type: 'object', additionalProperties: { type: 'string' } }, cwd: { type: 'string' }, scope: { type: 'string', enum: ['global', 'project'] } }, required: ['name'], additionalProperties: false }),
+      execute: async ({ name, pluginName, url, type, command, args, env, cwd, scope: requestedScope }) => {
         setAgentState('running');
-        if (!projectScoped) return { ok: false, error: 'Seleccion� un proyecto antes de crear un plugin MCP.' };
+        const scopeResult = requirePluginScope(requestedScope);
+        if ('error' in scopeResult) return { ok: false, error: scopeResult.error };
+        const scope = scopeResult.scope;
         let cleanUrl = 'https://stdio.invalid';
         const serverName = String(name || 'server').trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-|-$/g, '').slice(0, 64) || 'server';
         const mcpPluginName = String(pluginName || `mcp-${serverName}`).trim().toLowerCase();
@@ -888,57 +745,43 @@ export function createTools(ctx: ToolContext) {
           const serverArgs = Array.isArray(args) ? args.map((value) => String(value)) : [];
           const serverEnv = env && typeof env === 'object' ? Object.fromEntries(Object.entries(env).map(([key, value]) => [key, String(value)])) : {};
           const serverCwd = cwd === undefined ? undefined : String(cwd).trim();
-          if (!executable || /\s/.test(executable) || executable.includes('..')) return { ok: false, error: 'stdio requiere command como un �nico token seguro.' };
+          if (!executable || /\s/.test(executable) || executable.includes('..')) return { ok: false, error: 'stdio requiere command como un único token seguro.' };
           if (Object.keys(serverEnv).some((key) => key === 'PLUGIN_ROOT' || key === 'PLUGIN_DATA')) return { ok: false, error: 'PLUGIN_ROOT y PLUGIN_DATA son variables reservadas.' };
           if (serverCwd && ((!serverCwd.startsWith('./') && !serverCwd.startsWith('${PLUGIN_ROOT}') && !serverCwd.startsWith('${PLUGIN_DATA}')) || serverCwd.includes('..'))) return { ok: false, error: 'cwd debe usar ./, PLUGIN_ROOT o PLUGIN_DATA sin escapar.' };
           serverConfig = { type: 'stdio', command: executable, ...(serverArgs.length ? { args: serverArgs } : {}), ...(Object.keys(serverEnv).length ? { env: serverEnv } : {}), ...(serverCwd ? { cwd: serverCwd } : {}) };
         } else {
           cleanUrl = String(url || '').trim();
-          if (!/^https:\/\/\S+$/i.test(cleanUrl) && !/^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(?:\/\S*)?$/i.test(cleanUrl)) return { ok: false, error: 'El endpoint MCP debe usar HTTPS; HTTP solo est� permitido para loopback.' };
+          if (!/^https:\/\/\S+$/i.test(cleanUrl) && !/^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(?:\/\S*)?$/i.test(cleanUrl)) return { ok: false, error: 'El endpoint MCP debe usar HTTPS; HTTP solo está permitido para loopback.' };
           serverConfig = { type: transport === 'sse' ? 'sse' : 'streamable-http', url: cleanUrl };
         }
-        if (!/^[a-z0-9]+(?:[-.][a-z0-9]+)*$/.test(mcpPluginName) || mcpPluginName.length > 64 || mcpPluginName.includes('--') || mcpPluginName.includes('..')) return { ok: false, error: 'El nombre del plugin debe usar min�sculas, n�meros, guiones o puntos.' };
-        if (!/^https:\/\/\S+$/i.test(cleanUrl) && !/^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(?:\/\S*)?$/i.test(cleanUrl)) return { ok: false, error: 'El endpoint MCP debe usar HTTPS; HTTP solo est� permitido para loopback.' };
-        const pluginPath = `.codeclub/plugins/${mcpPluginName}`;
+        if (!/^[a-z0-9]+(?:[-.][a-z0-9]+)*$/.test(mcpPluginName) || mcpPluginName.length > 64 || mcpPluginName.includes('--') || mcpPluginName.includes('..')) return { ok: false, error: 'El nombre del plugin debe usar minúsculas, números, guiones o puntos.' };
+        if (!/^https:\/\/\S+$/i.test(cleanUrl) && !/^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(?:\/\S*)?$/i.test(cleanUrl)) return { ok: false, error: 'El endpoint MCP debe usar HTTPS; HTTP solo está permitido para loopback.' };
+        const pluginPath = scope === 'project' ? `project/plugins/${mcpPluginName}` : `global/plugins/${mcpPluginName}`;
         const manifest = { '$schema': 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json', name: mcpPluginName, version: '0.1.0', description: `MCP server ${serverName}` };
         const mcpConfig = { '$schema': 'https://agent-plugins.org/schemas/1.0.0/mcp.schema.json', mcpServers: { [serverName]: serverConfig } };
-        await invoke('codeclub_write_file', { projectPath, path: `${pluginPath}/plugin.json`, content: JSON.stringify(manifest, null, 2) + '\n' });
-        await invoke('codeclub_write_file', { projectPath, path: `${pluginPath}/mcp.json`, content: JSON.stringify(mcpConfig, null, 2) + '\n' });
-        const pluginServer = { ok: true, plugin: mcpPluginName, pluginPath, serverName, ...serverConfig, format: 'agent-plugins-1.0.0', availableNextMessage: true };
+        await writePluginFile(scope, mcpPluginName, 'plugin.json', JSON.stringify(manifest, null, 2) + '\n');
+        await writePluginFile(scope, mcpPluginName, 'mcp.json', JSON.stringify(mcpConfig, null, 2) + '\n');
+        const pluginServer = { ok: true, plugin: mcpPluginName, pluginPath, scope, workspace: scope === 'project' ? projectPath : null, serverName, ...serverConfig, format: 'agent-plugins-1.0.0', availableNextMessage: true };
         recordToolEvent('createMcpServer', { name, pluginName: mcpPluginName, ...serverConfig }, pluginServer);
         window.dispatchEvent(new CustomEvent('codeclub:mcp-changed', { detail: { projectPath, pluginName: mcpPluginName } }));
         return pluginServer;
-        /* Legacy MCP settings are no longer written.
-        // Legacy settings are retained only for reading old installations.
-        if (!/^https?:\/\/\S+$/i.test(cleanUrl)) return { ok: false, error: 'La URL debe ser HTTP(S).' };
-        const raw = await getSetting('codeclub_mcp_servers', '[]'); let items: any[] = []; try { items = JSON.parse(raw || '[]'); } catch { items = []; }
-        if (items.some((item) => item.url === cleanUrl)) return { ok: false, error: 'Ese MCP ya está registrado.' };
-        const server = { id: crypto.randomUUID(), name: String(name || new URL(cleanUrl).hostname).trim().slice(0, 80), url: cleanUrl, enabled: true, custom: true };
-        await setSetting('codeclub_mcp_servers', JSON.stringify([...items, server])); window.dispatchEvent(new CustomEvent('codeclub:mcp-changed'));
-        recordToolEvent('createMcpServer', { name, url: cleanUrl }, server); return { ok: true, server, availableNextMessage: true };
-        */
       },
     }),
     deleteMcpServer: tool({
-      description: 'Delete an Agent Plugins MCP package from the active project by plugin name.',
-      inputSchema: jsonSchema({ type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' }, url: { type: 'string' } }, additionalProperties: false }),
-      execute: async ({ id, name, url }) => {
+      description: 'Delete an Agent Plugins MCP package globally or from the active project.',
+      inputSchema: jsonSchema({ type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' }, url: { type: 'string' }, scope: { type: 'string', enum: ['global', 'project'] } }, additionalProperties: false }),
+      execute: async ({ id, name, url, scope: requestedScope }) => {
         setAgentState('running');
-        if (!projectScoped) return { ok: false, error: 'Seleccion� un proyecto antes de eliminar un plugin MCP.' };
+        const scopeResult = requirePluginScope(requestedScope);
+        if ('error' in scopeResult) return { ok: false, error: scopeResult.error };
+        const scope = scopeResult.scope;
         const pluginId = String(id || name || '').trim().toLowerCase();
-        if (!/^[a-z0-9]+(?:[-.][a-z0-9]+)*$/.test(pluginId)) return { ok: false, error: 'Indic� el nombre v�lido del plugin MCP.' };
-        try { await invoke('codeclub_delete_agent_plugin', { projectPath, pluginId }); } catch (error) { return { ok: false, error: String(error) }; }
-        const pluginOutput = { ok: true, deleted: pluginId, format: 'agent-plugins-1.0.0' };
+        if (!/^[a-z0-9]+(?:[-.][a-z0-9]+)*$/.test(pluginId)) return { ok: false, error: 'Indicá el nombre válido del plugin MCP.' };
+        try { await invoke('codeclub_delete_agent_plugin', { projectPath, pluginId, scope }); } catch (error) { return { ok: false, error: String(error) }; }
+        const pluginOutput = { ok: true, deleted: pluginId, scope, format: 'agent-plugins-1.0.0' };
         recordToolEvent('deleteMcpServer', { id, name, url, pluginId }, pluginOutput);
         window.dispatchEvent(new CustomEvent('codeclub:mcp-changed', { detail: { projectPath, pluginId } }));
         return pluginOutput;
-        /* Legacy MCP deletion is retained only for old settings.
-        const raw = await getSetting('codeclub_mcp_servers', '[]'); let items: any[] = []; try { items = JSON.parse(raw || '[]'); } catch { items = []; }
-        const next = items.filter((item) => item.id !== id && item.name !== name && item.url !== url);
-        if (next.length === items.length) return { ok: false, error: 'No se encontró el servidor MCP.' };
-        await setSetting('codeclub_mcp_servers', JSON.stringify(next)); window.dispatchEvent(new CustomEvent('codeclub:mcp-changed'));
-        const output = { ok: true, deleted: id || name || url }; recordToolEvent('deleteMcpServer', { id, name, url }, output); return output;
-        */
       },
     }),
     runCommand: tool({
@@ -1012,7 +855,7 @@ export function createTools(ctx: ToolContext) {
       },
     }),
     openBrowser: tool({
-      description: 'Open a web URL in Codeclub�s Browser tab so the user can inspect it and reference the page or selected text in chat.',
+      description: 'Open a web URL in Codeclub\'s Browser tab so the user can inspect it and reference the page or selected text in chat.',
       inputSchema: jsonSchema({
         type: 'object',
         properties: { url: { type: 'string', description: 'Absolute http or https URL to open.' } },
@@ -1022,7 +865,7 @@ export function createTools(ctx: ToolContext) {
       execute: async ({ url }) => {
         const normalized = normalizeBrowserUrl(url);
         if (!normalized) {
-          const output = { ok: false, error: 'URL inv�lida. Us� una direcci�n http(s) con puerto v�lido.' };
+          const output = { ok: false, error: 'URL inválida. Usá una dirección http(s) con puerto válido.' };
           recordToolEvent('openBrowser', { url }, output);
           return output;
         }
@@ -1039,13 +882,13 @@ export function createTools(ctx: ToolContext) {
       description: 'Inspect the active Codeclub browser without vision. Returns accessible DOM text, visible controls, roles, labels, selectors and screen rectangles as JSON.',
       inputSchema: jsonSchema({ type: 'object', properties: {}, additionalProperties: false }),
       execute: async () => {
-        if (typeof window === 'undefined') return { ok: false, error: 'El navegador solo est� disponible en la aplicaci�n.' };
+        if (typeof window === 'undefined') return { ok: false, error: 'El navegador solo está disponible en la aplicación.' };
         const output = await new Promise<any>((resolve) => {
           let timer: number | undefined;
           const cleanup = () => { if (timer) window.clearTimeout(timer); window.removeEventListener('codeclub:browser-state', handleState); };
           const handleState = (event: Event) => { cleanup(); resolve({ ok: true, state: (event as CustomEvent).detail }); };
           window.addEventListener('codeclub:browser-state', handleState, { once: true });
-          timer = window.setTimeout(() => { cleanup(); resolve({ ok: false, error: 'No se recibi� el estado del navegador.' }); }, 5000);
+          timer = window.setTimeout(() => { cleanup(); resolve({ ok: false, error: 'No se recibió el estado del navegador.' }); }, 5000);
           window.dispatchEvent(new CustomEvent('codeclub:browser-state-request'));
         });
         recordToolEvent('getBrowserState', {}, output);
@@ -1067,13 +910,13 @@ export function createTools(ctx: ToolContext) {
         additionalProperties: false,
       }),
       execute: async (action) => {
-        if (typeof window === 'undefined') return { ok: false, error: 'El navegador solo est� disponible en la aplicaci�n.' };
+        if (typeof window === 'undefined') return { ok: false, error: 'El navegador solo está disponible en la aplicación.' };
         const output = await new Promise<any>((resolve) => {
           let timer: number | undefined;
           const cleanup = () => { if (timer) window.clearTimeout(timer); window.removeEventListener('codeclub:browser-action-result', handleResult); };
-          const handleResult = (event: Event) => { cleanup(); resolve((event as CustomEvent).detail || { ok: false, error: 'Resultado vac�o.' }); };
+          const handleResult = (event: Event) => { cleanup(); resolve((event as CustomEvent).detail || { ok: false, error: 'Resultado vacíoo.' }); };
           window.addEventListener('codeclub:browser-action-result', handleResult, { once: true });
-          timer = window.setTimeout(() => { cleanup(); resolve({ ok: false, error: 'No se recibi� confirmaci�n de la acci�n.' }); }, 5000);
+          timer = window.setTimeout(() => { cleanup(); resolve({ ok: false, error: 'No se recibió confirmación de la acción.' }); }, 5000);
           window.dispatchEvent(new CustomEvent('codeclub:browser-action', { detail: action }));
         });
         recordToolEvent('browserAction', action, output);
@@ -1149,7 +992,7 @@ export function createTools(ctx: ToolContext) {
       execute: async (request) => {
         if (false) {
           const approved = await requestToolApproval({ toolName: 'computerAction', input: request, summary: `Controlar Windows: ${request.action}` });
-          if (!approved) return { ok: false, error: 'Acci�n cancelada por el usuario.' };
+          if (!approved) return { ok: false, error: 'Acción cancelada por el usuario.' };
         }
         const output = await invoke('codeclub_computer_action', { request });
         recordToolEvent('computerAction', request, output);
@@ -1178,7 +1021,7 @@ export function createTools(ctx: ToolContext) {
         }
         const projects = await readProjectIndex();
         const match = projects.find((entry) => entry.path === requested || entry.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() === normalizedRequested);
-        if (!match) return { ok: false, error: `No encontr� un proyecto indexado llamado o ubicado en: ${requested}`, availableProjects: projects.map((entry) => ({ name: entry.name, path: entry.path })) };
+        if (!match) return { ok: false, error: `No encontré un proyecto indexado llamado o ubicado en: ${requested}`, availableProjects: projects.map((entry) => ({ name: entry.name, path: entry.path })) };
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('codeclub:project-selection-changed', { detail: { selected: true, projectPath: match.path, projectName: match.name } }));
           window.dispatchEvent(new CustomEvent('codeclub:active-project', { detail: { projectPath: match.path, projectName: match.name } }));

@@ -1,4 +1,4 @@
-import { getProjectFilePath, migrateLegacyProjectData } from '../persistence';
+import { getProjectFilePath } from '../persistence';
 import { fileExists, makeDirectory, readDesktopText, writeDesktopText } from '../runtime';
 
 export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled' | 'blocked';
@@ -36,7 +36,6 @@ export interface AgentState {
 const statePath = (projectPath: string) => getProjectFilePath(projectPath, 'agent-state.json');
 
 export async function readAgentState(projectPath: string): Promise<AgentState> {
-  await migrateLegacyProjectData(projectPath);
   const path = await statePath(projectPath);
   if (!(await fileExists(path))) return { plan: null, plans: [], todos: [] };
   try {
