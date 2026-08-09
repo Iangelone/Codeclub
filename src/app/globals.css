@@ -66,6 +66,10 @@ body {
 }
 
 /* Archivos y Revisar deben llenar el viewport interno de la sidebar. */
+[id^="right-panel-files"] > div[class*="items-center"] > div > svg {
+  display: none;
+}
+
 #right-panel-files,
 #right-panel-review,
 #right-panel-files > div:first-child,
