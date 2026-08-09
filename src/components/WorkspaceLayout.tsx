@@ -11,6 +11,7 @@ import { nativeInvoke } from '../lib/runtime';
 
 const MIN_WIDTH = 220;
 const MAX_WIDTH = 420;
+const MIN_CENTER_WIDTH = 320;
 const DEFAULT_LEFT = 280;
 const DEFAULT_RIGHT = 300;
 
@@ -30,7 +31,7 @@ const rightPanelTabs: Array<{ id: RightPanelTab; label: string; icon: typeof Fol
   { id: 'terminals', label: 'Terminales', icon: SquareTerminal },
 ];
 
-function ResizeHandle({ side, value, onStart, onKeyboardResize }: { side: Side; value: number; onStart: (event: React.PointerEvent<HTMLDivElement>) => void; onKeyboardResize: (value: number) => void }) {
+function ResizeHandle({ side, value, maxValue, onStart, onKeyboardResize }: { side: Side; value: number; maxValue: number; onStart: (event: React.PointerEvent<HTMLDivElement>) => void; onKeyboardResize: (value: number) => void }) {
   const isLeft = side === 'left';
   const resizeWithKeyboard = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const direction = isLeft ? 1 : -1;
@@ -38,17 +39,17 @@ function ResizeHandle({ side, value, onStart, onKeyboardResize }: { side: Side; 
     if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next += 16 * direction;
     else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next -= 16 * direction;
     else if (event.key === 'Home') next = MIN_WIDTH;
-    else if (event.key === 'End') next = MAX_WIDTH;
+    else if (event.key === 'End') next = maxValue;
     else return;
     event.preventDefault();
-    onKeyboardResize(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, next)));
+    onKeyboardResize(Math.min(maxValue, Math.max(MIN_WIDTH, next)));
   };
   return <div
     role="separator"
     aria-orientation="vertical"
     aria-label={`Redimensionar sidebar ${isLeft ? 'izquierda' : 'derecha'}`}
     aria-valuemin={MIN_WIDTH}
-    aria-valuemax={MAX_WIDTH}
+    aria-valuemax={maxValue}
     aria-valuenow={value}
     tabIndex={0}
     onPointerDown={onStart}
@@ -83,7 +84,21 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
   const rightPanelSequence = useRef(0);
   const [resizing, setResizing] = useState<Side | null>(null);
   const [sizesReady, setSizesReady] = useState(false);
+  const [viewportWidth, setViewportWidth] = useState(1280);
   const resizeRef = useRef<{ side: Side; startX: number; startWidth: number } | null>(null);
+
+  const rightMaxWidth = leftOpen ? MAX_WIDTH : Math.max(MAX_WIDTH, viewportWidth - MIN_CENTER_WIDTH - 8);
+
+  useEffect(() => {
+    const updateViewportWidth = () => setViewportWidth(window.innerWidth);
+    updateViewportWidth();
+    window.addEventListener('resize', updateViewportWidth);
+    return () => window.removeEventListener('resize', updateViewportWidth);
+  }, []);
+
+  useEffect(() => {
+    setRightWidth((current) => Math.min(current, rightMaxWidth));
+  }, [rightMaxWidth]);
 
   useEffect(() => {
     try {
@@ -102,14 +117,15 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
       const drag = resizeRef.current;
       if (!drag) return;
       const delta = drag.side === 'left' ? event.clientX - drag.startX : drag.startX - event.clientX;
-      const nextWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, drag.startWidth + delta));
+      const maxWidth = drag.side === 'right' ? rightMaxWidth : MAX_WIDTH;
+      const nextWidth = Math.min(maxWidth, Math.max(MIN_WIDTH, drag.startWidth + delta));
       if (drag.side === 'left') setLeftWidth(nextWidth); else setRightWidth(nextWidth);
     };
     const handleEnd = () => { resizeRef.current = null; setResizing(null); };
     window.addEventListener('pointermove', handleMove);
     window.addEventListener('pointerup', handleEnd, { once: true });
     return () => { window.removeEventListener('pointermove', handleMove); window.removeEventListener('pointerup', handleEnd); };
-  }, [resizing]);
+  }, [resizing, rightMaxWidth]);
 
   useEffect(() => {
     const handleProjectSwitch = (event: Event) => {
@@ -438,11 +454,11 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
       </motion.aside>
       {chatContextMenu && <div ref={chatContextMenuRef} className="fixed z-[100] grid w-40 gap-0.5 rounded-lg border border-(--codeclub-border-soft) bg-(--codeclub-surface-raised) p-1 shadow-2xl" style={{ left: chatContextMenu.x, top: chatContextMenu.y }} role="menu" aria-label="Menú del chat"><button type="button" onClick={renameFromContextMenu} className="rounded-md px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem">Renombrar chat</button><button type="button" onClick={() => void deleteFromContextMenu()} className="rounded-md px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem">Eliminar chat</button></div>}
       {rightContextMenu && <div ref={rightContextMenuRef} className="fixed z-[100] grid w-52 gap-0.5 rounded-xl border border-white/[0.08] bg-[#2C2C2C]/90 p-1 shadow-2xl backdrop-blur-xl" style={{ left: rightContextMenu.x, top: rightContextMenu.y }} role="menu" aria-label={`Menú de ${rightContextMenu.panel.label}`}><button type="button" onClick={() => closeRightPanel(rightContextMenu.panel.instanceId)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><X size={14} aria-hidden="true" />Cerrar</button><button type="button" onClick={() => closeOtherRightPanels(rightContextMenu.panel.instanceId)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><CopyX size={14} aria-hidden="true" />Cerrar otras pestañas</button><button type="button" onClick={() => closeRightPanelsToRight(rightContextMenu.panel.instanceId)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><ArrowRightToLine size={14} aria-hidden="true" />Cerrar a la derecha</button></div>}
-      {leftOpen && <ResizeHandle side="left" value={leftWidth} onStart={startResize('left')} onKeyboardResize={setLeftWidth} />}
+      {leftOpen && <ResizeHandle side="left" value={leftWidth} maxValue={MAX_WIDTH} onStart={startResize('left')} onKeyboardResize={setLeftWidth} />}
 
       <PanelManager activeSection={activeSection} />
 
-      {rightOpen && <ResizeHandle side="right" value={rightWidth} onStart={startResize('right')} onKeyboardResize={setRightWidth} />}
+      {rightOpen && <ResizeHandle side="right" value={rightWidth} maxValue={rightMaxWidth} onStart={startResize('right')} onKeyboardResize={setRightWidth} />}
       <motion.aside id="codeclub-right-sidebar" animate={{ width: rightOpen ? rightWidth : 0, opacity: rightOpen ? 1 : 0 }} transition={resizing ? { type: 'spring', stiffness: 900, damping: 58, mass: 0.22 } : { type: 'spring', stiffness: 340, damping: 30 }} className="codeclub-panel-edge flex h-full min-h-0 shrink-0 flex-col overflow-visible bg-(--codeclub-center)" aria-label="Sidebar derecha" aria-hidden={!rightOpen}>
         <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
           <div ref={rightMenuRef} className="relative flex h-11 min-w-0 shrink-0 items-center gap-2 px-2">
