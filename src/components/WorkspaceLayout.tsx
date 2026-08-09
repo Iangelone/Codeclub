@@ -79,7 +79,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
   const [rightWidth, setRightWidth] = useState(DEFAULT_RIGHT);
   const [rightPanels, setRightPanels] = useState<RightPanelInstance[]>([]);
   const [activeRightPanelId, setActiveRightPanelId] = useState('');
-  const [filesTreeVisible, setFilesTreeVisible] = useState(true);
+  const [filesTreeVisible, setFilesTreeVisible] = useState(false);
   const [reviewChangesVisible, setReviewChangesVisible] = useState(true);
   const [rightMenuOpen, setRightMenuOpen] = useState(false);
   const rightMenuRef = useRef<HTMLDivElement | null>(null);

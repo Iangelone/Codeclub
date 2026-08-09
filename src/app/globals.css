@@ -70,6 +70,25 @@ body {
   display: none;
 }
 
+[id^="right-panel-files"] main > div[class*="items-center"] > svg {
+  display: none;
+}
+
+[id^="right-panel-files"] main > div[class*="items-center"] > div > p:first-child {
+  font-size: 12px;
+  font-weight: 400;
+}
+
+[id^="right-panel-files"] main > div[class*="items-center"] > div > p:last-child {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 20px;
+}
+
+[id^="right-panel-files"] main {
+  background: var(--codeclub-center);
+}
+
 #right-panel-files,
 #right-panel-review,
 #right-panel-files > div:first-child,
