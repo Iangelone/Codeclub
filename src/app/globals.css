@@ -124,7 +124,7 @@ body {
   background-clip: padding-box;
 }
 
-[id^="right-panel-files"] main > div:first-child > div {
+[id^="right-panel-files"] main > div:first-child[class*="h-8"] > div {
   min-width: 90px;
   max-width: 170px;
   height: 24px;
@@ -137,11 +137,11 @@ body {
   color: #eeeeee;
 }
 
-[id^="right-panel-files"] main > div:first-child > div > button {
+[id^="right-panel-files"] main > div:first-child[class*="h-8"] > div > button {
   color: #eeeeee;
 }
 
-[id^="right-panel-files"] main > div:first-child {
+[id^="right-panel-files"] main > div:first-child[class*="h-8"] {
   background: #191919;
 }
 

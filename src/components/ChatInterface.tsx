@@ -18,6 +18,7 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { jsonSchema, Output } from 'ai';
 import ReactMarkdown from 'react-markdown';
 import { AnimatePresence, motion } from 'motion/react';
+import { generateManifest } from 'material-icon-theme';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import { createPortal } from 'react-dom';
@@ -2427,6 +2428,18 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
 type ProjectFileEntry = { path: string; kind: string; size?: number };
 type FileTreeNode = { name: string; path: string; kind: 'directory' | 'file'; children: FileTreeNode[]; extension?: string };
 
+const materialIconManifest = generateManifest({});
+
+function MaterialFileIcon({ name, kind }: { name: string; kind: FileTreeNode['kind'] }) {
+  const associations = kind === 'directory' ? materialIconManifest.folderNames : materialIconManifest.fileNames;
+  const extension = name.includes('.') ? name.split('.').pop()?.toLowerCase() : undefined;
+  const iconName = associations?.[name.toLowerCase()] ?? (extension ? materialIconManifest.fileExtensions?.[extension] : undefined) ?? (kind === 'directory' ? materialIconManifest.folder : materialIconManifest.file);
+  const iconPath = iconName ? materialIconManifest.iconDefinitions?.[iconName]?.iconPath : undefined;
+  const iconFile = iconPath?.split('/').pop();
+  if (!iconFile) return kind === 'directory' ? <Folder size={14} className="text-[#a89b72]" /> : <FileCode2 size={14} className="text-[#777777]" />;
+  return <img src={`/material-icons/${iconFile}`} alt="" aria-hidden="true" className="h-[17px] w-[17px] shrink-0" />;
+}
+
 function buildFileTree(entries: ProjectFileEntry[]): FileTreeNode[] {
   const root: FileTreeNode[] = [];
   for (const entry of entries) {
@@ -2763,7 +2776,7 @@ function TabbedProjectView({ projectPath, initialSelectedPath = '', showFileTree
     return <React.Fragment key={node.path}>
       <button type="button" onClick={() => node.kind === 'directory' ? setExpanded((current) => { const next = new Set(current); next.has(node.path) ? next.delete(node.path) : next.add(node.path); return next; }) : void openFile(node.path)} className={`flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[12px] ${selectedPath === node.path ? 'bg-[var(--color-surface-7)] text-[#eeeeee]' : 'text-[#bdbdbd] hover:bg-[var(--color-surface-3)]'}`} style={{ paddingLeft: `${8 + depth * 14}px` }}>
         {node.kind === 'directory' ? (isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />) : <span className="w-[13px]" />}
-        {node.kind === 'directory' ? <Folder size={14} className="text-[#a89b72]" /> : <FileCode2 size={14} className="text-[#777777]" />}
+        <MaterialFileIcon name={node.name} kind={node.kind} />
         <span className="min-w-0 flex-1 truncate">{node.name}</span>
       </button>
       {node.kind === 'directory' && isOpen && renderTree(node.children, depth + 1)}
