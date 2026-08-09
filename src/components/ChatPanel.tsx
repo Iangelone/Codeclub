@@ -13,5 +13,5 @@ const catalog = [
 ];
 
 export default function ChatPanel() {
-  return <section className="relative h-full min-w-0 min-h-0 grid place-items-stretch overflow-hidden" aria-label="Chat"><WorkspaceManager catalog={catalog} defaultProvider={defaultProvider} defaultModel={defaultModel} initialView="chat" /></section>;
+  return <section className="relative h-full min-w-0 min-h-0 grid place-items-stretch overflow-hidden" aria-label="Chat"><WorkspaceManager catalog={catalog} defaultProvider={defaultProvider} defaultModel={defaultModel} /></section>;
 }

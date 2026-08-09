@@ -83,14 +83,14 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
         <header>
           <h1 className="m-0 text-[28px] font-normal tracking-[-0.04em] text-[#eeeeee]">{text.title}</h1>
           <p className="mt-1.5 text-[14px] text-[#999999]">{text.description}</p>
-          <p className="mt-2 inline-flex items-center gap-1.5 text-[12px] text-[#777777]" title={projectPath || text.noProject}><Folder size={13} />{projectPath ? `${text.project}: ${projectPath.split(/[\\/]/).pop()}` : text.noProject}</p>
+          {projectPath && <p className="mt-2 inline-flex items-center gap-1.5 text-[12px] text-[#777777]" title={projectPath}><Folder size={13} />{text.project}: {projectPath.split(/[\\/]/).pop()}</p>}
         </header>
 
         <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
           <nav className="flex items-center gap-0.5 text-[13px] text-[#777777]" aria-label="Categorías de extensiones">
             {([{ id: 'extensions', label: text.extensions, count: allExtensions.length, icon: Blocks }, { id: 'skills', label: text.skills, count: skills.length, icon: WandSparkles }, { id: 'mcp', label: 'MCP', count: mcpServers.length, icon: PlugZap }] as const).map(({ id, label, count, icon: Icon }) => <button key={id} type="button" onClick={() => setTab(id)} aria-label={`${label} ${count}`} className={`inline-flex items-center gap-1.5 rounded-[8px] border-0 px-3 py-1.5 ${tab === id ? 'bg-[#2b2b2b] text-[#eeeeee]' : 'bg-transparent text-[#777777] hover:bg-[#202020]'}`}><Icon size={14} strokeWidth={1.8} className="shrink-0 text-[#eeeeee]" aria-hidden="true" />{label} <span className="text-[#999999]">{count}</span></button>)}
           </nav>
-          <label className="flex h-9 w-full max-w-[280px] items-center gap-2 rounded-[9px] border border-[#3a3a3a] bg-[#202020] px-3 text-[#999999] focus-within:border-[#555555]"><Search size={16} strokeWidth={1.7} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={text.search} aria-label={text.search} className="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[#eeeeee] outline-none placeholder:text-[#777777]" /></label>
+          <label className="flex h-9 w-full max-w-[280px] items-center gap-2 rounded-full border border-[#4a4a4a] bg-[#2b2b2b] px-3.5 text-[#a7a7a7] focus-within:border-[#666666]"><Search size={17} strokeWidth={1.7} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={language === 'en' ? 'Search extensions' : 'Buscar complementos'} aria-label={language === 'en' ? 'Search extensions' : 'Buscar complementos'} className="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[#d0d0d0] outline-none placeholder:text-[#a7a7a7]" /></label>
         </div>
 
         {tab === 'extensions' && <section className="mt-9 grid min-w-0 gap-1.5" aria-label={text.list}>

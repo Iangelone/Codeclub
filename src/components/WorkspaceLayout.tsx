@@ -297,6 +297,8 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
     setActiveSection(section);
     setActiveChatId(undefined);
     if (section === 'new-chat') window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
+    else if (section === 'extensions') window.dispatchEvent(new CustomEvent('codeclub:open-extensions'));
+    else window.dispatchEvent(new CustomEvent('codeclub:close-extensions'));
   };
 
   const renameFromContextMenu = () => {
@@ -463,7 +465,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
 }
 
 function PanelManager({ activeSection }: { activeSection: SidebarSection }) {
-  const chatVisible = activeSection === 'new-chat';
+  const chatVisible = activeSection === 'new-chat' || activeSection === 'extensions';
   return <section role="region" className="codeclub-graphite relative min-h-0 min-w-0 flex-1 overflow-hidden backdrop-blur-xl" aria-label="Gestor de paneles" aria-live="polite">
     <div className="codeclub-panel-shell h-full w-full overflow-hidden bg-(--codeclub-center)">
       <div className={`h-full min-h-0 min-w-0 ${chatVisible ? 'block' : 'hidden'}`} aria-hidden={!chatVisible}><ChatPanel /></div>

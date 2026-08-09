@@ -2,18 +2,14 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Folder } from 'lucide-react';
 import { activeChatStore } from '../lib/store';
 import ChatInterface from './ChatInterface.tsx';
-import ProjectsPanel from './ProjectsPanel.tsx';
 import ExtensionsPanel from './ExtensionsPanel.tsx';
-import SettingsPanel from './SettingsPanel.tsx';
 import { readProjectIndex, type ProjectEntry } from '../lib/projectManager';
 
 type SelectedProject = { projectPath: string; projectName?: string };
 
-export default function WorkspaceManager({ catalog, defaultProvider, defaultModel, initialView = 'projects' }: { catalog: any; defaultProvider: any; defaultModel: any; initialView?: 'projects' | 'chat' }) {
+export default function WorkspaceManager({ catalog, defaultProvider, defaultModel }: { catalog: any; defaultProvider: any; defaultModel: any }) {
   const [selectedProject, setSelectedProject] = useState<SelectedProject | null>(null);
-  const [showProjects, setShowProjects] = useState(initialView !== 'chat');
   const [showExtensions, setShowExtensions] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [availableProjects, setAvailableProjects] = useState<ProjectEntry[]>([]);
   const pendingChatRef = useRef<any>(null);
@@ -33,14 +29,12 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
       setSelectedProject(detail.selected === true && detail.projectPath
         ? { projectPath: detail.projectPath, projectName: detail.projectName }
         : null);
-      setShowProjects(detail.selected !== true && detail.keepChat !== true && detail.keepView !== true);
     };
 
     const handleActiveProject = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
       if (detail.projectPath) setSelectedProject({ projectPath: detail.projectPath, projectName: detail.projectName });
-      if (detail.projectPath) setShowProjects(false);
-      else if (Object.prototype.hasOwnProperty.call(detail, 'projectPath')) { setSelectedProject(null); setShowProjects(false); }
+      else if (Object.prototype.hasOwnProperty.call(detail, 'projectPath')) setSelectedProject(null);
     };
 
     window.addEventListener('codeclub:project-panel-selected', handleProjectPanelSelection);
@@ -73,51 +67,39 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
   };
 
   useEffect(() => {
-    const handleOpenProjects = () => {
-      setShowProjects(true);
-      setShowExtensions(false);
-      setShowSettings(false);
-      setSelectedProject(null);
-    };
     const handleOpenExtensions = () => {
       setShowExtensions(true);
-      setShowProjects(false);
-      setShowSettings(false);
     };
-    const handleOpenSettings = () => { setShowProjects(false); setShowExtensions(false); setShowSettings(true); setSelectedProject(null); };
+    const handleCloseExtensions = () => setShowExtensions(false);
     const handleOpenChat = (event: Event) => {
       pendingChatRef.current = (event as CustomEvent).detail || null;
-      setShowProjects(false);
       setShowExtensions(false);
-      setShowSettings(false);
       setChatOpenVersion((version) => version + 1);
     };
-    const handleOpenEmptyChat = () => { setShowProjects(false); setShowExtensions(false); setShowSettings(false); };
+    const handleOpenEmptyChat = () => setShowExtensions(false);
     window.addEventListener('codeclub:open-chat', handleOpenChat);
-    window.addEventListener('codeclub:open-projects', handleOpenProjects);
     window.addEventListener('codeclub:open-extensions', handleOpenExtensions);
-    window.addEventListener('codeclub:open-settings', handleOpenSettings);
+    window.addEventListener('codeclub:close-extensions', handleCloseExtensions);
     window.addEventListener('codeclub:open-empty-chat', handleOpenEmptyChat);
     return () => {
-      window.removeEventListener('codeclub:open-projects', handleOpenProjects);
       window.removeEventListener('codeclub:open-extensions', handleOpenExtensions);
-      window.removeEventListener('codeclub:open-settings', handleOpenSettings);
+      window.removeEventListener('codeclub:close-extensions', handleCloseExtensions);
       window.removeEventListener('codeclub:open-empty-chat', handleOpenEmptyChat);
       window.removeEventListener('codeclub:open-chat', handleOpenChat);
     };
   }, []);
 
   useEffect(() => {
-    if (showProjects || showExtensions || showSettings || !pendingChatRef.current) return;
+    if (showExtensions || !pendingChatRef.current) return;
     const detail = pendingChatRef.current;
     pendingChatRef.current = null;
     const timer = window.setTimeout(() => window.dispatchEvent(new CustomEvent('codeclub:panel-left:open-chat', { detail })), 0);
     return () => window.clearTimeout(timer);
-  }, [showProjects, showExtensions, showSettings, chatOpenVersion]);
+  }, [showExtensions, chatOpenVersion]);
 
   useEffect(() => {
-    if (!showProjects && !showExtensions && !showSettings && !activeChatStore.get().id) window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
-  }, [showProjects, showExtensions, showSettings]);
+    if (!showExtensions && !activeChatStore.get().id) window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
+  }, [showExtensions]);
 
   useEffect(() => {
     const openInPanel = (kind: 'chat' | 'folders' | 'blank') => (event: Event) => {
@@ -145,8 +127,8 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
         </div>}
       </div>
       <div className="workspace-pane acrylic-panel min-h-0 min-w-0 flex-1 overflow-hidden">
-        <div key={showProjects ? 'projects' : showExtensions ? 'extensions' : showSettings ? 'settings' : 'chat'} className="workspace-panel-content h-full min-h-0 min-w-0">
-          {showProjects ? <ProjectsPanel /> : showExtensions ? <ExtensionsPanel selectedProject={selectedProject} /> : showSettings ? <SettingsPanel /> : <ChatInterface
+        <div key={showExtensions ? 'extensions' : 'chat'} className="workspace-panel-content h-full min-h-0 min-w-0">
+          {showExtensions ? <ExtensionsPanel selectedProject={selectedProject} /> : <ChatInterface
             catalog={catalog}
             defaultProvider={defaultProvider}
             defaultModel={defaultModel}
