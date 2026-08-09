@@ -89,6 +89,62 @@ body {
   background: var(--codeclub-center);
 }
 
+[id^="right-panel-files"] aside {
+  background: var(--codeclub-center);
+}
+
+[id^="right-panel-files"],
+[id^="right-panel-files"] * {
+  scrollbar-width: thin;
+  scrollbar-color: #a3a3a3 transparent;
+}
+
+[id^="right-panel-files"]::-webkit-scrollbar,
+[id^="right-panel-files"] *::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+[id^="right-panel-files"]::-webkit-scrollbar-track,
+[id^="right-panel-files"] *::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+[id^="right-panel-files"]::-webkit-scrollbar-thumb,
+[id^="right-panel-files"] *::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 10px;
+  background: #a3a3a3;
+  background-clip: padding-box;
+}
+
+[id^="right-panel-files"]::-webkit-scrollbar-thumb:hover,
+[id^="right-panel-files"] *::-webkit-scrollbar-thumb:hover {
+  background: #c2c2c2;
+  background-clip: padding-box;
+}
+
+[id^="right-panel-files"] main > div:first-child > div {
+  min-width: 90px;
+  max-width: 170px;
+  height: 24px;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid #444444;
+  border-radius: 6px;
+  margin-bottom: 4px;
+  background: #2f2f2f;
+  color: #eeeeee;
+}
+
+[id^="right-panel-files"] main > div:first-child > div > button {
+  color: #eeeeee;
+}
+
+[id^="right-panel-files"] main > div:first-child {
+  background: #191919;
+}
+
 #right-panel-files,
 #right-panel-review,
 #right-panel-files > div:first-child,
