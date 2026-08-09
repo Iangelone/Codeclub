@@ -749,3 +749,86 @@ html.is-windows #app-background {
 #codeclub-right-sidebar main > div:last-child > div > p:last-child { margin: 0.5rem 0 0 !important; max-width: 280px !important; font-size: 0 !important; line-height: 20px !important; color: transparent !important; visibility: visible !important; }
 #codeclub-right-sidebar main > div:last-child > div > p:last-child::after { content: 'Selecciona un archivo del \00E1rbol del espacio de trabajo'; display: block; font-size: 12px; line-height: 20px; color: #a7a7a7; visibility: visible; }
 #codeclub-right-sidebar main > div:last-child { justify-content: flex-start !important; padding-top: 2.5rem !important; }
+
+/* Los paneles internos se estiran dentro de la altura real de la sidebar. */
+#codeclub-right-sidebar [role="tabpanel"] {
+  display: flex !important;
+  height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  flex: 1 1 auto !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+#codeclub-right-sidebar,
+#codeclub-right-sidebar > div {
+  height: 100% !important;
+}
+
+#codeclub-right-sidebar > div > div[class*="min-h-0"][class*="flex-1"] {
+  display: flex !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  flex-direction: column !important;
+}
+
+#codeclub-right-sidebar [role="tabpanel"] > div,
+#codeclub-right-sidebar [role="tabpanel"] > section {
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+#codeclub-right-sidebar [role="tabpanel"] main {
+  min-width: 0;
+  min-height: 0;
+}
+
+#codeclub-right-sidebar [role="tabpanel"] main > div:last-child {
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  justify-content: center !important;
+  padding-top: 0 !important;
+}
+
+#codeclub-right-sidebar [role="tabpanel"] > div > div > p:last-child {
+  font-size: 0 !important;
+  color: transparent !important;
+}
+
+#codeclub-right-sidebar [role="tabpanel"] > div > div > p:last-child::after {
+  content: 'Vinculá una carpeta para explorar sus archivos.';
+  display: block;
+  color: #a7a7a7;
+  font-size: 11px;
+  line-height: 20px;
+}
+
+#codeclub-right-sidebar [role="tabpanel"] > div:has(> div > p) {
+  justify-content: center !important;
+  padding-top: 0 !important;
+}
+
+#codeclub-right-sidebar [role="tabpanel"] > div[class*="justify-start"] {
+  justify-content: center !important;
+  padding-top: 0 !important;
+}
+
+#right-panel-files > div[class*="pt-10"],
+#right-panel-review > div[class*="pt-10"],
+#right-panel-review main > div[class*="pt-10"] {
+  display: grid !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  place-items: center !important;
+  justify-content: center !important;
+  padding-top: 0 !important;
+}
+
+#codeclub-right-sidebar [role="tabpanel"] aside {
+  width: 38% !important;
+  max-width: 374px !important;
+  min-width: 0 !important;
+}

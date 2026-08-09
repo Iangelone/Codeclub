@@ -51,6 +51,100 @@ body {
   border-left: 1px solid var(--codeclub-border-faint);
 }
 
+/* Archivos y Revisar deben llenar el viewport interno de la sidebar. */
+#right-panel-files,
+#right-panel-review,
+#right-panel-files > div:first-child,
+#right-panel-review > section {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  flex: 1 1 auto;
+}
+
+#right-panel-files > div:first-child > div,
+#right-panel-files > div:first-child > div > main,
+#right-panel-review > section > main {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  flex: 1 1 auto;
+}
+
+#right-panel-files > div:first-child > div > main > div[class*="gap-4"][class*="items-center"],
+#right-panel-review > section > main > div[class*="justify-start"] {
+  min-height: 0;
+  height: 100%;
+  flex: 1 1 auto;
+  align-content: center;
+  justify-content: center;
+}
+
+#right-panel-files,
+#right-panel-files > div:first-child,
+#right-panel-files > div:first-child > div > main,
+#right-panel-review,
+#right-panel-review > section {
+  background: #191919;
+}
+
+/* Revisar ocupa todo el contenedor cuando se oculta la lista de cambios. */
+#right-panel-review {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+#right-panel-review > section {
+  display: flex;
+  width: 100%;
+  flex: 1 1 auto;
+  flex-direction: row;
+}
+
+#right-panel-review > section > main {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+#right-panel-review > section > main > div[class*="justify-start"] {
+  display: flex;
+  width: 100%;
+  min-height: 0;
+  height: 100%;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  padding-top: 0;
+}
+
+#right-panel-review > div[class*="justify-start"] {
+  display: grid;
+  width: 100%;
+  min-height: 0;
+  height: 100%;
+  flex: 1 1 auto;
+  place-items: center;
+  padding-top: 0;
+}
+
+#right-panel-review > section > aside {
+  width: 38%;
+  max-width: 374px;
+  min-width: 0;
+  flex: 0 1 38%;
+  background: #171717;
+}
+
+/* Al ocultar la lista de cambios, solo queda el area principal. */
+#right-panel-review > section > div:last-child:has(> p) {
+  display: none !important;
+}
+
 .composer-action {
   position: relative;
   z-index: 10;

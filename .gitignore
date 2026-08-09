@@ -10,3 +10,4 @@ dist-ssr/
 .astro/
 .whatsapp-debug-session/
 bun.lockb
+*.tsbuildinfo

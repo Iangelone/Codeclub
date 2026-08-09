@@ -346,6 +346,7 @@ function createWindow() {
       preload: path.join(root, '..', 'electron', 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
+      webviewTag: true,
     },
   });
   if (process.platform === 'win32' && typeof mainWindow.setBackgroundMaterial === 'function') mainWindow.setBackgroundMaterial('acrylic');
