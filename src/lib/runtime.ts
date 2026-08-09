@@ -24,7 +24,6 @@ export const readDesktopText = async (path: string) => desktop()?.readTextFile ?
 export const writeDesktopText = async (path: string, content: string) => desktop()?.writeTextFile ? desktop().writeTextFile(path, content) : undefined;
 export const removeDesktopFile = async (path: string) => desktop()?.removeFile ? desktop().removeFile(path) : undefined;
 export const selectDesktopFiles = async () => desktop()?.selectFiles ? (await desktop().selectFiles()) : [];
-export const selectDesktopFolder = async () => desktop()?.selectProjectFolder ? (await desktop().selectProjectFolder()) : null;
 export const desktopFileUrl = (path: string) => path.startsWith('file://') || path.startsWith('data:') ? path : `file:///${path.replace(/\\/g, '/').replace(/^\/+/, '')}`;
 
 export const copyText = async (value: string) => {

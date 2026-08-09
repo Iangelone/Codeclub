@@ -1,4 +1,4 @@
-import { appConfigDir, fileExists as exists, makeDirectory as mkdir, readDesktopText as readTextFile, writeDesktopText as writeTextFile, nativeInvoke as invoke } from './runtime';
+import { appConfigDir, fileExists as exists, makeDirectory as mkdir, readDesktopText as readTextFile, writeDesktopText as writeTextFile } from './runtime';
 import { getAppConfigFilePath, getProjectFilePath, getSetting, logPersistence, setSetting } from "./persistence.ts";
 
 const PROJECTS_INDEX = "projects.json";
@@ -12,13 +12,6 @@ export interface ProjectEntry {
   total_size?: number;
   files?: string[];
   indexed_at?: string;
-}
-
-export interface ProjectIndexSnapshot {
-  fileCount: number;
-  directoryCount: number;
-  totalSize: number;
-  files: string[];
 }
 
 export interface ProjectMeta {
@@ -78,50 +71,6 @@ export const writeProjectMeta = async (projectPath: string, meta: ProjectMeta) =
   const path = await getProjectMetaPath(projectPath);
   await mkdir(await getProjectFilePath(projectPath), { recursive: true });
   await writeTextFile(path, JSON.stringify(meta));
-};
-
-export const ensureProjectMeta = async (projectPath: string, name: string) => {
-  const current = await readProjectMeta(projectPath);
-  const meta: ProjectMeta = {
-    name,
-    path: projectPath,
-    created_at: current?.created_at || new Date().toISOString(),
-    chats: current?.chats || [],
-  };
-  await writeProjectMeta(projectPath, meta);
-  await logPersistence("save_project_meta", "ok", { name, projectPath, path: await getProjectMetaPath(projectPath) });
-};
-
-export const saveProjectIndex = async (name: string, projectPath: string) => {
-  const globalProjects = await readProjectIndex();
-  const existingProject = globalProjects.find((project) => project.path === projectPath);
-  if (existingProject) existingProject.name = name;
-  else globalProjects.push({ name, path: projectPath });
-  await writeProjectIndex(globalProjects);
-  await logPersistence("save_project_index", "ok", { name, projectPath, count: globalProjects.length });
-};
-
-export const ensureCodeclubFolder = async (projectPath: string) => {
-  await mkdir(await getProjectFilePath(projectPath), { recursive: true });
-};
-
-export const indexProjectContents = async (name: string, projectPath: string) => {
-  const snapshot = await invoke<ProjectIndexSnapshot>("codeclub_index_project", { projectPath });
-  const projects = await readProjectIndex();
-  const existing = projects.find((project) => project.path === projectPath);
-  const entry: ProjectEntry = {
-    ...(existing || {}),
-    name,
-    path: projectPath,
-    file_count: snapshot.fileCount,
-    directory_count: snapshot.directoryCount,
-    total_size: snapshot.totalSize,
-    files: snapshot.files,
-    indexed_at: new Date().toISOString(),
-  };
-  const next = existing ? projects.map((project) => project.path === projectPath ? entry : project) : [...projects, entry];
-  await writeProjectIndex(next);
-  return entry;
 };
 
 export const writeProjectIndex = async (projects: ProjectEntry[]) => {

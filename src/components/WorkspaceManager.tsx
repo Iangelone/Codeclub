@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Folder } from 'lucide-react';
 import { activeChatStore } from '../lib/store';
 import ChatInterface from './ChatInterface.tsx';

@@ -1,7 +1,7 @@
 'use client';
 
 import { createElement, useEffect, useRef, useState, type FormEvent } from 'react';
-import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, Bolt, CircleHelp, CirclePlus, Clock, CopyX, EllipsisVertical, FileWarning, FolderOpen, FolderPen, FolderTree, GitBranch, GitCompare, Globe, Grid2X2, ListTodo, MessageCircle, PanelLeft, PanelRight, Pencil, RotateCw, SquareTerminal, X } from 'lucide-react';
+import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, Bolt, CircleHelp, CirclePlus, Clock, CopyX, EllipsisVertical, FileWarning, FolderOpen, FolderPen, FolderTree, GitBranch, GitCompare, Grid2X2, ListTodo, MessageCircle, Pencil, RotateCw, SquareTerminal, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import ChatPanel from './ChatPanel';
 import { ProjectPanelView } from './ChatInterface';

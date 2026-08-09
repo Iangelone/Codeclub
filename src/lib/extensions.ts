@@ -44,5 +44,3 @@ export const codeclubExtensions: CodeclubExtension[] = [
     instruction: 'Creá plantillas reutilizables desde el contenido de referencia, separando estructura, variables y reglas de uso.',
   },
 ];
-
-export const protectedExtensionIds = new Set(codeclubExtensions.map((extension) => extension.id));

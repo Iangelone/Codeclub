@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUp, ArrowUpRight, Box, Bug, Camera, Check, ChevronDown, ChevronRight, CircleHelp, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, GitCompare, Globe, KeyRound, Languages, LayoutTemplate, Lightbulb, ListChecks, ListTodo, MessageSquare, Monitor, MousePointer2, Orbit, Paperclip, Pencil, Presentation, Radar, RotateCcw, Search, ScrollText, Square, Table2, Terminal, Folder, FolderTree, RefreshCw, WandSparkles, Wifi, X } from 'lucide-react';
+import { ArrowUp, Box, Bug, Camera, Check, ChevronDown, ChevronRight, CircleHelp, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Languages, LayoutTemplate, Lightbulb, ListChecks, ListTodo, MessageSquare, Monitor, MousePointer2, Orbit, Paperclip, Pencil, Presentation, Radar, RotateCcw, Search, ScrollText, Square, Table2, Terminal, Folder, FolderTree, WandSparkles, Wifi, X } from 'lucide-react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -32,42 +32,7 @@ import { codeclubExtensions, type CodeclubExtension } from '../lib/extensions';
 import { LANGUAGE_STORAGE_KEY, type AppLanguage } from '../lib/i18n';
 import { connectAllAgentPluginMcp, loadAgentPlugins } from '../lib/agent-plugins';
 
-const SPINNER_FRAMES = {
-  chat: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"],
-  terminal: ["⡀", "⠄", "⠂", "⠁", "⠈", "⠐", "⠠", "⢀", "⠠", "⠐", "⠈", "⠁", "⠂", "⠄"]
-};
-
-const AnimatedBraille = ({ kind }: { kind: keyof typeof SPINNER_FRAMES }) => {
-  const [frame, setFrame] = useState(0);
-  const [isPaused, setIsPaused] = useState(true);
-  const spanRef = useRef<HTMLSpanElement>(null);
-
-  useEffect(() => {
-    const btn = spanRef.current?.closest('button');
-    if (!btn) return;
-    const enter = () => setIsPaused(false);
-    const leave = () => setIsPaused(true);
-    btn.addEventListener('mouseenter', enter);
-    btn.addEventListener('mouseleave', leave);
-    return () => {
-      btn.removeEventListener('mouseenter', enter);
-      btn.removeEventListener('mouseleave', leave);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (isPaused) return;
-    const frames = SPINNER_FRAMES[kind];
-    const timer = setInterval(() => setFrame((f) => (f + 1) % frames.length), 110);
-    return () => clearInterval(timer);
-  }, [kind, isPaused]);
-  
-  return <span ref={spanRef} className="font-mono text-[14px] leading-none text-[#2C2C2C]">{SPINNER_FRAMES[kind][frame]}</span>;
-};
-
-const formatDuration = (durationMs: number) => durationMs >= 60000 ? `${(durationMs / 60000).toFixed(1)} min` : `${Math.max(0.1, durationMs / 1000).toFixed(1)} s`;
 const formatProcessingDuration = (durationMs: number) => durationMs >= 60000 ? `${(durationMs / 60000).toFixed(1)}min` : `${Math.max(0, Math.round(durationMs / 1000))}s`;
-const escapeXml = (value: unknown) => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 const getBrowserReferenceFavicon = (reference: { title: string; url?: string }) => {
   try {
     if (!reference.url && reference.title.toLowerCase().includes('google')) return 'https://www.google.com/favicon.ico';
@@ -259,13 +224,11 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [browserReferences, setBrowserReferences] = useState<{ id: string; title: string; text: string; url?: string }[]>([]);
   const browserRefContainerRef = useRef<HTMLDivElement>(null);
   const [maxVisibleBrowserRefs, setMaxVisibleBrowserRefs] = useState(3);
-  const [inputFocused, setInputFocused] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<ChatAttachment[]>([]);
   const chatPanelRef = useRef<HTMLDivElement>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [agentState, setAgentState] = useState('idle');
   const [connectionAttempt, setConnectionAttempt] = useState(1);
-  const [agentElapsedMs, setAgentElapsedMs] = useState(0);
   const agentStartedAtRef = useRef(0);
   const [activeToolName, setActiveToolName] = useState('');
   const [computerUseActive, setComputerUseActive] = useState(false);
@@ -318,7 +281,6 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [activeProject, setActiveProject] = useState<any>(() => selectedProject ? { projectPath: selectedProject.projectPath, name: selectedProject.projectName || 'Proyecto' } : null);
   const [projectMeta, setProjectMeta] = useState<Record<string, any[]> | null>(null);
   const [expandedMenu, setExpandedMenu] = useState<'chat' | null>(null);
-  const [newArtifactName, setNewArtifactName] = useState('');
   const [artifactSearch, setArtifactSearch] = useState<Record<string, string>>({});
   const [recentArtifactIds, setRecentArtifactIds] = useState<Record<string, string[]>>({});
   const [terminalCount, setTerminalCount] = useState(0);
@@ -363,13 +325,6 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const agentStatusText = chatText.status[agentState as keyof typeof chatText.status] || chatText.status.idle;
   const isAgentBusy = isStreaming;
   const sendButtonActive = isAgentBusy || Boolean(input.trim()) || attachedFiles.length > 0 || Boolean(credentialProvider);
-  useEffect(() => {
-    if (!isStreaming) { setAgentElapsedMs(0); return undefined; }
-    const updateElapsed = () => setAgentElapsedMs(Math.max(0, Date.now() - agentStartedAtRef.current));
-    updateElapsed();
-    const timer = window.setInterval(updateElapsed, 100);
-    return () => window.clearInterval(timer);
-  }, [isStreaming]);
   useEffect(() => { window.dispatchEvent(new CustomEvent('codeclub:agent-activity', { detail: { chatId: activeChat?.chatId, state: agentState, tool: activeToolName, agent: 'Desarrollo' } })); }, [activeChat?.chatId, agentState, activeToolName]);
   useEffect(() => {
     const handleArtifactReference = (event: Event) => {
@@ -1072,45 +1027,6 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     }
 };
 
-const readWorkspaceChangeSummary = async (projectPath?: string) => {
-  if (!projectPath) return null;
-  try {
-    const result = await invoke<{ code?: number | null; stdout: string; stderr: string }>('codeclub_run_command', {
-      projectPath,
-      request: { command: 'git', args: ['diff', 'HEAD', '--numstat', '--'] },
-    });
-    if (result.code !== 0) return null;
-    let additions = 0;
-    let deletions = 0;
-    let files = 0;
-    result.stdout.split(/\r?\n/).filter(Boolean).forEach((line) => {
-      const [added, removed] = line.split('\t');
-      if (added === '-' || removed === '-') return;
-      const addedCount = Number(added);
-      const removedCount = Number(removed);
-      if (!Number.isFinite(addedCount) || !Number.isFinite(removedCount)) return;
-      additions += addedCount;
-      deletions += removedCount;
-      files += 1;
-    });
-    const statusResult = await invoke<{ code?: number | null; stdout: string }>('codeclub_run_command', {
-      projectPath,
-      request: { command: 'git', args: ['status', '--short', '--untracked-files=all'] },
-    });
-    const untracked = statusResult.code === 0 ? statusResult.stdout.split(/\r?\n/).filter((line) => line.startsWith('?? ')).map((line) => line.slice(3).trim()).filter(Boolean) : [];
-    for (const path of untracked) {
-      try {
-        const content = await invoke<string>('codeclub_read_file', { projectPath, path });
-        additions += content.split(/\r?\n/).length;
-        files += 1;
-      } catch { /* Los binarios nuevos no tienen conteo de líneas. */ }
-    }
-    return { additions, deletions, files };
-  } catch {
-    return null;
-  }
-};
-
 type WorkspaceSnapshot = Map<string, string | null>;
 
 const readWorkspaceSnapshot = async (projectPath: string): Promise<WorkspaceSnapshot> => {
@@ -1275,20 +1191,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     setPendingApprovals((items) => items.filter((item) => item.id !== approvalId));
     resolver(approved);
   };
-
-  const requestToolApproval = ({ toolName, input, summary }: { toolName: string; input: any; summary: string }) => {
-    const approvalId = crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`;
-    setAgentState('approval');
-    setPendingApprovals((items) => [
-      ...items,
-      { id: approvalId, toolName, input, summary: summary || compactJson(input) },
-    ]);
-
-    return new Promise((resolve) => {
-      approvalResolversRef.current.set(approvalId, resolve);
-    });
-  };
-
 
   const appendToJsonl = async (msg: any, chatOverride = activeChatRef.current) => {
     const chat = chatOverride;
@@ -1529,7 +1431,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         console.warn('No se pudieron cargar los plugins Agent Plugins:', error);
       }
       let tools: Record<string, any> = {};
-      let toolRoutingContext = 'La IA principal recibe directamente las tools necesarias y ejecuta el trabajo.';
       let beforeWorkspaceSnapshot: WorkspaceSnapshot = new Map();
       routeSpecialist = inferAgentSpecialist(content, runMode);
       const selectedToolset = Object.fromEntries(Object.entries(developmentTools).filter(([name]) => !['swarm', 'subagent', 'listAvailableTools'].includes(name)));
@@ -1570,7 +1471,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           searchTools: dynamicToolAccess.searchTools,
           executeTool: dynamicToolAccess.executeTool,
         };
-        toolRoutingContext = `La IA de intención resolvió: ${routing.reason || 'intención detectada'} (confianza ${routing.confidence}). Tools habilitadas: ${Object.keys(tools).join(', ')}.`;
         void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'tool-router', input: { mode: runMode, specialist: routeSpecialist, prompt: content }, output: { confidence: routing.confidence, reason: routing.reason, requiresAction: routing.requiresAction, tools: Object.keys(tools) } });
       } catch (error) {
         const fallbackTools = selectToolsForPrompt(routedToolset, runMode, content);
@@ -1579,7 +1479,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           searchTools: dynamicToolAccess.searchTools,
           executeTool: dynamicToolAccess.executeTool,
         };
-        toolRoutingContext = `La IA de intención falló; se habilitó una selección determinista y acotada. Error: ${String(error)}`;
         void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'tool-router', input: { mode: runMode, specialist: routeSpecialist, prompt: content }, output: { status: 'fallback-deterministic', error: String(error), tools: Object.keys(tools) } });
       }
       beforeWorkspaceSnapshot = await readWorkspaceSnapshot(toolProjectPath);
@@ -1801,7 +1700,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
 
       if (!isCurrentGeneration() || abortController.signal.aborted) return;
       const changes = contextProjectPath ? summarizeWorkspaceDelta(beforeWorkspaceSnapshot, await readWorkspaceSnapshot(toolProjectPath)) : null;
-      const usage = latestUsage as any;
       const assistantMessage = { role: 'assistant', content: assistantContent || 'La ejecución terminó sin texto final, pero las evidencias quedaron registradas.', timeline: assistantTimeline, tools: assistantTools, agentName: 'Desarrollo', meta: { provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt, status: 'completed', changes, usage: latestUsage ? { inputTokens: latestUsage.inputTokens, outputTokens: latestUsage.outputTokens, totalTokens: latestUsage.totalTokens, reasoningTokens: latestUsage.reasoningTokens } : null } };
       // La respuesta ya se muestra progresivamente durante el stream. Al finalizar
       // conservamos el contenido completo para evitar una burbuja vacíoa si la
@@ -2138,35 +2036,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
 
   if (workspaceMode === 'blank' && activeProject && false) {
     if (activeProject) {
-      const createNewArtifact = async (customName: string) => {
-        if (!customName.trim()) {
-          setNewArtifactName('');
-          return;
-        }
-        const id = Date.now().toString();
-        const name = customName.trim();
-        try {
-          let metaData: any = await readProjectMeta(activeProject.projectPath) || {
-            name: activeProject.name,
-            path: activeProject.projectPath,
-            created_at: new Date().toISOString(),
-            chats: [],
-          };
-          if (!Array.isArray(metaData.chats)) metaData.chats = [];
-          metaData.chats.push({ id, name });
-          await writeProjectMeta(activeProject.projectPath, metaData);
-          
-          window.dispatchEvent(new CustomEvent(`codeclub:panel-${panelId}:open-chat`, {
-            detail: { projectPath: activeProject.projectPath, chatId: id, name }
-          }));
-          
-          setProjectMeta(metaData);
-          setNewArtifactName('');
-        } catch (e) {
-          console.error(e);
-        }
-      };
-
       return (
         <div className="flex flex-col gap-2 w-[min(300px,calc(100%-64px))] text-[#d8d8d8] text-[13px]" style={{ fontWeight: 400 }}>
           {(['chat'] as const).map((kind) => {
@@ -2446,8 +2315,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 e.currentTarget.form?.requestSubmit();
               }
             }}
-            onFocus={() => { setInputFocused(true); if (commandKind !== 'credential') setMenuOpen(false); }}
-            onBlur={() => setInputFocused(false)}
+            onFocus={() => { if (commandKind !== 'credential') setMenuOpen(false); }}
             aria-label={chatText.message}
             className={`order-1 min-h-[22px] h-auto max-h-[180px] w-full min-w-0 flex-none resize-none self-stretch overflow-y-hidden border-0 bg-transparent px-0 py-0.5 pr-2.5 text-xs leading-[1.4] text-(--codeclub-text-strong) outline-none placeholder:text-(--codeclub-text-muted) [scrollbar-width:none] ${isAgentBusy ? 'opacity-[0.55]' : 'opacity-100'}`}
             placeholder={agentStatusText}
@@ -2628,32 +2496,6 @@ function parseCsv(content: string): string[][] {
   return rows;
 }
 
-const TOOL_BRAILLE_FRAMES: Record<string, string[]> = {
-  listFiles: ['⠿', '⠾', '⠶', '⠷', '⠿'], readFile: ['⠶', '⠦', '⠴', '⠶'], searchText: ['⠤', '⠦', '⠴', '⠦'],
-  writeFile: ['⠒', '⠓', '⠒', '⠑'], runCommand: ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧'], terminal: ['⠙', '⠋', '⠹', '⠸', '⠼', '⠴'],
-  openBrowser: ['⠳', '⠲', '⠦', '⠴', '⠳'], getBrowserState: ['⠼', '⠾', '⠿', '⠾', '⠼'], browserAction: ['⠦', '⠴', '⠲', '⠦'],
-  askUser: ['⠴', '⠦', '⠴', '⠦'], createPlan: ['⠇', '⠧', '⠷', '⠇'], updatePlan: ['⠸', '⠼', '⠸'],
-  todo: ['⠺', '⠻', '⠺', '⠻'], getTaskStatus: ['⠾', '⠿', '⠾'], getExecutionLog: ['⠫', '⠪', '⠫'],
-  subagent: ['⠈', '⠉', '⠋', '⠙'],
-};
-
-const SPECIALIST_BRAILLE_FRAMES: Record<string, string[]> = {
-  developer: ['⠈', '⠉', '⠋', '⠙'], frontend: ['⠈', '⠊', '⠒', '⠓'], backend: ['⠈', '⠐', '⠘', '⠸'], qa: ['⠈', '⠤', '⠦', '⠴'], security: ['⠈', '⠎', '⠴', '⠿'], documentation: ['⠈', '⠇', '⠧', '⠷'], computer_use: ['⠳', '⠲', '⠦', '⠴'],
-};
-
-function BrailleToolMark({ name, specialist, state }: { name: string; specialist?: string; state: 'running' | 'completed' | 'error' }) {
-  const frames = (specialist && SPECIALIST_BRAILLE_FRAMES[specialist]) || TOOL_BRAILLE_FRAMES[name] || ['⠋', '⠙', '⠹', '⠸'];
-  const [frame, setFrame] = useState(0);
-  useEffect(() => {
-    setFrame(0);
-    if (state !== 'running' || frames.length < 2) return undefined;
-    const timer = window.setInterval(() => setFrame((current) => (current + 1) % frames.length), 150);
-    return () => window.clearInterval(timer);
-  }, [name, specialist, state, frames.length]);
-  const glyph = state === 'error' ? '⠿' : state === 'completed' ? frames[frames.length - 1] : frames[frame];
-  return <span className="codeclub-tool-braille" data-state={state} aria-hidden="true">{glyph}</span>;
-}
-
 const TOOL_ICONS: Record<string, any> = {
   listFiles: FolderTree, readFile: FileCode2, searchText: Search, writeFile: Pencil, runCommand: Terminal, terminal: Terminal,
   openBrowser: Globe, getBrowserState: Eye, browserAction: MousePointer2, computerGetState: Monitor, computerListWindows: Monitor, computerScreenshot: Camera, computerOcr: Camera, computerAction: MousePointer2, swarm: Orbit, subagent: Orbit, listAvailableTools: FolderOpen,
@@ -2664,28 +2506,6 @@ const TOOL_ICONS: Record<string, any> = {
 function ToolIcon({ name }: { name: string }) {
   const Icon = TOOL_ICONS[name] || Code2;
   return <span style={{ display: 'grid', placeItems: 'center', width: '18px', height: '18px', flex: '0 0 18px', color: '#888' }}><Icon size={15} strokeWidth={1.7} /></span>;
-}
-
-function ProcessingStatus({ startedAt, provider, model }: { startedAt: number; provider: string; model: string }) {
-  const [elapsed, setElapsed] = useState(() => Math.max(0, Date.now() - startedAt));
-  useEffect(() => {
-    const timer = window.setInterval(() => setElapsed(Math.max(0, Date.now() - startedAt)), 1000);
-    return () => window.clearInterval(timer);
-  }, [startedAt]);
-  return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', padding: '0 0 12px', color: '#999', fontSize: '12px' }}><span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#777' }}>{provider} · {model}</span><span style={{ flexShrink: 0 }}>Procesando desde hace {formatProcessingDuration(elapsed)}</span></div>;
-}
-
-function CompletedStatus({ language, provider, model, durationMs }: { language: AppLanguage; provider: string; model: string; durationMs: number }) {
-  return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', alignSelf: 'stretch', margin: '20px 0 -6px', color: 'rgba(216, 216, 216, 0.52)', fontSize: '12px', letterSpacing: '0.01em' }}><span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{provider} · {model}</span><span style={{ flexShrink: 0 }}>{language === 'en' ? 'Completed in' : 'Completado en'} {formatProcessingDuration(durationMs)}</span></div>;
-}
-
-function ProcessingStatusFixed({ startedAt, provider, model }: { startedAt: number; provider: string; model: string }) {
-  const [elapsed, setElapsed] = useState(() => Math.max(0, Date.now() - startedAt));
-  useEffect(() => {
-    const timer = window.setInterval(() => setElapsed(Math.max(0, Date.now() - startedAt)), 1000);
-    return () => window.clearInterval(timer);
-  }, [startedAt]);
-  return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', padding: '0 0 12px', color: '#999', fontSize: '12px' }}><span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#777' }}>{provider} · {model}</span><span style={{ flexShrink: 0 }}>Procesando desde hace {formatProcessingDuration(elapsed)}</span></div>;
 }
 
 function ProcessingStatusStateFixed({ startedAt, provider, model, state, attempt }: { startedAt: number; provider: string; model: string; state: string; attempt: number }) {
@@ -2756,72 +2576,7 @@ function ExecutionTimeline({ timeline = [], active }: { timeline?: any[]; active
   return <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '10px 0 3px', color: failed ? '#d98b8b' : '#999', fontSize: '13px' }}><ToolIcon name={event.name} /><span className={event.status === 'running' && !failed ? 'chat-thinking-label chat-tool-thinking-label' : undefined}>{failed ? `Falló ${label}` : `${event.status === 'running' ? 'Ejecutando' : 'Ejecutado'} ${label}`}</span></div>;
 }
 
-function ComputerEvidence({ tools = [] }: { tools?: any[] }) {
-  const events = tools.filter((event) => ['computerGetState', 'computerListWindows', 'computerScreenshot', 'computerAction'].includes(event.name) && event.output?.status !== 'running');
-  const latest = events[events.length - 1];
-  if (!latest) return null;
-  const payload = latest.output?.output ?? latest.output?.result ?? latest.output;
-  const screenshot = tools.slice().reverse().find((event) => event.name === 'computerScreenshot' && event.output?.status !== 'running');
-  const screenshotPayload = screenshot?.output?.output ?? screenshot?.output?.result ?? screenshot?.output;
-  const imageSrc = screenshotPayload?.data && screenshotPayload?.mimeType ? `data:${screenshotPayload.mimeType};base64,${screenshotPayload.data}` : '';
-  const state = latest.name === 'computerGetState' ? payload : null;
-  const controls = Array.isArray(state?.elements) ? state.elements.filter((element: any) => element.name).slice(0, 8) : [];
-  return <div style={{ display: 'grid', gap: '7px', width: 'min(520px, 100%)', margin: '8px 0 2px', padding: '8px 10px', border: '1px solid #252525', borderRadius: '9px', background: '#151515', color: '#bdbdbd', fontSize: '11px' }}>
-    {controls.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>{controls.map((element: any) => <span key={element.id} style={{ border: '1px solid #2b2b2b', borderRadius: '5px', padding: '3px 5px', color: element.focused ? '#b9dcff' : '#999' }}>{element.role}: {element.name}</span>)}</div>}
-    {imageSrc && <img src={imageSrc} alt="Captura de Computer Use" style={{ display: 'block', width: '100%', maxHeight: '220px', objectFit: 'contain', objectPosition: 'left center', borderRadius: '6px', background: '#101010' }} />}
-  </div>;
-}
-
-function ToolExecutionCards({ tools = [] }: { tools?: any[] }) {
-  const [visibleTools, setVisibleTools] = useState<any[]>([]);
-  const latestKeyRef = useRef('');
-  useEffect(() => {
-    const latest = tools[tools.length - 1];
-    if (!latest) { setVisibleTools([]); latestKeyRef.current = ''; return undefined; }
-    const key = String(latest.id || latest.name);
-    const running = latest.output?.status === 'running';
-    if (latestKeyRef.current === key) {
-      setVisibleTools([latest]);
-      if (!running) {
-        const timer = window.setTimeout(() => {
-          setVisibleTools([]);
-          latestKeyRef.current = '';
-        }, 700);
-        return () => window.clearTimeout(timer);
-      }
-      return undefined;
-    }
-    latestKeyRef.current = key;
-    setVisibleTools((current) => [...current.slice(-1), latest]);
-    const timer = window.setTimeout(() => {
-      if (running) setVisibleTools((current) => current.slice(-1));
-      else {
-        setVisibleTools([]);
-        latestKeyRef.current = '';
-      }
-    }, running ? 180 : 700);
-    return () => window.clearTimeout(timer);
-  }, [tools]);
-  if (!visibleTools.length) return null;
-  const latestKey = String(tools[tools.length - 1]?.id || tools[tools.length - 1]?.name);
-  return <div style={{ position: 'relative', width: 'min(520px, 100%)', minHeight: '28px', margin: '4px 0 2px' }}>
-    {visibleTools.map((event, index) => {
-      const key = String(event.id || event.name);
-      const running = event.output?.status === 'running';
-      const failed = Boolean(event.output?.error) || event.output?.status === 'error';
-      const status = failed ? 'Error' : running ? 'Ejecutando' : formatDuration(Number(event.durationMs || 0));
-      const specialist = event.input?.specialist;
-      return <div key={`${key}-${index}`} style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, minHeight: '28px', padding: '5px 8px', border: '1px solid #252525', borderRadius: '7px', background: '#151515', color: '#999', fontSize: '10px', animation: key === latestKey ? 'codeclub-tool-fade-in 180ms ease-out' : 'codeclub-tool-fade-out 180ms ease-in forwards' }}>
-        <span style={{ display: 'grid', placeItems: 'center', flex: '0 0 16px', color: '#ffffff' }}><BrailleToolMark name={event.name} specialist={specialist} state={failed ? 'error' : running ? 'running' : 'completed'} /></span>
-        <span style={{ minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#cfcfcf', fontFamily: 'var(--font-mono, monospace)' }}>{event.name}</span>
-        <span title={running ? 'Tool en ejecución' : `Tiempo de ejecución: ${status}`} style={{ flexShrink: 0, color: '#ffffff' }}>{status}</span>
-      </div>;
-    })}
-    <style>{'@keyframes codeclub-tool-fade-in { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: translateY(0); } } @keyframes codeclub-tool-fade-out { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(2px); } }'}</style>
-  </div>;
-}
-
-function AskUserCards({ tools = [], onSelect, disabled }: { tools?: any[]; onSelect: (answer: string) => void; disabled: boolean }) {
+function AskUserCards({ tools = [], onSelect }: { tools?: any[]; onSelect: (answer: string) => void; disabled?: boolean }) {
   const questions = tools.filter((event) => event.name === 'askUser' && event.output?.status === 'awaiting_user');
   if (!questions.length) return null;
   return <div style={{ display: 'grid', gap: '8px', width: 'min(520px, 100%)', margin: '2px 0 2px' }}>
@@ -2832,32 +2587,6 @@ function AskUserCards({ tools = [], onSelect, disabled }: { tools?: any[]; onSel
         {(event.output.options?.length ? event.output.options : ['Responder en el chat']).map((option: string) => <button key={option} type="button" onClick={() => onSelect(option)} onMouseEnter={(event) => { event.currentTarget.style.background = '#202020'; event.currentTarget.style.borderColor = '#4a4a4a'; }} onMouseLeave={(event) => { event.currentTarget.style.background = '#151515'; event.currentTarget.style.borderColor = '#252525'; }} style={{ display: 'flex', alignItems: 'center', minHeight: '36px', padding: '5px 9px', border: '1px solid #252525', borderRadius: '8px', background: '#151515', color: '#ddd', cursor: 'pointer', textAlign: 'left', fontSize: '11px', transition: 'background 120ms ease, border-color 120ms ease' }}>{option}</button>)}
       </div>
     </div>)}
-  </div>;
-}
-
-function SubagentCards({ tools = [] }: { tools?: any[] }) {
-  const latestBySpecialist = new Map<string, any>();
-  tools.filter((event) => event.name === 'subagent').forEach((event) => {
-    latestBySpecialist.set(event.input?.specialist || 'subagent', event);
-  });
-  const subagents = Array.from(latestBySpecialist.values());
-  if (!subagents.length) return null;
-
-  return <div style={{ display: 'grid', gap: '7px', width: 'min(520px, 100%)', margin: '4px 0 2px' }}>
-    {subagents.map((event) => {
-      const running = event.output?.status === 'running';
-      const failed = event.output?.status === 'error' || Boolean(event.output?.error);
-      const specialist = event.input?.specialist || 'Subagente';
-      const result = typeof event.output?.result === 'string' ? event.output.result : event.output?.result ? JSON.stringify(event.output.result) : '';
-      const text = running ? `Está analizando: ${event.input?.task || 'la tarea asignada'}` : failed ? String(event.output?.error || 'No pudo completar el análisis.') : result || 'Terminó su análisis.';
-      return <div key={event.id} style={{ display: 'grid', gap: '4px', minWidth: 0, padding: '8px 10px', border: '1px solid #2b2b2b', borderRadius: '9px', background: '#151515' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', minWidth: 0 }}>
-          <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#d8d8d8', fontSize: '11px', fontWeight: 600 }}>{specialist}</span>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', flexShrink: 0, color: failed ? '#c88787' : running ? '#aaa' : '#8fbe9b', fontSize: '10px' }}><span aria-hidden="true" style={{ color: failed ? '#d98b8b' : running ? '#d8d8d8' : '#8fbe9b', fontSize: '12px', lineHeight: 1 }}>{failed ? '!' : running ? '…' : '✓'}</span>{failed ? 'Error' : running ? 'Trabajando…' : 'Finalizado'}</span>
-        </div>
-        <div title={text} style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#777', fontSize: '10px' }}>{text}</div>
-      </div>;
-    })}
   </div>;
 }
 
@@ -2888,30 +2617,6 @@ function ChangeSummaryCard({ changes }: { changes?: { additions: number; deletio
   </div>;
 }
 
-function TodoCards({ tools = [] }: { tools?: any[] }) {
-  const todoEvents = tools.filter((event) => event.name === 'todo' && Array.isArray(event.output?.todos));
-  const latest = todoEvents[todoEvents.length - 1];
-  const todos = latest?.output?.todos || [];
-  if (!todos.length) return null;
-
-  const statusLabel = { pending: 'Pendiente', in_progress: 'En curso', completed: 'Completado', cancelled: 'Cancelado', blocked: 'Bloqueado' };
-  const statusIcon = { pending: '○', in_progress: '◐', completed: '✓', cancelled: '⊘', blocked: '!' };
-  return <div style={{ display: 'grid', gap: '7px', width: 'min(520px, 100%)', margin: '4px 0 2px' }}>
-    <div style={{ display: 'grid', gap: '6px', padding: '8px 10px', border: '1px solid #2b2b2b', borderRadius: '9px', background: '#151515' }}>
-      <div style={{ color: '#d8d8d8', fontSize: '11px', fontWeight: 600 }}>TODO</div>
-      {todos.map((todo: any) => {
-        const status = (todo.status || 'pending') as keyof typeof statusIcon;
-        const color = '#999';
-        return <div key={todo.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, minHeight: '30px', padding: '4px 7px', borderRadius: '7px', background: '#111' }}>
-          <span aria-hidden="true" style={{ display: 'grid', placeItems: 'center', flex: '0 0 16px', width: '16px', height: '16px', color, fontSize: '14px', lineHeight: 1 }}>{statusIcon[status] || '·'}</span>
-          <span title={todo.title} style={{ minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#ccc', fontSize: '11px' }}>{todo.title}</span>
-          <span style={{ flexShrink: 0, color, fontSize: '10px' }}>{statusLabel[status] || status}</span>
-        </div>;
-      })}
-    </div>
-  </div>;
-}
-
 function FilePreview({ projectPath, file, onChange }: { projectPath: string; file: OpenFile; onChange?: (content: string) => void }) {
   const extension = getExtension(file.path);
   const sourcePath = file.fsPath || `${projectPath}/${file.path}`;
@@ -2928,139 +2633,6 @@ function FilePreview({ projectPath, file, onChange }: { projectPath: string; fil
   return <CodeMirrorFileEditor path={file.path} content={file.content} onChange={onChange} />;
 }
 
-function ProjectFoldersView({ projectPath }: { projectPath?: string }) {
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
-  const [entries, setEntries] = useState<ProjectFileEntry[]>([]);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [selectedPath, setSelectedPath] = useState('');
-  const [selectedContent, setSelectedContent] = useState('');
-
-  const loadProject = async () => {
-    if (!projectPath) return;
-    setLoading(true);
-    setLoadError('');
-    try {
-    const result = await invoke<ProjectFileEntry[]>('codeclub_list_files', { projectPath, maxFiles: 1200 });
-      setEntries(result);
-      setExpanded(new Set(result.filter((entry) => entry.kind === 'directory').map((entry) => entry.path)));
-    } catch (error) { setEntries([]); setLoadError(String(error)); } finally { setLoading(false); }
-  };
-
-  useEffect(() => { loadProject(); }, [projectPath]);
-
-  const openFile = async (path: string) => {
-    if (!projectPath) return;
-    try {
-      const content = await invoke<string>('codeclub_read_file', { projectPath, path });
-      setSelectedPath(path);
-      setSelectedContent(content);
-    } catch (error) {
-      setSelectedPath(path);
-      setSelectedContent(`No se pudo abrir el archivo: ${String(error)}`);
-    }
-  };
-
-  const tree = buildFileTree(entries);
-  const renderTree = (nodes: FileTreeNode[], depth = 0): React.ReactNode => nodes.map((node) => {
-    const isOpen = expanded.has(node.path);
-    return <React.Fragment key={node.path}>
-      <button type="button" onClick={() => node.kind === 'directory' ? setExpanded((current) => { const next = new Set(current); next.has(node.path) ? next.delete(node.path) : next.add(node.path); return next; }) : openFile(node.path)} className={`flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[12px] ${selectedPath === node.path ? 'bg-[var(--color-surface-7)] text-[#eeeeee]' : 'text-[#bdbdbd] hover:bg-[var(--color-surface-3)]'}`} style={{ paddingLeft: `${8 + depth * 14}px` }}>
-        {node.kind === 'directory' ? (isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />) : <span className="w-[13px]" />}
-        {node.kind === 'directory' ? <Folder size={14} className="text-[#a89b72]" /> : <FileCode2 size={14} className="text-[#777777]" />}
-        <span className="min-w-0 flex-1 truncate">{node.name}</span>
-        {node.extension && <span className="text-[10px] text-[#666666]">{node.extension}</span>}
-      </button>
-      {node.kind === 'directory' && isOpen && renderTree(node.children, depth + 1)}
-    </React.Fragment>;
-  });
-
-  return <div className="flex h-[min(720px,calc(100vh-96px))] w-[min(980px,calc(100%-64px))] min-w-0 flex-col gap-3 text-[#d8d8d8]">
-    <div className="flex items-center justify-between text-sm text-[#eeeeee]"><div className="flex items-center gap-2"><FolderTree size={16} /><span>Carpetas</span></div><button type="button" onClick={loadProject} className="rounded-md p-1.5 text-[#777777] hover:bg-[var(--color-surface-3)] hover:text-[#eeeeee]" aria-label="Actualizar panel" title="Actualizar"><RefreshCw size={14} /></button></div>
-    <div className="flex min-h-0 flex-1 overflow-hidden rounded-xl border border-[var(--color-surface-8)] bg-[var(--color-bg)]">
-      {loading ? <span className="p-4 text-xs text-[#8f8f8f]">Cargando...</span> : <><div className="w-[min(290px,38%)] min-w-[190px] overflow-auto border-r border-[var(--color-surface-8)] p-2 [scrollbar-width:none]">{loadError ? <span className="p-2 text-xs text-[#a87878]">{loadError}</span> : tree.length ? renderTree(tree) : <span className="p-2 text-xs text-[#777777]">No se encontraron archivos.</span>}</div><div className="min-w-0 flex-1 overflow-hidden bg-[#101010]">{selectedPath ? <CodeMirrorFileEditor path={selectedPath} content={selectedContent} /> : <div className="flex h-full items-center justify-center text-xs text-[#666666]">Seleccioná un archivo para verlo</div>}</div></>}
-    </div>
-  </div>;
-}
-
-function AppleFoldersView({ projectPath, initialSelectedPath = '' }: { projectPath?: string; initialSelectedPath?: string }) {
-  const [loading, setLoading] = useState(true);
-  const [entries, setEntries] = useState<ProjectFileEntry[]>([]);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [selectedPath, setSelectedPath] = useState(initialSelectedPath);
-  const [openFiles, setOpenFiles] = useState<Record<string, OpenFile>>({});
-  const [tabs, setTabs] = useState<string[]>([]);
-  const [showFileTree, setShowFileTree] = useState(true);
-  const [error, setError] = useState('');
-
-  const loadProject = async () => {
-    if (!projectPath) return;
-    setLoading(true); setError('');
-    try {
-    const result = await invoke<ProjectFileEntry[]>('codeclub_list_files', { projectPath, maxFiles: 1200 });
-      setEntries(result);
-      setExpanded(new Set(result.filter((entry) => entry.kind === 'directory').map((entry) => entry.path)));
-    } catch (reason) { setEntries([]); setError(String(reason)); } finally { setLoading(false); }
-  };
-
-  useEffect(() => { loadProject(); }, [projectPath]);
-  const openFile = async (path: string) => {
-    if (!projectPath) return;
-    setSelectedPath(path);
-    setTabs((current) => current.includes(path) ? current : [...current, path]);
-    if (openFiles[path]) return;
-    const extension = getExtension(path);
-    try {
-      if (imageExtensions.has(extension) || extension === 'pdf') {
-        setOpenFiles((current) => ({ ...current, [path]: { path, content: '' } }));
-      } else if (extension === 'docx') {
-        const bytes = await readFile(`${projectPath}/${path}`);
-        const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-        const result = await mammoth.convertToHtml({ arrayBuffer });
-        setOpenFiles((current) => ({ ...current, [path]: { path, content: '', html: result.value } }));
-      } else {
-        const content = await invoke<string>('codeclub_read_file', { projectPath, path });
-        setOpenFiles((current) => ({ ...current, [path]: { path, content } }));
-      }
-    } catch (reason) {
-      setOpenFiles((current) => ({ ...current, [path]: { path, content: '', error: `No se pudo abrir: ${String(reason)}` } }));
-    }
-  };
-  const closeFile = (path: string) => {
-    setTabs((current) => {
-      const index = current.indexOf(path);
-      const next = current.filter((item) => item !== path);
-      if (selectedPath === path) setSelectedPath(next[index - 1] || next[index] || '');
-      return next;
-    });
-    setOpenFiles((current) => { const next = { ...current }; delete next[path]; return next; });
-  };
-  useEffect(() => {
-    if (initialSelectedPath && initialSelectedPath !== selectedPath) openFile(initialSelectedPath);
-  }, [initialSelectedPath, projectPath]);
-  const renderFlat = (items: ProjectFileEntry[]): React.ReactNode => items
-    .slice()
-    .sort((a, b) => a.path.localeCompare(b.path))
-    .map((entry) => (
-      <button
-        key={`${entry.kind}-${entry.path}`}
-        type="button"
-        onClick={() => entry.kind !== 'directory' && openFile(entry.path)}
-        className={`flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-[12px] transition-colors ${selectedPath === entry.path ? 'bg-[var(--color-surface-7)] text-[#eeeeee]' : 'text-[#bdbdbd] hover:bg-[var(--color-surface-3)]'}`}
-      >
-        {entry.kind === 'directory' ? <Folder size={14} className="shrink-0 text-[#a89b72]" /> : <FileCode2 size={14} className="shrink-0 text-[#777777]" />}
-        <span className="min-w-0 flex-1 truncate">{entry.path}</span>
-      </button>
-    ));
-  const renderTree = (_nodes: FileTreeNode[]): React.ReactNode => renderFlat(entries);
-  const tree = buildFileTree(entries);
-  const selectedContent = openFiles[selectedPath]?.content || '';
-  const selectedParts = selectedPath.split('/').filter(Boolean);
-  return <div className={`flex h-full w-full min-w-0 flex-col overflow-hidden text-[#d8d8d8] [&>div>aside>div:first-child]:hidden ${tree.length ? '' : '[&>div>aside]:hidden'}`}>
-    {loading ? <div className="flex flex-1 items-center justify-center text-xs text-[#777777]">Cargando proyecto...</div> : <div className="flex min-h-0 flex-1"><aside className="flex w-[250px] shrink-0 flex-col border-r border-[var(--color-surface-8)] bg-transparent"><div className="flex items-center justify-between px-3 py-3"><span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#777777]">Archivos</span><span className="text-[10px] text-[#555555]">{entries.length}</span></div><div className="min-h-0 flex-1 overflow-auto px-2 pb-3 [scrollbar-width:none]">{error ? <div className="rounded-lg bg-[#2b1e1e] p-3 text-xs text-[#c28d8d]">{error}</div> : tree.length ? renderTree(tree) : <div className="p-3 text-xs text-[#777777]">No se encontraron archivos.</div>}</div></aside><main className="flex min-w-0 flex-1 flex-col bg-transparent">{selectedPath ? <><div className="flex h-10 shrink-0 items-center gap-1 border-b border-[var(--color-surface-8)] px-4 text-[11px] text-[#777777]">{selectedParts.map((part, index) => <React.Fragment key={`${part}-${index}`}><span className={index === selectedParts.length - 1 ? 'text-[#eeeeee]' : ''}>{part}</span>{index < selectedParts.length - 1 && <ChevronRight size={12} className="text-[#4d4d4d]" />}</React.Fragment>)}</div><div className="min-h-0 flex-1 overflow-hidden"><CodeMirrorFileEditor path={selectedPath} content={selectedContent} /></div></> : <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center"><div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[var(--color-surface-8)] bg-[var(--color-surface-3)] text-[#777777]"><FileCode2 size={20} /></div><div><p className="m-0 text-sm text-[#bdbdbd]">Elegí un archivo</p><p className="m-1 text-xs text-[#666666]">Hacé click en cualquier archivo para abrirlo acá</p></div></div>}</main></div>}
-  </div>;
-}
-
 function TabbedProjectView({ projectPath, initialSelectedPath = '', showFileTree, onToggleFileTree }: { projectPath?: string; initialSelectedPath?: string; showFileTree: boolean; onToggleFileTree?: () => void }) {
   const [loading, setLoading] = useState(true);
   const [entries, setEntries] = useState<ProjectFileEntry[]>([]);
@@ -3071,7 +2643,7 @@ function TabbedProjectView({ projectPath, initialSelectedPath = '', showFileTree
   const saveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const panelRef = useRef<HTMLDivElement>(null);
   const draggedFileRef = useRef<{ projectPath: string; path: string } | null>(null);
-  const [error, setError] = useState('');
+  const [, setError] = useState('');
   const setShowFileTree = (_toggle?: (visible: boolean) => boolean) => onToggleFileTree?.();
 
   const loadProject = async () => {
@@ -3186,7 +2758,6 @@ function TabbedProjectView({ projectPath, initialSelectedPath = '', showFileTree
   };
 
   const tree = buildFileTree(entries);
-  const selectedContent = files[selectedPath]?.content || '';
   const renderTree = (nodes: FileTreeNode[], depth = 0): React.ReactNode => nodes.map((node) => {
     const isOpen = expanded.has(node.path);
     return <React.Fragment key={node.path}>
@@ -3210,64 +2781,4 @@ function TabbedProjectView({ projectPath, initialSelectedPath = '', showFileTree
 
 export function ProjectPanelView({ projectPath, selectedPath, showFileTree = true, onToggleFileTree }: { projectPath?: string; selectedPath?: string; showFileTree?: boolean; onToggleFileTree?: () => void }) {
   return <TabbedProjectView projectPath={projectPath} initialSelectedPath={selectedPath} showFileTree={showFileTree} onToggleFileTree={onToggleFileTree} />;
-}
-
-function ProjectDiffView({ kind, projectPath }: { kind: 'diff' | 'folders'; projectPath?: string }) {
-  const [loading, setLoading] = useState(true);
-  const [folders, setFolders] = useState<Array<{ path: string; kind: string }>>([]);
-  const [diff, setDiff] = useState('');
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      if (!projectPath) return;
-      setLoading(true);
-      try {
-        if (kind === 'folders') {
-          const entries = await invoke<Array<{ path: string; kind: string }>>('codeclub_list_files', {
-            projectPath,
-            maxFiles: 400,
-          });
-          if (!cancelled) setFolders(entries);
-        } else {
-          const result = await invoke<{ stdout: string; stderr: string }>('codeclub_run_command', {
-            projectPath,
-            request: { command: 'git', args: ['diff', '--stat'] },
-          });
-          if (!cancelled) setDiff(result.stdout || result.stderr || 'Sin cambios pendientes.');
-        }
-      } catch (error) {
-        if (!cancelled) setDiff(`No se pudo cargar ${kind}: ${String(error)}`);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-    load();
-    return () => { cancelled = true; };
-  }, [kind, projectPath]);
-
-  return (
-    <div className="flex h-full w-full min-w-0 flex-col gap-3 text-[#d8d8d8]">
-      <div className="flex items-center gap-2 text-sm text-[#eeeeee]">
-        {kind === 'folders' ? <FolderTree size={16} /> : <GitCompare size={16} />}
-        <span>{kind === 'folders' ? 'Carpetas' : 'Cambios'}</span>
-      </div>
-      <div className="min-h-0 flex-1 overflow-auto bg-transparent p-0 text-xs [scrollbar-width:none]">
-        {loading ? (
-          <span className="text-[#8f8f8f]">Cargando...</span>
-        ) : kind === 'folders' ? (
-          <div className="flex flex-col gap-1">
-            {folders.map((entry) => (
-              <div key={`${entry.kind}-${entry.path}`} className="flex items-center gap-2 rounded-md px-2 py-1 text-[#bdbdbd] hover:bg-[var(--color-surface-3)]">
-                {entry.kind === 'directory' ? <FolderTree size={13} /> : <span className="w-[13px] text-center text-[#777777]">·</span>}
-                <span className="truncate">{entry.path}</span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <pre className="m-0 whitespace-pre-wrap font-mono leading-5 text-[#bdbdbd]">{diff || 'Sin cambios pendientes.'}</pre>
-        )}
-      </div>
-    </div>
-  );
 }

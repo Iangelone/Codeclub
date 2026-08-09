@@ -17,8 +17,5 @@ function createStore<T>(initialValue: T) {
   };
 }
 
-export const activeProjectStore = createStore<{ projectPath?: string; name?: string }>({});
 export const activeChatStore = createStore<{ id?: string; kind?: string }>({});
-export type GlobalChat = { id: string; name: string; customName?: boolean; projectPath: string; projectName: string };
-export const chatsStore = createStore<GlobalChat[]>([]);
 

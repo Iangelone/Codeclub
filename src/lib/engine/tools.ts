@@ -3,7 +3,7 @@ import { jsonSchema as aiJsonSchema, tool } from 'ai';
 import type { ToolContext } from './types';
 import { runStream } from './run';
 import { createId, readAgentState, writeAgentState, type TaskStatus } from './planning';
-import { appendGenerationUsage, readGenerationUsage, summarizeGenerationUsage } from '../usage';
+import { appendGenerationUsage } from '../usage';
 import { readExecutionLog } from '../execution-log';
 import { readProjectIndex } from '../projectManager';
 
@@ -155,8 +155,8 @@ const normalizeBrowserUrl = (raw: string) => {
 };
 
 function createSwarmTool(ctx: { projectPath: string; projectScoped?: boolean; recordToolEvent: (name: string, input: any, output: any) => void; setAgentState: (state: string) => void; requestToolApproval?: (opts: { toolName: string; input: any; summary: string }) => Promise<boolean>; childTools?: Record<string, any>; provider?: any; modelId?: string }) {
-  const { projectPath, projectScoped = false, recordToolEvent, setAgentState, requestToolApproval, childTools = {}, provider, modelId } = ctx;
-  const runChild = async (swarm: SwarmState, child: SwarmChild, message: string) => {
+  const { projectPath, projectScoped = false, recordToolEvent, setAgentState, childTools = {}, provider, modelId } = ctx;
+  const runChild = async (_swarm: SwarmState, child: SwarmChild, message: string) => {
     if (!provider || !modelId) return { error: 'No hay modelo configurado para el swarm.' };
     child.status = 'running';
     child.messages.push(message);
@@ -682,7 +682,6 @@ export function createTools(ctx: ToolContext) {
         if (license) manifest.license = String(license).trim().slice(0, 80);
         if (homepage) manifest.homepage = String(homepage).trim().slice(0, 500);
         const pluginSkillContent = `---\nname: ${pluginSkillName}\ndescription: ${pluginDescription}\n---\n\n${pluginInstructions}\n`;
-        const pluginSkillPath = `${pluginPath}/skills/${pluginSkillName}/SKILL.md`;
         await writePluginFile(scope, pluginName, 'plugin.json', JSON.stringify(manifest, null, 2) + '\n');
         await writePluginFile(scope, pluginName, `skills/${pluginSkillName}/SKILL.md`, pluginSkillContent);
         const pluginOutput = { ok: true, plugin: pluginName, pluginPath, manifestPath, skillName: pluginSkillName, skillPath: `${pluginPath}/skills/${pluginSkillName}/SKILL.md`, scope, workspace: scope === 'project' ? projectPath : null, availableInSession: true, format: 'agent-plugins-1.0.0' };

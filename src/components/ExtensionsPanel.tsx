@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Blocks, Box, FileText, FileType2, Folder, LayoutTemplate, PlugZap, Presentation, Search, Table2, Trash2, WandSparkles } from 'lucide-react';
 import { getSetting, setSetting } from '../lib/persistence';
 import { LANGUAGE_STORAGE_KEY, type AppLanguage } from '../lib/i18n';

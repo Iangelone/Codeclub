@@ -31,18 +31,6 @@ export const logPersistence = async (action: string, status: string, detail: Rec
   }
 };
 
-export const startPersistenceSession = async () => {
-  try {
-    const cachePath = await appCacheDir();
-    const logPath = await getAppCacheFilePath(PERSISTENCE_LOG);
-    await mkdir(cachePath, { recursive: true });
-    await writeTextFile(logPath, "");
-  } catch (error) {
-    console.error("[codeclub:persist] session reset failed", error);
-  }
-  await logPersistence("app_start", "ok");
-};
-
 let settingsCache: Record<string, unknown> | null = null;
 let settingsWriteQueue = Promise.resolve();
 
