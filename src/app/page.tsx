@@ -1,14 +1,27 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import Topbar from '../components/Topbar';
+import SubTopbar from '../components/SubTopbar';
 import WorkspaceLayout from '../components/WorkspaceLayout';
+import { motion } from 'motion/react';
 
 export default function HomePage() {
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(false);
-  return <main className="relative isolate grid h-screen max-h-screen grid-rows-[34px_minmax(0,1fr)] min-w-[320px] min-h-0 overflow-hidden bg-transparent text-(--codeclub-text) font-sans">
-      <Topbar leftOpen={leftOpen} rightOpen={rightOpen} onToggleLeft={() => setLeftOpen((open) => !open)} onToggleRight={() => setRightOpen((open) => !open)} />
+  const [topbarOpen, setTopbarOpen] = useState(true);
+  const [activeProject, setActiveProject] = useState<{ name: string; path?: string }>({ name: 'Inicio' });
+  useEffect(() => {
+    const handleProjectSwitch = (event: Event) => {
+      const detail = (event as CustomEvent<{ name?: string; path?: string }>).detail;
+      setActiveProject(detail?.path ? { name: detail.name || 'Proyecto', path: detail.path } : { name: 'Inicio' });
+    };
+    window.addEventListener('codeclub:project-switch', handleProjectSwitch);
+    return () => window.removeEventListener('codeclub:project-switch', handleProjectSwitch);
+  }, []);
+  return <main className="relative isolate grid h-screen max-h-screen grid-rows-[34px_auto_minmax(0,1fr)] min-w-[320px] min-h-0 overflow-hidden bg-transparent text-(--codeclub-text) font-sans">
+      <Topbar leftOpen={leftOpen} rightOpen={rightOpen} topbarOpen={topbarOpen} onToggleLeft={() => setLeftOpen((open) => !open)} onToggleRight={() => setRightOpen((open) => !open)} onToggleTopbar={() => setTopbarOpen((open) => !open)} />
+      <motion.div initial={false} animate={{ height: topbarOpen ? 44 : 0, opacity: topbarOpen ? 1 : 0 }} transition={{ type: 'spring', stiffness: 420, damping: 34 }} className="min-h-0 overflow-hidden"><SubTopbar activeProject={activeProject} /></motion.div>
       <WorkspaceLayout leftOpen={leftOpen} rightOpen={rightOpen} />
   </main>;
 }

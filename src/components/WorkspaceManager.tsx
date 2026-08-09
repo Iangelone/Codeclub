@@ -14,6 +14,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
   const [availableProjects, setAvailableProjects] = useState<ProjectEntry[]>([]);
   const pendingChatRef = useRef<any>(null);
   const [chatOpenVersion, setChatOpenVersion] = useState(0);
+  const panelNavigation = useRef<{ entries: string[]; index: number; moving: boolean; chats: Record<string, any> }>({ entries: ['new-chat'], index: 0, moving: false, chats: {} });
 
   useEffect(() => {
     const handleProjectPanelSelection = (event: Event) => {
@@ -67,27 +68,76 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
   };
 
   useEffect(() => {
+    const publishNavigationState = () => {
+      const navigation = panelNavigation.current;
+      window.dispatchEvent(new CustomEvent('codeclub:left-panel-navigation-state', { detail: { back: navigation.index > 0, forward: navigation.index < navigation.entries.length - 1 } }));
+    };
+    const visit = (key: string, detail?: any) => {
+      const navigation = panelNavigation.current;
+      if (detail) navigation.chats[key] = detail;
+      if (navigation.moving) { navigation.moving = false; publishNavigationState(); return; }
+      if (navigation.entries[navigation.index] !== key) {
+        navigation.entries = navigation.entries.slice(0, navigation.index + 1);
+        navigation.entries.push(key);
+        navigation.index = navigation.entries.length - 1;
+      }
+      publishNavigationState();
+    };
     const handleOpenExtensions = () => {
       setShowExtensions(true);
+      visit('extensions');
     };
-    const handleCloseExtensions = () => setShowExtensions(false);
+    const handleCloseExtensions = () => { setShowExtensions(false); visit(activeChatStore.get().id ? `chat:${activeChatStore.get().id}` : 'new-chat'); };
     const handleOpenChat = (event: Event) => {
-      pendingChatRef.current = (event as CustomEvent).detail || null;
+      const detail = (event as CustomEvent).detail || {};
+      pendingChatRef.current = detail;
       setShowExtensions(false);
+      visit(detail.chatId ? `chat:${detail.chatId}` : 'new-chat', detail);
       setChatOpenVersion((version) => version + 1);
     };
-    const handleOpenEmptyChat = () => setShowExtensions(false);
+    const handleNavigateNewChat = () => {
+      if (showExtensions) {
+        setShowExtensions(false);
+        visit(activeChatStore.get().id ? `chat:${activeChatStore.get().id}` : 'new-chat');
+        return;
+      }
+      if (activeChatStore.get().id) window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
+    };
+    const handleOpenEmptyChat = () => { setShowExtensions(false); visit('new-chat'); };
+    const move = (direction: -1 | 1) => {
+      const navigation = panelNavigation.current;
+      const nextIndex = navigation.index + direction;
+      if (nextIndex < 0 || nextIndex >= navigation.entries.length) return;
+      const key = navigation.entries[nextIndex];
+      navigation.index = nextIndex;
+      navigation.moving = true;
+      if (key === 'extensions') { navigation.moving = false; window.dispatchEvent(new CustomEvent('codeclub:open-extensions')); }
+      else if (key === 'new-chat') window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
+      else if (navigation.chats[key]) window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: navigation.chats[key] }));
+      publishNavigationState();
+    };
+    const handleBack = () => move(-1);
+    const handleForward = () => move(1);
+    const handleNavigationRequest = () => publishNavigationState();
     window.addEventListener('codeclub:open-chat', handleOpenChat);
+    window.addEventListener('codeclub:navigate-new-chat', handleNavigateNewChat);
     window.addEventListener('codeclub:open-extensions', handleOpenExtensions);
     window.addEventListener('codeclub:close-extensions', handleCloseExtensions);
     window.addEventListener('codeclub:open-empty-chat', handleOpenEmptyChat);
+    window.addEventListener('codeclub:right-panel-back', handleBack);
+    window.addEventListener('codeclub:right-panel-forward', handleForward);
+    window.addEventListener('codeclub:left-panel-navigation-request', handleNavigationRequest);
     return () => {
       window.removeEventListener('codeclub:open-extensions', handleOpenExtensions);
       window.removeEventListener('codeclub:close-extensions', handleCloseExtensions);
       window.removeEventListener('codeclub:open-empty-chat', handleOpenEmptyChat);
       window.removeEventListener('codeclub:open-chat', handleOpenChat);
+      window.removeEventListener('codeclub:navigate-new-chat', handleNavigateNewChat);
+      window.removeEventListener('codeclub:right-panel-back', handleBack);
+      window.removeEventListener('codeclub:right-panel-forward', handleForward);
+      window.removeEventListener('codeclub:left-panel-navigation-request', handleNavigationRequest);
     };
-  }, []);
+  }, [showExtensions]);
 
   useEffect(() => {
     if (showExtensions || !pendingChatRef.current) return;
@@ -98,7 +148,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
   }, [showExtensions, chatOpenVersion]);
 
   useEffect(() => {
-    if (!showExtensions && !activeChatStore.get().id) window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
+    if (!showExtensions && !pendingChatRef.current && !activeChatStore.get().id) window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
   }, [showExtensions]);
 
   useEffect(() => {

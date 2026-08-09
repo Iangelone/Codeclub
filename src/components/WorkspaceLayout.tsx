@@ -82,6 +82,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
   const [rightContextMenu, setRightContextMenu] = useState<RightPanelContextMenu | null>(null);
   const rightContextMenuRef = useRef<HTMLDivElement | null>(null);
   const rightPanelSequence = useRef(0);
+  const rightPanelNavigation = useRef<{ entries: string[]; index: number; moving: boolean }>({ entries: [], index: -1, moving: false });
   const [resizing, setResizing] = useState<Side | null>(null);
   const [sizesReady, setSizesReady] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(1280);
@@ -99,6 +100,56 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
   useEffect(() => {
     setRightWidth((current) => Math.min(current, rightMaxWidth));
   }, [rightMaxWidth]);
+
+  useEffect(() => {
+    if (!activeRightPanelId) return;
+    const navigation = rightPanelNavigation.current;
+    const validIds = new Set(rightPanels.map((panel) => panel.instanceId));
+    const currentId = navigation.entries[navigation.index];
+    navigation.entries = navigation.entries.filter((entry) => validIds.has(entry));
+    navigation.index = navigation.entries.indexOf(currentId);
+    if (navigation.index < 0) navigation.index = Math.min(navigation.entries.length - 1, Math.max(0, navigation.entries.length - 1));
+    if (navigation.moving) {
+      navigation.moving = false;
+      return;
+    }
+    if (navigation.entries[navigation.index] === activeRightPanelId) return;
+    navigation.entries = navigation.entries.slice(0, navigation.index + 1);
+    navigation.entries.push(activeRightPanelId);
+    navigation.index = navigation.entries.length - 1;
+  }, [activeRightPanelId, rightPanels]);
+
+  useEffect(() => {
+    const publishNavigationState = () => {
+      const navigation = rightPanelNavigation.current;
+      const isValid = (index: number) => index >= 0 && index < navigation.entries.length && rightPanels.some((panel) => panel.instanceId === navigation.entries[index]);
+      window.dispatchEvent(new CustomEvent('codeclub:right-panel-navigation-state', { detail: { back: isValid(navigation.index - 1), forward: isValid(navigation.index + 1) } }));
+    };
+    publishNavigationState();
+    window.addEventListener('codeclub:right-panel-navigation-request', publishNavigationState);
+    return () => window.removeEventListener('codeclub:right-panel-navigation-request', publishNavigationState);
+  }, [activeRightPanelId, rightPanels]);
+
+  useEffect(() => {
+    const movePanel = (direction: -1 | 1) => {
+      const navigation = rightPanelNavigation.current;
+      let nextIndex = navigation.index + direction;
+      while (nextIndex >= 0 && nextIndex < navigation.entries.length && !rightPanels.some((panel) => panel.instanceId === navigation.entries[nextIndex])) nextIndex += direction;
+      if (nextIndex < 0 || nextIndex >= navigation.entries.length) return;
+      const nextId = navigation.entries[nextIndex];
+      navigation.index = nextIndex;
+      navigation.moving = true;
+      setActiveRightPanelId(nextId);
+    };
+    const back = () => movePanel(-1);
+    const forward = () => movePanel(1);
+    window.addEventListener('codeclub:right-panel-back', back);
+    window.addEventListener('codeclub:right-panel-forward', forward);
+    return () => {
+      window.removeEventListener('codeclub:right-panel-back', back);
+      window.removeEventListener('codeclub:right-panel-forward', forward);
+    };
+  }, [rightPanels]);
 
   useEffect(() => {
     try {
@@ -300,11 +351,16 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
       setActiveChatId((event as CustomEvent<{ chatId?: string }>).detail?.chatId);
     };
     const showEmptyChat = () => { setActiveSection('new-chat'); setActiveChatId(undefined); };
+    const showExtensions = () => { setActiveSection('extensions'); setActiveChatId(undefined); };
     window.addEventListener('codeclub:open-chat', showChat);
+    window.addEventListener('codeclub:panel-left:open-chat', showChat);
     window.addEventListener('codeclub:open-empty-chat', showEmptyChat);
+    window.addEventListener('codeclub:open-extensions', showExtensions);
     return () => {
       window.removeEventListener('codeclub:open-chat', showChat);
+      window.removeEventListener('codeclub:panel-left:open-chat', showChat);
       window.removeEventListener('codeclub:open-empty-chat', showEmptyChat);
+      window.removeEventListener('codeclub:open-extensions', showExtensions);
     };
   }, []);
 
