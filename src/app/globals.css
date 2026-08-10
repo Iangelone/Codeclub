@@ -75,6 +75,15 @@ body {
   font-weight: 400 !important;
 }
 
+#codeclub-terminal-panel,
+#codeclub-terminal-panel > div {
+  background-color: #191919 !important;
+}
+
+#codeclub-terminal-panel form:has(#codeclub-terminal-input) {
+  display: none !important;
+}
+
 /* Archivos y Revisar deben llenar el viewport interno de la sidebar. */
 [id^="right-panel-files"] > div[class*="items-center"] > div > svg {
   display: none;

@@ -4,6 +4,9 @@ import { createElement, useEffect, useRef, useState, type FormEvent } from 'reac
 import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, Bolt, CircleHelp, CirclePlus, Clock, CopyX, EllipsisVertical, FileWarning, FolderOpen, FolderPen, FolderTree, GitBranch, GitCompare, Grid2X2, Home, ListTodo, MousePointerClick, Pencil, RotateCw, SquareTerminal, UserRound, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { GlobeCheck } from 'lucide-react';
+import { Terminal as XtermTerminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import '@xterm/xterm/css/xterm.css';
 import ChatPanel from './ChatPanel';
 import { ProjectPanelView } from './ChatInterface';
 import { readGlobalChats, readProjectMeta, writeGlobalChats, writeProjectMeta } from '../lib/projectManager';
@@ -829,12 +832,105 @@ function BrowserPanel() {
 type TerminalInfo = { id: string; name: string; shell: string; cwd: string; status: string };
 
 function TerminalPanel({ projectPath }: { projectPath?: string }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const terminalRef = useRef<XtermTerminal | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
+  const outputRef = useRef('');
+
+  useEffect(() => {
+    if (!containerRef.current) return undefined;
+    const terminal = new XtermTerminal({
+      convertEol: true,
+      cursorBlink: true,
+      fontFamily: 'Consolas, "Cascadia Mono", monospace',
+      fontSize: 14,
+      lineHeight: 1.25,
+      scrollback: 5000,
+      theme: { background: '#191919', foreground: '#f2f2f2', cursor: '#f2f2f2', selectionBackground: '#3d9bff66' },
+    });
+    const fit = new FitAddon();
+    terminal.loadAddon(fit);
+    terminal.open(containerRef.current);
+    terminalRef.current = terminal;
+    const resize = () => { try { fit.fit(); } catch { /* El contenedor puede estar oculto durante el montaje. */ } };
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(containerRef.current);
+    const input = terminal.onData((data) => {
+      if (data === '\u000c') {
+        terminal.reset();
+        return;
+      }
+      if (data === '\u0003') terminal.write('^C\r\n');
+      const id = sessionIdRef.current;
+      if (id) void nativeInvoke('codeclub_terminal_write', { id, data });
+    });
+    return () => {
+      observer.disconnect();
+      input.dispose();
+      terminal.dispose();
+      terminalRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: number | undefined;
+    let pollInFlight = false;
+    const start = async () => {
+      outputRef.current = '';
+      try {
+        const created = await nativeInvoke<TerminalInfo>('codeclub_terminal_create', { request: { projectPath, shell: 'powershell', name: 'PowerShell' } });
+        if (cancelled) {
+          await nativeInvoke('codeclub_terminal_delete', { id: created.id }).catch(() => undefined);
+          return;
+        }
+        sessionIdRef.current = created.id;
+        const poll = async () => {
+          if (pollInFlight) return;
+          pollInFlight = true;
+          try {
+            const snapshot = await nativeInvoke<{ output?: string }>('codeclub_terminal_snapshot', { id: created.id });
+            if (cancelled) return;
+            const nextOutput = String(snapshot.output || '');
+            const terminal = terminalRef.current;
+            if (!terminal || nextOutput === outputRef.current) return;
+            if (nextOutput.startsWith(outputRef.current)) terminal.write(nextOutput.slice(outputRef.current.length));
+            else { terminal.reset(); terminal.write(nextOutput); }
+            terminal.scrollToBottom();
+            outputRef.current = nextOutput;
+          } catch { /* La sesión se limpia al desmontar el panel. */ }
+          finally { pollInFlight = false; }
+        };
+        void poll();
+        timer = window.setInterval(() => void poll(), 60);
+      } catch (reason) {
+        terminalRef.current?.writeln(`\r\n${String(reason)}`);
+      }
+    };
+    void start();
+    return () => {
+      cancelled = true;
+      if (timer) window.clearInterval(timer);
+      const id = sessionIdRef.current;
+      sessionIdRef.current = null;
+      if (id) void nativeInvoke('codeclub_terminal_delete', { id }).catch(() => undefined);
+    };
+  }, [projectPath]);
+
+  return <div ref={containerRef} id="codeclub-terminal-panel" className="h-full min-h-0 w-full bg-[#191919] p-3" onClick={() => terminalRef.current?.focus()} aria-label="Terminal PowerShell" />;
+}
+
+function LegacyTerminalPanel({ projectPath }: { projectPath?: string }) {
   const [session, setSession] = useState<TerminalInfo | null>(null);
   const [output, setOutput] = useState('');
-  const [command, setCommand] = useState('');
   const [error, setError] = useState('');
   const [restartKey, setRestartKey] = useState(0);
   const sessionIdRef = useRef<string | null>(null);
+  const terminalPanelRef = useRef<HTMLDivElement | null>(null);
+  const terminalInputRef = useRef<HTMLInputElement | null>(null);
+  const terminalOutputRef = useRef<HTMLDivElement | null>(null);
+  const outputRef = useRef('');
 
   useEffect(() => {
     let cancelled = false;
@@ -842,6 +938,7 @@ function TerminalPanel({ projectPath }: { projectPath?: string }) {
     const start = async () => {
       setError('');
       setOutput('');
+      outputRef.current = '';
       setSession(null);
       try {
         const created = await nativeInvoke<TerminalInfo>('codeclub_terminal_create', { request: { projectPath, shell: 'powershell', name: 'PowerShell' } });
@@ -855,7 +952,11 @@ function TerminalPanel({ projectPath }: { projectPath?: string }) {
           try {
             const snapshot = await nativeInvoke<{ info?: TerminalInfo; output?: string }>('codeclub_terminal_snapshot', { id: created.id });
             if (!cancelled) {
-              setOutput(String(snapshot.output || ''));
+              const nextOutput = String(snapshot.output || '');
+              if (nextOutput !== outputRef.current) {
+                outputRef.current = nextOutput;
+                setOutput(nextOutput);
+              }
               if (snapshot.info) setSession(snapshot.info);
             }
           } catch (reason) {
@@ -863,7 +964,7 @@ function TerminalPanel({ projectPath }: { projectPath?: string }) {
           }
         };
         void poll();
-        timer = window.setInterval(() => void poll(), 250);
+        timer = window.setInterval(() => void poll(), 500);
       } catch (reason) {
         if (!cancelled) setError(String(reason));
       }
@@ -878,24 +979,42 @@ function TerminalPanel({ projectPath }: { projectPath?: string }) {
     };
   }, [projectPath, restartKey]);
 
-  const sendCommand = async () => {
-    const value = command;
-    if (!value.trim() || !session?.id) return;
-    setCommand('');
+  useEffect(() => {
+    if (session?.id) terminalInputRef.current?.focus();
+  }, [session?.id]);
+
+  const writeTerminalInput = async (data: string) => {
+    if (!session?.id) return;
     try {
-      await nativeInvoke('codeclub_terminal_write', { id: session.id, data: `${value}\r\n` });
+      await nativeInvoke('codeclub_terminal_write', { id: session.id, data });
     } catch (reason) {
       setError(String(reason));
     }
   };
 
-  return <div className="flex h-full min-h-0 flex-col bg-[#171717] text-[#eeeeee]">
-    <div className="flex h-14 shrink-0 items-center justify-between gap-3 bg-[#171717] px-3" aria-label="Controles de la terminal">
-      <div className="flex min-w-0 items-center gap-2"><SquareTerminal size={18} className="shrink-0 text-[#b8b8b8]" aria-hidden="true" /><div className="min-w-0"><p className="m-0 truncate text-[13px] font-medium text-[#eeeeee]">{session?.shell || 'PowerShell'}</p><p className="m-0 max-w-[220px] truncate text-[10px] text-[#777777]" title={session?.cwd || projectPath || ''}>{session?.cwd || projectPath || 'Carpeta de usuario'}</p></div></div>
-      <div className="flex shrink-0 items-center gap-1"><button type="button" onClick={() => setRestartKey((value) => value + 1)} className="grid h-8 w-8 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Reiniciar PowerShell" title="Reiniciar PowerShell"><RotateCw size={17} /></button><button type="button" onClick={() => setOutput('')} className="grid h-8 w-8 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Limpiar salida" title="Limpiar salida"><EllipsisVertical size={18} /></button></div>
-    </div>
-    <div className="min-h-0 flex-1 overflow-auto bg-[#111111] px-3 py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"><pre className="m-0 whitespace-pre-wrap break-words font-mono text-[11px] leading-5 text-[#d2d2d2]">{output || (error ? '' : 'Iniciando PowerShell...')}</pre>{error && <p className="m-0 mt-2 whitespace-pre-wrap font-mono text-[11px] leading-5 text-red-200">{error}</p>}</div>
-    <form onSubmit={(event) => { event.preventDefault(); void sendCommand(); }} className="flex shrink-0 items-center gap-2 border-t border-[#2B2B2B] bg-[#171717] px-3 py-2"><span className="font-mono text-[12px] text-[#8BC7FF]" aria-hidden="true">&gt;</span><label className="sr-only" htmlFor="codeclub-terminal-input">Escribir comando en PowerShell</label><input id="codeclub-terminal-input" value={command} onChange={(event) => setCommand(event.target.value)} disabled={!session || Boolean(error)} placeholder="Escribi un comando..." className="min-w-0 flex-1 bg-transparent font-mono text-[11px] text-[#eeeeee] outline-none placeholder:text-[#777777]" autoComplete="off" /></form>
+  const handleTerminalKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!session || error) return;
+    let data = '';
+    if (event.ctrlKey && event.key.toLowerCase() === 'c') data = '\u0003';
+    else if (event.ctrlKey && event.key.toLowerCase() === 'l') data = '\u000c';
+    else if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key.length === 1) data = event.key;
+    else if (event.key === 'Enter') data = '\r';
+    else if (event.key === 'Backspace') data = '\b';
+    else if (event.key === 'Tab') data = '\t';
+    else if (event.key === 'ArrowUp') data = '\u001b[A';
+    else if (event.key === 'ArrowDown') data = '\u001b[B';
+    else if (event.key === 'ArrowRight') data = '\u001b[C';
+    else if (event.key === 'ArrowLeft') data = '\u001b[D';
+    else if (event.key === 'Home') data = '\u001b[H';
+    else if (event.key === 'End') data = '\u001b[F';
+    if (!data) return;
+    event.preventDefault();
+    void writeTerminalInput(data);
+  };
+
+  return <div ref={terminalPanelRef} id="codeclub-terminal-panel" className="relative flex h-full min-h-0 flex-col bg-[#191919] text-[#eeeeee] outline-none" onPointerDownCapture={(event) => { event.preventDefault(); terminalInputRef.current?.focus(); }}>
+    <input ref={terminalInputRef} type="text" aria-label="Terminal PowerShell" className="absolute inset-y-0 left-0 right-3 z-10 h-full w-auto cursor-text opacity-0" onKeyDown={handleTerminalKeyDown} onWheel={(event) => terminalOutputRef.current?.scrollBy({ top: event.deltaY })} autoComplete="off" />
+    <div ref={terminalOutputRef} className="min-h-0 flex-1 overflow-auto bg-[#191919] px-4 py-3"><pre className="m-0 whitespace-pre-wrap break-words font-mono text-[14px] leading-6 text-[#f2f2f2]">{output || (error ? '' : 'Iniciando PowerShell...')}</pre>{error && <p className="m-0 mt-2 whitespace-pre-wrap font-mono text-[14px] leading-6 text-red-200">{error}</p>}</div>
   </div>;
 }
 

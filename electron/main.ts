@@ -5,6 +5,7 @@ import { createInterface } from 'node:readline';
 import { promisify } from 'node:util';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as pty from 'node-pty';
 
 type Project = { id: string; name: string; path: string; createdAt: string; lastOpenedAt?: string };
 
@@ -16,7 +17,7 @@ let isQuitting = false;
 const execFile = promisify(execFileCallback);
 type NativeMcpSession = { child: ReturnType<typeof spawn>; nextId: number; pending: Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }> };
 const nativeMcpSessions = new Map<string, NativeMcpSession>();
-type NativeTerminal = { child: ReturnType<typeof spawn>; info: any; buffer: string };
+type NativeTerminal = { child: pty.IPty; info: any; buffer: string };
 const nativeTerminals = new Map<string, NativeTerminal>();
 
 const projectsFile = () => path.join(app.getPath('userData'), 'projects.json');
@@ -204,13 +205,12 @@ function createNativeTerminal(request: any) {
   const shell = shellCommand(request.shell || 'powershell');
   const cwd = path.resolve(request.cwd || request.projectPath || process.cwd());
   const id = `terminal-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-  const child = spawn(shell.command, shell.args, { cwd, env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, shell: false });
+  const child = pty.spawn(shell.command, shell.args, { name: 'xterm-color', cols: 120, rows: 40, cwd, env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' } as Record<string, string> });
   const info = { id, name: String(request.name || 'Terminal'), shell: shell.label, cwd, projectPath: request.projectPath, is_agent: Boolean(request.isAgent), created_at: String(Date.now()), status: 'running' };
   const session: NativeTerminal = { child, info, buffer: '' };
-  const append = (data: Buffer | string) => { session.buffer = `${session.buffer}${data.toString()}`.slice(-240000); };
-  child.stdout?.on('data', append); child.stderr?.on('data', append);
-  child.on('exit', () => { session.info.status = 'exited'; });
-  child.on('error', (error) => { append(`\r\n${error.message}\r\n`); session.info.status = 'error'; });
+  const append = (data: string) => { session.buffer = `${session.buffer}${data}`.slice(-240000); };
+  child.onData(append);
+  child.onExit(() => { session.info.status = 'exited'; });
   nativeTerminals.set(id, session);
   return info;
 }
@@ -291,8 +291,8 @@ async function invokeNativeCommand(command: string, args: any = {}) {
     }
     case 'codeclub_terminal_write': {
       const session = nativeTerminals.get(String(args.id));
-      if (!session || !session.child.stdin) throw new Error('Terminal no encontrada.');
-      session.child.stdin.write(String(args.data || ''));
+      if (!session) throw new Error('Terminal no encontrada.');
+      session.child.write(String(args.data || ''));
       return null;
     }
     case 'codeclub_terminal_rename': {
