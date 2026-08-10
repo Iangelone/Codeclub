@@ -145,6 +145,14 @@ body {
   background: #191919;
 }
 
+[id^="right-panel-review"] > section > div[class*="items-start"] {
+  display: none;
+}
+
+[id^="right-panel-review"] [class*="items-start"] > svg {
+  display: none;
+}
+
 #right-panel-files,
 #right-panel-review,
 #right-panel-files > div:first-child,
