@@ -65,6 +65,16 @@ body {
   height: 100%;
 }
 
+/* El navegador arranca vacío: no mostrar el empty-state heredado. */
+[aria-label="Controles del navegador"] > div.absolute {
+  display: none !important;
+}
+
+#codeclub-browser-address {
+  font-size: 14px !important;
+  font-weight: 400 !important;
+}
+
 /* Archivos y Revisar deben llenar el viewport interno de la sidebar. */
 [id^="right-panel-files"] > div[class*="items-center"] > div > svg {
   display: none;
