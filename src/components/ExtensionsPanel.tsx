@@ -76,9 +76,44 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
     return () => events.forEach((event) => window.removeEventListener(event, refresh));
   }, [projectPath]);
 
+  useEffect(() => {
+    const root = document.getElementById('codeclub-extensions-panel');
+    const tablist = root?.querySelector('nav');
+    if (!root || !tablist) return;
+    const ids = ['extensions', 'skills', 'mcp'] as const;
+    const tabs = Array.from(tablist.querySelectorAll<HTMLButtonElement>('button'));
+    tablist.setAttribute('role', 'tablist');
+    tabs.forEach((button, index) => {
+      const id = ids[index];
+      if (!id) return;
+      const selected = tab === id;
+      button.id = `extensions-tab-${id}`;
+      button.setAttribute('role', 'tab');
+      button.setAttribute('aria-selected', String(selected));
+      button.setAttribute('aria-controls', `extensions-panel-${id}`);
+      button.tabIndex = selected ? 0 : -1;
+      button.onkeydown = (event) => {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight' && event.key !== 'Home' && event.key !== 'End') return;
+        event.preventDefault();
+        const currentIndex = ids.indexOf(id);
+        const nextIndex = event.key === 'Home' ? 0 : event.key === 'End' ? ids.length - 1 : (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + ids.length) % ids.length;
+        setTab(ids[nextIndex]);
+        tabs[nextIndex]?.focus();
+      };
+    });
+    const panel = root.querySelector('section');
+    if (panel) {
+      panel.id = `extensions-panel-${tab}`;
+      panel.setAttribute('role', 'tabpanel');
+      panel.setAttribute('aria-labelledby', `extensions-tab-${tab}`);
+      panel.tabIndex = 0;
+    }
+    return () => tabs.forEach((button) => { button.onkeydown = null; });
+  }, [tab]);
+
 
   return (
-    <main className="extensions-panel-scroll h-full min-h-0 overflow-x-hidden overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden bg-[#1A1A1A]">
+    <main id="codeclub-extensions-panel" className="extensions-panel-scroll h-full min-h-0 overflow-x-hidden overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden bg-[#1A1A1A]">
       <div className="mx-auto min-w-0 w-full max-w-[1040px] px-6 py-7 lg:px-8">
         <header>
           <h1 className="m-0 text-[28px] font-normal tracking-[-0.04em] text-[#eeeeee]">{text.title}</h1>

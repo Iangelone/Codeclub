@@ -352,6 +352,11 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
         tab.tabIndex = tab.getAttribute('aria-selected') === 'true' ? 0 : -1;
         tab.setAttribute('aria-posinset', String(index + 1));
         tab.setAttribute('aria-setsize', String(tabs.length));
+        const panelId = tab.getAttribute('aria-controls');
+        if (panelId) {
+          tab.id = `right-tab-${panelId}`;
+          root.querySelector<HTMLElement>(`#${CSS.escape(panelId)}`)?.setAttribute('aria-labelledby', tab.id);
+        }
         const move = (event: KeyboardEvent) => {
           if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
           event.preventDefault();
@@ -585,12 +590,38 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
 
 function PanelManager({ activeSection }: { activeSection: SidebarSection }) {
   const chatVisible = activeSection === 'new-chat' || activeSection === 'extensions';
+  const synapseVisible = activeSection === 'projects';
+  const scheduledVisible = activeSection === 'scheduled';
   return <section role="region" className="codeclub-graphite relative min-h-0 min-w-0 flex-1 overflow-hidden backdrop-blur-xl" aria-label="Gestor de paneles" aria-live="polite">
     <div className="codeclub-panel-shell h-full w-full overflow-hidden bg-(--codeclub-center)">
       <div className={`h-full min-h-0 min-w-0 ${chatVisible ? 'block' : 'hidden'}`} aria-hidden={!chatVisible}><ChatPanel /></div>
+      {synapseVisible && <div className="relative z-10 h-full min-h-0 min-w-0"><SynapsePanel /></div>}
+      {scheduledVisible && <div className="relative z-10 h-full min-h-0 min-w-0"><ScheduledPanel /></div>}
       {!chatVisible && <div className="grid h-full min-h-0 place-items-center bg-(--codeclub-center) px-6 text-center"><div><p className="text-sm font-medium text-(--codeclub-text-strong)">Panel sin contenido</p><p className="mt-1 text-xs text-(--codeclub-text-muted)">Este espacio se adaptará cuando agreguemos esta sección.</p></div></div>}
     </div>
   </section>;
+}
+
+function SynapsePanel() {
+  return <main id="codeclub-synapse-panel" className="h-full min-h-0 overflow-auto bg-(--codeclub-center)" aria-label="Synapse">
+    <div className="mx-auto min-w-0 w-full max-w-[1040px] px-6 py-7 lg:px-8">
+      <header>
+        <h1 className="m-0 text-[28px] font-normal tracking-[-0.04em] text-(--codeclub-text-strong)">Synapse</h1>
+        <p className="mt-1.5 text-[14px] text-(--codeclub-text-muted)">Gestioná automatizaciones, agentes y flujos por alcance.</p>
+      </header>
+    </div>
+  </main>;
+}
+
+function ScheduledPanel() {
+  return <main id="codeclub-scheduled-panel" className="h-full min-h-0 overflow-auto bg-(--codeclub-center)" aria-label="Programadas">
+    <div className="mx-auto min-w-0 w-full max-w-[1040px] px-6 py-7 lg:px-8">
+      <header>
+        <h1 className="m-0 text-[28px] font-normal tracking-[-0.04em] text-(--codeclub-text-strong)">Programadas</h1>
+        <p className="mt-1.5 text-[14px] text-(--codeclub-text-muted)">Administrá tus tareas y recordatorios programados.</p>
+      </header>
+    </div>
+  </main>;
 }
 
 type ReviewFile = { path: string; status: string; additions: number; deletions: number };
