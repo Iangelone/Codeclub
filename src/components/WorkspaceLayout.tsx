@@ -1,7 +1,7 @@
 'use client';
 
 import { createElement, useEffect, useRef, useState, type FormEvent } from 'react';
-import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, Bolt, CircleHelp, CirclePlus, Clock, CopyX, EllipsisVertical, FileWarning, FolderOpen, FolderPen, FolderTree, GitBranch, GitCompare, Grid2X2, ListTodo, MessageCircle, Pencil, RotateCw, SquareTerminal, UserRound, X } from 'lucide-react';
+import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, Bolt, CircleHelp, CirclePlus, Clock, CopyX, EllipsisVertical, FileWarning, FolderOpen, FolderPen, FolderTree, GitBranch, GitCompare, Grid2X2, Home, ListTodo, MessageCircle, Pencil, RotateCw, SquareTerminal, UserRound, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import ChatPanel from './ChatPanel';
 import { ProjectPanelView } from './ChatInterface';
@@ -658,11 +658,12 @@ function ReviewPanel({ projectPath, visible }: { projectPath?: string; visible: 
   </section>;
 }
 
-const DEFAULT_BROWSER_URL = 'https://www.google.com/';
+const DEFAULT_BROWSER_URL = '';
+const EMPTY_BROWSER_URL = `data:text/html;charset=utf-8,${encodeURIComponent('<!doctype html><style>html,body{margin:0;background:#202124;color:#9a9a9a;font-family:Arial,sans-serif}form{display:flex;align-items:center;height:40px;margin:10px 6px;padding:0 10px;border-radius:12px;background:#2c2c2c}input{min-width:0;flex:1;border:0;outline:0;background:transparent;color:#e8eaed;text-align:center;font-size:16px}input::placeholder{color:#9a9a9a}button{border:0;background:transparent;color:#9a9a9a;font-size:24px;cursor:pointer}form:hover{background:#353535}form:hover button{color:#e8eaed}</style><form onsubmit="event.preventDefault();var value=this.querySelector(\'input\').value.trim();if(value)location.href=/^https?:\\/\\//i.test(value)?value:\'https://\'+value"><input autofocus placeholder="Ingresá una URL" aria-label="Ingresar una URL"><button type="submit" aria-label="Abrir URL">↗</button></form>')}`;
 
 const normalizeBrowserAddress = (value: string) => {
   const raw = value.trim();
-  if (!raw) return DEFAULT_BROWSER_URL;
+  if (!raw) return null;
   try {
     const parsed = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
     if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname) return null;
@@ -676,7 +677,8 @@ function BrowserPanel() {
   const webviewRef = useRef<any>(null);
   const [address, setAddress] = useState(DEFAULT_BROWSER_URL);
   const [currentUrl, setCurrentUrl] = useState(DEFAULT_BROWSER_URL);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
 
   const publishState = async () => {
@@ -707,17 +709,25 @@ function BrowserPanel() {
   useEffect(() => {
     const view = webviewRef.current;
     if (!view) return undefined;
-    const syncUrl = () => { const next = view.getURL?.() || currentUrl; setCurrentUrl(next); setAddress(next); };
-    const start = () => setLoading(true);
-    const stop = () => { setLoading(false); syncUrl(); void publishState(); };
+    const syncUrl = () => { const next = view.getURL?.() || currentUrl; if (next === EMPTY_BROWSER_URL) { setCurrentUrl(''); setAddress(''); return; } setCurrentUrl(next); setAddress(next); };
+    const start = () => { setLoading(true); setLoadError(''); };
+    const stop = async () => { setLoading(false); syncUrl(); if (view.getURL?.() === EMPTY_BROWSER_URL) await view.insertCSS?.(`html,body{height:100%!important;margin:0!important}body{display:grid!important;place-items:center!important;position:relative!important;background:#202124!important}body::before{content:'⌁  Navegador';position:absolute;top:calc(50% - 82px);left:0;right:0;text-align:center;color:#e8eaed;font:500 22px Arial,sans-serif;letter-spacing:-.02em}body::after{content:'Ingresá una dirección para empezar';position:absolute;top:calc(50% - 42px);left:0;right:0;text-align:center;color:#9aa0a6;font:14px Arial,sans-serif}form{width:min(520px,calc(100% - 48px))!important;height:44px!important;margin:0!important;padding:0 12px!important;border:1px solid #3c4043!important;border-radius:14px!important;background:#2c2c2c!important;box-sizing:border-box!important}form:hover,form:focus-within{background:#353535!important;border-color:#5f6368!important}`); void publishState(); };
+    const fail = (event: Event) => {
+      const detail = event as Event & { errorCode?: number; errorDescription?: string; isMainFrame?: boolean };
+      if (detail.isMainFrame === false) return;
+      setLoading(false);
+      setLoadError(detail.errorDescription || 'No se pudo cargar esta página.');
+    };
     const navigate = () => syncUrl();
     view.addEventListener('did-start-loading', start);
     view.addEventListener('did-stop-loading', stop);
+    view.addEventListener('did-fail-load', fail);
     view.addEventListener('did-navigate', navigate);
     view.addEventListener('did-navigate-in-page', navigate);
     return () => {
       view.removeEventListener('did-start-loading', start);
       view.removeEventListener('did-stop-loading', stop);
+      view.removeEventListener('did-fail-load', fail);
       view.removeEventListener('did-navigate', navigate);
       view.removeEventListener('did-navigate-in-page', navigate);
     };
@@ -757,20 +767,61 @@ function BrowserPanel() {
     };
   }, [currentUrl]);
 
+  useEffect(() => {
+    const view = webviewRef.current;
+    if (!view) return undefined;
+    const styleEmptyPage = async () => {
+      if (view.getURL?.() !== EMPTY_BROWSER_URL) return;
+      await view.insertCSS?.(`body::before,body::after{content:none!important;display:none!important}form{width:min(620px,calc(100% - 32px))!important;height:58px!important;margin:0!important;padding:8px 10px!important;border:1px solid #2e2e2e!important;border-radius:12px!important;background:#1a1a1a!important;box-shadow:0 8px 30px #00000040!important;box-sizing:border-box!important}form::before{content:'⌕'!important;display:grid!important;place-items:center!important;width:28px!important;height:28px!important;color:#8a8a8a!important;font:18px Arial,sans-serif!important}form:hover,form:focus-within{background:#1f1f1f!important;border-color:#444!important}input{height:40px!important;padding:0 10px!important;text-align:left!important;font-size:13px!important}button{width:30px!important;height:30px!important;color:#8a8a8a!important;border-radius:8px!important}button:hover{background:#ffffff0d!important;color:#f1f1f1!important}`);
+    };
+    view.addEventListener('did-stop-loading', styleEmptyPage);
+    return () => view.removeEventListener('did-stop-loading', styleEmptyPage);
+  }, []);
+
+  useEffect(() => {
+    const view = webviewRef.current;
+    if (!view) return undefined;
+    const refineEmptyPage = async () => {
+      if (!String(view.getURL?.() || '').startsWith('data:text/html')) return;
+      await view.insertCSS?.(`body{display:grid!important;place-items:center!important}body::before,body::after{content:none!important;display:none!important}form{width:min(520px,calc(100% - 32px))!important;height:52px!important;margin:0!important}form::before{width:34px!important;height:34px!important;font-size:24px!important}input{height:38px!important;font-size:13px!important}button{width:34px!important;height:34px!important;font-size:24px!important}`);
+    };
+    view.addEventListener('did-finish-load', refineEmptyPage);
+    view.addEventListener('did-stop-loading', refineEmptyPage);
+    return () => {
+      view.removeEventListener('did-finish-load', refineEmptyPage);
+      view.removeEventListener('did-stop-loading', refineEmptyPage);
+    };
+  }, []);
+
+  useEffect(() => {
+    const view = webviewRef.current;
+    if (!view) return undefined;
+    const showCompass = async () => {
+      if (!String(view.getURL?.() || '').startsWith('data:text/html')) return;
+      await view.insertCSS?.(`body::before{content:'✦'!important;display:block!important;position:absolute!important;top:calc(50% - 98px)!important;left:0!important;right:0!important;text-align:center!important;color:#9aa0a6!important;font:400 42px Arial,sans-serif!important;line-height:1!important;animation:codeclub-compass-pulse 2.4s ease-in-out infinite!important}body::after{content:none!important;display:none!important}@keyframes codeclub-compass-pulse{0%,100%{opacity:.55;transform:scale(.94) rotate(0deg)}50%{opacity:1;transform:scale(1) rotate(180deg)}}`);
+    };
+    view.addEventListener('did-finish-load', showCompass);
+    view.addEventListener('did-stop-loading', showCompass);
+    return () => {
+      view.removeEventListener('did-finish-load', showCompass);
+      view.removeEventListener('did-stop-loading', showCompass);
+    };
+  }, []);
+
   const submitAddress = (event: FormEvent) => {
     event.preventDefault();
     const next = normalizeBrowserAddress(address);
     if (next) { setAddress(next); setCurrentUrl(next); }
   };
-  const viewProps = { ref: (node: any) => { webviewRef.current = node; }, src: currentUrl, className: 'absolute inset-0 inline-flex border-0 bg-[#202124]', title: 'Contenido del navegador', allowpopups: 'true' };
+  const viewProps = { ref: (node: any) => { webviewRef.current = node; }, src: currentUrl || EMPTY_BROWSER_URL, className: 'absolute inset-0 inline-flex border-0 bg-[#202124]', title: 'Contenido del navegador', allowpopups: 'true' };
 
   return <div className="relative h-full min-h-0 bg-[#202124] text-[#e8eaed]">
-    <div className="flex h-14 shrink-0 items-center gap-3 bg-[#171717] px-3" aria-label="Controles del navegador">
-      <div className="flex shrink-0 items-center gap-1"><button type="button" onClick={() => webviewRef.current?.goBack?.()} className="grid h-8 w-8 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Ir atras" title="Ir atras"><ArrowLeft size={18} /></button><button type="button" onClick={() => webviewRef.current?.goForward?.()} className="grid h-8 w-8 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Ir adelante" title="Ir adelante"><ArrowRight size={18} /></button><button type="button" onClick={() => webviewRef.current?.reload?.()} className="grid h-8 w-8 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Recargar pagina" title="Recargar pagina"><RotateCw size={18} className={loading ? 'animate-spin' : ''} /></button></div>
+    <div className="flex h-10 shrink-0 items-center gap-3 bg-[#171717] px-3" aria-label="Controles del navegador">
+      <div className="flex shrink-0 items-center gap-1"><button type="button" onClick={() => webviewRef.current?.goBack?.()} className="grid h-8 w-8 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Ir atras" title="Ir atras"><ArrowLeft size={18} /></button><button type="button" onClick={() => webviewRef.current?.goForward?.()} className="grid h-8 w-8 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Ir adelante" title="Ir adelante"><ArrowRight size={18} /></button><button type="button" onClick={() => webviewRef.current?.reload?.()} className="grid h-8 w-8 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Recargar pagina" title="Recargar pagina"><RotateCw size={18} className={loading ? 'animate-spin' : ''} /></button><button type="button" onClick={() => { setAddress(''); setCurrentUrl(DEFAULT_BROWSER_URL); setLoadError(''); setLoading(false); }} className="grid h-8 w-8 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Ir a inicio" title="Ir a inicio"><Home size={17} /></button></div>
       <form onSubmit={submitAddress} className="min-w-0 flex-1"><label className="sr-only" htmlFor="codeclub-browser-address">Direccion web</label><input id="codeclub-browser-address" value={address.replace(/^https?:\/\//, '').replace(/\/$/, '')} onChange={(event) => setAddress(event.target.value)} onFocus={(event) => event.currentTarget.select()} className="h-9 w-full bg-transparent text-center text-[20px] font-medium text-[#f1f3f4] outline-none placeholder:text-[#8a8a8a]" aria-label="Direccion web" /></form>
       <div className="relative flex shrink-0 items-center gap-1"><button type="button" className="grid h-8 w-8 place-items-center rounded-full text-[#b8b8b8] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Abrir chat lateral" title="Abrir chat lateral" onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-chat'))}><MessageCircle size={19} /></button><button type="button" onClick={() => setMenuOpen((open) => !open)} className="grid h-8 w-8 place-items-center rounded-full text-[#b8b8b8] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Mas opciones del navegador" aria-expanded={menuOpen}><EllipsisVertical size={19} /></button>{menuOpen && <div className="absolute top-10 right-0 z-20 w-44 rounded-lg border border-white/[0.08] bg-[#2C2C2C]/95 p-1 shadow-xl backdrop-blur-xl"><button type="button" onClick={() => { webviewRef.current?.reload?.(); setMenuOpen(false); }} className="flex w-full rounded-md px-2.5 py-2 text-left text-[11px] text-[#eeeeee] hover:bg-white/[0.08]">Recargar pagina</button><button type="button" onClick={() => { window.open(currentUrl, '_blank'); setMenuOpen(false); }} className="flex w-full rounded-md px-2.5 py-2 text-left text-[11px] text-[#eeeeee] hover:bg-white/[0.08]">Abrir fuera de Codeclub</button></div>}</div>
     </div>
-    <div className="absolute top-14 right-0 bottom-0 left-0 overflow-hidden">{createElement('webview', viewProps)}</div>
+    <div className="absolute top-10 right-0 bottom-0 left-0 overflow-hidden">{createElement('webview', viewProps)}</div>{loadError && <div className="absolute inset-0 z-10 grid place-items-center bg-[#202124] px-6 text-center"><div className="max-w-[360px]"><p className="m-0 text-[15px] font-medium text-[#f1f3f4]">No se pudo abrir esta página</p><p className="mt-2 mb-0 break-words text-[12px] leading-5 text-[#a7a7a7]">{loadError}</p><p className="mt-1 mb-0 break-words text-[11px] text-[#777777]">{currentUrl}</p><button type="button" onClick={() => { setLoadError(''); setLoading(true); webviewRef.current?.reload?.(); }} className="mt-4 rounded-lg bg-white/[0.08] px-3 py-1.5 text-[11px] text-[#eeeeee] hover:bg-white/[0.14]">Reintentar</button></div></div>}
   </div>;
 }
 
