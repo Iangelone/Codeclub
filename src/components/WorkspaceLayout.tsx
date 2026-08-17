@@ -16,6 +16,7 @@ import { nativeInvoke } from '../lib/runtime';
 const MIN_WIDTH = 220;
 const MAX_WIDTH = 420;
 const MIN_CENTER_WIDTH = 320;
+const RESIZE_HANDLE_SPACE = 8;
 const DEFAULT_LEFT = 280;
 const DEFAULT_RIGHT = 300;
 
@@ -96,7 +97,10 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
   const [viewportWidth, setViewportWidth] = useState(1280);
   const resizeRef = useRef<{ side: Side; startX: number; startWidth: number } | null>(null);
 
-  const rightMaxWidth = leftOpen ? MAX_WIDTH : Math.max(MAX_WIDTH, viewportWidth - MIN_CENTER_WIDTH - 8);
+  const rightMaxWidth = Math.max(
+    MIN_WIDTH,
+    viewportWidth - (leftOpen ? leftWidth : 0) - MIN_CENTER_WIDTH - RESIZE_HANDLE_SPACE,
+  );
 
   useEffect(() => {
     void nativeInvoke<string>('codeclub_get_username').then((name) => setUserName(name || 'Usuario')).catch(() => setUserName('Usuario'));
