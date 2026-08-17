@@ -216,6 +216,35 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     { id: 'build-feature', label: 'Desarrollar funcionalidad', description: 'Planificar, implementar y verificar', type: 'development', prompt: 'Desarrollá esta funcionalidad usando las tools necesarias. Primero inspeccioná el proyecto, proponé un plan breve, implementá los cambios y verificá que todo funcione.' },
     { id: 'debug-project', label: 'Investigar y corregir', description: 'Diagnosticar con tools', type: 'development', prompt: 'Investigá este problema usando las tools disponibles. Revisá el proyecto, encontrá la causa raíz, aplicá una solución y verificá el resultado.' },
     { id: 'review-changes', label: 'Revisar el proyecto', description: 'Analizar estado y próximos pasos', type: 'development', prompt: 'Revisá el estado actual del proyecto usando las tools necesarias. Señalá problemas importantes, proponé mejoras concretas y aplicá las que correspondan.' },
+    { id: 'test-list-files', label: 'Test: listar archivos', description: 'Probar exploración del workspace', type: 'development', prompt: 'Usá listFiles para inspeccionar el workspace activo. Informá la ruta, cantidad y una muestra de archivos reales; no modifiques nada.' },
+    { id: 'test-read-file', label: 'Test: leer archivo', description: 'Probar lectura de archivos', type: 'development', prompt: 'Usá listFiles para elegir un archivo de texto real y luego usá readFile para leerlo. Devolvé evidencia de ambas tools; no modifiques nada.' },
+    { id: 'test-search-text', label: 'Test: buscar texto', description: 'Probar búsqueda en el código', type: 'development', prompt: 'Usá searchText para buscar una cadena real y común del proyecto. Mostrá rutas, líneas y previews devueltos por la tool; no inventes coincidencias ni modifiques nada.' },
+    { id: 'test-ask-user', label: 'Test: preguntar al usuario', description: 'Probar pausa de aclaración', type: 'development', prompt: 'Usá askUser para preguntarme qué archivo o área del proyecto querés que inspeccione después. Esperá mi respuesta y no ejecutes acciones adicionales.' },
+    { id: 'test-create-plan', label: 'Test: crear plan', description: 'Probar planes persistentes', type: 'development', prompt: 'Creá un plan de prueba persistente con createPlan para inspeccionar el workspace, verificar una ruta y revisar el log. No edites archivos.' },
+    { id: 'test-update-plan', label: 'Test: actualizar plan', description: 'Probar cambios de estado', type: 'development', prompt: 'Usá getTaskStatus para encontrar el plan activo y luego updatePlan para marcar un paso real como in_progress. Informá los resultados y no edites archivos.' },
+    { id: 'test-todos', label: 'Test: TODOs', description: 'Probar tareas persistentes', type: 'development', prompt: 'Usá todo para agregar un TODO de prueba claramente identificado, luego listalo y finalmente actualizalo a completed. Informá cada resultado real.' },
+    { id: 'test-task-status', label: 'Test: estado de tareas', description: 'Probar lectura de planes y TODOs', type: 'development', prompt: 'Usá getTaskStatus para leer el plan y los TODOs persistentes del proyecto activo. Devolvé el estado real sin crear ni modificar nada.' },
+    { id: 'test-execution-log', label: 'Test: log de ejecución', description: 'Probar auditoría de tools', type: 'development', prompt: 'Usá getExecutionLog con un límite pequeño para leer el log estructurado de ejecución. Resumí tools, tiempos y resultados reales; no modifiques nada.' },
+    { id: 'test-run-command', label: 'Test: ejecutar comando', description: 'Probar comandos seguros', type: 'development', prompt: 'Usá runCommand para ejecutar un comando seguro y de solo lectura que confirme el sistema y la ruta del workspace. Verificá la salida real y no modifiques archivos.' },
+    { id: 'test-terminal', label: 'Test: terminal persistente', description: 'Probar procesos de terminal', type: 'development', prompt: 'Usá terminal para iniciar un proceso corto y seguro en segundo plano, observá el resultado y cerralo si corresponde. Informá el estado real sin dejar procesos innecesarios.' },
+    { id: 'test-open-browser', label: 'Test: abrir navegador', description: 'Probar navegador integrado', type: 'development', prompt: 'Usá openBrowser para abrir https://example.com dentro del navegador integrado. Confirmá la URL real y no interactúes todavía con la página.' },
+    { id: 'test-browser-state', label: 'Test: estado del navegador', description: 'Probar observación web', type: 'development', prompt: 'Usá getBrowserState para observar el navegador integrado actual. Informá URL, título y elementos visibles devueltos por la tool; no inventes datos.' },
+    { id: 'test-browser-action', label: 'Test: acción en navegador', description: 'Probar interacción web', type: 'development', prompt: 'Abrí https://example.com con openBrowser, observá con getBrowserState y ejecutá una acción segura de scroll pequeño con browserAction. Verificá cada resultado real.' },
+    { id: 'test-list-windows', label: 'Test: listar ventanas', description: 'Probar control de PC', type: 'development', prompt: 'Usá computerListWindows para listar las ventanas visibles de Windows. Informá títulos, procesos y handles reales sin interactuar ni modificar nada.' },
+    { id: 'test-computer-state', label: 'Test: estado de ventana', description: 'Probar UI Automation', type: 'development', prompt: 'Usá computerListWindows, elegí una ventana visible segura y consultá su estado con computerGetState. Devolvé evidencia real sin ejecutar acciones.' },
+    { id: 'test-screenshot', label: 'Test: captura de pantalla', description: 'Probar captura del escritorio', type: 'development', prompt: 'Usá computerScreenshot para capturar el escritorio actual. Confirmá que la evidencia fue devuelta y describí solo lo observable, sin inventar.' },
+    { id: 'test-ocr', label: 'Test: OCR de pantalla', description: 'Probar lectura visual', type: 'development', prompt: 'Usá computerScreenshot y luego computerOcr para leer el texto visible de la captura. Informá texto y coordenadas reales, sin interactuar con ventanas.' },
+    { id: 'test-computer-action', label: 'Test: acción de PC', description: 'Probar mouse y teclado', type: 'development', prompt: 'Usá computerListWindows y computerGetState para localizar una ventana segura. Luego ejecutá con computerAction únicamente una acción reversible de focus y verificá el estado posterior.' },
+    { id: 'test-subagent', label: 'Test: subagente', description: 'Probar delegación especializada', type: 'development', prompt: 'Delegá a un subagente read_only la tarea de listar y resumir la estructura del workspace. Esperá su resultado, verificá la evidencia y no modifiques archivos.' },
+    { id: 'test-tool-discovery', label: 'Test: descubrir tools', description: 'Probar búsqueda y ejecución dinámica', type: 'development', prompt: 'Usá searchTools con una consulta vacía o amplia para descubrir las tools disponibles. Luego ejecutá mediante executeTool una tool segura de lectura usando su esquema exacto y reportá ambos resultados.' },
+    { id: 'test-write-file', label: 'Test: escribir archivo', description: 'Probar escritura controlada', type: 'development', prompt: 'Creá mediante writeFile el archivo temporal __codeclub_tool_test__.txt con una línea de texto, leelo con readFile, verificá su contenido y eliminá el archivo temporal usando una tool segura. Informá cada evidencia.' },
+    { id: 'test-create-skill', label: 'Test: crear skill', description: 'Probar Agent Plugins', type: 'development', prompt: 'Creá una skill de prueba mínima y claramente identificada con createSkill en el alcance del proyecto activo. Verificá que devuelva pluginPath y skillPath; no sobrescribas plugins existentes.' },
+    { id: 'test-create-extension', label: 'Test: crear extensión', description: 'Probar extensiones de agente', type: 'development', prompt: 'Creá una extensión de prueba mínima y claramente identificada con createExtension en el alcance del proyecto activo. Verificá su resultado y no sobrescribas extensiones existentes.' },
+    { id: 'test-delete-extension', label: 'Test: eliminar extensión', description: 'Probar limpieza de plugins', type: 'development', prompt: 'Usá deleteExtension únicamente sobre una extensión de prueba creada previamente por este flujo. Verificá la respuesta real y no elimines extensiones existentes.' },
+    { id: 'test-create-mcp', label: 'Test: crear MCP', description: 'Probar configuración MCP', type: 'development', prompt: 'Creá un servidor MCP de prueba claramente identificado con createMcpServer usando una configuración segura y no ejecutable. Verificá el manifiesto generado y no conectes servicios reales.' },
+    { id: 'test-delete-mcp', label: 'Test: eliminar MCP', description: 'Probar limpieza de servidores', type: 'development', prompt: 'Usá deleteMcpServer únicamente sobre un servidor MCP de prueba creado previamente por este flujo. Verificá la respuesta real y no elimines servidores existentes.' },
+    { id: 'test-switch-project', label: 'Test: cambiar proyecto', description: 'Probar contexto de workspace', type: 'development', prompt: 'Usá switchProject para consultar o seleccionar explícitamente un proyecto disponible, verificá el proyecto activo con una lectura segura y no cambies archivos.' },
+    { id: 'test-full-development-flow', label: 'Test: flujo completo', description: 'Probar ciclo de desarrollo', type: 'development', prompt: 'Ejecutá un flujo completo y verificable: inspeccioná archivos con listFiles, buscá texto con searchText, leé un archivo con readFile, creá un plan con createPlan, agregá un TODO con todo, ejecutá un comando seguro con runCommand, consultá getExecutionLog y resumí toda la evidencia. No modifiques archivos.' },
   ];
   const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
   const [copiedToolLogIndex, setCopiedToolLogIndex] = useState<number | null>(null);
@@ -1297,13 +1326,22 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     const generationStartedAt = Date.now();
     let chat = activeChatRef.current;
     if (!chat) {
-      chat = { chatId: `global-${Date.now()}`, projectPath: '' };
+      const projectPath = activeProject?.projectPath || '';
+      const projectName = activeProject?.name || 'Proyecto';
+      chat = { chatId: `${projectPath ? 'project' : 'global'}-${Date.now()}`, projectPath, projectName };
       activeChatRef.current = chat;
       setActiveChat(chat);
-      const globalChats = await readGlobalChats();
-      globalChats.push({ id: chat.chatId, name: 'Nuevo chat', customName: false, projectPath: '', projectName: 'Sin proyecto' });
-      await writeGlobalChats(globalChats);
-      window.dispatchEvent(new CustomEvent('codeclub:global-chat-changed'));
+      if (projectPath) {
+        const projectMeta = await readProjectMeta(projectPath) || { name: projectName, path: projectPath, created_at: new Date().toISOString(), chats: [] };
+        if (!projectMeta.chats.some((item) => item.id === chat?.chatId)) projectMeta.chats.push({ id: chat.chatId, name: 'Nuevo chat', customName: false });
+        await writeProjectMeta(projectPath, projectMeta);
+        window.dispatchEvent(new CustomEvent('codeclub:project-meta-changed', { detail: { projectPath } }));
+      } else {
+        const globalChats = await readGlobalChats();
+        globalChats.push({ id: chat.chatId, name: 'Nuevo chat', customName: false, projectPath: '', projectName: 'Sin proyecto' });
+        await writeGlobalChats(globalChats);
+        window.dispatchEvent(new CustomEvent('codeclub:global-chat-changed'));
+      }
     }
     const chatId = chat.chatId;
     const runtime: ChatRuntime = { controller: abortController, state: 'connecting', tool: '', startedAt: generationStartedAt, messages: [], pendingApprovals: [], approvalResolvers: new Map() };
@@ -1412,7 +1450,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         }
       };
       const toolProjectPath = contextProjectPath || await invoke<string>('codeclub_get_system_root');
-      const indexedProjects = await readProjectIndex();
       const developmentTools = createTools({
         projectPath: toolProjectPath,
         projectScoped: Boolean(contextProjectPath),
@@ -1494,19 +1531,9 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         projectChangeNotice,
         activeSkillsContext,
         activeExtensionsContext,
-        'Sos el agente de Desarrollo de Codeclub. Tu trabajo es entender el objetivo, ejecutar tools y entregar un resultado comprobable. Reportá siempre los errores reales de las tools; nunca describas una ejecución como "sin errores" si hubo una llamada fallida.',
-        `Contexto: proyecto ${contextProjectPath || 'sin proyecto'}; proyectos indexados: ${indexedProjects.map((project) => `${project.name} (${project.path})`).join(', ') || 'ninguno'}.`,
-        'Para capacidades operativas, consultá searchTools con palabras clave, leé el schema exacto y ejecutá la elegida mediante executeTool. No inventes nombres ni parámetros.',
-        'Podés ejecutar directamente las tools de artifacts necesarias y verificá cada resultado antes de responder.',
-        'La única IA es responsable de ejecutar acciones y persistir planes, TODOs y artifacts.',
-        'Para PC o navegador usá un hijo custom con herramientas explícitas. Exigí estado observable después de cada acción. Nunca afirmes éxito sin el resultado real de una tool; redactá secretos y respondé en español.',
+        'Sos el agente principal de Desarrollo de Codeclub. Ejecutá las tools necesarias y respondé con evidencia real. Si una tool falla, informá el error; nunca afirmes éxito sin un resultado comprobable.',
+        `Proyecto activo: ${contextProjectPath || 'sin proyecto'}.`,
       ].filter(Boolean).join(' ');
-      const xmlSystem = `<codeclub_agent>
-  <identity>Agente principal de Codeclub</identity>
-  <mode>Desarrollo</mode>
-  <context>${escapeXml(system)}</context>
-  <protocol>Coordinar hijos, ejecutar tools asignadas, verificar resultados y responder solo con evidencias comprobables.</protocol>
-</codeclub_agent>`;
       // Algunos proveedores compatibles rechazan response_format junto con tools.
       // Los artifacts ya quedan validados y persistidos por sus tools; dejamos el
       // JSON forzado solo para respuestas sin ejecución de tools.
@@ -1525,7 +1552,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         const executionMessages = retryInstruction ? [...newMessages, { role: 'user', content: `${retryInstruction}\n\nUse a different strategy or tool sequence; do not repeat the same failed call.` }] : newMessages;
         return runStream({
           model: provider(currentModel.id),
-          system: xmlSystem,
+          system,
           messages: executionMessages.map((message, index) => ({
             role: message.role,
             content: index === executionMessages.length - 1 && attachmentParts.length > 0 && !retryInstruction

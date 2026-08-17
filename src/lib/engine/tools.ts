@@ -304,7 +304,7 @@ export function createDynamicToolAccess(availableTools: Record<string, any>, rec
   const definitions = new Map(entries.map((entry) => [entry.name, availableTools[entry.name]]));
   return wrapToolSet({
     searchTools: tool({
-      description: 'Search the available Codeclub tools and return compact descriptions plus exact input schemas. Use this before executeTool when you need a capability.',
+      description: 'Search available Codeclub tools and return compact descriptions plus exact input schemas. Use this before executeTool when a capability or parameter is uncertain; never invent tool names or inputs.',
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
@@ -331,7 +331,7 @@ export function createDynamicToolAccess(availableTools: Record<string, any>, rec
       },
     }),
     executeTool: tool({
-      description: 'Execute one tool returned by searchTools using its exact name and input object.',
+      description: 'Execute one tool returned by searchTools using its exact name and schema-compatible input object. Report the real result or error; do not claim success without evidence.',
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
@@ -497,7 +497,7 @@ export function createTools(ctx: ToolContext) {
       },
     }),
     createPlan: tool({
-      description: 'Create a persistent implementation plan for the active project.',
+      description: 'Create a persistent implementation plan for the active project. Use for multi-step work and verify the returned plan and step IDs.',
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
@@ -527,7 +527,7 @@ export function createTools(ctx: ToolContext) {
       },
     }),
     updatePlan: tool({
-      description: 'Update the active implementation plan or one of its steps.',
+      description: 'Update the active implementation plan or one of its steps. Verify the returned status after persisting the change.',
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
@@ -562,7 +562,7 @@ export function createTools(ctx: ToolContext) {
       },
     }),
     todo: tool({
-      description: 'Manage persistent TODO items for the active project.',
+      description: 'Manage persistent TODO items for the active project. Verify the returned TODO list after add, update, remove or clear actions.',
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
@@ -600,7 +600,7 @@ export function createTools(ctx: ToolContext) {
       },
     }),
     getTaskStatus: tool({
-      description: 'Read the current implementation plan and TODO items for the active project.',
+      description: 'Read the current implementation plan and TODO items for the active project. Use this to verify persisted planning state without modifying it.',
       inputSchema: jsonSchema({ type: 'object', properties: {}, additionalProperties: false }),
       execute: async () => {
         setAgentState('tool_call');
@@ -620,7 +620,7 @@ export function createTools(ctx: ToolContext) {
       },
     }),
     writeFile: tool({
-      description: 'Write full UTF-8 content to a relative workspace file inside the active workspace.',
+      description: 'Write full UTF-8 content to a relative workspace file inside the active workspace. After writing, verify the real file with readFile or listFiles.',
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
@@ -1035,7 +1035,7 @@ export function createTools(ctx: ToolContext) {
       },
     }),
     subagent: tool({
-      description: 'Delegate a focused development or computer-control task to a specialist IA.',
+      description: 'Delegate a focused development or computer-control task to a specialist IA. For browser or PC work, provide explicit tools and require observable state before and after actions.',
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
