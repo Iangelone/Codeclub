@@ -1,6 +1,6 @@
 {
   "name": "codeclub-desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local-first desktop IDE for building software with AI agents.",
   "author": "Iangelone",
   "private": true,
@@ -72,6 +72,7 @@
     "files": [
       "out/**/*",
       "electron-dist/**/*",
+      "electron/preload.cjs",
       "public/**/*",
       "package.json"
     ],
