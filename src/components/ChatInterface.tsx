@@ -67,6 +67,11 @@ const readDesktopFile = async (path: string) => {
   const reader = (window as any).codeclub?.readFile;
   return reader ? new Uint8Array(await reader(path)) : readFile(path);
 };
+const getBrowserReferenceComment = (text: string) => text.match(/^Comentario:\s*([\s\S]*?)(?:\n\n|$)/)?.[1]?.trim() || text.replace(/^Componente seleccionado:\s*/, '').split('\n\nTexto visible:')[0].trim();
+const getVisibleUserContent = (message: any) => {
+  if (typeof message?.displayContent === 'string') return message.displayContent;
+  return String(message?.content || '').replace(/\n\nReferencia \d+: @[\s\S]*$/m, '').trim();
+};
 const readDesktopTextFile = async (path: string) => {
   const reader = (window as any).codeclub?.readTextFile;
   return reader ? String(await reader(path)) : readTextFile(path);
@@ -251,7 +256,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [input, setInput] = useState('');
   const [artifactReference, setArtifactReference] = useState<any>(null);
-  const [browserReferences, setBrowserReferences] = useState<{ id: string; title: string; text: string; url?: string }[]>([]);
+  const [browserReferences, setBrowserReferences] = useState<{ id: string; title: string; text: string; url?: string; markerId?: string }[]>([]);
   const browserRefContainerRef = useRef<HTMLDivElement>(null);
   const [maxVisibleBrowserRefs, setMaxVisibleBrowserRefs] = useState(3);
   const [attachedFiles, setAttachedFiles] = useState<ChatAttachment[]>([]);
@@ -381,13 +386,14 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   }, [browserReferences.length]);
   useEffect(() => {
     const handleBrowserReference = (event: Event) => {
-      const detail = (event as CustomEvent<{ title?: string; text?: string; url?: string }>).detail;
+      const detail = (event as CustomEvent<{ title?: string; text?: string; url?: string; markerId?: string }>).detail;
       if (!detail?.text) return;
       const newItem = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         title: detail.title || 'Referencia',
         text: detail.text,
         url: detail.url,
+        markerId: detail.markerId,
       };
       setBrowserReferences((current) => {
         if (current.some((item) => item.text === newItem.text)) return current;
@@ -395,8 +401,16 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       });
       requestAnimationFrame(() => chatInputRef.current?.focus());
     };
+    const handleRemoveBrowserReference = (event: Event) => {
+      const markerId = (event as CustomEvent<{ markerId?: string }>).detail?.markerId;
+      if (markerId) setBrowserReferences((current) => current.filter((item) => item.markerId !== markerId));
+    };
     window.addEventListener('codeclub:browser-reference', handleBrowserReference);
-    return () => window.removeEventListener('codeclub:browser-reference', handleBrowserReference);
+    window.addEventListener('codeclub:remove-browser-reference', handleRemoveBrowserReference);
+    return () => {
+      window.removeEventListener('codeclub:browser-reference', handleBrowserReference);
+      window.removeEventListener('codeclub:remove-browser-reference', handleRemoveBrowserReference);
+    };
   }, []);
   const approvalResolversRef = useRef(new Map<string, (approved: boolean) => void>());
   const lastModelFetchRef = useRef<{ method: string; url: string; requestBody?: string; status?: number; statusText?: string; responseHeaders?: unknown; responseBody?: unknown; transportError?: string } | null>(null);
@@ -1314,8 +1328,10 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       content = `${content}\n\nReferencia de artifact: @${artifactReference.kind} "${artifactReference.title}" (id: ${artifactReference.id})`;
       setArtifactReference(null);
     }
-    if (browserReferences.length > 0) {
-      const refsText = browserReferences
+    const visibleContent = content;
+    const messageBrowserReferences = browserReferences;
+    if (messageBrowserReferences.length > 0) {
+      const refsText = messageBrowserReferences
         .map((ref, idx) => `Referencia ${idx + 1}: @${ref.title}\nContenido seleccionado:\n${ref.text}`)
         .join('\n\n');
       content = `${content}\n\n${refsText}`;
@@ -1374,7 +1390,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     if (shouldRenameChat) window.dispatchEvent(new CustomEvent('codeclub:chat-created', { detail: { chatId: chat.chatId } }));
 
     const attachmentParts = attachments.length > 0 ? await readAttachmentParts(attachments) : [];
-    const userMessage = { role: 'user', content, attachments: attachments.map(({ path, name, mediaType, size, previewUrl }) => ({ path, name, mediaType, size, previewUrl })) };
+    const userMessage = { role: 'user', content: visibleContent, displayContent: visibleContent, browserReferences: messageBrowserReferences, attachments: attachments.map(({ path, name, mediaType, size, previewUrl }) => ({ path, name, mediaType, size, previewUrl })) };
     const newMessages = [...baseMessages, userMessage];
     const pendingAssistant = { role: 'assistant', content: '', timeline: [], tools: [], agentName: 'Desarrollo' };
     runtime.messages = [...newMessages, pendingAssistant];
@@ -1549,7 +1565,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         executionStartedAt = Date.now();
         guardedSetAgentState('streaming');
         updateAssistantMessage();
-        const executionMessages = retryInstruction ? [...newMessages, { role: 'user', content: `${retryInstruction}\n\nUse a different strategy or tool sequence; do not repeat the same failed call.` }] : newMessages;
+        const contextualMessages = newMessages.map((message, index) => index === newMessages.length - 1 && message.role === 'user' ? { ...message, content } : message);
+        const executionMessages = retryInstruction ? [...contextualMessages, { role: 'user', content: `${retryInstruction}\n\nUse a different strategy or tool sequence; do not repeat the same failed call.` }] : contextualMessages;
         return runStream({
           model: provider(currentModel.id),
           system,
@@ -1879,7 +1896,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if ((!input.trim() && attachedFiles.length === 0) || isAgentBusy) return;
+    if ((!input.trim() && attachedFiles.length === 0 && browserReferences.length === 0) || isAgentBusy) return;
 
     if (/^\/terminal$/i.test(input.trim())) {
       const rect = e.currentTarget.getBoundingClientRect();
@@ -2220,10 +2237,11 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             {m.role === 'user' && (
               <div aria-hidden="true" style={{ alignSelf: 'stretch', borderTop: '1px solid rgba(255, 255, 255, 0.08)', margin: '4px 0 38px' }} />
             )}
-            {m.role === 'assistant' && m.meta?.status === 'error' ? <ErrorRecoveryNotice configurationError={m.meta.configuration === true} /> : <div className={m.role === 'assistant' ? 'chat-assistant-message' : 'chat-user-message'} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '5px', maxWidth: '80%', marginTop: m.role === 'assistant' ? '50px' : 0 }}>
+            {m.role === 'assistant' && m.meta?.status === 'error' ? <ErrorRecoveryNotice configurationError={m.meta.configuration === true} /> : <div className={m.role === 'assistant' ? 'chat-assistant-message' : 'chat-user-message'} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '5px', maxWidth: '80%', minWidth: 0, marginTop: m.role === 'assistant' ? '50px' : 0 }}>
               {m.role === 'user' && m.attachments?.length > 0 && <div className="chat-attachments" aria-label="Archivos adjuntos">{m.attachments.map((file) => file.mediaType?.startsWith('image/') ? <div key={file.path || file.name} className="chat-attachment-card" title={file.name}><img src={file.previewUrl || convertFileSrc(file.path)} alt={file.name} /></div> : <div key={file.path || file.name} className="chat-attachment-card chat-attachment-file" title={file.name}>{file.previewText ? <pre className="chat-attachment-preview-text">{file.previewText}</pre> : <span>{file.name.split('.').pop()?.toUpperCase().slice(0, 6) || 'FILE'}</span>}</div>)}</div>}
-              <div className={`w-fit max-w-full break-words text-sm leading-6 text-(--codeclub-text-strong) ${m.role === 'user' && m.content.trim() ? 'rounded-[24px_24px_4px_24px] bg-(--codeclub-user-bubble) px-5 py-3.5 leading-[1.4]' : ''}`}>
-                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{ p: ({ children }) => <p style={{ margin: m.role === 'user' ? 0 : '0 0 12px', lineHeight: m.role === 'user' ? 1.4 : 1.6 }}>{children}</p>, ul: ({ children }) => <ul style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ul>, ol: ({ children }) => <ol style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ol>, li: ({ children }) => <li style={{ margin: m.role === 'user' ? 0 : '4px 0' }}>{children}</li>, table: ({ children }) => <div style={{ overflowX: 'auto', margin: '12px 0' }}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>{children}</table></div>, th: ({ children }) => <th style={{ border: '1px solid #2b2b2b', padding: '7px 9px', background: '#1c1c1c', textAlign: 'left', fontWeight: 600 }}>{children}</th>, td: ({ children }) => <td style={{ border: '1px solid #2b2b2b', padding: '7px 9px', verticalAlign: 'top' }}>{children}</td>, h1: ({ children }) => <h1 style={{ margin: '18px 0 10px', fontSize: '20px' }}>{children}</h1>, h2: ({ children }) => <h2 style={{ margin: '16px 0 8px', fontSize: '17px' }}>{children}</h2>, h3: ({ children }) => <h3 style={{ margin: '14px 0 7px', fontSize: '15px' }}>{children}</h3> }}>{normalizeChatContent(m.displayContent || m.content)}</ReactMarkdown>
+              {m.role === 'user' && m.browserReferences?.length > 0 && <div className="chat-browser-references" aria-label="Referencias de navegador">{m.browserReferences.map((ref: { id: string; title: string; text: string }, referenceIndex: number) => <div key={ref.id || `${ref.title}-${referenceIndex}`} className="chat-browser-reference-card"><span className="chat-browser-reference-number">{referenceIndex + 1}</span><span className="min-w-0"><span className="block truncate text-[11px] text-[#d6d6d6]">{ref.title}</span><span className="mt-0.5 block truncate text-[11px] text-[#858585]">{getBrowserReferenceComment(ref.text)}</span></span></div>)}</div>}
+              <div className={`min-w-0 w-fit max-w-full break-words [overflow-wrap:anywhere] text-sm leading-6 text-(--codeclub-text-strong) ${m.role === 'user' && getVisibleUserContent(m).trim() ? 'rounded-[24px_24px_4px_24px] bg-(--codeclub-user-bubble) px-5 py-3.5 leading-[1.4]' : ''}`}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{ p: ({ children }) => <p style={{ margin: m.role === 'user' ? 0 : '0 0 12px', lineHeight: m.role === 'user' ? 1.4 : 1.6 }}>{children}</p>, ul: ({ children }) => <ul style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ul>, ol: ({ children }) => <ol style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ol>, li: ({ children }) => <li style={{ margin: m.role === 'user' ? 0 : '4px 0' }}>{children}</li>, table: ({ children }) => <div style={{ overflowX: 'auto', margin: '12px 0' }}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>{children}</table></div>, th: ({ children }) => <th style={{ border: '1px solid #2b2b2b', padding: '7px 9px', background: '#1c1c1c', textAlign: 'left', fontWeight: 600 }}>{children}</th>, td: ({ children }) => <td style={{ border: '1px solid #2b2b2b', padding: '7px 9px', verticalAlign: 'top' }}>{children}</td>, h1: ({ children }) => <h1 style={{ margin: '18px 0 10px', fontSize: '20px' }}>{children}</h1>, h2: ({ children }) => <h2 style={{ margin: '16px 0 8px', fontSize: '17px' }}>{children}</h2>, h3: ({ children }) => <h3 style={{ margin: '14px 0 7px', fontSize: '15px' }}>{children}</h3> }}>{normalizeChatContent(m.role === 'user' ? getVisibleUserContent(m) : (m.displayContent || m.content))}</ReactMarkdown>
                 {m.role === 'assistant' && isStreaming && agentState !== 'error' && i === messages.length - 1 && !m.content && <span className="chat-thinking-label" style={{ display: 'inline-block', color: 'rgba(216, 216, 216, 0.58)', fontSize: '13px' }}>Pensando</span>}
               </div>
               {m.role === 'assistant' && <ExecutionTimeline timeline={m.timeline} active={isStreaming && i === messages.length - 1} />}
@@ -2254,20 +2272,11 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           {artifactReference && <div className="flex min-h-[28px] items-center gap-2 px-4 py-1.5" aria-label="Referencia de artifact"><span className="shrink-0 text-[10px] uppercase tracking-[0.08em] text-[#666]">Referencia</span><button type="button" onClick={() => setArtifactReference(null)} className="min-w-0 max-w-[260px] truncate rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-left text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar referencia">@{artifactReference.kind} · {artifactReference.title}</button></div>}
           {browserReferences.length > 0 && (
             <div ref={browserRefContainerRef} className="file-preview-scrollbar flex min-h-[76px] w-full min-w-0 max-w-full flex-nowrap items-center gap-2 overflow-x-auto overflow-y-hidden border-b-0 px-3 py-1.5" aria-label="Referencias de navegador">
-              {browserReferences.map((ref) => (
-                <button
-                  key={ref.id}
-                  type="button"
-                  onClick={() => setBrowserReferences((current) => current.filter((item) => item.id !== ref.id))}
-                  className="browser-reference-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] text-[#cfcfcf]"
-                  title={`Quitar @${ref.title}`}
-                >
-                  <span className="browser-reference-preview-icon">
-                    {getBrowserReferenceFavicon(ref) ? <img src={getBrowserReferenceFavicon(ref)} alt="" onError={(event) => { event.currentTarget.style.display = 'none'; }} /> : <Globe size={18} strokeWidth={1.7} />}
-                  </span>
-                  <span className="shrink-0 text-[#777] hover:text-[#eee]">×</span>
-                </button>
-              ))}
+              {browserReferences.map((ref, index) => <button key={ref.id} type="button" onClick={() => { setBrowserReferences((current) => current.filter((item) => item.id !== ref.id)); if (ref.markerId) window.dispatchEvent(new CustomEvent('codeclub:remove-browser-marker', { detail: { markerId: ref.markerId } })); }} className="browser-reference-preview relative flex h-14 w-32 shrink-0 items-center gap-1.5 overflow-hidden rounded-[9px] border-0 bg-[#161616] px-2 text-left text-[#cfcfcf]" title={`Quitar @${ref.title}`}>
+                <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-[#1687ff] text-[9px] font-semibold text-white">{index + 1}</span>
+                <span className="min-w-0 flex-1 pr-3"><span className="block truncate text-[10px] text-[#d6d6d6]">{ref.title}</span><span className="mt-0.5 block truncate text-[10px] text-[#858585]">{getBrowserReferenceComment(ref.text)}</span></span>
+                <span aria-hidden="true" className="browser-reference-remove pointer-events-none absolute inset-0 grid place-items-center bg-[#161616]/80 text-[#eeeeee]"><span className="grid h-6 w-6 place-items-center rounded-full bg-[#252525] text-[#bdbdbd]"><X size={13} strokeWidth={2} /></span></span>
+              </button>)}
               {false && browserReferences.length > maxVisibleBrowserRefs && (
                 <button
                   type="button"

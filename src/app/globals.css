@@ -384,6 +384,93 @@ body {
   transition: filter 180ms ease-out;
 }
 
+.file-preview-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #4a4a4a transparent;
+}
+
+.file-preview-scrollbar::-webkit-scrollbar {
+  height: 6px;
+}
+
+.file-preview-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.file-preview-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #4a4a4a;
+}
+
+.file-preview-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #686868;
+}
+
+.selection-comment-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #4a4a4a transparent;
+}
+
+.selection-comment-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.selection-comment-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.selection-comment-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #4a4a4a;
+}
+
+.selection-comment-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #686868;
+}
+
+.browser-reference-remove {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 160ms ease-out, visibility 160ms ease-out, background-color 160ms ease-out;
+}
+
+.browser-reference-preview:hover .browser-reference-remove {
+  opacity: 1;
+  visibility: visible;
+}
+
+.chat-browser-references {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.chat-browser-reference-card {
+  display: flex;
+  width: min(128px, 100%);
+  min-height: 56px;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  border-radius: 9px;
+  background: #161616;
+  padding: 8px;
+}
+
+.chat-browser-reference-number {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 999px;
+  background: #1687ff;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 600;
+}
+
 .attachment-image-preview-close,
 .attachment-file-preview-close {
   opacity: 0;

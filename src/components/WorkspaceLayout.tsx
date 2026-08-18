@@ -833,6 +833,143 @@ function BrowserPanel() {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedElement, setSelectedElement] = useState<{ title: string; text: string; html: string; x: number; y: number; markerId: string } | null>(null);
+  const [selectionComment, setSelectionComment] = useState('');
+  const selectionCommentRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    if (!selectedElement) return;
+    requestAnimationFrame(() => {
+      const input = selectionCommentRef.current;
+      if (!input) return;
+      input.style.height = 'auto';
+      input.style.height = `${Math.min(input.scrollHeight, 126)}px`;
+      input.style.overflowY = input.scrollHeight > 126 ? 'auto' : 'hidden';
+      input.focus();
+    });
+  }, [selectedElement]);
+
+  const clearPagePicker = async () => {
+    try { await webviewRef.current?.executeJavaScript(`window.__codeclubStopPicker?.();`); } catch { /* page may have navigated */ }
+    setSelectionMode(false);
+  };
+
+  const startPagePicker = async () => {
+    const view = webviewRef.current;
+    if (!view) return;
+    setSelectedElement(null);
+    setSelectionComment('');
+    setSelectionMode(true);
+    let pickerCursor = '';
+    try {
+      const response = await fetch('/cursors/dark/arrow.cur');
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      let binary = '';
+      bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+      pickerCursor = `data:image/x-icon;base64,${btoa(binary)}`;
+    } catch { /* use the fallback crosshair */ }
+    try {
+      await view.executeJavaScript(`(() => {
+        const pickerCursor = ${JSON.stringify(pickerCursor)};
+        window.__codeclubStopPicker?.();
+        const style = document.createElement('style');
+        style.id = 'codeclub-picker-style';
+        style.textContent = '.codeclub-picker-active,.codeclub-picker-active *{cursor:' + (pickerCursor ? 'url(' + pickerCursor + ') 0 0, ' : '') + 'crosshair!important}.codeclub-picker-hover{outline:2px solid #3d9bff!important;outline-offset:2px!important;background-color:#3d9bff18!important}';
+        document.documentElement.appendChild(style);
+        document.documentElement.classList.add('codeclub-picker-active');
+        const clean = (value, limit) => String(value || '').replace(/\\s+/g, ' ').trim().slice(0, limit);
+        const sanitize = (element) => {
+          const clone = element.cloneNode(true);
+          clone.querySelectorAll('script,style,iframe,canvas,svg').forEach((node) => node.remove());
+          clone.querySelectorAll('*').forEach((node) => Array.from(node.attributes).forEach((attribute) => { if (/^on/i.test(attribute.name)) node.removeAttribute(attribute.name); }));
+          return clone.outerHTML.slice(0, 12000);
+        };
+        const pickable = (node) => node instanceof Element ? (node.closest('button,a,input,textarea,select,[role="button"],section,article,header,main,div') || node) : null;
+        const over = (event) => { const element = pickable(event.target); if (element) element.classList.add('codeclub-picker-hover'); };
+        const out = (event) => { const element = pickable(event.target); if (element) element.classList.remove('codeclub-picker-hover'); };
+        const click = (event) => {
+          event.preventDefault(); event.stopPropagation();
+          const element = pickable(event.target); if (!element) return;
+          document.querySelectorAll('.codeclub-picker-hover').forEach((node) => node.classList.remove('codeclub-picker-hover'));
+          const marker = document.createElement('div');
+          window.__codeclubMarkerCount = Number(window.__codeclubMarkerCount || 0) + 1;
+          const markerId = 'codeclub-comment-' + Date.now() + '-' + window.__codeclubMarkerCount;
+          marker.textContent = String(window.__codeclubMarkerCount);
+          marker.dataset.codeclubMarkerId = markerId;
+          marker.style.cssText = 'position:absolute;z-index:2147483647;display:grid;place-items:center;width:24px;height:24px;border:2px solid #ffffff;border-radius:999px;background:#126cff;color:#ffffff;font:600 12px/1 Arial,sans-serif;box-shadow:0 1px 8px #00000080;pointer-events:none;cursor:pointer;';
+          const rect = element.getBoundingClientRect();
+          marker.style.left = Math.max(4, Math.min(window.innerWidth - 28, rect.right + window.scrollX - 12)) + 'px';
+          marker.style.top = Math.max(4, rect.top + window.scrollY - 12) + 'px';
+          document.body.appendChild(marker);
+          window.__codeclubRenumberCommentMarkers?.();
+          window.__codeclubRemoveCommentMarker = (id) => document.querySelector('[data-codeclub-marker-id="' + id + '"]')?.remove();
+          window.__codeclubSelection = { title: clean(element.getAttribute('aria-label') || element.textContent || element.tagName, 100), text: clean(element.textContent, 2000), html: sanitize(element), x: event.clientX, y: event.clientY, markerId };
+          window.__codeclubStopPicker?.();
+        };
+        window.__codeclubFinalizeCommentMarker = (id) => {
+          const marker = document.querySelector('[data-codeclub-marker-id="' + id + '"]');
+          if (!marker) return;
+          marker.style.pointerEvents = 'auto';
+          marker.onclick = (event) => { event.preventDefault(); event.stopPropagation(); marker.remove(); window.__codeclubRenumberCommentMarkers?.(); window.__codeclubRemovedCommentMarker = id; };
+        };
+        window.__codeclubRenumberCommentMarkers = () => document.querySelectorAll('[data-codeclub-marker-id]').forEach((node, index) => { node.textContent = String(index + 1); });
+        window.__codeclubStopPicker = () => { document.removeEventListener('mouseover', over, true); document.removeEventListener('mouseout', out, true); document.removeEventListener('click', click, true); document.documentElement.classList.remove('codeclub-picker-active'); document.getElementById('codeclub-picker-style')?.remove(); document.querySelectorAll('.codeclub-picker-hover').forEach((node) => node.classList.remove('codeclub-picker-hover')); };
+        window.__codeclubSelection = null;
+        document.addEventListener('mouseover', over, true); document.addEventListener('mouseout', out, true); document.addEventListener('click', click, true);
+        return true;
+      })()`);
+    } catch { setSelectionMode(false); }
+  };
+
+  useEffect(() => {
+    if (!selectionMode) return undefined;
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') void clearPagePicker(); };
+    window.addEventListener('keydown', escape);
+    const poll = window.setInterval(async () => {
+      try {
+        const result = await webviewRef.current?.executeJavaScript('window.__codeclubSelection || null');
+        if (result?.html) { setSelectedElement(result); setSelectionMode(false); }
+      } catch { /* page may have navigated */ }
+    }, 250);
+    return () => { window.clearInterval(poll); window.removeEventListener('keydown', escape); };
+  }, [selectionMode]);
+
+  useEffect(() => {
+    const removeBrowserMarker = (event: Event) => {
+      const markerId = (event as CustomEvent<{ markerId?: string }>).detail?.markerId;
+      if (markerId) void webviewRef.current?.executeJavaScript(`window.__codeclubRemoveCommentMarker?.(${JSON.stringify(markerId)}); window.__codeclubRenumberCommentMarkers?.();`);
+    };
+    window.addEventListener('codeclub:remove-browser-marker', removeBrowserMarker);
+    const pollRemovedMarker = window.setInterval(async () => {
+      try {
+        const markerId = await webviewRef.current?.executeJavaScript('window.__codeclubRemovedCommentMarker || null');
+        if (!markerId) return;
+        window.dispatchEvent(new CustomEvent('codeclub:remove-browser-reference', { detail: { markerId } }));
+        await webviewRef.current?.executeJavaScript('window.__codeclubRemovedCommentMarker = null;');
+      } catch { /* page may have navigated */ }
+    }, 250);
+    return () => {
+      window.clearInterval(pollRemovedMarker);
+      window.removeEventListener('codeclub:remove-browser-marker', removeBrowserMarker);
+    };
+  }, []);
+
+  const addSelectedReference = () => {
+    if (!selectedElement) return;
+    const comment = selectionComment.trim();
+    const text = `${comment ? `Comentario: ${comment}\n\n` : ''}Componente seleccionado:\n${selectedElement.html}\n\nTexto visible: ${selectedElement.text}`;
+    window.dispatchEvent(new CustomEvent('codeclub:browser-reference', { detail: { title: selectedElement.title || 'Elemento seleccionado', text, url: currentUrl, markerId: selectedElement.markerId } }));
+    setSelectedElement(null);
+    setSelectionComment('');
+    void webviewRef.current?.executeJavaScript(`window.__codeclubFinalizeCommentMarker?.(${JSON.stringify(selectedElement.markerId)});`);
+  };
+
+  const discardSelectedReference = () => {
+    setSelectedElement(null);
+    setSelectionComment('');
+    void webviewRef.current?.executeJavaScript(`window.__codeclubRemoveCommentMarker?.(${JSON.stringify(selectedElement?.markerId || '')});`);
+  };
 
   const publishState = async () => {
     const view = webviewRef.current;
@@ -972,9 +1109,9 @@ function BrowserPanel() {
     <div className="flex h-10 shrink-0 items-center gap-3 bg-[#171717] px-3" aria-label="Controles del navegador">{!currentUrl && !loadError && <div className="absolute top-10 right-0 bottom-0 left-0 z-[1] flex flex-col items-center justify-center gap-5 bg-[#202124]"><GlobeCheck aria-hidden="true" className="text-[#9aa0a6]" size={38} strokeWidth={1.7} /><form onSubmit={submitAddress} className="flex h-[52px] w-[min(520px,calc(100%-32px))] items-center gap-2 rounded-[14px] border border-[#3c4043] bg-[#1a1a1a] px-3 shadow-[0_8px_30px_#00000040] transition-colors hover:bg-[#1f1f1f] focus-within:border-[#5f6368]"><span className="grid h-8 w-8 shrink-0 place-items-center text-[24px] text-[#8a8a8a]">⌕</span><input autoFocus value={address} onChange={(event) => setAddress(event.target.value)} className="h-9 min-w-0 flex-1 bg-transparent px-2 text-[13px] text-[#e8eaed] outline-none placeholder:text-[#9a9a9a]" placeholder="Ingresá una URL" aria-label="Ingresar una URL" /><button type="submit" aria-label="Abrir URL" className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-transparent text-[24px] text-[#8a8a8a] hover:bg-white/[0.06] hover:text-[#f1f1f1]">↗</button></form></div>}
       <div className="flex shrink-0 items-center gap-1"><button type="button" onClick={() => webviewRef.current?.goBack?.()} className="grid h-8 w-8 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Ir atras" title="Ir atras"><ArrowLeft size={18} /></button><button type="button" onClick={() => webviewRef.current?.goForward?.()} className="grid h-8 w-8 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Ir adelante" title="Ir adelante"><ArrowRight size={18} /></button><button type="button" onClick={() => webviewRef.current?.reload?.()} className="grid h-8 w-8 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Recargar pagina" title="Recargar pagina"><RotateCw size={18} className={loading ? 'animate-spin' : ''} /></button><button type="button" onClick={() => { setAddress(''); setCurrentUrl(DEFAULT_BROWSER_URL); setLoadError(''); setLoading(false); }} className="grid h-8 w-8 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Ir a inicio" title="Ir a inicio"><Home size={17} /></button></div>
       <form onSubmit={submitAddress} className="min-w-0 flex-1"><label className="sr-only" htmlFor="codeclub-browser-address">Direccion web</label><input id="codeclub-browser-address" value={address.replace(/^https?:\/\//, '').replace(/\/$/, '')} onChange={(event) => setAddress(event.target.value)} onFocus={(event) => event.currentTarget.select()} className="h-9 w-full bg-transparent text-center text-[20px] font-medium text-[#f1f3f4] outline-none placeholder:text-[#8a8a8a]" aria-label="Direccion web" placeholder="Escribí una URL para navegar" /></form>
-      <div className="relative flex shrink-0 items-center gap-1"><button type="button" className="grid h-8 w-8 place-items-center rounded-full text-[#b8b8b8] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Seleccionar" title="Seleccionar" onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-chat'))}><MousePointerClick size={19} /></button><button type="button" onClick={() => setMenuOpen((open) => !open)} className="grid h-8 w-8 place-items-center rounded-full text-[#b8b8b8] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Mas opciones del navegador" aria-expanded={menuOpen}><EllipsisVertical size={19} /></button>{menuOpen && <div className="absolute top-10 right-0 z-20 w-44 rounded-lg border border-white/[0.08] bg-[#2C2C2C]/95 p-1 shadow-xl backdrop-blur-xl"><button type="button" onClick={() => { webviewRef.current?.reload?.(); setMenuOpen(false); }} className="flex w-full rounded-md px-2.5 py-2 text-left text-[11px] text-[#eeeeee] hover:bg-white/[0.08]">Recargar pagina</button><button type="button" onClick={() => { window.open(currentUrl, '_blank'); setMenuOpen(false); }} className="flex w-full rounded-md px-2.5 py-2 text-left text-[11px] text-[#eeeeee] hover:bg-white/[0.08]">Abrir fuera de Codeclub</button></div>}</div>
+      <div className="relative flex shrink-0 items-center gap-1"><button type="button" className={`grid h-8 w-8 place-items-center rounded-full hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${selectionMode ? 'bg-[#3d9bff22] text-[#8bc7ff]' : 'text-[#b8b8b8]'}`} aria-label="Seleccionar elemento" title="Seleccionar elemento" aria-pressed={selectionMode} onClick={() => selectionMode ? void clearPagePicker() : void startPagePicker()}><MousePointerClick size={19} /></button><button type="button" onClick={() => setMenuOpen((open) => !open)} className="grid h-8 w-8 place-items-center rounded-full text-[#b8b8b8] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Mas opciones del navegador" aria-expanded={menuOpen}><EllipsisVertical size={19} /></button>{menuOpen && <div className="absolute top-10 right-0 z-20 w-44 rounded-lg border border-white/[0.08] bg-[#2C2C2C]/95 p-1 shadow-xl backdrop-blur-xl"><button type="button" onClick={() => { webviewRef.current?.reload?.(); setMenuOpen(false); }} className="flex w-full rounded-md px-2.5 py-2 text-left text-[11px] text-[#eeeeee] hover:bg-white/[0.08]">Recargar pagina</button><button type="button" onClick={() => { window.open(currentUrl, '_blank'); setMenuOpen(false); }} className="flex w-full rounded-md px-2.5 py-2 text-left text-[11px] text-[#eeeeee] hover:bg-white/[0.08]">Abrir fuera de Codeclub</button></div>}</div>
     </div>
-    <div className="absolute top-10 right-0 bottom-0 left-0 overflow-hidden">{createElement('webview', viewProps)}</div>{loadError && <div className="absolute inset-0 z-10 grid place-items-center bg-[#202124] px-6 text-center"><div className="max-w-[360px]"><p className="m-0 text-[15px] font-medium text-[#f1f3f4]">No se pudo abrir esta página</p><p className="mt-2 mb-0 break-words text-[12px] leading-5 text-[#a7a7a7]">{loadError}</p><p className="mt-1 mb-0 break-words text-[11px] text-[#777777]">{currentUrl}</p><button type="button" onClick={() => { setLoadError(''); setLoading(true); webviewRef.current?.reload?.(); }} className="mt-4 rounded-lg bg-white/[0.08] px-3 py-1.5 text-[11px] text-[#eeeeee] hover:bg-white/[0.14]">Reintentar</button></div></div>}
+    <div className="absolute top-10 right-0 bottom-0 left-0 overflow-hidden">{createElement('webview', viewProps)}</div>{selectedElement && <div className="absolute z-20 w-[210px] max-w-[calc(100%-16px)] rounded-xl border border-white/[0.1] bg-[#292929]/95 p-2 shadow-2xl backdrop-blur-xl" style={{ left: `clamp(8px, ${selectedElement.x}px, calc(100% - 218px))`, top: `clamp(48px, ${selectedElement.y + 48}px, calc(100% - 152px))` }}><textarea ref={selectionCommentRef} value={selectionComment} onChange={(event) => setSelectionComment(event.target.value)} onInput={(event) => { const input = event.currentTarget; input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 126)}px`; input.style.overflowY = input.scrollHeight > 126 ? 'auto' : 'hidden'; }} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); discardSelectedReference(); } if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); addSelectedReference(); } }} rows={1} placeholder="Agregá un comentario..." className="selection-comment-scrollbar max-h-[126px] w-full resize-none overflow-y-hidden bg-transparent px-1 text-[13px] leading-[18px] text-[#eeeeee] outline-none placeholder:text-[#858585]" aria-label="Agregar un comentario al elemento seleccionado" /></div>}{loadError && <div className="absolute inset-0 z-10 grid place-items-center bg-[#202124] px-6 text-center"><div className="max-w-[360px]"><p className="m-0 text-[15px] font-medium text-[#f1f3f4]">No se pudo abrir esta página</p><p className="mt-2 mb-0 break-words text-[12px] leading-5 text-[#a7a7a7]">{loadError}</p><p className="mt-1 mb-0 break-words text-[11px] text-[#777777]">{currentUrl}</p><button type="button" onClick={() => { setLoadError(''); setLoading(true); webviewRef.current?.reload?.(); }} className="mt-4 rounded-lg bg-white/[0.08] px-3 py-1.5 text-[11px] text-[#eeeeee] hover:bg-white/[0.14]">Reintentar</button></div></div>}
   </div>;
 }
 
