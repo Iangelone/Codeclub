@@ -118,7 +118,21 @@ npm run next:build
 npm run electron:compile
 npm run electron:dev
 npm run desktop:build
+npm run package:win
 ```
+
+## Releases
+
+- `npm run package:win` genera localmente el instalador Windows en `release/`.
+- No subir `release/` ni credenciales; ambos quedan fuera del repositorio.
+- Las releases se disparan al pushear un tag `vX.Y.Z`.
+- `.github/workflows/release.yml` construye en Windows y publica el `.exe`, `.blockmap`,
+  `latest.yml` y `builder-debug.yml`.
+- El usuario final descarga solo `Codeclub Setup X.Y.Z.exe`.
+- El workflow usa `--publish never` en electron-builder y publica con GitHub Actions para
+  evitar errores por falta de `GH_TOKEN`.
+- Antes de crear un tag, probar `npm run package:win` e instalar el `.exe` localmente.
+- Si se cambia la versión, actualizar `package.json` y `package-lock.json` juntos.
 
 ## Verificación antes de entregar
 

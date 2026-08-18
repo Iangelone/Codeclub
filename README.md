@@ -127,7 +127,11 @@ npm run next:dev
 npm run next:build
 npm run electron:compile
 npm run desktop:build
+npm run package:win
 ```
+
+`package:win` genera el instalador Windows en `release/`. Para el flujo completo de beta,
+incluyendo tags y GitHub Actions, consultar [Desarrollo y releases](docs/desarrollo.md).
 
 Antes de publicar, probar chat, cambio de proyecto, persistencia, tareas, selección del navegador, artifacts, terminal y cambio de idioma.
 
