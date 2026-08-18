@@ -21,4 +21,5 @@ contextBridge.exposeInMainWorld('codeclub', {
   windowMinimize: () => ipcRenderer.invoke('window:minimize'),
   windowMaximize: () => ipcRenderer.invoke('window:maximize'),
   windowClose: () => ipcRenderer.invoke('window:close'),
+  reloadApp: () => ipcRenderer.invoke('app:reload'),
 });

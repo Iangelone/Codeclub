@@ -1,10 +1,20 @@
 'use client';
 
-import { ArrowLeft, ArrowRight, ArrowUp, ChevronRight, House, RefreshCw, Search } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ChevronRight, Download, House, RefreshCw, Search } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
+import { nativeInvoke } from '../lib/runtime';
 
 const controlClass = 'grid h-8 w-8 shrink-0 place-items-center rounded-lg border-0 bg-transparent text-(--codeclub-icon) transition-colors hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)';
+const versionParts = (version: string) => version.replace(/^v/i, '').split(/[.-]/).slice(0, 3).map((part) => Number(part) || 0);
+const isNewerVersion = (latest: string, current: string) => {
+  const next = versionParts(latest);
+  const installed = versionParts(current);
+  for (let index = 0; index < 3; index += 1) {
+    if (next[index] !== installed[index]) return next[index] > installed[index];
+  }
+  return false;
+};
 
 export default function SubTopbar({ activeProject }: { activeProject: { name: string; path?: string } }) {
   const folders = activeProject.path?.split(/[\\/]/).filter(Boolean) ?? [];
@@ -12,6 +22,7 @@ export default function SubTopbar({ activeProject }: { activeProject: { name: st
   const breadcrumbRef = useRef<HTMLDivElement>(null);
   const fullBreadcrumbRef = useRef<HTMLDivElement>(null);
   const [collapsed, setCollapsed] = useState(false);
+  const [updateVersion, setUpdateVersion] = useState('');
   const [navigation, setNavigation] = useState({ leftBack: false, leftForward: false, rightBack: false, rightForward: false });
   useEffect(() => {
     const update = () => {
@@ -43,13 +54,29 @@ export default function SubTopbar({ activeProject }: { activeProject: { name: st
       window.removeEventListener('codeclub:left-panel-navigation-state', updateLeftNavigation);
     };
   }, []);
+  useEffect(() => {
+    let cancelled = false;
+    const checkForUpdate = async () => {
+      try {
+        const current = await nativeInvoke<string>('codeclub_get_app_version');
+        const response = await fetch('https://api.github.com/repos/Iangelone/Codeclub/releases/latest', { headers: { Accept: 'application/vnd.github+json' } });
+        if (!response.ok) return;
+        const release = await response.json() as { tag_name?: string };
+        const latest = String(release.tag_name || '').replace(/^v/i, '');
+        if (!cancelled && latest && isNewerVersion(latest, current)) setUpdateVersion(latest);
+      } catch { /* offline or repository without releases */ }
+    };
+    void checkForUpdate();
+    const timer = window.setInterval(checkForUpdate, 15 * 60 * 1000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, []);
   const visibleBreadcrumb = collapsed && breadcrumb.length > 4 ? breadcrumb.slice(-4) : breadcrumb;
   return <div className="codeclub-graphite flex h-11 min-w-0 items-center gap-2 px-3 text-(--codeclub-text) backdrop-blur-xl backdrop-saturate-150" role="toolbar" aria-label="Navegación del panel">
     <div className="flex shrink-0 items-center gap-1">
       <motion.button type="button" disabled={!navigation.leftBack && !navigation.rightBack} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:right-panel-back'))} className={`${controlClass} disabled:cursor-not-allowed disabled:opacity-35`} whileHover={navigation.leftBack || navigation.rightBack ? { scale: 1.06 } : undefined} whileTap={navigation.leftBack || navigation.rightBack ? { scale: 0.92 } : undefined} transition={{ type: 'spring', stiffness: 420, damping: 26 }} aria-label="Panel anterior" title="Panel anterior"><ArrowLeft size={18} strokeWidth={1.7} /></motion.button>
       <motion.button type="button" disabled={!navigation.leftForward && !navigation.rightForward} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:right-panel-forward'))} className={`${controlClass} disabled:cursor-not-allowed disabled:opacity-35`} whileHover={navigation.leftForward || navigation.rightForward ? { scale: 1.06 } : undefined} whileTap={navigation.leftForward || navigation.rightForward ? { scale: 0.92 } : undefined} transition={{ type: 'spring', stiffness: 420, damping: 26 }} aria-label="Panel siguiente" title="Panel siguiente"><ArrowRight size={18} strokeWidth={1.7} /></motion.button>
-      <motion.button type="button" onClick={() => window.dispatchEvent(new CustomEvent('codeclub:navigate-new-chat'))} className={controlClass} whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.92 }} transition={{ type: 'spring', stiffness: 420, damping: 26 }} aria-label="Ir a Nuevo chat" title="Ir a Nuevo chat"><ArrowUp size={18} strokeWidth={1.7} /></motion.button>
-      <motion.button type="button" className={controlClass} whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.92 }} transition={{ type: 'spring', stiffness: 420, damping: 26 }} aria-label="Recargar" title="Recargar"><RefreshCw size={18} strokeWidth={1.7} /></motion.button>
+      <motion.button type="button" onClick={() => void nativeInvoke('codeclub_open_external', { url: 'https://github.com/Iangelone/Codeclub/releases/latest' })} className={`${controlClass} ${updateVersion ? 'text-white hover:text-white' : ''}`} whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.92 }} transition={{ type: 'spring', stiffness: 420, damping: 26 }} aria-label={updateVersion ? `Actualizar a ${updateVersion}` : 'Buscar actualizaciones'} title={updateVersion ? `Actualización disponible: ${updateVersion}` : 'Buscar actualizaciones'}><Download size={18} strokeWidth={1.7} /></motion.button>
+      <motion.button type="button" onClick={() => void (window as any).codeclub?.reloadApp?.()} className={controlClass} whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.92 }} transition={{ type: 'spring', stiffness: 420, damping: 26 }} aria-label="Recargar aplicación" title="Recargar aplicación"><RefreshCw size={18} strokeWidth={1.7} /></motion.button>
     </div>
     <div ref={breadcrumbRef} className="relative flex h-8 min-w-0 flex-1 items-center gap-1 overflow-hidden rounded-lg bg-(--codeclub-acrylic-active) px-3 text-[13px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <House size={17} strokeWidth={1.7} className="shrink-0 text-(--codeclub-icon)" aria-hidden="true" />

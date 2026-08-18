@@ -227,6 +227,7 @@ async function invokeNativeCommand(command: string, args: any = {}) {
       await shell.openExternal(url);
       return true;
     }
+    case 'codeclub_get_app_version': return app.getVersion();
     case 'codeclub_list_files': return listProjectFiles(args.projectPath, Math.min(Number(args.maxFiles) || 400, 1200));
     case 'codeclub_read_file': return fs.readFile(projectFile(args.projectPath, args.path), 'utf8');
     case 'codeclub_search_text': return searchProjectText(args.projectPath, args.query, Math.min(Number(args.maxMatches) || 80, 200));
@@ -436,6 +437,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('window:minimize', (event) => BrowserWindow.fromWebContents(event.sender)?.minimize());
   ipcMain.handle('window:maximize', (event) => { const window = BrowserWindow.fromWebContents(event.sender); if (window?.isMaximized()) window.unmaximize(); else window?.maximize(); });
   ipcMain.handle('window:close', (event) => BrowserWindow.fromWebContents(event.sender)?.close());
+  ipcMain.handle('app:reload', (event) => BrowserWindow.fromWebContents(event.sender)?.webContents.reload());
   createWindow();
   createTray();
   app.on('activate', showMainWindow);
