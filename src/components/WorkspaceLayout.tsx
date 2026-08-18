@@ -1,7 +1,7 @@
 'use client';
 
 import { createElement, useEffect, useRef, useState, type FormEvent } from 'react';
-import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, Bolt, ChevronDown, Circle, CircleCheck, CircleHelp, CirclePlus, Clock, CopyX, EllipsisVertical, FileWarning, FolderOpen, FolderPen, FolderTree, GitBranch, GitCompare, Grid2X2, Home, Info, ListTodo, MoreHorizontal, MousePointerClick, Pause, Pencil, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, UserRound, X } from 'lucide-react';
+import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, Bolt, ChevronDown, Circle, CircleCheck, CirclePlus, Clock, CopyX, EllipsisVertical, FileWarning, FolderOpen, FolderPen, FolderTree, GitBranch, GitCompare, Grid2X2, Heart, Home, Info, ListTodo, MoreHorizontal, MousePointerClick, Pause, Pencil, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { GlobeCheck } from 'lucide-react';
 import { Terminal as XtermTerminal } from '@xterm/xterm';
@@ -107,10 +107,6 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
   const [chatsByProject, setChatsByProject] = useState<Record<string, RecentChat[]>>({});
   const [activeSection, setActiveSection] = useState<SidebarSection>('new-chat');
   const [activeChatId, setActiveChatId] = useState<string | undefined>();
-  const [userName, setUserName] = useState('Usuario');
-  const [userOnline, setUserOnline] = useState(true);
-  const [statusSince, setStatusSince] = useState(() => Date.now());
-  const [statusTick, setStatusTick] = useState(0);
   const [chatContextMenu, setChatContextMenu] = useState<ChatContextMenu | null>(null);
   const chatContextMenuRef = useRef<HTMLDivElement | null>(null);
   const [leftWidth, setLeftWidth] = useState(DEFAULT_LEFT);
@@ -134,42 +130,6 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
     MIN_WIDTH,
     viewportWidth - (leftOpen ? leftWidth : 0) - MIN_CENTER_WIDTH - RESIZE_HANDLE_SPACE,
   );
-
-  useEffect(() => {
-    void nativeInvoke<string>('codeclub_get_username').then((name) => setUserName(name || 'Usuario')).catch(() => setUserName('Usuario'));
-  }, []);
-
-  useEffect(() => {
-    const setPresence = (online: boolean) => {
-      setUserOnline((current) => {
-        if (current === online) return current;
-        setStatusSince(Date.now());
-        return online;
-      });
-    };
-    const handleVisibility = () => setPresence(document.visibilityState === 'visible' && document.hasFocus());
-    const handleFocus = () => setPresence(true);
-    const handleBlur = () => setPresence(false);
-    window.addEventListener('focus', handleFocus);
-    window.addEventListener('blur', handleBlur);
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => {
-      window.removeEventListener('focus', handleFocus);
-      window.removeEventListener('blur', handleBlur);
-      document.removeEventListener('visibilitychange', handleVisibility);
-    };
-  }, []);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setStatusTick((tick) => tick + 1), 30_000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  const statusAge = (() => {
-    void statusTick;
-    const minutes = Math.floor((Date.now() - statusSince) / 60_000);
-    return minutes < 1 ? 'ahora' : minutes === 1 ? 'hace 1 min' : `hace ${minutes} min`;
-  })();
 
   useEffect(() => {
     const updateViewportWidth = () => setViewportWidth(window.innerWidth);
@@ -584,14 +544,14 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
           <div className="flex items-center gap-1 px-1.5">{editingProjectName ? <input autoFocus value={projectNameDraft} onChange={(event) => setProjectNameDraft(event.target.value)} onBlur={() => void commitProjectName()} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void commitProjectName(); } if (event.key === 'Escape') { setProjectNameDraft(activeProjectName); setEditingProjectName(false); } }} className="min-w-0 flex-1 rounded-md border border-(--codeclub-border-soft) bg-(--codeclub-surface-raised) px-1.5 py-0.5 text-[15px] font-semibold tracking-tight text-(--codeclub-text-strong) outline-none" aria-label="Nombre del proyecto" /> : <span className="min-w-0 truncate text-[15px] font-semibold tracking-tight text-(--codeclub-text-strong)">{activeProjectName}</span>}{activeProjectId !== 'home' && !editingProjectName && <button type="button" onClick={() => setEditingProjectName(true)} className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-(--codeclub-text-muted) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Cambiar nombre del proyecto" title="Cambiar nombre"><Pencil size={13} aria-hidden="true" /></button>}</div>
           <nav className="mt-4 space-y-0.5" aria-label="Navegación principal">
             <SidebarItem active={activeSection === 'new-chat' && !activeChatId} icon={<CirclePlus />} label="Nuevo chat" onClick={() => selectSidebarSection('new-chat')} />
-            <SidebarItem active={activeSection === 'scheduled'} icon={<Clock />} label="Programadas" onClick={() => selectSidebarSection('scheduled')} />
+            <SidebarItem active={activeSection === 'scheduled'} icon={<Clock />} label="Tareas" onClick={() => selectSidebarSection('scheduled')} />
             <SidebarItem active={activeSection === 'extensions'} icon={<Grid2X2 />} label="Extensiones" onClick={() => selectSidebarSection('extensions')} />
             <SidebarItem active={activeSection === 'projects'} icon={<Bolt />} label="Dispositivos" disabled onClick={() => selectSidebarSection('projects')} />
           </nav>
           <div className="mt-5 min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {recentChats.length > 0 && <div className="pb-3"><p className="px-1.5 text-[13px] font-semibold text-(--codeclub-text-muted)">Recientes</p><div className="mt-2 space-y-1">{recentChats.map((chat) => <button key={chat.id} type="button" onContextMenu={(event) => { if (!chat.customName) return; event.preventDefault(); setChatContextMenu({ chat, x: event.clientX, y: event.clientY }); }} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: { chatId: chat.id, name: chat.title, customName: chat.customName, projectId: activeProjectId, projectPath: chat.projectPath ?? activeProjectPath, projectName: chat.projectName ?? activeProjectName } }))} className={`flex w-full min-w-0 items-center justify-between rounded-lg px-2.5 py-2 text-left text-[13px] text-(--codeclub-text-strong) ${activeChatId === chat.id ? 'bg-(--codeclub-acrylic-active)' : 'bg-transparent hover:bg-(--codeclub-hover)'}`}><span className="min-w-0 truncate">{chat.title}</span></button>)}</div></div>}
           </div>
-          <div className="mt-auto flex items-center justify-between border-t border-(--codeclub-border-soft) px-1.5 pt-3"><button type="button" className="flex min-w-0 items-center gap-2 rounded-lg px-1.5 py-1 text-left hover:bg-(--codeclub-hover) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={`Abrir perfil de ${userName}`} title={`Perfil de ${userName}`}><span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#161616] text-(--codeclub-text-strong)"><UserRound size={17} strokeWidth={1.8} /></span><span className="min-w-0"><span className="block truncate text-[13px] font-medium text-(--codeclub-text-strong)">{userName}</span><span className="block text-[11px] text-(--codeclub-text-muted)">{userOnline ? `En línea · ${statusAge}` : `Desconectado · ${statusAge}`}</span></span></button><CircleHelp size={16} className="text-(--codeclub-text-muted)" /></div>
+          <div className="mt-auto border-t border-(--codeclub-border-soft) px-1.5 pt-3"><button type="button" onClick={() => void nativeInvoke('codeclub_open_external', { url: 'https://ko-fi.com/iangeldev' })} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12px] text-(--codeclub-text-muted) transition-colors hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Apoyar Codeclub" title="Hacer una donación"><Heart size={15} strokeWidth={1.8} /><span>Apoyar Codeclub</span></button></div>
         </div>
       </motion.aside>
       {chatContextMenu && <div ref={chatContextMenuRef} className="fixed z-[100] grid w-40 gap-0.5 rounded-lg border border-(--codeclub-border-soft) bg-(--codeclub-surface-raised) p-1 shadow-2xl" style={{ left: chatContextMenu.x, top: chatContextMenu.y }} role="menu" aria-label="Menú del chat"><button type="button" onClick={renameFromContextMenu} className="rounded-md px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem">Renombrar chat</button><button type="button" onClick={() => void deleteFromContextMenu()} className="rounded-md px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem">Eliminar chat</button></div>}

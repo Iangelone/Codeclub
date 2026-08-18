@@ -1,6 +1,6 @@
 import './globals.css';
 
-export const metadata = { title: 'Codeclub', description: 'AI-focused IDE' };
+export const metadata = { title: 'Codeclub', description: 'AI-focused IDE', icons: { icon: '/logo.png', shortcut: '/logo.png', apple: '/logo.png' } };
 const contentSecurityPolicy = [
   "default-src 'self' file:",
   `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''}`,

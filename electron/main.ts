@@ -1,8 +1,9 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Tray } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray } from 'electron';
 import { promises as fs } from 'node:fs';
 import { execFile as execFileCallback, spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { promisify } from 'node:util';
+import { userInfo } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as pty from 'node-pty';
@@ -217,7 +218,15 @@ function createNativeTerminal(request: any) {
 
 async function invokeNativeCommand(command: string, args: any = {}) {
   switch (command) {
-    case 'codeclub_get_username': return process.env.CODECLUB_USERNAME || 'Usuario';
+    case 'codeclub_get_username': {
+      try { return process.env.CODECLUB_USERNAME || userInfo().username || process.env.USERNAME || 'Usuario'; } catch { return process.env.CODECLUB_USERNAME || process.env.USERNAME || 'Usuario'; }
+    }
+    case 'codeclub_open_external': {
+      const url = String(args.url || '');
+      if (!/^https:\/\//i.test(url)) throw new Error('Solo se permiten enlaces HTTPS externos.');
+      await shell.openExternal(url);
+      return true;
+    }
     case 'codeclub_list_files': return listProjectFiles(args.projectPath, Math.min(Number(args.maxFiles) || 400, 1200));
     case 'codeclub_read_file': return fs.readFile(projectFile(args.projectPath, args.path), 'utf8');
     case 'codeclub_search_text': return searchProjectText(args.projectPath, args.query, Math.min(Number(args.maxMatches) || 80, 200));
@@ -341,7 +350,7 @@ function showMainWindow() {
 }
 
 function createTray() {
-  const iconPath = path.join(root, '..', 'public', 'logo.png');
+  const iconPath = path.join(root, '..', 'public', 'icono', '256.png');
   const icon = nativeImage.createFromPath(iconPath);
   tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
   tray.setToolTip('Codeclub');
@@ -355,6 +364,7 @@ function createTray() {
 }
 
 function createWindow() {
+  const iconPath = path.join(root, '..', 'public', 'icono', '512.png');
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -363,6 +373,7 @@ function createWindow() {
     show: false,
     frame: false,
     transparent: true,
+    icon: iconPath,
     backgroundColor: '#00000000',
     backgroundMaterial: 'acrylic',
     webPreferences: {
