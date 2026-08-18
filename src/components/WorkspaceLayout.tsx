@@ -435,7 +435,6 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
     const chat = chatContextMenu?.chat;
     if (!chat) return;
     setChatContextMenu(null);
-    if (!window.confirm('¿Eliminar este chat?')) return;
     if (chat.projectPath) {
       const meta = await readProjectMeta(chat.projectPath);
       if (!meta) return;
