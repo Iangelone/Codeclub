@@ -1,7 +1,7 @@
 'use client';
 
 import { createElement, useEffect, useRef, useState, type FormEvent } from 'react';
-import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, Bolt, CircleHelp, CirclePlus, Clock, CopyX, EllipsisVertical, FileWarning, FolderOpen, FolderPen, FolderTree, GitBranch, GitCompare, Grid2X2, Home, ListTodo, MousePointerClick, Pencil, RotateCw, SquareTerminal, UserRound, X } from 'lucide-react';
+import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, Bolt, ChevronDown, Circle, CircleCheck, CircleHelp, CirclePlus, Clock, CopyX, EllipsisVertical, FileWarning, FolderOpen, FolderPen, FolderTree, GitBranch, GitCompare, Grid2X2, Home, Info, ListTodo, MoreHorizontal, MousePointerClick, Pause, Pencil, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, UserRound, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { GlobeCheck } from 'lucide-react';
 import { Terminal as XtermTerminal } from '@xterm/xterm';
@@ -12,6 +12,8 @@ import { ProjectPanelView } from './ChatInterface';
 import { readGlobalChats, readProjectMeta, writeGlobalChats, writeProjectMeta } from '../lib/projectManager';
 import { readAgentState, writeAgentState, type AgentState, type TaskStatus } from '../lib/engine/planning';
 import { nativeInvoke } from '../lib/runtime';
+import { getProjectSetting, getSetting, setProjectSetting } from '../lib/persistence';
+import { models, providers } from '../lib/ai-catalog';
 
 const MIN_WIDTH = 220;
 const MAX_WIDTH = 420;
@@ -27,6 +29,37 @@ type ChatContextMenu = { chat: RecentChat; x: number; y: number };
 type RightPanelTab = 'files' | 'review' | 'browser' | 'artifacts' | 'terminals';
 type RightPanelInstance = { instanceId: string; tab: RightPanelTab; label: string };
 type RightPanelContextMenu = { panel: RightPanelInstance; x: number; y: number };
+type ScheduledTask = { id: string; name: string; prompt: string; schedule: string; repeat: string; interval: string; every: string; time: string; status: 'active' | 'paused'; executionTarget: string; provider: string; model: string; apiKey: string; project: string; reasoning: string; notifications: string; lastRun?: string };
+
+const SCHEDULED_STORAGE_KEY = 'codeclub:scheduled-tasks';
+const defaultScheduledProvider = providers[0]?.label || 'Proveedor actual';
+const defaultScheduledModel = models.find((model: any) => model.providerId === providers[0]?.id)?.label || models[0]?.label || 'Modelo actual';
+const scheduledTimeOptions = Array.from({ length: 48 }, (_, index) => { const hour = Math.floor(index / 2); const minute = index % 2 ? '30' : '00'; const suffix = hour < 12 ? 'a. m.' : 'p. m.'; const displayHour = hour % 12 || 12; return { value: `${String(hour).padStart(2, '0')}:${minute}`, label: `${displayHour}:${minute} ${suffix}` }; });
+
+function ScheduledSelect({ value, options, onChange, label, searchable = false }: { value: string; options: string[]; onChange: (value: string) => void; label: string; searchable?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const selectRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const close = (event: MouseEvent) => { if (!selectRef.current?.contains(event.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, []);
+  return <div ref={selectRef} className="relative">
+    <button type="button" onClick={() => setOpen((current) => !current)} className="flex max-w-[280px] items-center gap-2 rounded-lg px-2 py-1.5 text-right text-[14px] text-[#dddddd] transition-colors hover:bg-white/[0.06]" aria-label={label} aria-expanded={open}>
+      <span className="truncate">{value}</span><ChevronDown size={15} className={`shrink-0 text-[#888888] transition-transform ${open ? 'rotate-180' : ''}`} />
+    </button>
+    {open && <div className="absolute right-0 top-[calc(100%+4px)] z-30 max-h-72 min-w-[220px] overflow-y-auto rounded-xl border border-white/[0.1] bg-[#292929] p-1.5 shadow-2xl shadow-black/40">
+      {searchable && <input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Buscar ${label.toLowerCase()}`} className="mb-1.5 w-full rounded-lg border border-white/[0.08] bg-[#202020] px-2.5 py-2 text-[12px] text-[#eeeeee] outline-none placeholder:text-[#777777] focus:border-[#555555]" />}
+      {options.filter((option) => option.toLowerCase().includes(query.toLowerCase())).map((option) => <button key={option} type="button" onClick={() => { onChange(option); setQuery(''); setOpen(false); }} className={`flex w-full items-center rounded-lg px-3 py-2 text-left text-[13px] transition-colors ${option === value ? 'bg-[#333333] text-[#8bc7ff]' : 'text-[#cccccc] hover:bg-white/[0.07] hover:text-white'}`}>{option}</button>)}
+    </div>}
+  </div>;
+}
+
+function ScheduledTimeSelect({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const selected = scheduledTimeOptions.find((option) => option.value === value) || scheduledTimeOptions[16];
+  return <ScheduledSelect value={selected.label} options={scheduledTimeOptions.map((option) => option.label)} label="Hora" onChange={(label) => { const option = scheduledTimeOptions.find((item) => item.label === label); if (option) onChange(option.value); }} />;
+}
 
 const rightPanelTabs: Array<{ id: RightPanelTab; label: string; icon: typeof FolderTree }> = [
   { id: 'files', label: 'Archivos', icon: FolderPen },
@@ -553,7 +586,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
             <SidebarItem active={activeSection === 'new-chat' && !activeChatId} icon={<CirclePlus />} label="Nuevo chat" onClick={() => selectSidebarSection('new-chat')} />
             <SidebarItem active={activeSection === 'scheduled'} icon={<Clock />} label="Programadas" onClick={() => selectSidebarSection('scheduled')} />
             <SidebarItem active={activeSection === 'extensions'} icon={<Grid2X2 />} label="Extensiones" onClick={() => selectSidebarSection('extensions')} />
-            <SidebarItem active={activeSection === 'projects'} icon={<Bolt />} label="Synapse" onClick={() => selectSidebarSection('projects')} />
+            <SidebarItem active={activeSection === 'projects'} icon={<Bolt />} label="Dispositivos" onClick={() => selectSidebarSection('projects')} />
           </nav>
           <div className="mt-5 min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {recentChats.length > 0 && <div className="pb-3"><p className="px-1.5 text-[13px] font-semibold text-(--codeclub-text-muted)">Recientes</p><div className="mt-2 space-y-1">{recentChats.map((chat) => <button key={chat.id} type="button" onContextMenu={(event) => { if (!chat.customName) return; event.preventDefault(); setChatContextMenu({ chat, x: event.clientX, y: event.clientY }); }} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: { chatId: chat.id, name: chat.title, customName: chat.customName, projectId: activeProjectId, projectPath: chat.projectPath ?? activeProjectPath, projectName: chat.projectName ?? activeProjectName } }))} className={`flex w-full min-w-0 items-center justify-between rounded-lg px-2.5 py-2 text-left text-[13px] text-(--codeclub-text-strong) ${activeChatId === chat.id ? 'bg-(--codeclub-acrylic-active)' : 'bg-transparent hover:bg-(--codeclub-hover)'}`}><span className="min-w-0 truncate">{chat.title}</span></button>)}</div></div>}
@@ -565,7 +598,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
       {rightContextMenu && <div ref={rightContextMenuRef} className="fixed z-[100] grid w-52 gap-0.5 rounded-xl border border-white/[0.08] bg-[#2C2C2C]/90 p-1 shadow-2xl backdrop-blur-xl" style={{ left: rightContextMenu.x, top: rightContextMenu.y }} role="menu" aria-label={`Menú de ${rightContextMenu.panel.label}`}><button type="button" onClick={() => closeRightPanel(rightContextMenu.panel.instanceId)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><X size={14} aria-hidden="true" />Cerrar</button><button type="button" onClick={() => closeOtherRightPanels(rightContextMenu.panel.instanceId)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><CopyX size={14} aria-hidden="true" />Cerrar otras pestañas</button><button type="button" onClick={() => closeRightPanelsToRight(rightContextMenu.panel.instanceId)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><ArrowRightToLine size={14} aria-hidden="true" />Cerrar a la derecha</button></div>}
       {leftOpen && <ResizeHandle side="left" value={leftWidth} maxValue={MAX_WIDTH} onStart={startResize('left')} onKeyboardResize={setLeftWidth} />}
 
-      <PanelManager activeSection={activeSection} />
+      <PanelManager activeSection={activeSection} projectPath={activeProjectPath} />
 
       {rightOpen && <ResizeHandle side="right" value={rightWidth} maxValue={rightMaxWidth} onStart={startResize('right')} onKeyboardResize={setRightWidth} />}
       <motion.aside id="codeclub-right-sidebar" animate={{ width: rightOpen ? rightWidth : 0, opacity: rightOpen ? 1 : 0 }} transition={resizing ? { type: 'spring', stiffness: 900, damping: 58, mass: 0.22 } : { type: 'spring', stiffness: 340, damping: 30 }} className="codeclub-panel-edge flex h-full min-h-0 shrink-0 flex-col overflow-visible bg-(--codeclub-center)" aria-label="Sidebar derecha" aria-hidden={!rightOpen}>
@@ -592,7 +625,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
   </section>;
 }
 
-function PanelManager({ activeSection }: { activeSection: SidebarSection }) {
+function PanelManager({ activeSection, projectPath }: { activeSection: SidebarSection; projectPath?: string }) {
   const chatVisible = activeSection === 'new-chat' || activeSection === 'extensions';
   const synapseVisible = activeSection === 'projects';
   const scheduledVisible = activeSection === 'scheduled';
@@ -600,30 +633,111 @@ function PanelManager({ activeSection }: { activeSection: SidebarSection }) {
     <div className="codeclub-panel-shell h-full w-full overflow-hidden bg-(--codeclub-center)">
       <div className={`h-full min-h-0 min-w-0 ${chatVisible ? 'block' : 'hidden'}`} aria-hidden={!chatVisible}><ChatPanel /></div>
       {synapseVisible && <div className="relative z-10 h-full min-h-0 min-w-0"><SynapsePanel /></div>}
-      {scheduledVisible && <div className="relative z-10 h-full min-h-0 min-w-0"><ScheduledPanel /></div>}
+      {scheduledVisible && <div className="relative z-10 h-full min-h-0 min-w-0"><ScheduledPanel projectPath={projectPath} /></div>}
       {!chatVisible && <div className="grid h-full min-h-0 place-items-center bg-(--codeclub-center) px-6 text-center"><div><p className="text-sm font-medium text-(--codeclub-text-strong)">Panel sin contenido</p><p className="mt-1 text-xs text-(--codeclub-text-muted)">Este espacio se adaptará cuando agreguemos esta sección.</p></div></div>}
     </div>
   </section>;
 }
 
 function SynapsePanel() {
-  return <main id="codeclub-synapse-panel" className="h-full min-h-0 overflow-auto bg-(--codeclub-center)" aria-label="Synapse">
+  return <main id="codeclub-synapse-panel" className="h-full min-h-0 overflow-auto bg-(--codeclub-center)" aria-label="Dispositivos">
     <div className="mx-auto min-w-0 w-full max-w-[1040px] px-6 py-7 lg:px-8">
       <header>
-        <h1 className="m-0 text-[28px] font-normal tracking-[-0.04em] text-(--codeclub-text-strong)">Synapse</h1>
-        <p className="mt-1.5 text-[14px] text-(--codeclub-text-muted)">Gestioná automatizaciones, agentes y flujos por alcance.</p>
+        <h1 className="m-0 text-[28px] font-normal tracking-[-0.04em] text-(--codeclub-text-strong)">Dispositivos</h1>
+        <p className="mt-1.5 text-[14px] text-(--codeclub-text-muted)">Conectá tu celular al IDE escaneando un código QR.</p>
       </header>
     </div>
   </main>;
 }
 
-function ScheduledPanel() {
-  return <main id="codeclub-scheduled-panel" className="h-full min-h-0 overflow-auto bg-(--codeclub-center)" aria-label="Programadas">
+function ScheduledPanel({ projectPath }: { projectPath?: string }) {
+  const [tasks, setTasks] = useState<ScheduledTask[]>([]);
+  const [scheduledDefaults, setScheduledDefaults] = useState({ provider: defaultScheduledProvider, model: defaultScheduledModel, apiKey: '' });
+  const [scheduledReady, setScheduledReady] = useState(false);
+  const [draftTask, setDraftTask] = useState<ScheduledTask | null>(null);
+  const loadedProjectKey = useRef<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<'all' | 'active' | 'paused'>('all');
+  const [query, setQuery] = useState('');
+
+  useEffect(() => {
+    setScheduledReady(false);
+    loadedProjectKey.current = null;
+    setTasks([]);
+    setSelectedId(null);
+    void Promise.all([
+      getProjectSetting<unknown>(projectPath, 'scheduled-tasks', null),
+      getSetting<string>('codeclub_last_provider_id', providers[0]?.id || ''),
+      getSetting<string>('codeclub_last_model_id', models[0]?.id || ''),
+    ]).then(async ([saved, providerId, modelId]) => {
+      const provider = providers.find((item: any) => item.id === providerId) || providers[0];
+      const model = models.find((item: any) => item.id === modelId && item.providerId === provider?.id) || models.find((item: any) => item.providerId === provider?.id) || models[0];
+      const defaults = { provider: provider?.label || provider?.id || defaultScheduledProvider, model: model?.label || model?.id || defaultScheduledModel, apiKey: provider?.id ? await getSetting<string>(`${provider.id}_api_key`, '') : '' };
+      setScheduledDefaults(defaults);
+      let source = saved;
+      if (source === null && !projectPath) source = await getSetting<unknown>(SCHEDULED_STORAGE_KEY, []);
+      if (Array.isArray(source)) setTasks(source.map((task) => ({ ...task as ScheduledTask, repeat: task.repeat || 'Días hábiles', interval: task.interval || (task.repeat === 'Todos los días' ? 'Diario' : 'Días hábiles'), every: task.every || '30 min', time: task.time && /^\d{2}:\d{2}$/.test(task.time) ? task.time : '08:00', executionTarget: 'Chat nuevo', provider: task.provider || defaults.provider, model: task.model || defaults.model, apiKey: task.apiKey || defaults.apiKey })));
+      loadedProjectKey.current = projectPath ?? '';
+      setScheduledReady(true);
+    }).catch(() => setScheduledReady(true));
+  }, [projectPath]);
+
+  useEffect(() => {
+    if (scheduledReady && loadedProjectKey.current === (projectPath ?? '')) void setProjectSetting(projectPath, 'scheduled-tasks', tasks);
+  }, [projectPath, scheduledReady, tasks]);
+
+  const visibleTasks = tasks.filter((task) => (filter === 'all' || task.status === filter) && `${task.name} ${task.prompt}`.toLowerCase().includes(query.toLowerCase()));
+  const createCustomTask = () => {
+    const task: ScheduledTask = { id: `custom-${Date.now()}`, name: 'Nueva tarea', prompt: '', schedule: 'Días hábiles a las 8:00 a.m.', repeat: 'Días hábiles', interval: 'Días hábiles', every: '30 min', time: '08:00', status: 'active', executionTarget: 'Chat nuevo', ...scheduledDefaults, project: projectPath ? 'Proyecto activo' : 'Ninguno', reasoning: 'Medio', notifications: 'Todas las ejecuciones' };
+    setDraftTask(task);
+    setSelectedId(null);
+  };
+  const updateTask = (next: ScheduledTask) => { setTasks((current) => draftTask ? [next, ...current] : current.map((task) => task.id === next.id ? next : task)); setDraftTask(null); setSelectedId(null); };
+  const runTask = (task: ScheduledTask) => {
+    setTasks((current) => current.map((item) => item.id === task.id ? { ...item, lastRun: new Date().toLocaleString('es-AR') } : item));
+    window.dispatchEvent(new CustomEvent('codeclub:run-scheduled-task', { detail: { task } }));
+  };
+  const deleteTask = (id: string) => { setTasks((current) => current.filter((task) => task.id !== id)); setSelectedId(null); };
+  const selected = draftTask || tasks.find((task) => task.id === selectedId) || null;
+
+  if (selected) return <ScheduledTaskDetail task={selected} onBack={() => { setDraftTask(null); setSelectedId(null); }} onSave={updateTask} onRun={() => runTask(selected)} onDelete={() => draftTask ? setDraftTask(null) : deleteTask(selected.id)} />;
+
+  return <main id="codeclub-scheduled-panel" className="h-full min-h-0 overflow-y-auto bg-(--codeclub-center) [scrollbar-color:#444444_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#444444] [&::-webkit-scrollbar-thumb:hover]:bg-[#666666]" aria-label="Programadas">
     <div className="mx-auto min-w-0 w-full max-w-[1040px] px-6 py-7 lg:px-8">
-      <header>
+      <header className="mb-6">
         <h1 className="m-0 text-[28px] font-normal tracking-[-0.04em] text-(--codeclub-text-strong)">Programadas</h1>
-        <p className="mt-1.5 text-[14px] text-(--codeclub-text-muted)">Administrá tus tareas y recordatorios programados.</p>
+        <p className="mt-1.5 text-[14px] text-(--codeclub-text-muted)">Automatizá tareas y recordatorios para que se ejecuten cuando los necesites.</p>
       </header>
+      <div className="relative flex h-9 items-center rounded-full border border-[#454545] bg-[#292929] px-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] focus-within:border-[#666666]">
+        <Search size={17} className="mr-2 shrink-0 text-[#999999]" aria-hidden="true" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar tareas programadas" aria-label="Buscar tareas programadas" className="min-w-0 flex-1 bg-transparent text-[14px] text-(--codeclub-text-strong) outline-none placeholder:text-[#929292]" />
+      </div>
+      <div className="mt-8 flex items-center gap-1 border-b border-white/[0.06] pb-3" role="tablist" aria-label="Estado de tareas programadas">
+        {([{ id: 'all', label: 'Todas' }, { id: 'active', label: 'Activadas' }, { id: 'paused', label: 'En pausa' }] as const).map((item) => <button key={item.id} type="button" role="tab" aria-selected={filter === item.id} onClick={() => setFilter(item.id)} className={`rounded-lg px-3 py-1.5 text-[13px] transition-colors ${filter === item.id ? 'bg-[#2d2d2d] text-[#eeeeee]' : 'text-[#888888] hover:bg-white/[0.05] hover:text-[#cccccc]'}`}>{item.label}</button>)}
+        <button type="button" onClick={createCustomTask} className="ml-auto grid h-7 w-7 place-items-center rounded-lg text-[#999999] transition-colors hover:bg-white/[0.08] hover:text-[#eeeeee]" aria-label="Crear tarea personalizada" title="Crear tarea personalizada"><Plus size={16} strokeWidth={1.8} /></button>
+      </div>
+      {visibleTasks.length > 0 && <section className="mt-7" aria-label="Tareas programadas">
+        <h2 className="m-0 text-[15px] font-medium text-[#888888]">Recientes</h2>
+        <div className="mt-3 divide-y divide-white/[0.06]">{visibleTasks.map((task) => <button key={task.id} type="button" onClick={() => setSelectedId(task.id)} className="group flex w-full items-center gap-2.5 rounded-lg px-2 py-2.5 text-left transition-colors hover:bg-white/[0.035]"><span className="grid h-6 w-6 shrink-0 place-items-center text-[#858585]">{task.status === 'active' ? <CircleCheck size={17} strokeWidth={1.6} /> : <Circle size={17} strokeWidth={1.6} />}</span><span className="min-w-0 flex-1"><span className="block truncate text-[14px] text-[#cfcfcf]">{task.name}</span><span className="mt-0.5 block truncate text-[12px] text-[#858585]">{task.schedule} · {task.status === 'active' ? 'Próxima ejecución pendiente' : 'En pausa'}</span></span><MoreHorizontal size={16} className="shrink-0 text-[#777777] opacity-0 transition-opacity group-hover:opacity-100" /></button>)}</div>
+      </section>}
+      {visibleTasks.length === 0 && <p className="mt-8 px-2 text-[13px] text-[#777777]">No hay tareas programadas.</p>}
+    </div>
+  </main>;
+}
+
+function ScheduledTaskDetail({ task, onBack, onSave, onRun, onDelete }: { task: ScheduledTask; onBack: () => void; onSave: (task: ScheduledTask) => void; onRun: () => void; onDelete: () => void }) {
+  const [draft, setDraft] = useState(task);
+  const set = <K extends keyof ScheduledTask>(key: K, value: ScheduledTask[K]) => setDraft((current) => ({ ...current, [key]: value }));
+  const providerOptions = providers.map((provider: any) => provider.label || provider.id).filter(Boolean);
+  const selectedProvider = providers.find((provider: any) => (provider.label || provider.id) === draft.provider);
+  const modelOptions = models.filter((model: any) => !selectedProvider || model.providerId === selectedProvider.id).map((model: any) => model.label || model.id).filter(Boolean);
+  return <main className="h-full min-h-0 overflow-y-auto bg-(--codeclub-center) [scrollbar-color:#444444_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#444444] [&::-webkit-scrollbar-thumb:hover]:bg-[#666666]" aria-label={`Tarea programada: ${draft.name}`}>
+    <div className="mx-auto min-w-0 w-full max-w-[1040px] px-6 py-6 lg:px-8">
+      <div className="flex items-center justify-between"><button type="button" onClick={onBack} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] text-[#999999] hover:bg-white/[0.05] hover:text-[#eeeeee]"><ArrowLeft size={15} />Programadas</button><div className="flex items-center gap-1"><button type="button" onClick={() => set('status', draft.status === 'active' ? 'paused' : 'active')} className="grid h-8 w-8 place-items-center rounded-lg text-[#999999] hover:bg-white/[0.06] hover:text-[#eeeeee]" title={draft.status === 'active' ? 'Pausar' : 'Activar'}>{draft.status === 'active' ? <Pause size={16} /> : <Play size={16} />}</button><button type="button" onClick={onRun} className="grid h-8 w-8 place-items-center rounded-lg text-[#999999] hover:bg-white/[0.06] hover:text-[#eeeeee]" title="Ejecutar ahora" aria-label="Ejecutar ahora"><Play size={16} /></button><button type="button" onClick={() => onSave(draft)} className="grid h-8 w-8 place-items-center rounded-lg text-[#999999] hover:bg-[#1f3d57] hover:text-[#8bc7ff]" title="Guardar tarea" aria-label="Guardar tarea"><CircleCheck size={17} /></button><button type="button" onClick={onDelete} className="grid h-8 w-8 place-items-center rounded-lg text-[#999999] hover:bg-[#562b2b] hover:text-[#ffb4b4]" title="Eliminar"><Trash2 size={16} /></button><button type="button" onClick={onBack} className="grid h-8 w-8 place-items-center rounded-lg text-[#999999] hover:bg-white/[0.06] hover:text-[#eeeeee]" title="Cerrar" aria-label="Cerrar"><X size={17} /></button></div></div>
+      <div className="mt-7"><input value={draft.name} onChange={(event) => set('name', event.target.value)} className="w-full bg-transparent text-[28px] font-normal tracking-[-0.04em] text-[#eeeeee] outline-none" aria-label="Nombre de la tarea" /><p className="mt-2 text-[12px] text-[#777777]">ID: {draft.id} · Última ejecución: {draft.lastRun || 'nunca'}</p></div>
+      <textarea value={draft.prompt} onChange={(event) => set('prompt', event.target.value)} rows={3} className="mt-8 w-full resize-none rounded-2xl border border-[#414141] bg-[#252525] px-5 py-4 text-[16px] leading-6 text-[#dddddd] outline-none focus:border-[#666666]" aria-label="Instrucción de la tarea" />
+      <div className="mt-8"><h2 className="mb-3 text-[16px] font-normal text-[#888888]">Detalles <Info size={15} className="ml-1 inline-block align-[-2px]" /></h2><div className="overflow-visible rounded-2xl border border-white/[0.08] bg-[#242424]">{[['Proveedor', 'provider', providerOptions, true], ['API key', 'apiKey', [], false], ['Modelo', 'model', modelOptions.length ? modelOptions : [draft.model], true]].map(([label, key, options, searchable]) => <label key={String(label)} className="flex min-h-[56px] items-center justify-between gap-4 border-b border-white/[0.08] px-5 last:border-b-0"><span className="text-[15px] text-[#dddddd]">{label}</span>{key === 'apiKey' ? <input type="password" value={draft.apiKey} onChange={(event) => set('apiKey', event.target.value)} placeholder="API key" className="min-w-0 max-w-[65%] bg-transparent text-right text-[15px] text-[#dddddd] outline-none placeholder:text-[#777777]" autoComplete="off" /> : <ScheduledSelect value={String(draft[key as keyof ScheduledTask])} options={options as string[]} label={String(label)} searchable={Boolean(searchable)} onChange={(value) => { set(key as keyof ScheduledTask, value as never); if (key === 'provider') { const nextProvider = providers.find((provider: any) => (provider.label || provider.id) === value); const nextModel = models.find((model: any) => model.providerId === nextProvider?.id); if (nextModel) set('model', (nextModel.label || nextModel.id) as never); if (nextProvider?.id) void getSetting<string>(`${nextProvider.id}_api_key`, '').then((apiKey) => set('apiKey', apiKey)); } }} />}</label>)}</div></div>
+      <div className="mt-8"><h2 className="mb-3 text-[16px] font-normal text-[#888888]">Frecuencia</h2><div className="overflow-visible rounded-2xl border border-white/[0.08] bg-[#242424]"><label className="flex min-h-[56px] items-center justify-between gap-4 border-b border-white/[0.08] px-5"><span className="text-[15px] text-[#dddddd]">Intervalo</span><ScheduledSelect value={draft.interval} options={['Diario', 'Días hábiles', 'Semanal', 'Personalizado']} label="Intervalo" onChange={(value) => set('interval', value)} /></label>{draft.interval === 'Personalizado' && <label className="flex min-h-[56px] items-center justify-between gap-4 border-b border-white/[0.08] px-5"><span className="text-[15px] text-[#dddddd]">Cada</span><ScheduledSelect value={draft.every} options={['15 min', '30 min', '1 hora', '2 horas', '1 día']} label="Cada" onChange={(value) => set('every', value)} /></label>}<label className="flex min-h-[56px] items-center justify-between gap-4 border-b border-white/[0.08] px-5"><span className="text-[15px] text-[#dddddd]">A las</span><ScheduledTimeSelect value={draft.time} onChange={(value) => set('time', value)} /></label><label className="flex min-h-[56px] items-center justify-between gap-4 px-5"><span className="text-[15px] text-[#dddddd]">Notificaciones</span><ScheduledSelect value={draft.notifications} options={['Todas las ejecuciones', 'Solo errores', 'Sin notificaciones']} label="Notificaciones" onChange={(value) => set('notifications', value)} /></label></div></div>
+      <div className="pb-8" />
     </div>
   </main>;
 }

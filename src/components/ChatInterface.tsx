@@ -1834,6 +1834,20 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
   };
 
   useEffect(() => {
+    const handleScheduledTask = (event: Event) => {
+      const detail = (event as CustomEvent<{ task?: { prompt?: string } }>).detail;
+      const prompt = detail?.task?.prompt?.trim();
+      if (!prompt || isAgentBusy) return;
+      activeChatRef.current = null;
+      setActiveChat(null);
+      setMessages([]);
+      void sendMessage(prompt, [], true);
+    };
+    window.addEventListener('codeclub:run-scheduled-task', handleScheduledTask);
+    return () => window.removeEventListener('codeclub:run-scheduled-task', handleScheduledTask);
+  }, [isAgentBusy, sendMessage]);
+
+  useEffect(() => {
     const handleComputerEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || !computerUseActive) return;
       event.preventDefault();

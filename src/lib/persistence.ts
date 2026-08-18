@@ -16,6 +16,17 @@ export const getProjectDataDir = async (projectPath: string, ...parts: string[])
 
 export const getProjectFilePath = (projectPath: string, ...parts: string[]) => getProjectDataDir(projectPath, ...parts);
 
+export const getProjectSetting = async <T>(projectPath: string | undefined, key: string, fallback: T): Promise<T> => {
+  const filePath = await getProjectFilePath(projectPath ?? '', `${key}.json`);
+  try { return (await exists(filePath)) ? JSON.parse(await readTextFile(filePath)) as T : fallback; } catch { return fallback; }
+};
+
+export const setProjectSetting = async (projectPath: string | undefined, key: string, value: unknown) => {
+  const directory = await getProjectDataDir(projectPath ?? '');
+  await mkdir(directory, { recursive: true });
+  await writeTextFile(await getProjectFilePath(projectPath ?? '', `${key}.json`), JSON.stringify(value));
+};
+
 export const logPersistence = async (action: string, status: string, detail: Record<string, any> = {}) => {
   const entry = { at: new Date().toISOString(), action, status, ...detail };
   console.info("[codeclub:persist]", entry);
