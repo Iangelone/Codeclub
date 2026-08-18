@@ -1,6 +1,8 @@
 {
   "name": "codeclub-desktop",
   "version": "0.1.0",
+  "description": "Local-first desktop IDE for building software with AI agents.",
+  "author": "Iangelone",
   "private": true,
   "type": "module",
   "main": "electron-dist/main.js",
@@ -13,7 +15,8 @@
     "next:build": "next build",
     "electron:compile": "tsc -p tsconfig.electron.json",
     "electron:launch": "electron .",
-    "electron:dev": "npm run electron:compile && electron ."
+    "electron:dev": "npm run electron:compile && electron .",
+    "package:win": "npm run desktop:build && electron-builder --win --x64"
   },
   "dependencies": {
     "@ai-sdk/devtools": "^1.0.2",
@@ -38,7 +41,6 @@
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "ai": "^7.0.16",
-    "electron": "^43.3.0",
     "highlight.js": "^11.11.1",
     "lucide-react": "^1.23.0",
     "mammoth": "^1.12.0",
@@ -58,7 +60,35 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
     "@types/react-dom": "^19.2.4",
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3",
     "tsx": "^4.23.11",
     "typescript": "^7.0.2"
+  },
+  "build": {
+    "appId": "com.codeclub.desktop",
+    "productName": "Codeclub",
+    "directories": { "output": "release" },
+    "files": [
+      "out/**/*",
+      "electron-dist/**/*",
+      "public/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "public/icono/256.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Codeclub"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "Iangelone",
+      "repo": "Codeclub"
+    }
   }
 }
