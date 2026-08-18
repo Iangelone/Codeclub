@@ -13,6 +13,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [availableProjects, setAvailableProjects] = useState<ProjectEntry[]>([]);
   const pendingChatRef = useRef<any>(null);
+  const preserveSectionRef = useRef(false);
   const [chatOpenVersion, setChatOpenVersion] = useState(0);
   const panelNavigation = useRef<{ entries: string[]; index: number; moving: boolean; chats: Record<string, any> }>({ entries: ['new-chat'], index: 0, moving: false, chats: {} });
 
@@ -87,7 +88,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
       setShowExtensions(true);
       visit('extensions');
     };
-    const handleCloseExtensions = () => { setShowExtensions(false); visit(activeChatStore.get().id ? `chat:${activeChatStore.get().id}` : 'new-chat'); };
+    const handleCloseExtensions = (event: Event) => { preserveSectionRef.current = Boolean((event as CustomEvent).detail?.preserveSection); setShowExtensions(false); visit(activeChatStore.get().id ? `chat:${activeChatStore.get().id}` : 'new-chat'); };
     const handleOpenChat = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
       pendingChatRef.current = detail;
@@ -148,6 +149,7 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
   }, [showExtensions, chatOpenVersion]);
 
   useEffect(() => {
+    if (preserveSectionRef.current) { preserveSectionRef.current = false; return; }
     if (!showExtensions && !pendingChatRef.current && !activeChatStore.get().id) window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
   }, [showExtensions]);
 

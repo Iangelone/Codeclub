@@ -422,7 +422,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
     setActiveChatId(undefined);
     if (section === 'new-chat') window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
     else if (section === 'extensions') window.dispatchEvent(new CustomEvent('codeclub:open-extensions'));
-    else window.dispatchEvent(new CustomEvent('codeclub:close-extensions'));
+    else window.dispatchEvent(new CustomEvent('codeclub:close-extensions', { detail: { preserveSection: true } }));
   };
 
   const openFromContextMenu = () => {
