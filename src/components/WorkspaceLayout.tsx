@@ -235,6 +235,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
       setProjectNameDraft(nextName);
       setEditingProjectName(false);
       setChatsByProject((current) => current[projectId] ? current : { ...current, [projectId]: [] });
+      window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
       if (project.path) window.localStorage.setItem('codeclub:active-project', JSON.stringify({ id: projectId, name: nextName, path: project.path }));
       else window.localStorage.removeItem('codeclub:active-project');
     };
