@@ -1,25 +1,35 @@
-# Codeclub
+# Documentación de Codeclub
 
-Documentación breve de la aplicación de escritorio local-first.
+> La guía corta para entender, usar y mantener la app.
 
 ## Índice
 
-- [Arquitectura](./arquitectura.md)
-- [Flujos y eventos](./flujos.md)
-- [Persistencia y configuración](./persistencia.md)
-- [Terminal y navegador](./terminal-y-navegador.md)
-- [Accesibilidad y Computer Use](./accesibilidad.md)
-- [Desarrollo y verificación](./desarrollo.md)
-- [Sidebar derecha](./sidebar-derecha.md)
+| Documento | Responde a |
+| --- | --- |
+| [Arquitectura](arquitectura.md) | ¿Cómo está armada la app? |
+| [Flujos y eventos](flujos.md) | ¿Cómo se comunican sus partes? |
+| [Persistencia](persistencia.md) | ¿Dónde se guardan chats, tareas y settings? |
+| [Sidebar derecha](sidebar-derecha.md) | ¿Qué hacen sus paneles? |
+| [Terminal y navegador](terminal-y-navegador.md) | ¿Cómo funcionan las herramientas interactivas? |
+| [Accesibilidad](accesibilidad.md) | ¿Cómo hacer UI usable y observable? |
+| [Desarrollo](desarrollo.md) | ¿Cómo correr, verificar y publicar? |
+| [Synapse](synapse.md) | ¿Qué visión tienen Dispositivos y la trazabilidad? |
 
-## Resumen
+## Mapa mental
 
-Codeclub combina un renderer Next.js/React con un proceso nativo Electron. El renderer controla la interfaz y emite eventos `codeclub:*`; Electron ejecuta operaciones de sistema mediante IPC seguro.
+```text
+Proyecto -> Chat -> Agente -> Tool -> Resultado
+     |       |       |         |
+     |       |       |         +-> archivos / terminal / navegador / artifacts
+     |       |       +-> modelo y proveedor
+     |       +-> historial persistente
+     +-> settings, chats y tareas propias
+```
 
-La aplicación está organizada alrededor de tres espacios:
+## Principios
 
-- chat y ejecución de agentes;
-- navegación y gestión de proyectos;
-- herramientas laterales: archivos, revisión, navegador, artifacts y terminales.
-
-La app separa chats globales de chats asociados a proyectos y conserva settings, logs, uso y estado de planificación en el almacenamiento de Electron.
+- **Local-first:** los datos de trabajo viven localmente.
+- **Proyecto primero:** cada proyecto puede tener chats, tareas y artifacts propios.
+- **Agente flexible:** el modelo elige tools del catálogo disponible.
+- **Evidencia visible:** planes, TODOs, uso y logs ayudan a entender qué pasó.
+- **UI simple:** pocos colores, controles chicos y estados claros.

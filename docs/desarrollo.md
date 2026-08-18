@@ -1,34 +1,56 @@
-# Desarrollo y verificación
+# Desarrollo y releases
 
 ## Requisitos
 
-- Node.js compatible con Next.js 16.
-- npm.
-- Electron y dependencias instaladas con `npm install`.
+- Windows.
+- Node.js 24 recomendado.
+- npm 11 recomendado.
+- Dependencias instaladas con `npm install`.
 
 ## Comandos
 
-- `npm run dev`: desarrollo completo Next.js + Electron.
-- `npm run next:dev`: solo renderer.
-- `npm run electron:dev`: compila Electron y abre la app.
-- `npm run next:build`: build del renderer.
-- `npm run electron:compile`: compila `electron/main.ts`.
-- `npm run desktop:build`: build del renderer y compilación Electron.
+| Comando | Uso |
+| --- | --- |
+| `npm run dev` | Next.js + Electron en desarrollo. |
+| `npm run next:dev` | Solo renderer. |
+| `npm run electron:dev` | Compila Electron y abre la app. |
+| `npm run next:build` | Build del renderer. |
+| `npm run electron:compile` | Compila TypeScript de Electron. |
+| `npm run desktop:build` | Build completo de escritorio. |
 
 ## Verificación mínima
 
-Después de cambios de UI:
+```bash
+npm run next:build
+npm run electron:compile
+git diff --check
+```
 
-1. `npm run next:build`.
-2. Probar navegación de sidebar, tabs y estados vacíos.
-3. Verificar foco con teclado y nombres accesibles.
+Después probar manualmente:
 
-Después de cambios de Electron, PTY o IPC:
+- chat y streaming;
+- Inicio versus proyecto;
+- persistencia de chats y tareas;
+- sidebar derecha y resize;
+- navegador, selección y referencias;
+- artifacts y terminal;
+- idioma español/inglés;
+- update, recarga y controles de ventana.
 
-1. `npm run electron:compile`.
-2. Abrir la app con `npm run electron:dev`.
-3. Probar una operación real y su cleanup al desmontar.
+## Release beta
 
-## Regla de cambios
+1. Revisar `git status` y cambios de documentación.
+2. Ejecutar build completo.
+3. Probar una instalación limpia.
+4. Verificar icono, bandeja, links externos y permisos.
+5. Crear tag y release de GitHub.
+6. Adjuntar instalador y notas de cambios.
 
-Preferir componentes pequeños, eventos explícitos y cambios reversibles. No introducir dependencias nuevas si una API existente resuelve el problema. Cuando una dependencia nativa cambia, verificar su compatibilidad con la versión de Electron.
+> La conexión Android por QR y la ejecución automática de tareas quedan como trabajo futuro hasta que exista su backend/runtime completo.
+
+## Estilo de cambios
+
+- Usar `apply_patch` para editar archivos.
+- Preferir cambios pequeños y reversibles.
+- No sumar dependencias si ya existe una API del proyecto.
+- Documentar eventos y persistencia cuando se agrega una feature.

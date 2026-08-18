@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Blocks, Box, FileText, FileType2, Folder, LayoutTemplate, PlugZap, Presentation, Search, Table2, Trash2, WandSparkles } from 'lucide-react';
 import { getSetting, setSetting } from '../lib/persistence';
-import { LANGUAGE_STORAGE_KEY, type AppLanguage } from '../lib/i18n';
+import { useAppLanguage, type AppLanguage } from '../lib/i18n';
 import { loadAgentPlugins, type AgentPlugin } from '../lib/agent-plugins';
 import { nativeInvoke as invoke } from '../lib/runtime';
 
@@ -21,7 +21,7 @@ type McpItem = { id: string; name: string; url: string; scope: Scope };
 const scopeLabel = (scope: Scope, language: AppLanguage) => scope === 'global' ? (language === 'en' ? 'Global' : 'Global') : (language === 'en' ? 'Project' : 'Proyecto');
 
 export default function ExtensionsPanel({ selectedProject }: { selectedProject?: { projectPath: string } | null }) {
-  const [language, setLanguage] = useState<AppLanguage>('es');
+  const language = useAppLanguage();
   const [tab, setTab] = useState<'extensions' | 'skills' | 'mcp'>('extensions');
   const [query, setQuery] = useState('');
   const [enabled, setEnabled] = useState<Record<string, boolean>>({});
@@ -47,16 +47,6 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
   const text = language === 'en'
     ? { title: 'Extensions', description: 'Manage extensions, skills, and MCP by scope.', extensions: 'Extensions', skills: 'Skills', search: 'Search', list: 'Available extensions', empty: 'No extensions found.', noSkills: 'No SKILL.md files found.', noMcp: 'No MCP servers connected.', project: 'Active project', noProject: 'No active project: only global items are shown.' }
     : { title: 'Extensiones', description: 'Administrá extensiones, skills y MCP por alcance.', extensions: 'Extensiones', skills: 'Skills', search: 'Buscar', list: 'Extensiones disponibles', empty: 'No se encontraron extensiones.', noSkills: 'No se encontraron archivos SKILL.md.', noMcp: 'No hay servidores MCP conectados.', project: 'Proyecto activo', noProject: 'Sin proyecto activo: solo se muestran elementos globales.' };
-
-  useEffect(() => {
-    if (window.localStorage.getItem(LANGUAGE_STORAGE_KEY) === 'en') setLanguage('en');
-    const handleLanguageChange = (event: Event) => {
-      const nextLanguage = (event as CustomEvent<{ language?: AppLanguage }>).detail?.language;
-      if (nextLanguage === 'es' || nextLanguage === 'en') setLanguage(nextLanguage);
-    };
-    window.addEventListener('codeclub:language-change', handleLanguageChange);
-    return () => window.removeEventListener('codeclub:language-change', handleLanguageChange);
-  }, []);
 
   const refresh = () => {
     void Promise.all(builtInExtensions.map(async (extension) => [extension.id, await getSetting(`codeclub_extension_enabled_${extension.id}`, 'true') !== 'false'] as const))

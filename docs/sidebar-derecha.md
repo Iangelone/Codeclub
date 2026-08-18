@@ -1,80 +1,55 @@
 # Sidebar derecha
 
-Documento de trabajo para rediseñar y retrabajar la sidebar derecha de Codeclub.
+La sidebar derecha es el panel de herramientas del IDE. Se puede abrir, cerrar y redimensionar sin aplastar el chat.
 
-## Objetivo
+## Paneles
 
-Construir una sidebar derecha de escritorio, minimalista y redimensionable, integrada con el layout actual de Next.js + Electron. Debe empujar el panel central sin romper el chat ni la navegación.
-
-## Pestañas
-
-### Archivos
-
-- Árbol del proyecto activo.
-- Búsqueda y apertura de archivos.
-- Vista previa para texto, código, imágenes y PDF.
-- Edición únicamente cuando corresponda.
-
-### Revisar
-
-- Cambios del workspace.
-- Estado de git.
-- Archivos modificados, agregados y eliminados.
-- Resumen de la última ejecución de tools.
-
-### Navegador
-
-- Navegador embebido dentro de Electron.
-- URL, navegación y recarga.
-- Referencias seleccionadas para enviarlas al chat.
-- Estado vacío y errores claros.
-
-### Artifacts
-
-- Planes, TODOs y resultados generados por la IA.
-- Filtros por tipo.
-- Persistencia por proyecto.
-- Apertura desde una respuesta del chat.
-
-### Terminales
-
-- Terminales persistentes por pestaña.
-- Crear, cambiar nombre, enfocar y cerrar.
-- Estado del proceso y salida visible.
-- Persistencia solo durante la sesión de la app.
-
-## Reglas visuales
-
-- Mismo color base que el contenido central actual.
-- Sin base acrílica propia.
-- Paneles internos con #191919 cuando corresponda.
-- Bordes mínimos y divisor eléctrico azul suave al centro.
-- Sin tarjetas pesadas ni sombras fuertes.
-- Iconos Lucide consistentes con la topbar.
-- Motion sutil al cambiar de pestaña, abrir contenido y redimensionar.
+| Pestaña | Qué hace |
+| --- | --- |
+| **Archivos** | Explora el árbol, busca, abre y previsualiza archivos del proyecto. |
+| **Revisar** | Muestra cambios y estado del workspace/Git. |
+| **Navegador** | Abre páginas dentro de Electron y permite referenciarlas. |
+| **Artifacts** | Muestra planes y TODOs creados por el agente. |
+| **Terminales** | Abre terminales interactivas persistentes durante la sesión. |
 
 ## Comportamiento
 
-- Cerrada por defecto.
-- Se activa desde el botón de panel derecho de la topbar.
-- Ancho definido por el usuario con mínimo y máximo sanos.
-- La pestaña activa usa el mismo estado visual que los controles existentes.
-- Un solo contenido visible por vez.
-- El panel central se adapta dinámicamente al ancho disponible.
+- El panel central mantiene un ancho mínimo.
+- El ancho derecho se guarda localmente.
+- Browser y Terminales pueden abrir múltiples pestañas.
+- Las demás pestañas se reutilizan.
+- Las tabs usan el mismo lenguaje visual que el resto de la app.
+- Los paneles tienen estados vacíos claros y labels accesibles.
 
-## Integración
+## Archivos
 
-- React controla el estado visual.
-- Electron/Node maneja archivos, navegador, terminal y persistencia nativa.
-- El chat abre Artifacts mediante eventos codeclub:.
-- La selección de proyecto determina el contenido de Archivos, Revisar y Artifacts.
+El contenido depende del proyecto activo. En Inicio se muestra un estado vacío; no se intenta leer una ruta inexistente.
 
-## Orden de implementación
+## Revisar
 
-1. Shell de la sidebar y selector de pestañas.
-2. Archivos.
-3. Revisar.
-4. Artifacts.
-5. Terminales.
-6. Navegador.
-7. Accesibilidad, motion y verificación con Computer Use.
+Sirve para inspeccionar cambios del workspace. La vista debe diferenciar archivos agregados, modificados, eliminados, renombrados y sin seguimiento.
+
+## Artifacts
+
+Los artifacts se dividen en:
+
+```text
+Plan
+  -> pasos
+  -> progreso
+  -> estado
+
+TODO
+  -> descripción
+  -> estado
+```
+
+Se pueden buscar, referenciar al chat y eliminar. Su estado vive por proyecto.
+
+## Reglas visuales
+
+- Fondos oscuros: `#191919` y `#1E1E1E`.
+- Bordes suaves, sin tarjetas pesadas.
+- Acento eléctrico: `#8BC7FF` / `#3D9BFF`.
+- Scrollbars finas y coherentes con la app.
+- Motion corto al cambiar de panel o redimensionar.

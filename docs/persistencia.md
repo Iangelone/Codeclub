@@ -1,23 +1,40 @@
 # Persistencia y configuración
 
+## Qué se guarda
+
+| Alcance | Datos |
+| --- | --- |
+| Global | preferencias, idioma, chats de Inicio, plugins y settings globales. |
+| Proyecto | chats, metadata, tareas, planes, TODOs, artifacts y configuración propia. |
+| Sesión | PTY, terminales abiertas, WebView y estado vivo de selección. |
+
 ## Módulos
 
-- `src/lib/persistence.ts`: settings y registros persistentes del renderer.
-- `src/lib/projectManager.ts`: índice de proyectos, metadatos y chats por proyecto.
-- `src/lib/execution-log.ts`: auditoría de ejecuciones y eventos de tools.
-- `src/lib/usage.ts`: consumo y métricas de generaciones.
-- `src/lib/store.ts`: estado liviano compartido del chat activo.
-- `src/lib/agent-plugins.ts`: descubrimiento de plugins, skills y servidores MCP.
+- `src/lib/persistence.ts`: settings y valores livianos del renderer.
+- `src/lib/projectManager.ts`: índice de proyectos, metadata y chats.
+- `src/lib/usage.ts`: tokens, costo, proveedor, modelo y duración.
+- `src/lib/execution-log.ts`: historial de ejecuciones y tools.
+- `src/lib/engine/planning.ts`: planes, TODOs y estados.
+- `src/lib/agent-plugins.ts`: plugins, skills y MCP.
+- `localStorage`: idioma, tamaños de sidebars, proyecto activo y preferencias de UI.
 
-## Alcance de datos
+## Separación de chats
 
-- Global: preferencias, chats sin proyecto, plugins y configuraciones globales.
-- Proyecto: chats, metadata, planes, TODOs, logs y configuraciones del proyecto.
-- Sesión: terminales PTY y estado vivo del navegador.
+```text
+Inicio       -> chats globales
+Proyecto A   -> chats de A
+Proyecto B   -> chats de B
+```
 
-## Reglas
+Un chat de proyecto no debe aparecer en Inicio. Cada registro conserva el `projectPath` cuando corresponde.
 
-- Resolver paths con rutas absolutas y validar que queden dentro del proyecto.
-- No persistir credenciales en mensajes, logs ni estado visible.
-- Actualizar la UI mediante eventos después de mutaciones nativas.
-- Mantener el modo sin proyecto funcional para datos globales y estados vacíos.
+## Reglas prácticas
+
+- Usar rutas absolutas y validar que estén dentro del proyecto esperado.
+- No guardar API keys en mensajes, logs ni artifacts visibles.
+- Emitir un evento después de escribir datos para que la UI se actualice.
+- Mantener estados vacíos útiles cuando no hay proyecto activo.
+- Evitar que una tarea o un artifact de un proyecto se mezcle con otro.
+- Limpiar procesos de sesión al desmontar terminales o paneles.
+
+> La persistencia es local; borrar la carpeta de datos de Electron elimina la información guardada de la app.

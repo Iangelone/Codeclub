@@ -1,27 +1,67 @@
 # Flujos y eventos
 
-## Mensaje del usuario
+## Un mensaje normal
 
-1. `ChatInterface` valida el input y crea el mensaje.
-2. El engine selecciona modelo, tools y modo de ejecución.
-3. AI SDK transmite texto y resultados estructurados.
-4. Las tools invocan Electron cuando necesitan filesystem, terminal, navegador o procesos.
-5. El resultado vuelve al chat y puede abrir un panel lateral.
+1. El usuario escribe en `ChatInterface`.
+2. Se agrega el mensaje al chat activo.
+3. El agente recibe el proyecto actual y el catálogo de tools.
+4. AI SDK transmite la respuesta y las llamadas a tools.
+5. Cada tool ejecuta trabajo local o pide IPC.
+6. El resultado vuelve al chat y puede abrir un panel.
+7. Uso, resultado y errores quedan disponibles para auditoría.
 
-## Eventos DOM
+```text
+prompt -> modelo -> tool -> Electron -> resultado -> chat / artifact
+```
 
-Los eventos internos usan el prefijo `codeclub:`. Los más importantes son:
+## Proyecto activo
 
-- `codeclub:open-chat`, `codeclub:open-empty-chat`: navegación del chat.
-- `codeclub:open-extensions`, `codeclub:close-extensions`: alternancia de Extensiones.
-- `codeclub:project-selection-changed`, `codeclub:active-project`: proyecto activo.
-- `codeclub:open-artifacts`, `codeclub:open-right-panel`: apertura desde tools.
-- `codeclub:browser-navigate`, `codeclub:browser-state`, `codeclub:browser-action`: control del navegador.
-- `codeclub:artifacts-changed`: refresco de planes y TODOs.
-- `codeclub:right-panel-back`, `codeclub:right-panel-forward`: navegación de pestañas laterales.
+El proyecto activo se comparte por eventos. El modo Inicio no tiene path de proyecto y debe seguir funcionando con datos globales.
 
-Al agregar un evento nuevo, documentar emisor, payload y consumidores. Los listeners deben limpiarse en el retorno de `useEffect`.
+| Evento | Uso |
+| --- | --- |
+| `codeclub:project-switch` | Cambiar proyecto desde la topbar o sidebar. |
+| `codeclub:project-selection-changed` | Avisar qué proyecto ve un panel. |
+| `codeclub:active-project` | Sincronizar el proyecto activo. |
+| `codeclub:project-meta-changed` | Refrescar metadata y chats. |
 
-## Selección de proyecto
+## Navegación
 
-La selección se comunica por eventos para que Topbar, WorkspaceManager, ChatInterface y los paneles laterales puedan reaccionar sin acoplamiento directo. Un proyecto vacío representa el modo global; no debe intentar leer un path inexistente.
+| Evento | Resultado |
+| --- | --- |
+| `codeclub:open-chat` | Abrir un chat existente. |
+| `codeclub:open-empty-chat` | Crear o mostrar un chat vacío. |
+| `codeclub:open-extensions` | Mostrar Extensiones. |
+| `codeclub:open-artifacts` | Abrir Artifacts en la sidebar derecha. |
+| `codeclub:open-right-panel` | Abrir el navegador u otro panel derecho. |
+| `codeclub:right-panel-back` | Volver a la pestaña anterior. |
+| `codeclub:right-panel-forward` | Avanzar en pestañas visitadas. |
+
+## Navegador y selección DOM
+
+```text
+BrowserPanel -> browser-state -> Computer Use
+Computer Use -> browser-action -> BrowserPanel
+selección DOM -> comentario -> referencia -> ChatInterface
+```
+
+Los comentarios se numeran en la página y la tarjeta se manda al chat como referencia, sin mezclarla con la burbuja textual del usuario.
+
+## Tareas y artifacts
+
+- `codeclub:scheduled-tasks-changed`: refresca tareas persistentes.
+- `codeclub:artifacts-changed`: refresca planes y TODOs.
+- `codeclub:artifact-reference`: agrega un artifact como referencia al chat.
+- `codeclub:usage-updated`: actualiza métricas de uso.
+
+## Idioma
+
+`ChatInterface` emite `codeclub:language-change` con `{ language: 'es' | 'en' }`. Los componentes que usan `useAppLanguage()` se actualizan sin recargar la app y también cambia el atributo `lang` del documento.
+
+## Update y recarga
+
+La topbar consulta si existe una release más nueva. Si la hay, el icono de actualización se ilumina. El botón de recarga ejecuta una recarga completa de la ventana de Electron.
+
+## Regla para nuevos eventos
+
+Antes de agregar un evento, definir emisor, payload, consumidores y cleanup. Los listeners deben instalarse y removerse dentro del mismo `useEffect`.

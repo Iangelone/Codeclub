@@ -1,122 +1,160 @@
 # Codeclub
 
-Open source desktop IDE for building applications with AI, made in Argentina.
+> Un IDE de escritorio local-first para construir software con agentes de IA.
 
-[Ko-fi](https://ko-fi.com/codeclubide) · [Licencia](LICENSE.md)
+Codeclub combina chat, proyectos, terminal, navegador, herramientas de desarrollo y evidencia del trabajo en una sola app para Windows.
 
-## What is Codeclub
+[![Estado](https://img.shields.io/badge/estado-beta-3d9bff)](#estado) [![Plataforma](https://img.shields.io/badge/plataforma-Windows-1687ff)](#requisitos)
 
-Codeclub is an AI agent workspace that helps developers build applications with AI while producing auditable evidence — plans, TODOs, token usage, and execution history.
+## En criollo
 
-It is **local-first**: all data lives on your filesystem. No cloud, no vendor lock-in, no telemetry.
+Abrís un proyecto, hablás con el agente y le pedís que trabaje sobre tu código. El agente puede leer archivos, buscar texto, editar, usar la terminal, navegar una página y dejar planes o TODOs visibles.
 
-## Features
+La app corre localmente y guarda chats, proyectos, configuraciones, uso y logs en el almacenamiento de Electron. Tus datos no dependen de un servidor de Codeclub.
 
-### AI Agent
-- Multi-step agent with filesystem access, terminal execution, and browser control
-- Supports any OpenAI-compatible provider (live catalog from [models.dev](https://models.dev))
-- Development-first agent for code, files, terminals, browsers and Windows automation
-- Provider-agnostic `Custom` endpoint for self-hosted or private models
-- AI-powered tool router selects the right tools based on user intent
-- AI-powered tool verification checks whether executed tools accomplished the goal
-- Human-in-the-loop approvals for risky operations
+## Qué trae hoy
 
-### Agent Tools (Development)
-| Tool | Description |
-|---|---|
-| `listFiles` | List workspace directory contents |
-| `readFile` | Read any project file |
-| `searchText` | Full-text search across the workspace |
-| `writeFile` | Create or modify files (requires approval) |
-| `runCommand` | Execute commands — `node`, `npm`, `git`, `cargo`, `python`, `rg` (requires approval) |
-| `terminal` | Spawn persistent background terminal processes |
-| `openBrowser` | Open URLs in the built-in browser |
-| `askUser` | Request structured human decisions |
-| `createPlan` / `updatePlan` / `todo` / `getTaskStatus` | Persistent planning and TODOs |
-| `subagent` | Delegate to specialized read-only agents (developer, explorer, frontend, backend, QA, security, docs) |
-| `getExecutionLog` | Auditable tool execution history |
+### Chat y agente
 
-### Panels & Views
-- **Left sidebar**: project management, chat history, file explorer with CRUD, drag-and-drop
-- **Right sidebar** (resizable): file browser, git review, embedded WebView browser, and artifacts (plans/TODOs)
-- **Terminal dock**: multi-tab floating terminal (PowerShell, CMD, Git Bash, WSL2), draggable and resizable
-- **Code editor**: CodeMirror 6 with syntax highlighting (JS/TS/HTML/CSS/JSON/MD/Python/Rust/SQL/XML)
+- Streaming de respuestas con AI SDK v7.
+- Proveedores y modelos compatibles con OpenAI.
+- Catálogo dinámico de modelos y proveedores.
+- Selección libre de tools según la intención del prompt.
+- Planes, TODOs, estado de tareas y artifacts.
+- Historial global y chats separados por proyecto.
+- Adjuntos de texto, imágenes, PDF y DOCX.
+- Referencias visuales desde el navegador embebido.
+- Confirmación humana para operaciones sensibles.
 
-### Built-in Browser
-- Embedded Electron browser with URL bar, back/forward navigation
-- **DOM inspector**: click elements in the browser, inspect HTML, and reference selections in chat
-- Visibility toggle and resize support
+### Espacio de trabajo
 
-### Usage Tracking
-- Every AI generation records to `usage.jsonl`: provider, model, tokens, cost, duration
-- Local-only, no cloud dependency
-- Per-project and global aggregation
+| Zona | Para qué sirve |
+| --- | --- |
+| Sidebar izquierda | Inicio, chats recientes, proyectos, Tareas, Extensiones y Dispositivos desactivado visualmente. |
+| Panel central | Chat, Extensiones, Tareas y la vista de Dispositivos preparada para QR. |
+| Sidebar derecha | Archivos, Revisar, Navegador, Artifacts y Terminales. |
+| Topbar | Proyectos, navegación, paneles, actualización y controles de ventana. |
 
+Las dos sidebars se pueden redimensionar. El panel central conserva un ancho mínimo para no quedar aplastado.
 
-### File Attachments
-- Drag-and-drop or file-picker for text, images, PDFs, and DOCX
-- DOCX conversion via `mammoth`
-- File content inlined as message context
+### Herramientas laterales
 
-## Architecture
+- **Archivos:** árbol del proyecto, búsqueda, apertura y previews.
+- **Revisar:** cambios del workspace y estado de Git.
+- **Navegador:** WebView de Electron con URL, navegación, recarga y apertura externa.
+- **Selección DOM:** seleccioná un elemento, agregá un comentario y mandalo como referencia al chat.
+- **Artifacts:** planes y TODOs generados por el agente, filtrables y persistentes por proyecto.
+- **Terminales:** terminales interactivas con xterm y PTY de PowerShell.
 
+### Tareas programadas
+
+Las tareas se guardan en la app y cada proyecto puede tener las suyas. Una tarea permite elegir:
+
+- proveedor, modelo y API key;
+- prompt;
+- frecuencia: diaria, días hábiles, semanal o personalizada;
+- intervalo, horario y notificaciones;
+- estado activada o pausada;
+- ejecución manual con el botón de play;
+- guardado explícito con el check.
+
+Por defecto, cada ejecución se plantea para un chat nuevo en segundo plano.
+
+### Extensiones e idioma
+
+El panel **Extensiones** muestra elementos globales y los filtrados por el proyecto activo: plugins, skills (`SKILL.md`) y servidores MCP.
+
+La interfaz soporta español e inglés. El idioma se guarda localmente y se aplica a navegación, sidebars, tareas, navegador, artifacts, extensiones y estados principales.
+
+## Tools principales del agente
+
+| Grupo | Tools actuales |
+| --- | --- |
+| Archivos | `listFiles`, `readFile`, `searchText`, `writeFile` |
+| Terminal | `runCommand`, `terminal` |
+| Navegador | `openBrowser`, `getBrowserState`, `browserAction` |
+| PC | `computerListWindows`, `computerGetState`, `computerScreenshot`, `computerOcr`, `computerAction` |
+| Planificación | `createPlan`, `updatePlan`, `todo`, `getTaskStatus` |
+| Auditoría | `getExecutionLog` |
+| Plugins / MCP | `createSkill`, `createExtension`, `deleteExtension`, `createMcpServer`, `deleteMcpServer` |
+| Proyecto | `switchProject` |
+| Colaboración | `subagent`, `swarm`, `askUser` |
+| Descubrimiento | `searchTools`, `executeTool`, `listAvailableTools` |
+
+> Las tools no están hardcodeadas en cada prompt: el agente recibe el catálogo disponible y decide cuáles necesita.
+
+## Arquitectura rápida
+
+```text
+React / Next.js
+  page.tsx
+    Topbar
+    WorkspaceLayout
+      ChatPanel -> ChatInterface -> AI SDK -> tools
+      ExtensionsPanel
+      Sidebar derecha
+
+Electron
+  preload.cjs -> puente IPC seguro
+  main.ts    -> filesystem, terminal, WebView, HTTP, Git y procesos nativos
 ```
-ChatInterface.tsx (React orchestrator)
-  ├── createTools()  — AI agent tools
-  ├── runStream() → streamText (AI SDK v7)   — core agent loop
-  └── Tool execution backed by Electron IPC (Node.js → native OS)
-```
 
-**Frontend**: Next.js 16.3 + React 19 + TypeScript + Tailwind CSS 4
-**Desktop**: Electron + Node.js/TypeScript (filesystem, terminal, HTTP fetch, browser)
-**Runtime**: Node.js 24 + npm 11
-**AI**: AI SDK v7 (`ai`, `@ai-sdk/openai-compatible`, `@ai-sdk/react`)
+El renderer nunca accede directamente a Node.js. La comunicación interna usa eventos DOM `codeclub:*` e IPC a través de `src/lib/runtime.ts`.
 
-## Getting Started
+## Requisitos
 
-### Prerequisites
-- [Node.js](https://nodejs.org) 24+
+- Windows.
+- Node.js 24 o compatible con Next.js 16.
+- npm 11 recomendado.
+- Una API key de un proveedor compatible para usar el agente.
 
-### Install & Run
+## Instalar y ejecutar
 
 ```bash
 npm install
 npm run dev
 ```
 
-### Build
+Solo renderer:
 
 ```bash
+npm run next:dev
+```
+
+## Build y verificación
+
+```bash
+npm run next:build
+npm run electron:compile
 npm run desktop:build
 ```
 
-## Documentation
+Antes de publicar, probar chat, cambio de proyecto, persistencia, tareas, selección del navegador, artifacts, terminal y cambio de idioma.
 
-- [Product Workflow](docs/product-workflow.md) — current boundaries and next steps
-- [Engine](docs/engine/) — AI execution layer
-- [Components](docs/components/) — UI components and design tokens
-- [Models & Providers](docs/models/) — AI catalog
-- [AI SDK 7](docs/stack/ai-sdk-7.md) — AI SDK integration notes
+## Documentación
 
-## AI Catalog
+- [Índice de documentación](docs/README.md)
+- [Arquitectura](docs/arquitectura.md)
+- [Flujos y eventos](docs/flujos.md)
+- [Persistencia](docs/persistencia.md)
+- [Sidebar derecha](docs/sidebar-derecha.md)
+- [Terminal y navegador](docs/terminal-y-navegador.md)
+- [Accesibilidad y Computer Use](docs/accesibilidad.md)
+- [Desarrollo y releases](docs/desarrollo.md)
+- [Synapse y Dispositivos](docs/synapse.md)
 
-Providers and models are sourced live from [models.dev](https://models.dev):
+## Estado
 
-- Models: https://models.dev/models/
-- Providers: https://models.dev/providers/
+Codeclub está en beta temprana. La app es usable para desarrollo local, pero la conexión móvil por QR, la ejecución automática real de tareas y la distribución estable siguen en evolución.
 
-## AI SDK
+## Comunidad y soporte
 
-AI SDK documentation: https://ai-sdk.dev/docs
+- Donaciones: [Ko-fi](https://ko-fi.com/iangeldev)
+- Issues y mejoras: GitHub del proyecto
+- Licencias comerciales: `codeclubide@gmail.com`
 
-## License
+## Licencia
 
-**Dual license** — see [LICENSE.md](LICENSE.md) for full terms.
+Codeclub usa una **licencia dual**: gratuita para uso personal, educativo, open source y organizaciones sin fines de lucro; comercial paga para empresas y uso con fines de lucro.
 
-- **Gratis**: uso personal, educativo, freelancers (< USD 60k/año), ONGs, open source.
-- **Comercial paga**: empresas, corporaciones, uso comercial, SaaS, freelancers (> USD 60k/año).
-
-Contacto para licencias comerciales: **codeclubide@gmail.com**
-
-
-
+Leé los términos completos en [LICENSE.md](LICENSE.md).

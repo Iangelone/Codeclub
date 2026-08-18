@@ -1,49 +1,60 @@
 # Arquitectura
 
+## La idea en una línea
+
+```text
+Next.js muestra -> React coordina -> Electron ejecuta -> Windows responde
+```
+
 ## Capas
 
 ```text
-Next.js/React
+Renderer: Next.js + React + Tailwind
   page -> Topbar + WorkspaceLayout
-  WorkspaceLayout -> ChatPanel / ExtensionsPanel / panels laterales
-  ChatInterface -> AI SDK -> tools y eventos
+  WorkspaceLayout -> ChatPanel / ExtensionsPanel / paneles laterales
+  ChatInterface -> AI SDK -> tools
 
-Electron
-  preload.cjs -> nativeInvoke seguro
-  main.ts -> IPC, filesystem, procesos, webview y PTY
+Proceso nativo: Electron + Node.js
+  preload.cjs -> bridge seguro
+  main.ts -> IPC, filesystem, procesos, WebView y PTY
 ```
 
-## Entrada de la aplicación
+## Piezas principales
 
-- `src/app/page.tsx`: monta la ventana lógica y controla la apertura de sidebars.
-- `src/app/layout.tsx`: layout raíz y metadatos.
-- `src/app/globals.css`: tokens, superficies, estados de foco y reglas compartidas.
+| Archivo | Responsabilidad |
+| --- | --- |
+| `src/app/page.tsx` | Entrada de la ventana y estado general. |
+| `src/components/Topbar.tsx` | Proyectos, update, recarga y controles de ventana. |
+| `src/components/SubTopbar.tsx` | Navegación contextual, breadcrumbs y búsqueda. |
+| `src/components/WorkspaceLayout.tsx` | Tres columnas, resize y paneles internos. |
+| `src/components/WorkspaceManager.tsx` | Navegación entre chat, tareas y extensiones. |
+| `src/components/ChatInterface.tsx` | Input, mensajes, streaming, referencias y tools. |
+| `src/components/ExtensionsPanel.tsx` | Plugins, skills y servidores MCP. |
+| `src/lib/engine/` | Ejecución, tools, planes, TODOs y auditoría. |
+| `src/lib/projectManager.ts` | Proyectos, metadata y chats. |
+| `src/lib/i18n.ts` | Catálogo español/inglés y cambio de idioma. |
+| `electron/preload.cjs` | API permitida para el renderer. |
+| `electron/main.ts` | Operaciones nativas y ciclo de Electron. |
 
-## Shell visual
+## Layout
 
-- `Topbar.tsx`: proyectos, controles de ventana y apertura de sidebars.
-- `WorkspaceLayout.tsx`: layout principal, sidebar izquierda, panel central, sidebar derecha, resize y paneles internos.
-- `SubTopbar.tsx`: navegación contextual y breadcrumbs del workspace.
-- `WorkspaceManager.tsx`: alterna chat y Extensiones, conserva navegación del panel izquierdo y selección de proyecto.
+```text
+Topbar
+┌──────────────┬──────────────────────────┬──────────────┐
+│ izquierda    │ panel central            │ derecha      │
+│ navegación   │ chat / tareas / plugins  │ tools        │
+└──────────────┴──────────────────────────┴──────────────┘
+```
 
-## Chat y agentes
+Las sidebars se redimensionan, pero el panel central conserva un mínimo. La sidebar derecha usa pestañas; Browser y Terminales pueden tener más de una instancia.
 
-- `ChatPanel.tsx`: adapta el catálogo de proveedores/modelos al workspace.
-- `ChatInterface.tsx`: mensajes, input, streaming, comandos, tools, preview de archivos y apertura de paneles.
-- `src/lib/engine/run.ts`: ejecución del agente y ciclo de streaming.
-- `src/lib/engine/tools.ts`: catálogo de tools, acceso dinámico, artifacts, navegador, terminales y subagentes.
-- `src/lib/engine/planning.ts`: planes, TODOs y estados de ejecución.
+## Seguridad del renderer
 
-## Paneles laterales
+- React no importa `fs`, `child_process` ni APIs nativas.
+- Las operaciones pasan por `nativeInvoke`.
+- `preload.cjs` expone una superficie limitada.
+- El proceso principal valida argumentos antes de tocar el sistema.
 
-La sidebar derecha se administra en `WorkspaceLayout.tsx` mediante instancias identificadas por `instanceId`. Las pestañas disponibles son Archivos, Revisar, Navegador, Artifacts y Terminales. Browser y Terminales pueden abrir múltiples instancias; las demás se reutilizan.
+## Extensibilidad
 
-La sidebar izquierda activa `new-chat`, `scheduled`, `extensions` o `projects`. Extensiones vive dentro de `WorkspaceManager`; Synapse y Programadas usan paneles introductorios propios dentro de `PanelManager`.
-
-## Proceso nativo
-
-- `electron/preload.cjs`: expone únicamente el puente IPC necesario.
-- `electron/main.ts`: filesystem, proyectos, comandos, logs, terminales, PTY, integración de navegador y acciones nativas.
-- `src/lib/runtime.ts`: wrapper del renderer para invocar operaciones nativas.
-
-El renderer no accede directamente a Node.js.
+El agente puede descubrir tools, skills y MCP sin llenar cada system prompt con una lista fija. Las descripciones de las tools explican cuándo usarlas y el modelo decide el flujo.
