@@ -938,10 +938,10 @@ export function createTools(ctx: ToolContext) {
       },
     }),
     computerGetState: tool({
-      description: 'Inspect the focused Windows app through UI Automation. If it only exposes a Pane or no TextBox/Input, immediately use computerScreenshot and continue with coordinates; do not wait for inaccessible controls.',
-      inputSchema: jsonSchema({ type: 'object', properties: {}, additionalProperties: false }),
-      execute: async () => {
-        const output = await invoke('codeclub_computer_get_state');
+      description: 'Inspect the focused Windows app through real UI Automation and return its controls, names, automation IDs, roles, enabled state and screen bounds. Optionally target a window by name or automation ID. If a control is not exposed, use computerScreenshot and coordinates.',
+      inputSchema: jsonSchema({ type: 'object', properties: { targetName: { type: 'string', description: 'Optional partial window or control name.' }, automationId: { type: 'string', description: 'Optional automation ID.' } }, additionalProperties: false }),
+      execute: async (request) => {
+        const output = await invoke('codeclub_computer_get_state', { request });
         recordToolEvent('computerGetState', {}, output);
         return output;
       },

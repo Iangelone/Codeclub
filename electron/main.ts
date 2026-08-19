@@ -178,21 +178,103 @@ async function powershellJson(script: string) {
 }
 
 async function computerListWindows() {
-  return powershellJson(`Get-Process | Where-Object { $_.MainWindowTitle } | ForEach-Object { [pscustomobject]@{ title=$_.MainWindowTitle; className=''; handle=$_.MainWindowHandle.ToInt64(); bounds=@() } } | ConvertTo-Json -Compress`);
+  return powershellJson(`
+Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
+$root=[System.Windows.Automation.AutomationElement]::RootElement
+$windows=$root.FindAll([System.Windows.Automation.TreeScope]::Children,[System.Windows.Automation.Condition]::TrueCondition) | ForEach-Object {
+  try {
+    $c=$_.Current
+    if ($c.ControlType.ProgrammaticName -eq 'ControlType.Window' -and $c.Name) {
+      $r=$c.BoundingRectangle
+      [pscustomobject]@{title=$c.Name; className=$c.ClassName; processId=$c.ProcessId; handle=$c.NativeWindowHandle; bounds=@{x=[int]$r.X;y=[int]$r.Y;width=[int]$r.Width;height=[int]$r.Height}}
+    }
+  } catch {}
+}
+ConvertTo-Json -InputObject @($windows) -Compress -Depth 6`);
 }
 
 async function computerScreenshot() {
   return powershellJson(`Add-Type -AssemblyName System.Drawing; Add-Type -AssemblyName System.Windows.Forms; $b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $i=New-Object Drawing.Bitmap $b.Width,$b.Height; $g=[Drawing.Graphics]::FromImage($i); $g.CopyFromScreen($b.Location,[Drawing.Point]::Empty,$b.Size); $p=Join-Path $env:TEMP ('codeclub-'+[guid]::NewGuid().ToString()+'.png'); $i.Save($p,[Drawing.Imaging.ImageFormat]::Png); $g.Dispose();$i.Dispose();$d=[Convert]::ToBase64String([IO.File]::ReadAllBytes($p));Remove-Item $p -Force; [pscustomobject]@{mimeType='image/png';data=$d;width=$b.Width;height=$b.Height}|ConvertTo-Json -Compress`);
 }
 
+function computerPowerShellLiteral(value: string) {
+  return String(value || '').replaceAll("'", "''");
+}
+
+async function computerGetState(request: any = {}) {
+  const targetName = computerPowerShellLiteral(request.targetName);
+  const automationId = computerPowerShellLiteral(request.automationId);
+  return powershellJson(`
+Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
+$root=[System.Windows.Automation.AutomationElement]::RootElement
+$focused=[System.Windows.Automation.AutomationElement]::FocusedElement
+$target=$focused
+while ($target) {
+  try { if ($target.Current.ControlType.ProgrammaticName -eq 'ControlType.Window') { break } } catch { $target=$null; break }
+  $target=[System.Windows.Automation.TreeWalker]::RawViewWalker.GetParent($target)
+}
+$all=$root.FindAll([System.Windows.Automation.TreeScope]::Children,[System.Windows.Automation.Condition]::TrueCondition)
+if ('${targetName}' -or '${automationId}') {
+  $candidate=$all | Where-Object {
+    try { ($_.Current.Name -like '*${targetName}*' -and '${targetName}') -or ($_.Current.AutomationId -eq '${automationId}' -and '${automationId}') } catch { $false }
+  } | Select-Object -First 1
+  if ($candidate) { $target=$candidate }
+}
+function Describe($element) {
+  try {
+    $c=$element.Current; $r=$c.BoundingRectangle
+    return [pscustomobject]@{name=$c.Name;automationId=$c.AutomationId;controlType=$c.ControlType.ProgrammaticName;localizedControlType=$c.LocalizedControlType;className=$c.ClassName;enabled=$c.IsEnabled;keyboardFocusable=$c.IsKeyboardFocusable;bounds=@{x=[int]$r.X;y=[int]$r.Y;width=[int]$r.Width;height=[int]$r.Height}}
+  } catch { return $null }
+}
+$windowDescription=Describe $target
+$focusedDescription=Describe $focused
+$elements=@()
+if ($target) {
+  try {
+    $descendants=$target.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)
+    foreach ($element in $descendants) { $item=Describe $element; if ($item -and ($item.name -or $item.automationId) -and $elements.Count -lt 250) { $elements += $item } }
+  } catch {}
+}
+[pscustomobject]@{ok=$true;focused_window=$windowDescription;focused_element=$focusedDescription;elements=$elements}|ConvertTo-Json -Compress -Depth 7`);
+}
+
 async function computerAction(request: any) {
   const action = String(request.action || '');
   const text = String(request.text || request.key || '').replaceAll("'", "''");
   const x = Number(request.x || 0); const y = Number(request.y || 0);
-  const mouse = ['move', 'click', 'doubleClick', 'rightClick'].includes(action) ? `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Cursor]::Position=New-Object Drawing.Point(${x},${y});` : '';
-  const click = action === 'click' ? '[System.Windows.Forms.SendKeys]::SendWait("{ENTER}");' : action === 'doubleClick' ? '[System.Windows.Forms.SendKeys]::SendWait("{ENTER}{ENTER}");' : '';
-  const input = action === 'type' || action === 'key' ? `[System.Windows.Forms.SendKeys]::SendWait('${text}');` : '';
-  return powershellJson(`Add-Type -AssemblyName System.Windows.Forms; ${mouse}${click}${input}[pscustomobject]@{ok=$true;action='${action}'}|ConvertTo-Json -Compress`);
+  const targetName = computerPowerShellLiteral(request.targetName);
+  const automationId = computerPowerShellLiteral(request.automationId);
+  return powershellJson(`
+Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class CodeclubInput {
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extra);
+}
+'@
+$action='${computerPowerShellLiteral(action)}'; $targetName='${targetName}'; $automationId='${automationId}'
+$root=[System.Windows.Automation.AutomationElement]::RootElement
+$windows=$root.FindAll([System.Windows.Automation.TreeScope]::Children,[System.Windows.Automation.Condition]::TrueCondition)
+$window=$windows | Where-Object { try { $_.Current.ControlType.ProgrammaticName -eq 'ControlType.Window' -and ((($targetName) -and $_.Current.Name -like "*$targetName*") -or (($automationId) -and $_.Current.AutomationId -eq $automationId)) } catch { $false } } | Select-Object -First 1
+if (-not $window) { $window=[System.Windows.Automation.AutomationElement]::FocusedElement; while ($window) { try { if ($window.Current.ControlType.ProgrammaticName -eq 'ControlType.Window') { break } } catch { $window=$null; break }; $window=[System.Windows.Automation.TreeWalker]::RawViewWalker.GetParent($window) } }
+if ($window -and $action -eq 'focus') { [CodeclubInput]::SetForegroundWindow([IntPtr]$window.Current.NativeWindowHandle) | Out-Null; [pscustomobject]@{ok=$true;action=$action;window=$window.Current.Name}|ConvertTo-Json -Compress; exit }
+$element=$null
+if ($window -and ($targetName -or $automationId)) {
+  try { $element=$window.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition) | Where-Object { try { (($targetName) -and $_.Current.Name -like "*$targetName*") -or (($automationId) -and $_.Current.AutomationId -eq $automationId) } catch { $false } } | Select-Object -First 1 } catch {}
+}
+if ($element) { try { $element.SetFocus() } catch {} }
+if ($action -in @('move','click','doubleClick','rightClick')) {
+  [CodeclubInput]::SetCursorPos(${x},${y}) | Out-Null
+  $flags=0; if ($action -eq 'click') { $flags=0x0002 -bor 0x0004 } elseif ($action -eq 'doubleClick') { $flags=0x0002 -bor 0x0004; [CodeclubInput]::mouse_event($flags,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 60 } elseif ($action -eq 'rightClick') { $flags=0x0008 -bor 0x0010 }
+  if ($action -ne 'move') { [CodeclubInput]::mouse_event($flags,0,0,0,[UIntPtr]::Zero) }
+}
+if ($action -eq 'type') { [System.Windows.Forms.SendKeys]::SendWait('${text}') }
+if ($action -eq 'key') { [System.Windows.Forms.SendKeys]::SendWait('${text}') }
+[pscustomobject]@{ok=$true;action=$action;target=if($element){$element.Current.Name}else{$null}}|ConvertTo-Json -Compress`);
 }
 
 function shellCommand(shell: string) {
@@ -323,7 +405,7 @@ async function invokeNativeCommand(command: string, args: any = {}) {
     }
     case 'codeclub_computer_list_windows': return computerListWindows();
     case 'codeclub_computer_screenshot': return computerScreenshot();
-    case 'codeclub_computer_get_state': return { focused_window: null, focused_element: null, elements: [], note: 'UI Automation profundo no disponible; use computerScreenshot.' };
+    case 'codeclub_computer_get_state': return computerGetState(args.request || {});
     case 'codeclub_computer_action': return computerAction(args.request || {});
     case 'codeclub_http_fetch': {
       const request = args.request || {};
