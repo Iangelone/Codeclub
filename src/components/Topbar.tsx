@@ -11,8 +11,30 @@ export default function Topbar({ leftOpen, rightOpen, topbarOpen, onToggleLeft, 
   const [projects, setProjects] = useState<Array<{ id: string; name: string; path: string }>>([]);
   const [activeProjectId, setActiveProjectId] = useState('home');
   const noDragStyle = { WebkitAppRegion: 'no-drag' } as React.CSSProperties;
+  const persistOpenProjects = (nextProjects: Array<{ id: string; name: string; path: string }>) => {
+    window.localStorage.setItem('codeclub:open-projects', JSON.stringify(nextProjects.map((project) => project.id)));
+  };
   const nativeWindow = (action: 'windowMinimize' | 'windowMaximize' | 'windowClose') => { const api = (window as any).codeclub; if (!api?.[action]) { console.error(`Electron bridge no disponible: ${action}`); return; } void Promise.resolve(api[action]()).catch((error) => console.error(`Falló ${action}`, error)); };
-  useEffect(() => { void (async () => { const existing = await (window as any).codeclub?.listProjects?.(); if (Array.isArray(existing)) setProjects(existing); })(); }, []);
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem('codeclub:active-project') || 'null') as { id?: string } | null;
+      if (saved?.id) setActiveProjectId(saved.id);
+    } catch { /* Si no hay proyecto persistido, queda seleccionado Inicio. */ }
+    void (async () => {
+      const existing = await (window as any).codeclub?.listProjects?.();
+      if (!Array.isArray(existing)) return;
+      let openProjectIds: string[] | null = null;
+      try {
+        const saved = JSON.parse(window.localStorage.getItem('codeclub:open-projects') || 'null');
+        if (Array.isArray(saved)) openProjectIds = saved.filter((id): id is string => typeof id === 'string');
+      } catch { /* Si la lista no es válida, se migra desde los proyectos registrados. */ }
+      const openProjects = openProjectIds
+        ? existing.filter((project: { id: string }) => openProjectIds!.includes(project.id))
+        : existing;
+      setProjects(openProjects);
+      if (!openProjectIds) persistOpenProjects(openProjects);
+    })();
+  }, []);
   useEffect(() => { const handleProjectRenamed = (event: Event) => { const project = (event as CustomEvent<{ id?: string; name?: string; path?: string }>).detail; if (!project?.id || !project.name) return; setProjects((current) => current.map((item) => item.id === project.id ? { ...item, name: project.name!, path: project.path ?? item.path } : item)); }; window.addEventListener('codeclub:project-renamed', handleProjectRenamed); return () => window.removeEventListener('codeclub:project-renamed', handleProjectRenamed); }, []);
   useEffect(() => {
     const handleProjectSwitch = (event: Event) => {
@@ -26,6 +48,11 @@ export default function Topbar({ leftOpen, rightOpen, topbarOpen, onToggleLeft, 
       setProjects((current) => current.some((item) => item.id === projectId)
         ? current.map((item) => item.id === projectId ? { ...item, name: projectName, path: projectPath || item.path } : item)
         : [...current, { id: projectId, name: projectName, path: projectPath }]);
+      try {
+        const openProjectIds = JSON.parse(window.localStorage.getItem('codeclub:open-projects') || '[]') as unknown;
+        const nextIds = Array.isArray(openProjectIds) ? openProjectIds.filter((id): id is string => typeof id === 'string' && id !== projectId) : [];
+        window.localStorage.setItem('codeclub:open-projects', JSON.stringify([...nextIds, projectId]));
+      } catch { window.localStorage.setItem('codeclub:open-projects', JSON.stringify([projectId])); }
     };
     window.addEventListener('codeclub:project-switch', handleProjectSwitch);
     return () => window.removeEventListener('codeclub:project-switch', handleProjectSwitch);
@@ -37,7 +64,11 @@ export default function Topbar({ leftOpen, rightOpen, topbarOpen, onToggleLeft, 
     try { project = await api.selectProjectFolder(); } catch (error) { console.error('No se pudo seleccionar la carpeta del proyecto', error); return; }
     if (!project) return;
     const selectedProject = project as { id: string; name: string; path: string };
-    setProjects((current) => [...current.filter((item) => item.id !== selectedProject.id), selectedProject]);
+    setProjects((current) => {
+      const next = [...current.filter((item) => item.id !== selectedProject.id), selectedProject];
+      persistOpenProjects(next);
+      return next;
+    });
     setActiveProjectId(selectedProject.id);
     window.dispatchEvent(new CustomEvent('codeclub:project-switch', { detail: selectedProject }));
   };
@@ -47,8 +78,15 @@ export default function Topbar({ leftOpen, rightOpen, topbarOpen, onToggleLeft, 
     window.dispatchEvent(new CustomEvent('codeclub:project-switch', { detail: project }));
   };
   const closeProject = (project: { id: string; name: string; path: string }) => {
-    setProjects((current) => current.filter((item) => item.id !== project.id));
-    if (activeProjectId !== project.id) return;
+    setProjects((current) => {
+      const next = current.filter((item) => item.id !== project.id);
+      persistOpenProjects(next);
+      return next;
+    });
+    let persistedProjectId: string | undefined;
+    try { persistedProjectId = (JSON.parse(window.localStorage.getItem('codeclub:active-project') || 'null') as { id?: string } | null)?.id; } catch { /* Estado persistido inválido. */ }
+    if (activeProjectId !== project.id && persistedProjectId !== project.id) return;
+    window.localStorage.removeItem('codeclub:active-project');
     setActiveProjectId('home');
     window.dispatchEvent(new CustomEvent('codeclub:project-switch', { detail: { id: 'home', name: 'Codeclub' } }));
   };
