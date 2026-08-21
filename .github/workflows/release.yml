@@ -35,4 +35,4 @@ jobs:
         with:
           files: release/*
           generate_release_notes: true
-          prerelease: true
+          prerelease: false

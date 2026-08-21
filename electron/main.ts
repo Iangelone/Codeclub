@@ -7,6 +7,8 @@ import { userInfo } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as pty from 'node-pty';
+import electronUpdater from 'electron-updater';
+const { autoUpdater } = electronUpdater;
 
 type Project = { id: string; name: string; path: string; createdAt: string; lastOpenedAt?: string };
 
@@ -20,6 +22,8 @@ let computerOverlayActive = false;
 let computerMouseHook: ReturnType<typeof spawn> | null = null;
 let computerMenuWindow: BrowserWindow | null = null;
 let lastComputerContext: Record<string, unknown> | null = null;
+type AutoUpdateState = { state: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'; version?: string; percent?: number; error?: string };
+let autoUpdateState: AutoUpdateState = { state: 'idle' };
 const execFile = promisify(execFileCallback);
 type NativeMcpSession = { child: ReturnType<typeof spawn>; nextId: number; pending: Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }> };
 const nativeMcpSessions = new Map<string, NativeMcpSession>();
@@ -617,6 +621,28 @@ function createWindow() {
   if (devUrl) void mainWindow.loadURL(devUrl); else void mainWindow.loadFile(path.join(root, '..', 'out', 'index.html'));
 }
 
+function publishAutoUpdate(state: AutoUpdateState) {
+  autoUpdateState = state;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send('app:auto-update', state);
+}
+
+function setupAutoUpdater() {
+  if (!app.isPackaged) return;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.allowPrerelease = false;
+  autoUpdater.on('checking-for-update', () => publishAutoUpdate({ state: 'checking' }));
+  autoUpdater.on('update-available', (info) => publishAutoUpdate({ state: 'available', version: info.version }));
+  autoUpdater.on('update-not-available', () => publishAutoUpdate({ state: 'not-available' }));
+  autoUpdater.on('download-progress', (progress) => publishAutoUpdate({ state: 'downloading', version: autoUpdateState.version, percent: progress.percent }));
+  autoUpdater.on('update-downloaded', (info) => publishAutoUpdate({ state: 'downloaded', version: info.version }));
+  autoUpdater.on('error', (error) => publishAutoUpdate({ state: 'error', error: error instanceof Error ? error.message : String(error) }));
+  const check = () => void autoUpdater.checkForUpdates().catch((error) => publishAutoUpdate({ state: 'error', error: error instanceof Error ? error.message : String(error) }));
+  check();
+  setInterval(check, 15 * 60 * 1000);
+}
+
 app.setAppUserModelId('com.codeclub.desktop');
 // Expone el árbol de accesibilidad de Chromium a UI Automation/Computer Use.
 app.commandLine.appendSwitch('force-renderer-accessibility');
@@ -664,6 +690,12 @@ app.whenReady().then(async () => {
   ipcMain.handle('window:maximize', (event) => { const window = BrowserWindow.fromWebContents(event.sender); if (window?.isMaximized()) window.unmaximize(); else window?.maximize(); });
   ipcMain.handle('window:close', (event) => BrowserWindow.fromWebContents(event.sender)?.close());
   ipcMain.handle('app:reload', (event) => BrowserWindow.fromWebContents(event.sender)?.webContents.reload());
+  ipcMain.handle('app:update-status', () => autoUpdateState);
+  ipcMain.handle('app:check-for-updates', async () => {
+    if (!app.isPackaged) return { state: 'not-available' } satisfies AutoUpdateState;
+    try { await autoUpdater.checkForUpdates(); return autoUpdateState; } catch (error) { const state = { state: 'error', error: error instanceof Error ? error.message : String(error) } satisfies AutoUpdateState; publishAutoUpdate(state); return state; }
+  });
+  ipcMain.handle('app:install-update', () => { if (autoUpdateState.state === 'downloaded') autoUpdater.quitAndInstall(); return autoUpdateState; });
   ipcMain.handle('computer:overlay', (_event, payload: { active?: boolean; language?: string }) => setComputerOverlay(Boolean(payload?.active), payload?.language === 'en' ? 'en' : 'es'));
   ipcMain.on('computer:menu-action', (_event, action: string) => {
     if (computerMenuWindow && !computerMenuWindow.isDestroyed()) computerMenuWindow.close();
@@ -672,6 +704,7 @@ app.whenReady().then(async () => {
   });
   createWindow();
   createTray();
+  setupAutoUpdater();
   app.on('activate', showMainWindow);
 });
 

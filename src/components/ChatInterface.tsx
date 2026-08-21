@@ -209,10 +209,8 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     chatText.status = { ...chatText.status, idle: 'Listo cuando tú lo estés.', approval: 'Esperando aprobación...', error: 'Algo salió mal.' };
   }
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const autonomousText = language === 'en'
-    ? { label: 'Autonomous', description: 'Let the agent execute and verify the required tools', active: 'Active' }
-    : { label: 'Autónomo', description: 'Dejá que el agente ejecute y verifique las tools necesarias', active: 'Activo' };
   const projectsSlashLabel = language === 'en' ? 'Projects' : 'Proyectos';
+  const isDevelopmentBuild = process.env.NODE_ENV === 'development';
   const languageOptions = [
     { id: 'es', label: 'Español', description: 'Usar español', type: 'language' },
     { id: 'en', label: 'English', description: 'Use English', type: 'language' },
@@ -266,6 +264,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [connectionAttempt, setConnectionAttempt] = useState(1);
   const agentStartedAtRef = useRef(0);
   const [activeToolName, setActiveToolName] = useState('');
+  const [activeToolInput, setActiveToolInput] = useState<Record<string, any>>({});
   const [computerUseActive, setComputerUseActive] = useState(false);
   const [computerContext, setComputerContext] = useState<{ action: string; x: number; y: number; handle?: number; processId?: number; title?: string } | null>(null);
   const [pendingApprovals, setPendingApprovals] = useState<Array<{ id: string; toolName: string; input: unknown; summary: string }>>([]);
@@ -309,7 +308,6 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [projectOptions, setProjectOptions] = useState<ProjectOption[]>([]);
   const [skillOptions, setSkillOptions] = useState<SessionSkill[]>([]);
   const [activeSkills, setActiveSkills] = useState<SessionSkill[]>([]);
-  const [autonomousMode, setAutonomousMode] = useState(false);
   const [activeExtensions, setActiveExtensions] = useState<CodeclubExtension[]>([]);
   const [availableExtensions, setAvailableExtensions] = useState<CodeclubExtension[]>(codeclubExtensions);
   const [enabledExtensions, setEnabledExtensions] = useState<Record<string, boolean>>(() => Object.fromEntries(codeclubExtensions.map((extension) => [extension.id, true])));
@@ -788,16 +786,15 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     const matchesProvider = commandKind !== 'model' || item.providerId === currentProvider?.id;
     return matchesKind && matchesQuery && matchesProvider;
   });
-  const activeSelection = commandKind === 'provider' ? currentProvider : commandKind === 'model' ? currentModel : commandKind === 'project' && activeProject ? { id: activeProject.projectPath, label: activeProject.name } : commandKind === 'language' ? { id: language, label: language === 'en' ? 'English' : 'Español' } : commandKind === 'command' && autonomousMode ? { id: 'autonomo', label: autonomousText.label } : null;
+  const activeSelection = commandKind === 'provider' ? currentProvider : commandKind === 'model' ? currentModel : commandKind === 'project' && activeProject ? { id: activeProject.projectPath, label: activeProject.name } : commandKind === 'language' ? { id: language, label: language === 'en' ? 'English' : 'Español' } : null;
   const slashCommands: CatalogItem[] = [
     { id: 'proveedor', label: chatText.slash.provider, description: chatText.slash.providerDescription, aliases: ['proveedor', 'provider'], type: 'command', icon: Radar },
     { id: 'modelo', label: chatText.slash.model, description: chatText.slash.modelDescription, aliases: ['modelo', 'model'], type: 'command', icon: Box },
     { id: 'proyecto', label: projectsSlashLabel, description: chatText.slash.projectDescription, aliases: ['proyecto', 'proyectos', 'project', 'projects'], type: 'command', icon: Folder },
     { id: 'habilidad', label: chatText.slash.skill, description: chatText.slash.skillDescription, aliases: ['habilidad', 'skill'], type: 'command', icon: WandSparkles },
     { id: 'idioma', label: language === 'en' ? 'Language' : 'Idioma', description: language === 'en' ? 'Change language' : 'Cambiar idioma', aliases: ['idioma', 'language', 'lang'], type: 'command', icon: Languages },
-    { id: 'desarrollo', label: language === 'en' ? 'Development' : 'Desarrollo', description: language === 'en' ? 'Insert a development prompt' : 'Inyectar un prompt de desarrollo', aliases: ['desarrollo', 'desarrollar', 'development', 'develop'], type: 'command', icon: Code2 },
+    ...(isDevelopmentBuild ? [{ id: 'desarrollo', label: language === 'en' ? 'Development' : 'Desarrollo', description: language === 'en' ? 'Insert a development prompt' : 'Inyectar un prompt de desarrollo', aliases: ['desarrollo', 'desarrollar', 'development', 'develop'], type: 'command' as const, icon: Code2 }] : []),
     { id: 'overlay', label: computerUseActive ? (language === 'en' ? 'Disable Computer Use overlay' : 'Desactivar overlay de Computer Use') : (language === 'en' ? 'Enable Computer Use overlay' : 'Activar overlay de Computer Use'), description: language === 'en' ? 'Show or hide the PC control overlay' : 'Mostrar u ocultar el overlay de control de PC', aliases: ['overlay', 'overlay-pc', 'computer-overlay'], type: 'command', icon: Monitor },
-    { id: 'autonomo', label: autonomousText.label, description: autonomousText.description, aliases: ['autonomo', 'autonomous'], type: 'command', icon: Orbit },
     ...availableExtensions.filter((extension) => enabledExtensions[extension.id]).map((extension) => ({ id: extension.id, label: extension.name, description: extension.description, type: 'extension' as const, icon: extensionIcons[extension.id] || Box, extension })),
   ].filter((command: CatalogItem) => command.label?.toLowerCase().includes(searchQuery.toLowerCase()) || command.aliases?.some((alias: string) => alias.includes(searchQuery.toLowerCase())));
   const commandMenuItems = commandKind === 'command'
@@ -888,15 +885,6 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       }
       if (item.id === 'overlay') {
         setComputerUseActive((current) => !current);
-        setInput('');
-        setSearchQuery('');
-        setMenuOpen(false);
-        setCommandKind('');
-        chatInputRef.current?.focus();
-        return;
-      }
-      if (item.id === 'autonomo') {
-        setAutonomousMode((current) => !current);
         setInput('');
         setSearchQuery('');
         setMenuOpen(false);
@@ -1665,7 +1653,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               if (!isCurrentGeneration()) return;
               runtime.tool = '';
               publishRuntime();
-              if (isVisibleGeneration()) setActiveToolName('');
+              if (isVisibleGeneration()) { setActiveToolName(''); setActiveToolInput({}); }
             },
             onStepEnd: ({ stepNumber, finishReason, toolCalls, usage, performance }) => {
               if (!isCurrentGeneration()) return;
@@ -1681,6 +1669,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               if (!isCurrentGeneration()) return;
               const name = toolCall?.toolName || 'tool';
               const innerToolName = name === 'executeTool' ? toolCall?.input?.name : name;
+              const innerToolInput = name === 'executeTool' ? toolCall?.input?.input || {} : toolCall?.input || {};
               if (String(innerToolName || '').startsWith('computer')) setComputerUseActive(true);
               const eventKey = callId || toolCall?.toolCallId || '';
               const existingIndex = eventKey ? assistantTools.findIndex((event) => event.callId === eventKey) : -1;
@@ -1689,7 +1678,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               assistantTimeline = [...assistantTimeline, { type: 'tool', id: nextEvent.id, name, input: nextEvent.input, status: 'running' }];
               runtime.tool = name;
               publishRuntime();
-              if (isVisibleGeneration()) setActiveToolName(name);
+              if (isVisibleGeneration()) { setActiveToolName(String(innerToolName || name)); setActiveToolInput(innerToolInput); }
               updateAssistantMessage();
               void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'tool.execution.start', input: { callId, toolCallId: toolCall?.toolCallId, toolName: toolCall?.toolName, input: toolCall?.input }, output: { status: 'started' } });
             },
@@ -1718,6 +1707,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 toolStateTimerRef.current = null;
                 if (!isCurrentGeneration() || abortController.signal.aborted) return;
                 guardedSetAgentState('streaming');
+                if (isVisibleGeneration()) { setActiveToolName(''); setActiveToolInput({}); }
               }, 2000);
             },
             onUsage: async (usage) => {
@@ -2308,7 +2298,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               const m = turnItem;
               const i = turnIndex + turnOffset;
               return <React.Fragment key={m.role === 'assistant' && isStreaming && i === messages.length - 1 ? `${i}-${m.content.length}` : i}>
-            {m.role === 'user' && isStreaming && agentState !== 'error' && messages[i + 1]?.role === 'assistant' && i + 1 === messages.length - 1 && <ProcessingStatusStateFixed startedAt={agentStartedAtRef.current || Date.now()} provider={currentProvider?.label || currentProvider?.id || 'Proveedor'} model={currentModel?.label || currentModel?.id || 'Modelo'} state={agentState} attempt={connectionAttempt} />}
+            {m.role === 'user' && isStreaming && agentState !== 'error' && messages[i + 1]?.role === 'assistant' && i + 1 === messages.length - 1 && <ProcessingStatusStateFixed startedAt={agentStartedAtRef.current || Date.now()} provider={currentProvider?.label || currentProvider?.id || 'Proveedor'} model={currentModel?.label || currentModel?.id || 'Modelo'} state={agentState} attempt={connectionAttempt} language={language} toolName={activeToolName} toolInput={activeToolInput} />}
             {m.role === 'user' && messages[i + 1]?.role === 'assistant' && messages[i + 1]?.meta && !(isStreaming && i + 1 === messages.length - 1) && <CompletedStatusFixed language={language} provider={messages[i + 1].meta.provider} model={messages[i + 1].meta.model} durationMs={messages[i + 1].meta.durationMs} status={messages[i + 1].meta.status} errorName={messages[i + 1].meta.errorName} />}
             {m.role === 'user' && (
               <div aria-hidden="true" style={{ alignSelf: 'stretch', borderTop: '1px solid rgba(255, 255, 255, 0.08)', margin: '4px 0 38px' }} />
@@ -2517,7 +2507,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           ) : <div className="command-list" style={{ display: 'grid', gap: '4px', maxHeight: '300px', overflow: 'auto', scrollbarWidth: 'none', paddingBottom: '12px' }}>
             {activeSelection && (
               <div aria-current="true" style={{ minHeight: '30px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', borderRadius: '7px', background: '#1E1E1E', color: 'var(--codeclub-accent)', fontSize: '11px', padding: '0 9px' }}>
-                <span className="flex items-center gap-2">{activeSelection.id === 'autonomo' && <Orbit size={14} strokeWidth={1.8} />}{activeSelection.label || activeSelection.id}</span>
+                <span className="flex items-center gap-2">{activeSelection.label || activeSelection.id}</span>
                 <small style={{ color: 'var(--codeclub-accent)', fontSize: '11px', opacity: 0.88 }}>{chatText.selected}</small>
               </div>
             )}
@@ -2541,7 +2531,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 {index === activeCommandIndex && <motion.span layoutId="command-menu-active" transition={{ type: 'spring', stiffness: 520, damping: 34 }} aria-hidden="true" style={{ position: 'absolute', inset: 0, borderRadius: '7px', background: '#2F2F2F', zIndex: 0 }} />}
                 <span className="relative z-[1] flex min-w-0 items-center gap-2">{item.icon && React.createElement(item.icon, { size: 14, strokeWidth: 1.8 })}<span className="truncate">{item.label}</span></span>
                 <small className="relative z-[1]" style={{ color: 'rgba(216, 216, 216, 0.36)', fontSize: '11px' }}>
-                  {item.id === 'autonomo' && autonomousMode ? autonomousText.active : item.type === 'command' ? item.description : item.type === 'language' ? item.description : item.type === 'development' ? item.description : item.type === 'provider' ? chatText.provider : item.type === 'project' ? chatText.project : item.type === 'skill' ? item.source : item.type === 'extension' ? chatText.extension : chatText.model}
+                  {item.type === 'command' ? item.description : item.type === 'language' ? item.description : item.type === 'development' ? item.description : item.type === 'provider' ? chatText.provider : item.type === 'project' ? chatText.project : item.type === 'skill' ? item.source : item.type === 'extension' ? chatText.extension : chatText.model}
                 </small>
               </motion.button>
             ))}
@@ -2648,14 +2638,44 @@ function ToolIcon({ name }: { name: string }) {
   return <span style={{ display: 'grid', placeItems: 'center', width: '18px', height: '18px', flex: '0 0 18px', color: '#888' }}><Icon size={15} strokeWidth={1.7} /></span>;
 }
 
-function ProcessingStatusStateFixed({ startedAt, provider, model, state, attempt }: { startedAt: number; provider: string; model: string; state: string; attempt: number }) {
+const activityValue = (value: unknown, fallback = '') => String(value ?? fallback).replace(/\s+/g, ' ').trim().slice(0, 90);
+function toolActivityLabel(name: string, input: Record<string, any>, language: AppLanguage) {
+  const english = language === 'en';
+  const path = activityValue(input?.path || input?.filePath);
+  const command = activityValue([input?.command, ...(Array.isArray(input?.args) ? input.args : [])].filter(Boolean).join(' '));
+  const query = activityValue(input?.query);
+  const url = activityValue(input?.url);
+  const title = activityValue(input?.title || input?.name);
+  const specialist = activityValue(input?.specialist);
+  const action = activityValue(input?.action);
+  const labels: Record<string, string> = english ? {
+    listFiles: 'Reading workspace files', readFile: 'Reading', searchText: 'Searching', searchTools: 'Searching tools', executeTool: 'Running tool',
+    createPlan: 'Planning', updatePlan: 'Updating plan', todo: 'Updating TODO', getTaskStatus: 'Reading task status', getExecutionLog: 'Reading execution log',
+    writeFile: 'Writing file', createSkill: 'Creating skill', createExtension: 'Creating extension', deleteExtension: 'Removing extension', createMcpServer: 'Creating MCP server', deleteMcpServer: 'Removing MCP server',
+    runCommand: 'Executing', terminal: 'Running terminal', openBrowser: 'Opening browser', getBrowserState: 'Reading browser', browserAction: 'Using browser',
+    computerListWindows: 'Reading windows', computerGetState: 'Reading computer state', computerScreenshot: 'Capturing screen', computerOcr: 'Reading screen', computerAction: 'Controlling computer',
+    subagent: 'Delegating task', swarm: 'Coordinating agents', askUser: 'Waiting for your answer', switchProject: 'Switching project',
+  } : {
+    listFiles: 'Leyendo archivos del workspace', readFile: 'Leyendo', searchText: 'Buscando', searchTools: 'Buscando tools', executeTool: 'Ejecutando tool',
+    createPlan: 'Planificando', updatePlan: 'Actualizando plan', todo: 'Actualizando TODO', getTaskStatus: 'Leyendo estado de tareas', getExecutionLog: 'Leyendo historial de ejecución',
+    writeFile: 'Escribiendo archivo', createSkill: 'Creando habilidad', createExtension: 'Creando extensión', deleteExtension: 'Eliminando extensión', createMcpServer: 'Creando servidor MCP', deleteMcpServer: 'Eliminando servidor MCP',
+    runCommand: 'Ejecutando', terminal: 'Ejecutando terminal', openBrowser: 'Abriendo navegador', getBrowserState: 'Leyendo navegador', browserAction: 'Usando navegador',
+    computerListWindows: 'Leyendo ventanas', computerGetState: 'Leyendo estado de la PC', computerScreenshot: 'Capturando pantalla', computerOcr: 'Leyendo pantalla', computerAction: 'Controlando la PC',
+    subagent: 'Delegando tarea', swarm: 'Coordinando agentes', askUser: 'Esperando tu respuesta', switchProject: 'Cambiando de proyecto',
+  };
+  const prefix = labels[name] || (english ? 'Using' : 'Usando');
+  const detail = name === 'runCommand' || name === 'terminal' ? command : name === 'readFile' || name === 'writeFile' ? path : name === 'searchText' ? query : name === 'openBrowser' ? url : name === 'createPlan' || name === 'todo' || name === 'createSkill' ? title : name === 'subagent' ? specialist : name === 'browserAction' || name === 'computerAction' ? action : '';
+  return detail ? `${prefix} ${detail}` : prefix;
+}
+
+function ProcessingStatusStateFixed({ startedAt, provider, model, state, attempt, language, toolName, toolInput }: { startedAt: number; provider: string; model: string; state: string; attempt: number; language: AppLanguage; toolName?: string; toolInput?: Record<string, any> }) {
   const [elapsed, setElapsed] = useState(() => Math.max(0, Date.now() - startedAt));
   useEffect(() => {
     const timer = window.setInterval(() => setElapsed(Math.max(0, Date.now() - startedAt)), 1000);
     return () => window.clearInterval(timer);
   }, [startedAt]);
-  const status = state === 'approval' ? 'Esperando aprobación' : state === 'tool_call' ? 'Ejecutando herramienta' : state === 'connecting' && attempt > 1 ? `Reconectando ${attempt}/5` : state === 'connecting' ? 'Conectando con el proveedor' : 'Pensando';
-  const Icon = state === 'connecting' ? Wifi : state === 'approval' ? CircleHelp : state === 'tool_call' ? Terminal : MessageSquare;
+  const status = state === 'approval' ? (language === 'en' ? 'Waiting for approval' : 'Esperando aprobación') : state === 'tool_call' ? toolActivityLabel(toolName || 'tool', toolInput || {}, language) : state === 'connecting' && attempt > 1 ? `${language === 'en' ? 'Reconnecting' : 'Reconectando'} ${attempt}/5` : state === 'connecting' ? (language === 'en' ? 'Connecting to provider' : 'Conectando con el proveedor') : (language === 'en' ? 'Thinking' : 'Pensando');
+  const Icon = state === 'connecting' ? Wifi : state === 'approval' ? CircleHelp : state === 'tool_call' ? (TOOL_ICONS[toolName || ''] || Terminal) : MessageSquare;
   return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', padding: '0 0 12px', color: '#999', fontSize: '12px' }}><span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#777' }}>{provider} · {model}</span><span style={{ display: 'flex', alignItems: 'center', gap: '7px', flexShrink: 0 }}><Icon size={14} strokeWidth={1.7} aria-hidden="true" />{status} · {formatProcessingDuration(elapsed)}</span></div>;
 }
 

@@ -22,6 +22,14 @@ contextBridge.exposeInMainWorld('codeclub', {
   windowMaximize: () => ipcRenderer.invoke('window:maximize'),
   windowClose: () => ipcRenderer.invoke('window:close'),
   reloadApp: () => ipcRenderer.invoke('app:reload'),
+  getAutoUpdateStatus: () => ipcRenderer.invoke('app:update-status'),
+  checkForUpdates: () => ipcRenderer.invoke('app:check-for-updates'),
+  installUpdate: () => ipcRenderer.invoke('app:install-update'),
+  onAutoUpdate: (handler) => {
+    const listener = (_event, state) => handler(state);
+    ipcRenderer.on('app:auto-update', listener);
+    return () => ipcRenderer.removeListener('app:auto-update', listener);
+  },
   setComputerOverlay: (payload) => ipcRenderer.invoke('computer:overlay', payload),
   onComputerEscape: (handler) => {
     const listener = () => handler();
