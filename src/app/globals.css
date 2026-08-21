@@ -340,6 +340,26 @@ body {
   animation: composer-action-shine 3.2s linear infinite;
 }
 
+.composer-action-shine-error {
+  color: transparent !important;
+  background: linear-gradient(90deg, #f0f0f0 0%, #f0f0f0 34%, #ff6b6b 50%, #f0f0f0 66%, #f0f0f0 100%);
+  background-size: 240% 100%;
+  background-position: 120% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: composer-action-shine 3.2s linear infinite;
+}
+
+.composer-action-shine-success {
+  color: transparent !important;
+  background: linear-gradient(90deg, #f0f0f0 0%, #f0f0f0 34%, #1687ff 50%, #f0f0f0 66%, #f0f0f0 100%);
+  background-size: 240% 100%;
+  background-position: 120% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: composer-action-shine 3.2s linear infinite;
+}
+
 .command-menu::after {
   display: block;
   width: 100%;

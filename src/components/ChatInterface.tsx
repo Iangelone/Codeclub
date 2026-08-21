@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUp, Box, Bug, Camera, Check, ChevronDown, ChevronRight, CircleHelp, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Languages, LayoutTemplate, Lightbulb, ListChecks, ListTodo, MessageSquare, Monitor, MousePointer2, Orbit, Paperclip, Pencil, Presentation, Radar, RotateCcw, Search, ScrollText, Square, Table2, Terminal, Folder, FolderTree, WandSparkles, Wifi, X } from 'lucide-react';
+import { ArrowUp, Box, Bug, Camera, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Languages, LayoutTemplate, Lightbulb, ListChecks, ListTodo, MessageSquare, Monitor, MousePointer2, Orbit, Paperclip, Pencil, Presentation, Radar, RotateCcw, Search, ScrollText, Square, Table2, Terminal, Folder, FolderTree, WandSparkles, Wifi, X } from 'lucide-react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -417,6 +417,15 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const commandMenuHostRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const resizeChatInput = () => {
+    requestAnimationFrame(() => {
+      const target = chatInputRef.current;
+      if (!target) return;
+      target.style.height = 'auto';
+      target.style.height = `${Math.min(target.scrollHeight, 180)}px`;
+      target.style.overflowY = target.scrollHeight > 180 ? 'auto' : 'hidden';
+    });
+  };
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const rememberRecentArtifact = (kind: 'chat', detail: any) => {
     if (!detail?.projectPath || !detail?.[`${kind}Id`]) return;
@@ -923,6 +932,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       setSearchQuery('');
       setMenuOpen(false);
       setCommandKind('');
+      resizeChatInput();
       requestAnimationFrame(() => chatInputRef.current?.focus());
       return;
     }
@@ -2297,20 +2307,21 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             {turnMessages.map((turnItem, turnOffset) => {
               const m = turnItem;
               const i = turnIndex + turnOffset;
+              const isLiveAssistant = m.role === 'assistant' && isStreaming && i === messages.length - 1;
               return <React.Fragment key={m.role === 'assistant' && isStreaming && i === messages.length - 1 ? `${i}-${m.content.length}` : i}>
             {m.role === 'user' && isStreaming && agentState !== 'error' && messages[i + 1]?.role === 'assistant' && i + 1 === messages.length - 1 && <ProcessingStatusStateFixed startedAt={agentStartedAtRef.current || Date.now()} provider={currentProvider?.label || currentProvider?.id || 'Proveedor'} model={currentModel?.label || currentModel?.id || 'Modelo'} state={agentState} attempt={connectionAttempt} language={language} toolName={activeToolName} toolInput={activeToolInput} />}
             {m.role === 'user' && messages[i + 1]?.role === 'assistant' && messages[i + 1]?.meta && !(isStreaming && i + 1 === messages.length - 1) && <CompletedStatusFixed language={language} provider={messages[i + 1].meta.provider} model={messages[i + 1].meta.model} durationMs={messages[i + 1].meta.durationMs} status={messages[i + 1].meta.status} errorName={messages[i + 1].meta.errorName} />}
             {m.role === 'user' && (
-              <div aria-hidden="true" style={{ alignSelf: 'stretch', borderTop: '1px solid rgba(255, 255, 255, 0.08)', margin: '4px 0 38px' }} />
+              <div aria-hidden="true" style={{ alignSelf: 'stretch', borderTop: '1px solid rgba(255, 255, 255, 0.08)', margin: '0 0 38px' }} />
             )}
-            {m.role === 'assistant' && m.meta?.status === 'error' ? <ErrorRecoveryNotice configurationError={m.meta.configuration === true} errorMessage={m.meta.errorMessage || m.content} /> : <div className={m.role === 'assistant' ? 'chat-assistant-message' : 'chat-user-message'} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '5px', maxWidth: '80%', minWidth: 0, marginTop: m.role === 'assistant' ? '50px' : 0 }}>
+            {m.role === 'assistant' && m.meta?.status === 'error' ? <ErrorRecoveryNotice configurationError={m.meta.configuration === true} errorMessage={m.meta.errorMessage || m.content} /> : <motion.div initial={isLiveAssistant ? { opacity: 0.58, y: 2 } : false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.24, ease: 'easeOut' }} className={m.role === 'assistant' ? 'chat-assistant-message' : 'chat-user-message'} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '5px', maxWidth: '80%', minWidth: 0, marginTop: m.role === 'assistant' ? '50px' : 0 }}>
               {m.role === 'user' && m.attachments?.length > 0 && <div className="chat-attachments" aria-label="Archivos adjuntos">{m.attachments.map((file) => file.mediaType?.startsWith('image/') ? <div key={file.path || file.name} className="chat-attachment-card" title={file.name}><img src={file.previewUrl || convertFileSrc(file.path)} alt={file.name} /></div> : <div key={file.path || file.name} className="chat-attachment-card chat-attachment-file" title={file.name}>{file.previewText ? <pre className="chat-attachment-preview-text">{file.previewText}</pre> : <span>{file.name.split('.').pop()?.toUpperCase().slice(0, 6) || 'FILE'}</span>}</div>)}</div>}
               {m.role === 'user' && m.browserReferences?.length > 0 && <div className="chat-browser-references" aria-label="Referencias de navegador">{m.browserReferences.map((ref: { id: string; title: string; text: string }, referenceIndex: number) => <div key={ref.id || `${ref.title}-${referenceIndex}`} className="chat-browser-reference-card"><span className="chat-browser-reference-number">{referenceIndex + 1}</span><span className="min-w-0"><span className="block truncate text-[11px] text-[#d6d6d6]">{ref.title}</span><span className="mt-0.5 block truncate text-[11px] text-[#858585]">{getBrowserReferenceComment(ref.text)}</span></span></div>)}</div>}
               <div className={`min-w-0 w-fit max-w-full break-words [overflow-wrap:anywhere] text-sm leading-6 text-(--codeclub-text-strong) ${m.role === 'user' && getVisibleUserContent(m).trim() ? 'rounded-[24px_24px_4px_24px] bg-(--codeclub-user-bubble) px-5 py-3.5 leading-[1.4]' : ''}`}>
                 <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{ p: ({ children }) => <p style={{ margin: m.role === 'user' ? 0 : '0 0 12px', lineHeight: m.role === 'user' ? 1.4 : 1.6 }}>{children}</p>, ul: ({ children }) => <ul style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ul>, ol: ({ children }) => <ol style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ol>, li: ({ children }) => <li style={{ margin: m.role === 'user' ? 0 : '4px 0' }}>{children}</li>, table: ({ children }) => <div style={{ overflowX: 'auto', margin: '12px 0' }}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>{children}</table></div>, th: ({ children }) => <th style={{ border: '1px solid #2b2b2b', padding: '7px 9px', background: '#1c1c1c', textAlign: 'left', fontWeight: 600 }}>{children}</th>, td: ({ children }) => <td style={{ border: '1px solid #2b2b2b', padding: '7px 9px', verticalAlign: 'top' }}>{children}</td>, h1: ({ children }) => <h1 style={{ margin: '18px 0 10px', fontSize: '20px' }}>{children}</h1>, h2: ({ children }) => <h2 style={{ margin: '16px 0 8px', fontSize: '17px' }}>{children}</h2>, h3: ({ children }) => <h3 style={{ margin: '14px 0 7px', fontSize: '15px' }}>{children}</h3> }}>{normalizeChatContent(m.role === 'user' ? getVisibleUserContent(m) : (m.displayContent || m.content))}</ReactMarkdown>
-                {m.role === 'assistant' && isStreaming && agentState !== 'error' && i === messages.length - 1 && !m.content && <span className="chat-thinking-label" style={{ display: 'inline-block', color: 'rgba(216, 216, 216, 0.58)', fontSize: '13px' }}>Pensando</span>}
+                {m.role === 'assistant' && isStreaming && agentState !== 'error' && i === messages.length - 1 && !m.content && !m.timeline?.some((event: any) => event.type === 'tool') && <span className="chat-thinking-label composer-action-shine" style={{ display: 'inline-block', fontSize: '13px' }}>Pensando</span>}
               </div>
-              {m.role === 'assistant' && <ExecutionTimeline timeline={m.timeline} active={isStreaming && i === messages.length - 1} />}
+              {m.role === 'assistant' && <ExecutionTimeline timeline={m.timeline} active={isLiveAssistant && !m.content?.trim()} language={language} />}
               {m.role === 'assistant' && <AskUserCards tools={m.tools} onSelect={(answer) => void sendMessage(answer)} disabled={isAgentBusy} />}
               {m.role === 'assistant' && i === messages.length - 1 && <ApprovalCards approvals={pendingApprovals} onResolve={resolveToolApproval} />}
               {m.role === 'assistant' && <ChangeSummaryCard changes={m.meta?.changes} />}
@@ -2324,7 +2335,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                   <RotateCcw size={13} strokeWidth={2} />
                 </button>}
               </div>}
-            </div>}
+              </motion.div>}
               </React.Fragment>;
             })}
           </div>;
@@ -2411,10 +2422,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               }
             }}
             onInput={(e) => {
-              const target = e.currentTarget;
-              target.style.height = 'auto';
-              target.style.height = `${Math.min(target.scrollHeight, 180)}px`;
-              target.style.overflowY = target.scrollHeight > 180 ? 'auto' : 'hidden';
+              resizeChatInput();
             }}
             onKeyDown={(e) => {
               const slashMenuActive = ['command', 'provider', 'model', 'project', 'skill', 'language', 'development'].includes(commandKind) && (menuOpen || commandKind === 'command');
@@ -2626,20 +2634,8 @@ function parseCsv(content: string): string[][] {
   return rows;
 }
 
-const TOOL_ICONS: Record<string, any> = {
-  listFiles: FolderTree, readFile: FileCode2, searchText: Search, writeFile: Pencil, runCommand: Terminal, terminal: Terminal,
-  openBrowser: Globe, getBrowserState: Eye, browserAction: MousePointer2, computerGetState: Monitor, computerListWindows: Monitor, computerScreenshot: Camera, computerOcr: Camera, computerAction: MousePointer2, swarm: Orbit, subagent: Orbit, listAvailableTools: FolderOpen,
-  createPlan: ListChecks, updatePlan: ListChecks, todo: ListTodo, getTaskStatus: ListTodo,
-  getExecutionLog: ScrollText, askUser: MessageSquare,
-};
-
-function ToolIcon({ name }: { name: string }) {
-  const Icon = TOOL_ICONS[name] || Code2;
-  return <span style={{ display: 'grid', placeItems: 'center', width: '18px', height: '18px', flex: '0 0 18px', color: '#888' }}><Icon size={15} strokeWidth={1.7} /></span>;
-}
-
 const activityValue = (value: unknown, fallback = '') => String(value ?? fallback).replace(/\s+/g, ' ').trim().slice(0, 90);
-function toolActivityLabel(name: string, input: Record<string, any>, language: AppLanguage) {
+function toolActivityLabel(name: string, input: Record<string, any>, language: AppLanguage, completed = false) {
   const english = language === 'en';
   const path = activityValue(input?.path || input?.filePath);
   const command = activityValue([input?.command, ...(Array.isArray(input?.args) ? input.args : [])].filter(Boolean).join(' '));
@@ -2649,21 +2645,36 @@ function toolActivityLabel(name: string, input: Record<string, any>, language: A
   const specialist = activityValue(input?.specialist);
   const action = activityValue(input?.action);
   const labels: Record<string, string> = english ? {
-    listFiles: 'Reading workspace files', readFile: 'Reading', searchText: 'Searching', searchTools: 'Searching tools', executeTool: 'Running tool',
-    createPlan: 'Planning', updatePlan: 'Updating plan', todo: 'Updating TODO', getTaskStatus: 'Reading task status', getExecutionLog: 'Reading execution log',
-    writeFile: 'Writing file', createSkill: 'Creating skill', createExtension: 'Creating extension', deleteExtension: 'Removing extension', createMcpServer: 'Creating MCP server', deleteMcpServer: 'Removing MCP server',
-    runCommand: 'Executing', terminal: 'Running terminal', openBrowser: 'Opening browser', getBrowserState: 'Reading browser', browserAction: 'Using browser',
-    computerListWindows: 'Reading windows', computerGetState: 'Reading computer state', computerScreenshot: 'Capturing screen', computerOcr: 'Reading screen', computerAction: 'Controlling computer',
+    listFiles: 'Exploring workspace', readFile: 'Reading relevant files', searchText: 'Searching the codebase', searchTools: 'Exploring available tools', executeTool: 'Running a tool',
+    createPlan: 'Designing a plan', updatePlan: 'Updating the plan', todo: 'Organizing tasks', getTaskStatus: 'Reviewing task progress', getExecutionLog: 'Reviewing execution history',
+    writeFile: 'Applying changes', createSkill: 'Creating a skill', createExtension: 'Creating an extension', deleteExtension: 'Removing an extension', createMcpServer: 'Creating an MCP server', deleteMcpServer: 'Removing an MCP server',
+    runCommand: 'Verifying the result', terminal: 'Preparing the terminal', openBrowser: 'Opening the browser', getBrowserState: 'Inspecting the page', browserAction: 'Interacting with the browser',
+    computerListWindows: 'Exploring open windows', computerGetState: 'Inspecting the desktop', computerScreenshot: 'Capturing the screen', computerOcr: 'Reading the screen', computerAction: 'Controlling the computer',
     subagent: 'Delegating task', swarm: 'Coordinating agents', askUser: 'Waiting for your answer', switchProject: 'Switching project',
   } : {
-    listFiles: 'Leyendo archivos del workspace', readFile: 'Leyendo', searchText: 'Buscando', searchTools: 'Buscando tools', executeTool: 'Ejecutando tool',
-    createPlan: 'Planificando', updatePlan: 'Actualizando plan', todo: 'Actualizando TODO', getTaskStatus: 'Leyendo estado de tareas', getExecutionLog: 'Leyendo historial de ejecución',
-    writeFile: 'Escribiendo archivo', createSkill: 'Creando habilidad', createExtension: 'Creando extensión', deleteExtension: 'Eliminando extensión', createMcpServer: 'Creando servidor MCP', deleteMcpServer: 'Eliminando servidor MCP',
-    runCommand: 'Ejecutando', terminal: 'Ejecutando terminal', openBrowser: 'Abriendo navegador', getBrowserState: 'Leyendo navegador', browserAction: 'Usando navegador',
-    computerListWindows: 'Leyendo ventanas', computerGetState: 'Leyendo estado de la PC', computerScreenshot: 'Capturando pantalla', computerOcr: 'Leyendo pantalla', computerAction: 'Controlando la PC',
+    listFiles: 'Explorando el workspace', readFile: 'Leyendo archivos relevantes', searchText: 'Buscando en el código', searchTools: 'Explorando herramientas disponibles', executeTool: 'Ejecutando una herramienta',
+    createPlan: 'Diseñando un plan', updatePlan: 'Actualizando el plan', todo: 'Organizando tareas', getTaskStatus: 'Revisando el progreso', getExecutionLog: 'Revisando el historial de ejecución',
+    writeFile: 'Aplicando cambios', createSkill: 'Creando una skill', createExtension: 'Creando una extensión', deleteExtension: 'Eliminando una extensión', createMcpServer: 'Creando un servidor MCP', deleteMcpServer: 'Eliminando un servidor MCP',
+    runCommand: 'Verificando el resultado', terminal: 'Preparando la terminal', openBrowser: 'Abriendo el navegador', getBrowserState: 'Inspeccionando la página', browserAction: 'Interactuando con el navegador',
+    computerListWindows: 'Explorando ventanas abiertas', computerGetState: 'Inspeccionando el escritorio', computerScreenshot: 'Capturando la pantalla', computerOcr: 'Leyendo la pantalla', computerAction: 'Controlando la computadora',
     subagent: 'Delegando tarea', swarm: 'Coordinando agentes', askUser: 'Esperando tu respuesta', switchProject: 'Cambiando de proyecto',
   };
-  const prefix = labels[name] || (english ? 'Using' : 'Usando');
+  const completedLabels: Record<string, string> = english ? {
+    listFiles: 'Workspace explored', readFile: 'Relevant files read', searchText: 'Codebase searched', searchTools: 'Available tools explored', executeTool: 'Tool executed',
+    createPlan: 'Plan designed', updatePlan: 'Plan updated', todo: 'Tasks organized', getTaskStatus: 'Task progress reviewed', getExecutionLog: 'Execution history reviewed',
+    writeFile: 'Changes applied', createSkill: 'Skill created', createExtension: 'Extension created', deleteExtension: 'Extension removed', createMcpServer: 'MCP server created', deleteMcpServer: 'MCP server removed',
+    runCommand: 'Result verified', terminal: 'Terminal prepared', openBrowser: 'Browser opened', getBrowserState: 'Page inspected', browserAction: 'Browser interaction completed',
+    computerListWindows: 'Open windows explored', computerGetState: 'Desktop inspected', computerScreenshot: 'Screen captured', computerOcr: 'Screen read', computerAction: 'Computer action completed',
+    subagent: 'Task delegated', swarm: 'Agents coordinated', askUser: 'Question sent', switchProject: 'Project switched',
+  } : {
+    listFiles: 'Workspace explorado', readFile: 'Archivos relevantes leídos', searchText: 'Código buscado', searchTools: 'Herramientas disponibles exploradas', executeTool: 'Herramienta ejecutada',
+    createPlan: 'Plan diseñado', updatePlan: 'Plan actualizado', todo: 'Tareas organizadas', getTaskStatus: 'Progreso revisado', getExecutionLog: 'Historial de ejecución revisado',
+    writeFile: 'Cambios aplicados', createSkill: 'Skill creada', createExtension: 'Extensión creada', deleteExtension: 'Extensión eliminada', createMcpServer: 'Servidor MCP creado', deleteMcpServer: 'Servidor MCP eliminado',
+    runCommand: 'Resultado verificado', terminal: 'Terminal preparada', openBrowser: 'Navegador abierto', getBrowserState: 'Página inspeccionada', browserAction: 'Interacción con el navegador completada',
+    computerListWindows: 'Ventanas abiertas exploradas', computerGetState: 'Escritorio inspeccionado', computerScreenshot: 'Pantalla capturada', computerOcr: 'Pantalla leída', computerAction: 'Acción en la computadora completada',
+    subagent: 'Tarea delegada', swarm: 'Agentes coordinados', askUser: 'Pregunta enviada', switchProject: 'Proyecto cambiado',
+  };
+  const prefix = (completed ? completedLabels[name] : labels[name]) || (english ? (completed ? 'Action completed' : 'Working') : (completed ? 'Acción completada' : 'Trabajando'));
   const detail = name === 'runCommand' || name === 'terminal' ? command : name === 'readFile' || name === 'writeFile' ? path : name === 'searchText' ? query : name === 'openBrowser' ? url : name === 'createPlan' || name === 'todo' || name === 'createSkill' ? title : name === 'subagent' ? specialist : name === 'browserAction' || name === 'computerAction' ? action : '';
   return detail ? `${prefix} ${detail}` : prefix;
 }
@@ -2674,19 +2685,17 @@ function ProcessingStatusStateFixed({ startedAt, provider, model, state, attempt
     const timer = window.setInterval(() => setElapsed(Math.max(0, Date.now() - startedAt)), 1000);
     return () => window.clearInterval(timer);
   }, [startedAt]);
-  const status = state === 'approval' ? (language === 'en' ? 'Waiting for approval' : 'Esperando aprobación') : state === 'tool_call' ? toolActivityLabel(toolName || 'tool', toolInput || {}, language) : state === 'connecting' && attempt > 1 ? `${language === 'en' ? 'Reconnecting' : 'Reconectando'} ${attempt}/5` : state === 'connecting' ? (language === 'en' ? 'Connecting to provider' : 'Conectando con el proveedor') : (language === 'en' ? 'Thinking' : 'Pensando');
-  const Icon = state === 'connecting' ? Wifi : state === 'approval' ? CircleHelp : state === 'tool_call' ? (TOOL_ICONS[toolName || ''] || Terminal) : MessageSquare;
-  return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', padding: '0 0 12px', color: '#999', fontSize: '12px' }}><span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#777' }}>{provider} · {model}</span><span style={{ display: 'flex', alignItems: 'center', gap: '7px', flexShrink: 0 }}><Icon size={14} strokeWidth={1.7} aria-hidden="true" />{status} · {formatProcessingDuration(elapsed)}</span></div>;
+  const status = language === 'en' ? 'Thinking' : 'Pensando';
+  const elapsedLabel = formatProcessingDuration(elapsed);
+  const processingLabel = language === 'en' ? `${status} for ${elapsedLabel}` : `${status} desde hace ${elapsedLabel}`;
+  return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', padding: '0 0 5px', color: '#777', fontSize: '13px' }}><span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{provider} · {model}</span><span style={{ flexShrink: 0 }}>{processingLabel}</span></div>;
 }
 
 function CompletedStatusFixed({ language, provider, model, durationMs, status, errorName }: { language: AppLanguage; provider: string; model: string; durationMs: number; status?: string; errorName?: string }) {
   const stateLabel = status === 'cancelled'
-    ? (language === 'en' ? 'Cancelled by user' : 'Cancelado por el usuario')
-    : status === 'error'
-      ? errorName === 'TimeoutError' ? (language === 'en' ? 'Timed out at' : 'Tiempo agotado a los') : (language === 'en' ? 'Error at' : 'Error a los')
-      : language === 'en' ? 'Completed in' : 'Completado en';
-  const Icon = status === 'error' ? CircleHelp : status === 'cancelled' ? X : Check;
-  return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', alignSelf: 'stretch', margin: '20px 0 -6px', color: status === 'error' ? 'rgba(220, 150, 150, 0.72)' : 'rgba(216, 216, 216, 0.52)', fontSize: '12px', letterSpacing: '0.01em' }}><span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{provider} · {model}</span><span style={{ display: 'flex', alignItems: 'center', gap: '7px', flexShrink: 0 }}><Icon size={14} strokeWidth={1.7} aria-hidden="true" />{stateLabel} {formatProcessingDuration(durationMs)}</span></div>;
+    ? (language === 'en' ? 'Cancelled' : 'Cancelado')
+    : language === 'en' ? 'Completed in' : 'Completado en';
+  return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', alignSelf: 'stretch', margin: '20px 0 -6px', color: 'rgba(216, 216, 216, 0.52)', fontSize: '12px', letterSpacing: '0.01em' }}><span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{provider} · {model}</span><span style={{ flexShrink: 0 }}>{stateLabel} {formatProcessingDuration(durationMs)}</span></div>;
 }
 
 const ERROR_RECOVERY_TIPS = [
@@ -2727,16 +2736,18 @@ function ErrorRecoveryNotice({ configurationError, errorMessage }: { configurati
   </div>;
 }
 
-function ExecutionTimeline({ timeline = [], active }: { timeline?: any[]; active: boolean }) {
+function ExecutionTimeline({ timeline = [], active, language }: { timeline?: any[]; active: boolean; language: AppLanguage }) {
   if (!active || !timeline.length) return null;
   const toolEvents = timeline.filter((event) => event.type === 'tool');
   if (!toolEvents.length) return null;
   const event = [...toolEvents].reverse().find((item) => item.status === 'running') || toolEvents[toolEvents.length - 1];
   const command = event.name === 'runCommand' ? [event.input?.command, ...(event.input?.args || [])].filter(Boolean).join(' ') : '';
   const detail = command || event.input?.path || event.input?.childName || event.input?.specialist || '';
-  const label = detail ? `${event.name} ${detail}` : event.name;
   const failed = event.status === 'error' || event.output?.error;
-  return <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '10px 0 3px', color: failed ? '#d98b8b' : '#999', fontSize: '13px' }}><ToolIcon name={event.name} /><span className={event.status === 'running' && !failed ? 'chat-thinking-label chat-tool-thinking-label' : undefined}>{failed ? `Falló ${label}` : `${event.status === 'running' ? 'Ejecutando' : 'Ejecutado'} ${label}`}</span></div>;
+  const activity = toolActivityLabel(event.name, event.input || {}, language, event.status !== 'running' && !failed);
+  const label = detail && activity === event.name ? `${activity} ${detail}` : activity;
+  const shineClass = failed ? 'composer-action-shine-error' : 'composer-action-shine chat-thinking-label chat-tool-thinking-label';
+  return <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '10px 0 3px', color: failed ? '#d98b8b' : '#999', fontSize: '13px' }}><span className={shineClass}>{failed ? `Falló ${label}` : label}</span></div>;
 }
 
 function AskUserCards({ tools = [], onSelect }: { tools?: any[]; onSelect: (answer: string) => void; disabled?: boolean }) {

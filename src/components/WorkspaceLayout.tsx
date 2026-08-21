@@ -401,15 +401,23 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
       setActiveSection('new-chat');
       setActiveChatId((event as CustomEvent<{ chatId?: string }>).detail?.chatId);
     };
+    const showCreatedChat = (event: Event) => {
+      const chatId = (event as CustomEvent<{ chatId?: string }>).detail?.chatId;
+      if (!chatId) return;
+      setActiveSection('new-chat');
+      setActiveChatId(chatId);
+    };
     const showEmptyChat = () => { setActiveSection('new-chat'); setActiveChatId(undefined); };
     const showExtensions = () => { setActiveSection('extensions'); setActiveChatId(undefined); };
     window.addEventListener('codeclub:open-chat', showChat);
     window.addEventListener('codeclub:panel-left:open-chat', showChat);
+    window.addEventListener('codeclub:chat-created', showCreatedChat);
     window.addEventListener('codeclub:open-empty-chat', showEmptyChat);
     window.addEventListener('codeclub:open-extensions', showExtensions);
     return () => {
       window.removeEventListener('codeclub:open-chat', showChat);
       window.removeEventListener('codeclub:panel-left:open-chat', showChat);
+      window.removeEventListener('codeclub:chat-created', showCreatedChat);
       window.removeEventListener('codeclub:open-empty-chat', showEmptyChat);
       window.removeEventListener('codeclub:open-extensions', showExtensions);
     };
