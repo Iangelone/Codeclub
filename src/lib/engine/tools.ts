@@ -478,7 +478,7 @@ export function createTools(ctx: ToolContext) {
       },
     }),
     askUser: tool({
-      description: 'Request clarification from the user when an important decision is missing. Returns a pending request; it does not answer for the user.',
+      description: 'Request clarification from the user when an important decision is missing. When the question allows closed answers, provide 2 to 4 concise actionable options; otherwise leave options empty for an open chat response. Returns a pending request; it does not answer for the user.',
       inputSchema: jsonSchema({
         type: 'object',
         properties: {

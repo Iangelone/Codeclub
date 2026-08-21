@@ -16,6 +16,7 @@
     "electron:compile": "tsc -p tsconfig.electron.json",
     "electron:launch": "electron .",
     "electron:dev": "npm run electron:compile && electron .",
+    "verify:nvidia": "node scripts/verify-nvidia.mjs",
     "package:win": "npm run desktop:build && electron-builder --win --x64 --publish never"
   },
   "dependencies": {

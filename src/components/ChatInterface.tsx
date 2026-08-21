@@ -34,6 +34,7 @@ import { LANGUAGE_STORAGE_KEY, type AppLanguage } from '../lib/i18n';
 import { connectAllAgentPluginMcp, loadAgentPlugins } from '../lib/agent-plugins';
 
 const formatProcessingDuration = (durationMs: number) => durationMs >= 60000 ? `${(durationMs / 60000).toFixed(1)}min` : `${Math.max(0, Math.round(durationMs / 1000))}s`;
+const TOOL_ACCESS_HINT = 'Instrucción operativa: si necesitás una capacidad, buscá la herramienta por nombre o intención con searchTools, revisá el schema devuelto y ejecutala con executeTool. No inventes herramientas ni parámetros, y verificá el resultado real.';
 const getBrowserReferenceFavicon = (reference: { title: string; url?: string }) => {
   try {
     if (!reference.url && reference.title.toLowerCase().includes('google')) return 'https://www.google.com/favicon.ico';
@@ -251,6 +252,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   ];
   const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
   const [copiedToolLogIndex, setCopiedToolLogIndex] = useState<number | null>(null);
+  const [copiedTraceIndex, setCopiedTraceIndex] = useState<number | null>(null);
   const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [input, setInput] = useState('');
   const [artifactReference, setArtifactReference] = useState<any>(null);
@@ -326,6 +328,29 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const projectChangeNoticeRef = useRef<string | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState('blank');
   const [selectedStructurePath, setSelectedStructurePath] = useState('');
+
+  useEffect(() => {
+    const publishTrace = () => {
+      window.dispatchEvent(new CustomEvent('codeclub:trace-update', { detail: {
+        chatId: activeChatRef.current?.chatId,
+        projectPath: activeChatRef.current?.projectPath || activeProject?.projectPath,
+        projectName: activeChatRef.current?.projectName || activeProject?.name,
+        context: { provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id },
+        messages: messages.map((message) => ({
+          role: message.role,
+          content: message.content || '',
+          displayContent: message.displayContent,
+          reasoning: message.reasoning || '',
+          timeline: message.timeline || [],
+          tools: message.tools || [],
+          meta: message.meta || null,
+        })),
+      } }));
+    };
+    publishTrace();
+    window.addEventListener('codeclub:trace-request', publishTrace);
+    return () => window.removeEventListener('codeclub:trace-request', publishTrace);
+  }, [activeProject, currentModel, currentProvider, messages]);
 
   useEffect(() => {
     const loadSkills = async () => {
@@ -1368,7 +1393,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     }
   };
 
-  const sendMessage = async (content: string, baseMessages: any[] = messages, shouldRenameChat = messages.length === 0, replaceHistory = false, attachments: ChatAttachment[] = []) => {
+  const sendMessage = async (content: string, baseMessages: any[] = messages, shouldRenameChat = messages.length === 0, replaceHistory = false, attachments: ChatAttachment[] = [], resumeAskUserId?: string) => {
     if (visualAnimationRef.current) {
       clearInterval(visualAnimationRef.current);
       visualAnimationRef.current = null;
@@ -1391,6 +1416,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       content = `${content}\n\n${refsText}`;
       setBrowserReferences([]);
     }
+    content = `${content}\n\n${TOOL_ACCESS_HINT}`;
     const abortController = new AbortController();
     let pluginMcpClose: (() => Promise<unknown>) | undefined;
     const generationStartedAt = Date.now();
@@ -1444,8 +1470,15 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     if (shouldRenameChat) window.dispatchEvent(new CustomEvent('codeclub:chat-created', { detail: { chatId: chat.chatId } }));
 
     const attachmentParts = attachments.length > 0 ? await readAttachmentParts(attachments) : [];
-    const userMessage = { role: 'user', content, displayContent: visibleContent, browserReferences: messageBrowserReferences, computerContext: messageComputerContext, attachments: attachments.map(({ path, name, mediaType, size, previewUrl }) => ({ path, name, mediaType, size, previewUrl })) };
-    const newMessages = [...baseMessages, userMessage];
+    const pendingAskUser = [...baseMessages].reverse().flatMap((message) => message.role === 'assistant' ? (message.tools || []) : []).find((event: any) => event.name === 'askUser' && event.output?.status === 'awaiting_user' && !event.answer);
+    const resolvedAskUserId = resumeAskUserId || pendingAskUser?.id;
+    const contextualBaseMessages = resolvedAskUserId
+      ? baseMessages.map((message) => message.role === 'assistant' && message.tools?.some((event: any) => event.id === resolvedAskUserId)
+        ? { ...message, tools: message.tools.map((event: any) => event.id === resolvedAskUserId ? { ...event, answer: visibleContent } : event) }
+        : message)
+      : baseMessages;
+    const userMessage = { role: 'user', content, displayContent: resumeAskUserId ? '' : visibleContent, hidden: Boolean(resumeAskUserId), browserReferences: messageBrowserReferences, computerContext: messageComputerContext, attachments: attachments.map(({ path, name, mediaType, size, previewUrl }) => ({ path, name, mediaType, size, previewUrl })) };
+    const newMessages = [...contextualBaseMessages, userMessage];
     const pendingAssistant = { role: 'assistant', content: '', timeline: [], tools: [], agentName: 'Desarrollo' };
     runtime.messages = [...newMessages, pendingAssistant];
     setComposerDocked(true);
@@ -1602,6 +1635,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         activeSkillsContext,
         activeExtensionsContext,
         'Sos el agente principal de Desarrollo de Codeclub. Ejecutá las tools necesarias y respondé con evidencia real. Si una tool falla, informá el error; nunca afirmes éxito sin un resultado comprobable.',
+        'Si el pedido menciona una herramienta o capacidad que no identificás, buscala con searchTools usando el nombre o la intención, revisá su schema y ejecutala con executeTool. No inventes nombres, parámetros ni reemplaces una tool por una respuesta de texto; informá el resultado real.',
+        'Cuando uses askUser, devolvé entre 2 y 4 opciones breves y accionables siempre que la pregunta permita respuestas cerradas. Si no hay opciones razonables, dejá options vacío y hacé una pregunta abierta para que el usuario responda en el chat.',
         `Proyecto activo: ${contextProjectPath || 'sin proyecto'}.`,
       ].filter(Boolean).join(' ');
       // Algunos proveedores compatibles rechazan response_format junto con tools.
@@ -2098,6 +2133,37 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     return -1;
   };
 
+  const handleCopyTrace = async (assistantMessage: any, messageIndex: number) => {
+    const userIndex = previousUserMessageIndex(messageIndex);
+    const userMessage = userIndex >= 0 ? messages[userIndex] : null;
+    const trace = {
+      capturedAt: new Date().toISOString(),
+      environment: 'development',
+      chat: { id: activeChat?.chatId || null, projectPath: activeChat?.projectPath || activeProject?.projectPath || null },
+      user: userMessage ? {
+        content: userMessage.content,
+        visibleContent: getVisibleUserContent(userMessage),
+        attachments: userMessage.attachments || [],
+        browserReferences: userMessage.browserReferences || [],
+        computerContext: userMessage.computerContext || null,
+      } : null,
+      assistant: {
+        content: assistantMessage.content || '',
+        reasoning: assistantMessage.reasoning || '',
+        timeline: assistantMessage.timeline || [],
+        tools: assistantMessage.tools || [],
+        meta: assistantMessage.meta || null,
+      },
+    };
+    try {
+      if (!await copyText(JSON.stringify(trace, null, 2))) return;
+      setCopiedTraceIndex(messageIndex);
+      window.setTimeout(() => setCopiedTraceIndex((current) => current === messageIndex ? null : current), 3000);
+    } catch (error) {
+      console.error('No se pudo copiar la trazabilidad:', error);
+    }
+  };
+
   const addAttachmentPaths = async (paths: string[]) => {
     const attachments = await Promise.all(paths.map(async (path) => {
       const name = getAttachmentName(path);
@@ -2302,6 +2368,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         {messages.map((turnMessage, turnIndex) => {
           if (turnMessage.role !== 'user') return null;
           const assistantMessage = messages[turnIndex + 1]?.role === 'assistant' ? messages[turnIndex + 1] : null;
+          const resolvedAskUserTurn = assistantMessage?.tools?.some((event: any) => event.name === 'askUser' && event.answer);
+          if (resolvedAskUserTurn) return null;
           const turnMessages = assistantMessage ? [turnMessage, assistantMessage] : [turnMessage];
           return <div className="chat-turn" key={`turn-${turnIndex}`} role="article" aria-label={`Intercambio ${turnIndex + 1}`} style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: turnIndex > 0 ? '32px' : 0 }}>
             {turnMessages.map((turnItem, turnOffset) => {
@@ -2309,9 +2377,9 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               const i = turnIndex + turnOffset;
               const isLiveAssistant = m.role === 'assistant' && isStreaming && i === messages.length - 1;
               return <React.Fragment key={m.role === 'assistant' && isStreaming && i === messages.length - 1 ? `${i}-${m.content.length}` : i}>
-            {m.role === 'user' && isStreaming && agentState !== 'error' && messages[i + 1]?.role === 'assistant' && i + 1 === messages.length - 1 && <ProcessingStatusStateFixed startedAt={agentStartedAtRef.current || Date.now()} provider={currentProvider?.label || currentProvider?.id || 'Proveedor'} model={currentModel?.label || currentModel?.id || 'Modelo'} state={agentState} attempt={connectionAttempt} language={language} toolName={activeToolName} toolInput={activeToolInput} />}
+            {m.role === 'user' && !m.hidden && isStreaming && agentState !== 'error' && messages[i + 1]?.role === 'assistant' && i + 1 === messages.length - 1 && <ProcessingStatusStateFixed startedAt={agentStartedAtRef.current || Date.now()} provider={currentProvider?.label || currentProvider?.id || 'Proveedor'} model={currentModel?.label || currentModel?.id || 'Modelo'} state={agentState} attempt={connectionAttempt} language={language} toolName={activeToolName} toolInput={activeToolInput} />}
             {m.role === 'user' && messages[i + 1]?.role === 'assistant' && messages[i + 1]?.meta && !(isStreaming && i + 1 === messages.length - 1) && <CompletedStatusFixed language={language} provider={messages[i + 1].meta.provider} model={messages[i + 1].meta.model} durationMs={messages[i + 1].meta.durationMs} status={messages[i + 1].meta.status} errorName={messages[i + 1].meta.errorName} />}
-            {m.role === 'user' && (
+            {m.role === 'user' && !m.hidden && (
               <div aria-hidden="true" style={{ alignSelf: 'stretch', borderTop: '1px solid rgba(255, 255, 255, 0.08)', margin: '0 0 38px' }} />
             )}
             {m.role === 'assistant' && m.meta?.status === 'error' ? <ErrorRecoveryNotice configurationError={m.meta.configuration === true} errorMessage={m.meta.errorMessage || m.content} /> : <motion.div initial={isLiveAssistant ? { opacity: 0.58, y: 2 } : false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.24, ease: 'easeOut' }} className={m.role === 'assistant' ? 'chat-assistant-message' : 'chat-user-message'} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '5px', maxWidth: '80%', minWidth: 0, marginTop: m.role === 'assistant' ? '50px' : 0 }}>
@@ -2322,7 +2390,13 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 {m.role === 'assistant' && isStreaming && agentState !== 'error' && i === messages.length - 1 && !m.content && !m.timeline?.some((event: any) => event.type === 'tool') && <span className="chat-thinking-label composer-action-shine" style={{ display: 'inline-block', fontSize: '13px' }}>Pensando</span>}
               </div>
               {m.role === 'assistant' && <ExecutionTimeline timeline={m.timeline} active={isLiveAssistant && !m.content?.trim()} language={language} />}
-              {m.role === 'assistant' && <AskUserCards tools={m.tools} onSelect={(answer) => void sendMessage(answer)} disabled={isAgentBusy} />}
+              {m.role === 'assistant' && <AskUserCards tools={m.tools} onSelect={(answer, questionId) => void sendMessage(answer, messages, false, false, [], questionId)} onRespondInChat={() => {
+                setComposerDocked(true);
+                requestAnimationFrame(() => {
+                  chatInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  chatInputRef.current?.focus();
+                });
+              }} disabled={isAgentBusy} />}
               {m.role === 'assistant' && i === messages.length - 1 && <ApprovalCards approvals={pendingApprovals} onResolve={resolveToolApproval} />}
               {m.role === 'assistant' && <ChangeSummaryCard changes={m.meta?.changes} />}
               {m.role === 'assistant' && (!isStreaming || i !== messages.length - 1 || m.meta?.status === 'error') && <div style={{ alignSelf: 'start', display: 'flex', alignItems: 'center', gap: '4px', opacity: 0.72 }}>
@@ -2331,6 +2405,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 </button>
                 {m.role === 'assistant' && <button type="button" aria-label="Abrir Artifacts" title="Abrir Artifacts" onClick={() => { const projectPath = activeProject?.projectPath || activeChat?.projectPath || ''; if (projectPath) window.dispatchEvent(new CustomEvent('codeclub:active-project', { detail: { projectPath, projectName: activeProject?.name || '' } })); window.dispatchEvent(new CustomEvent('codeclub:open-artifacts', { detail: { projectPath } })); }} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: 'pointer' }}><ListTodo size={13} strokeWidth={1.8} /></button>}
                 {m.role === 'assistant' && m.tools?.length > 0 && <button type="button" aria-label={copiedToolLogIndex === i ? 'Log copiado' : 'Copiar log de tools'} title={copiedToolLogIndex === i ? 'Log copiado' : 'Copiar log de tools'} onClick={() => void handleCopyToolLog(m.tools, i)} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: copiedToolLogIndex === i ? '#F8EAD8' : 'rgba(216, 216, 216, 0.62)', cursor: 'pointer', transition: 'color 700ms ease' }}>{copiedToolLogIndex === i ? <Check size={13} strokeWidth={2.2} /> : <Bug size={13} strokeWidth={1.8} />}</button>}
+                {m.role === 'assistant' && isDevelopmentBuild && <button type="button" aria-label={copiedTraceIndex === i ? 'Trazabilidad copiada' : 'Copiar trazabilidad completa'} title={copiedTraceIndex === i ? 'Trazabilidad copiada' : 'Copiar trazabilidad completa'} onClick={() => void handleCopyTrace(m, i)} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: copiedTraceIndex === i ? '#F8EAD8' : 'rgba(216, 216, 216, 0.62)', cursor: 'pointer', transition: 'color 700ms ease' }}>{copiedTraceIndex === i ? <Check size={13} strokeWidth={2.2} /> : <ScrollText size={13} strokeWidth={1.8} />}</button>}
                 {previousUserMessageIndex(i) >= 0 && <button type="button" aria-label="Regenerar respuesta" title="Regenerar respuesta" onClick={() => handleRetryMessage(previousUserMessageIndex(i))} disabled={isAgentBusy} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: isAgentBusy ? 'not-allowed' : 'pointer' }}>
                   <RotateCcw size={13} strokeWidth={2} />
                 </button>}
@@ -2659,6 +2734,7 @@ function toolActivityLabel(name: string, input: Record<string, any>, language: A
     computerListWindows: 'Explorando ventanas abiertas', computerGetState: 'Inspeccionando el escritorio', computerScreenshot: 'Capturando la pantalla', computerOcr: 'Leyendo la pantalla', computerAction: 'Controlando la computadora',
     subagent: 'Delegando tarea', swarm: 'Coordinando agentes', askUser: 'Esperando tu respuesta', switchProject: 'Cambiando de proyecto',
   };
+
   const completedLabels: Record<string, string> = english ? {
     listFiles: 'Workspace explored', readFile: 'Relevant files read', searchText: 'Codebase searched', searchTools: 'Available tools explored', executeTool: 'Tool executed',
     createPlan: 'Plan designed', updatePlan: 'Plan updated', todo: 'Tasks organized', getTaskStatus: 'Task progress reviewed', getExecutionLog: 'Execution history reviewed',
@@ -2750,15 +2826,17 @@ function ExecutionTimeline({ timeline = [], active, language }: { timeline?: any
   return <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '10px 0 3px', color: failed ? '#d98b8b' : '#999', fontSize: '13px' }}><span className={shineClass}>{failed ? `Falló ${label}` : label}</span></div>;
 }
 
-function AskUserCards({ tools = [], onSelect }: { tools?: any[]; onSelect: (answer: string) => void; disabled?: boolean }) {
-  const questions = tools.filter((event) => event.name === 'askUser' && event.output?.status === 'awaiting_user');
+function AskUserCards({ tools = [], onSelect, onRespondInChat }: { tools?: any[]; onSelect: (answer: string, questionId: string) => void; onRespondInChat: () => void; disabled?: boolean }) {
+  const questions = tools.filter((event) => event.name === 'askUser' && event.output?.status === 'awaiting_user' && !event.answer);
   if (!questions.length) return null;
   return <div style={{ display: 'grid', gap: '8px', width: 'min(520px, 100%)', margin: '2px 0 2px' }}>
     {questions.map((event) => <div key={event.id} style={{ display: 'grid', gap: '8px', padding: '4px 0', border: 0, borderRadius: 0, background: 'transparent' }}>
       <div style={{ color: '#d8d8d8', fontSize: '12px', lineHeight: 1.4 }}>{event.output.question}</div>
       {event.output.context && <div style={{ color: '#777', fontSize: '10px' }}>{event.output.context}</div>}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '7px' }}>
-        {(event.output.options?.length ? event.output.options : ['Responder en el chat']).map((option: string) => <button key={option} type="button" onClick={() => onSelect(option)} onMouseEnter={(event) => { event.currentTarget.style.background = '#202020'; event.currentTarget.style.borderColor = '#4a4a4a'; }} onMouseLeave={(event) => { event.currentTarget.style.background = '#151515'; event.currentTarget.style.borderColor = '#252525'; }} style={{ display: 'flex', alignItems: 'center', minHeight: '36px', padding: '5px 9px', border: '1px solid #252525', borderRadius: '8px', background: '#151515', color: '#ddd', cursor: 'pointer', textAlign: 'left', fontSize: '11px', transition: 'background 120ms ease, border-color 120ms ease' }}>{option}</button>)}
+        {event.output.options?.length
+          ? event.output.options.map((option: string) => <button key={option} type="button" onClick={() => onSelect(option, event.id)} onMouseEnter={(event) => { event.currentTarget.style.background = '#202020'; event.currentTarget.style.borderColor = '#4a4a4a'; }} onMouseLeave={(event) => { event.currentTarget.style.background = '#151515'; event.currentTarget.style.borderColor = '#252525'; }} style={{ display: 'flex', alignItems: 'center', minHeight: '36px', padding: '5px 9px', border: '1px solid #252525', borderRadius: '8px', background: '#151515', color: '#ddd', cursor: 'pointer', textAlign: 'left', fontSize: '11px', transition: 'background 120ms ease, border-color 120ms ease' }}>{option}</button>)
+          : <button type="button" onClick={onRespondInChat} onMouseEnter={(event) => { event.currentTarget.style.background = '#202020'; event.currentTarget.style.borderColor = '#4a4a4a'; }} onMouseLeave={(event) => { event.currentTarget.style.background = '#151515'; event.currentTarget.style.borderColor = '#252525'; }} style={{ display: 'flex', alignItems: 'center', minHeight: '36px', padding: '5px 9px', border: '1px solid #252525', borderRadius: '8px', background: '#151515', color: '#ddd', cursor: 'pointer', textAlign: 'left', fontSize: '11px', transition: 'background 120ms ease, border-color 120ms ease' }}>Responder en el chat</button>}
       </div>
     </div>)}
   </div>;
