@@ -267,6 +267,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const agentStartedAtRef = useRef(0);
   const [activeToolName, setActiveToolName] = useState('');
   const [computerUseActive, setComputerUseActive] = useState(false);
+  const [computerContext, setComputerContext] = useState<{ action: string; x: number; y: number; handle?: number; processId?: number; title?: string } | null>(null);
   const [pendingApprovals, setPendingApprovals] = useState<Array<{ id: string; toolName: string; input: unknown; summary: string }>>([]);
   const toolStateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const visualAnimationRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -359,7 +360,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   }, []);
   const agentStatusText = chatText.status[agentState as keyof typeof chatText.status] || chatText.status.idle;
   const isAgentBusy = isStreaming;
-  const sendButtonActive = isAgentBusy || Boolean(input.trim()) || attachedFiles.length > 0 || Boolean(credentialProvider);
+  const sendButtonActive = isAgentBusy || Boolean(input.trim()) || attachedFiles.length > 0 || Boolean(browserReferences.length) || Boolean(computerContext) || Boolean(credentialProvider);
   useEffect(() => { window.dispatchEvent(new CustomEvent('codeclub:agent-activity', { detail: { chatId: activeChat?.chatId, state: agentState, tool: activeToolName, agent: 'Desarrollo' } })); }, [activeChat?.chatId, agentState, activeToolName]);
   useEffect(() => {
     const handleArtifactReference = (event: Event) => {
@@ -795,6 +796,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     { id: 'habilidad', label: chatText.slash.skill, description: chatText.slash.skillDescription, aliases: ['habilidad', 'skill'], type: 'command', icon: WandSparkles },
     { id: 'idioma', label: language === 'en' ? 'Language' : 'Idioma', description: language === 'en' ? 'Change language' : 'Cambiar idioma', aliases: ['idioma', 'language', 'lang'], type: 'command', icon: Languages },
     { id: 'desarrollo', label: language === 'en' ? 'Development' : 'Desarrollo', description: language === 'en' ? 'Insert a development prompt' : 'Inyectar un prompt de desarrollo', aliases: ['desarrollo', 'desarrollar', 'development', 'develop'], type: 'command', icon: Code2 },
+    { id: 'overlay', label: computerUseActive ? (language === 'en' ? 'Disable Computer Use overlay' : 'Desactivar overlay de Computer Use') : (language === 'en' ? 'Enable Computer Use overlay' : 'Activar overlay de Computer Use'), description: language === 'en' ? 'Show or hide the PC control overlay' : 'Mostrar u ocultar el overlay de control de PC', aliases: ['overlay', 'overlay-pc', 'computer-overlay'], type: 'command', icon: Monitor },
     { id: 'autonomo', label: autonomousText.label, description: autonomousText.description, aliases: ['autonomo', 'autonomous'], type: 'command', icon: Orbit },
     ...availableExtensions.filter((extension) => enabledExtensions[extension.id]).map((extension) => ({ id: extension.id, label: extension.name, description: extension.description, type: 'extension' as const, icon: extensionIcons[extension.id] || Box, extension })),
   ].filter((command: CatalogItem) => command.label?.toLowerCase().includes(searchQuery.toLowerCase()) || command.aliases?.some((alias: string) => alias.includes(searchQuery.toLowerCase())));
@@ -882,6 +884,15 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
         setInput('');
         setSearchQuery('');
         openCommandMenu('development');
+        return;
+      }
+      if (item.id === 'overlay') {
+        setComputerUseActive((current) => !current);
+        setInput('');
+        setSearchQuery('');
+        setMenuOpen(false);
+        setCommandKind('');
+        chatInputRef.current?.focus();
         return;
       }
       if (item.id === 'autonomo') {
@@ -1176,6 +1187,46 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     return sections.filter(Boolean).join('\n\n');
   };
 
+  const userFacingProviderError = (error: unknown, language: AppLanguage) => {
+    const rawMessage = error instanceof Error ? error.message : String(error);
+    const fetch = lastModelFetchRef.current;
+    let providerMessage = '';
+    if (fetch?.responseBody) {
+      try {
+        const payload = JSON.parse(fetch.responseBody);
+        providerMessage = payload?.error?.message || payload?.message || '';
+      } catch {
+        providerMessage = '';
+      }
+    }
+    const detail = String(providerMessage || rawMessage).replace(/^Error from provider[^:]*:\s*/i, '').trim();
+    const normalized = detail.toLowerCase();
+    if (normalized.includes('model is unavailable') || normalized.includes('model unavailable')) {
+      return language === 'en'
+        ? 'The provider is not making this model available right now. Choose another model or try again later.'
+        : 'El proveedor no tiene disponible este modelo ahora. Elegí otro modelo o probá de nuevo más tarde.';
+    }
+    if (fetch?.status === 401 || fetch?.status === 403 || normalized.includes('invalid api key') || normalized.includes('unauthorized')) {
+      return language === 'en'
+        ? 'The provider rejected the API key. Check the key and the selected provider.'
+        : 'El proveedor rechazó la API key. Revisá la clave y el proveedor seleccionado.';
+    }
+    if (fetch?.status === 429 || normalized.includes('rate limit') || normalized.includes('too many requests')) {
+      return language === 'en'
+        ? 'The provider reached its request limit. Wait a moment and try again.'
+        : 'El proveedor alcanzó el límite de solicitudes. Esperá un momento y probá de nuevo.';
+    }
+    if (/network|fetch failed|enotfound|timeout|timed out|connection/i.test(normalized)) {
+      return language === 'en'
+        ? 'The provider could not be reached. Check the connection and try again.'
+        : 'No se pudo conectar con el proveedor. Revisá la conexión y probá de nuevo.';
+    }
+    const cleanDetail = detail.replace(/\s+/g, ' ').slice(0, 220);
+    return language === 'en'
+      ? `The provider could not generate a response${cleanDetail ? `: ${cleanDetail}` : '.'}`
+      : `El proveedor no pudo generar una respuesta${cleanDetail ? `: ${cleanDetail}` : '.'}`;
+  };
+
   const desktopModelFetch = async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const request = input instanceof Request ? new Request(input, init) : new Request(input, init);
     let requestBody = ['GET', 'HEAD'].includes(request.method) ? undefined : await request.clone().text();
@@ -1329,6 +1380,11 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       setArtifactReference(null);
     }
     const visibleContent = content;
+    const messageComputerContext = computerContext;
+    if (messageComputerContext) {
+      content = `${content}\n\nContexto de Computer Use: acción "${messageComputerContext.action}" en la ventana "${messageComputerContext.title || 'desconocida'}", coordenadas de pantalla (${messageComputerContext.x}, ${messageComputerContext.y}), handle ${messageComputerContext.handle || 'n/d'}, proceso ${messageComputerContext.processId || 'n/d'}. Usá este contexto para guiar la próxima acción y verificá el estado real.`;
+      setComputerContext(null);
+    }
     const messageBrowserReferences = browserReferences;
     if (messageBrowserReferences.length > 0) {
       const refsText = messageBrowserReferences
@@ -1390,7 +1446,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     if (shouldRenameChat) window.dispatchEvent(new CustomEvent('codeclub:chat-created', { detail: { chatId: chat.chatId } }));
 
     const attachmentParts = attachments.length > 0 ? await readAttachmentParts(attachments) : [];
-    const userMessage = { role: 'user', content: visibleContent, displayContent: visibleContent, browserReferences: messageBrowserReferences, attachments: attachments.map(({ path, name, mediaType, size, previewUrl }) => ({ path, name, mediaType, size, previewUrl })) };
+    const userMessage = { role: 'user', content, displayContent: visibleContent, browserReferences: messageBrowserReferences, computerContext: messageComputerContext, attachments: attachments.map(({ path, name, mediaType, size, previewUrl }) => ({ path, name, mediaType, size, previewUrl })) };
     const newMessages = [...baseMessages, userMessage];
     const pendingAssistant = { role: 'assistant', content: '', timeline: [], tools: [], agentName: 'Desarrollo' };
     runtime.messages = [...newMessages, pendingAssistant];
@@ -1785,16 +1841,20 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         const updated = [...prev];
         const last = updated[updated.length - 1];
         if (last?.role === 'assistant' && last.content === '') {
+          const userFacingError = wasCancelled
+            ? (language === 'en' ? 'Generation cancelled.' : 'Generación cancelada.')
+            : userFacingProviderError(error, language);
           updated[updated.length - 1] = {
             ...last,
-            content: '',
+            content: userFacingError,
             meta: {
-              provider: currentProvider.label || currentProvider.id,
-              model: currentModel.label || currentModel.id,
+              provider: currentProvider?.label || currentProvider?.id || 'Proveedor',
+              model: currentModel?.label || currentModel?.id || 'Modelo',
               durationMs: Date.now() - generationStartedAt,
               status: wasCancelled ? 'cancelled' : 'error',
               errorName: error instanceof Error ? error.name : 'Error',
               configuration: (error instanceof Error ? error.message : String(error)).includes('API Key no configurada'),
+              errorMessage: userFacingError,
             },
           };
         }
@@ -1802,7 +1862,11 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       };
       runtime.messages = updateErrorMessages(runtime.messages);
       if (activeChatRef.current?.chatId === chatId) setMessages(runtime.messages);
-      await writeChatJsonl(runtime.messages, chat);
+      try {
+        await writeChatJsonl(runtime.messages, chat);
+      } catch (persistenceError) {
+        console.error('No se pudo guardar el error del proveedor en el historial:', persistenceError);
+      }
     } finally {
       if (pluginMcpClose) await pluginMcpClose().catch(() => undefined);
       if (chatRuntimesRef.current.get(chatId)?.controller !== abortController) return;
@@ -1871,24 +1935,36 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       cancelGeneration();
     };
     let unlisten: (() => void) | undefined;
+    let unlistenNative: (() => void) | undefined;
     void safeListen('codeclub-computer-escape', () => {
       if (computerUseActive) cancelGeneration();
     }).then((dispose) => { unlisten = dispose; });
+    const nativeEscape = (window as any).codeclub?.onComputerEscape;
+    if (typeof nativeEscape === 'function') unlistenNative = nativeEscape(() => { if (computerUseActive) cancelGeneration(); });
     window.addEventListener('keydown', handleComputerEscape);
     return () => {
       window.removeEventListener('keydown', handleComputerEscape);
       unlisten?.();
+      unlistenNative?.();
     };
   }, [computerUseActive]);
 
   useEffect(() => {
-    window.dispatchEvent(new CustomEvent('codeclub:computer-overlay-set', {
-      detail: {
-        active: computerUseActive,
-        provider: currentProvider?.label || currentProvider?.id || defaultProvider?.label || defaultProvider?.id || 'Codeclub',
-      },
-    }));
-  }, [computerUseActive, currentProvider, defaultProvider]);
+    const listener = (payload: any) => setComputerContext(payload?.action ? payload : null);
+    const subscribe = (window as any).codeclub?.onComputerContext;
+    if (typeof subscribe !== 'function') return undefined;
+    return subscribe(listener);
+  }, []);
+
+  useEffect(() => {
+    const detail = {
+      active: computerUseActive,
+      provider: currentProvider?.label || currentProvider?.id || defaultProvider?.label || defaultProvider?.id || 'Codeclub',
+      language,
+    };
+    window.dispatchEvent(new CustomEvent('codeclub:computer-overlay-set', { detail }));
+    void (window as any).codeclub?.setComputerOverlay?.({ active: computerUseActive, language });
+  }, [computerUseActive, currentProvider, defaultProvider, language]);
 
   useEffect(() => () => {
     if (visualAnimationRef.current) clearInterval(visualAnimationRef.current);
@@ -1896,7 +1972,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if ((!input.trim() && attachedFiles.length === 0 && browserReferences.length === 0) || isAgentBusy) return;
+    if ((!input.trim() && attachedFiles.length === 0 && browserReferences.length === 0 && !computerContext) || isAgentBusy) return;
 
     if (/^\/terminal$/i.test(input.trim())) {
       const rect = e.currentTarget.getBoundingClientRect();
@@ -2237,7 +2313,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             {m.role === 'user' && (
               <div aria-hidden="true" style={{ alignSelf: 'stretch', borderTop: '1px solid rgba(255, 255, 255, 0.08)', margin: '4px 0 38px' }} />
             )}
-            {m.role === 'assistant' && m.meta?.status === 'error' ? <ErrorRecoveryNotice configurationError={m.meta.configuration === true} /> : <div className={m.role === 'assistant' ? 'chat-assistant-message' : 'chat-user-message'} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '5px', maxWidth: '80%', minWidth: 0, marginTop: m.role === 'assistant' ? '50px' : 0 }}>
+            {m.role === 'assistant' && m.meta?.status === 'error' ? <ErrorRecoveryNotice configurationError={m.meta.configuration === true} errorMessage={m.meta.errorMessage || m.content} /> : <div className={m.role === 'assistant' ? 'chat-assistant-message' : 'chat-user-message'} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '5px', maxWidth: '80%', minWidth: 0, marginTop: m.role === 'assistant' ? '50px' : 0 }}>
               {m.role === 'user' && m.attachments?.length > 0 && <div className="chat-attachments" aria-label="Archivos adjuntos">{m.attachments.map((file) => file.mediaType?.startsWith('image/') ? <div key={file.path || file.name} className="chat-attachment-card" title={file.name}><img src={file.previewUrl || convertFileSrc(file.path)} alt={file.name} /></div> : <div key={file.path || file.name} className="chat-attachment-card chat-attachment-file" title={file.name}>{file.previewText ? <pre className="chat-attachment-preview-text">{file.previewText}</pre> : <span>{file.name.split('.').pop()?.toUpperCase().slice(0, 6) || 'FILE'}</span>}</div>)}</div>}
               {m.role === 'user' && m.browserReferences?.length > 0 && <div className="chat-browser-references" aria-label="Referencias de navegador">{m.browserReferences.map((ref: { id: string; title: string; text: string }, referenceIndex: number) => <div key={ref.id || `${ref.title}-${referenceIndex}`} className="chat-browser-reference-card"><span className="chat-browser-reference-number">{referenceIndex + 1}</span><span className="min-w-0"><span className="block truncate text-[11px] text-[#d6d6d6]">{ref.title}</span><span className="mt-0.5 block truncate text-[11px] text-[#858585]">{getBrowserReferenceComment(ref.text)}</span></span></div>)}</div>}
               <div className={`min-w-0 w-fit max-w-full break-words [overflow-wrap:anywhere] text-sm leading-6 text-(--codeclub-text-strong) ${m.role === 'user' && getVisibleUserContent(m).trim() ? 'rounded-[24px_24px_4px_24px] bg-(--codeclub-user-bubble) px-5 py-3.5 leading-[1.4]' : ''}`}>
@@ -2270,6 +2346,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         <div className="composer-row flex w-full min-w-0 items-center gap-2">
           <div className="composer-box min-h-10 min-w-0 flex-1 overflow-hidden rounded-[22px] border border-(--codeclub-border-soft) bg-(--codeclub-surface-raised) p-0 shadow-none [&>[aria-label='Referencia de artifact']]:relative [&>[aria-label='Referencia de artifact']]:z-50 [&>[aria-label='Referencia de artifact']>span]:hidden">
           {artifactReference && <div className="flex min-h-[28px] items-center gap-2 px-4 py-1.5" aria-label="Referencia de artifact"><span className="shrink-0 text-[10px] uppercase tracking-[0.08em] text-[#666]">Referencia</span><button type="button" onClick={() => setArtifactReference(null)} className="min-w-0 max-w-[260px] truncate rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-left text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar referencia">@{artifactReference.kind} · {artifactReference.title}</button></div>}
+          {computerContext && <div className="flex min-h-[28px] items-center gap-2 border-b border-[#202020] px-4 py-1.5" aria-label="Contexto de Computer Use"><span className="shrink-0 rounded-full border border-[#3D9BFF]/60 bg-[#1687FF]/10 px-2 py-0.5 text-[10px] font-medium text-[#8BC7FF]">PC</span><span className="min-w-0 flex-1 truncate text-[10px] text-[#bdbdbd]">{computerContext.title || 'Ventana desconocida'} · ({computerContext.x}, {computerContext.y})</span><button type="button" onClick={() => setComputerContext(null)} className="grid h-5 w-5 shrink-0 place-items-center rounded-full text-[#777] hover:bg-white/[0.08] hover:text-[#eee]" title="Quitar contexto de Computer Use" aria-label="Quitar contexto de Computer Use"><X size={12} /></button></div>}
           {browserReferences.length > 0 && (
             <div ref={browserRefContainerRef} className="file-preview-scrollbar flex min-h-[76px] w-full min-w-0 max-w-full flex-nowrap items-center gap-2 overflow-x-auto overflow-y-hidden border-b-0 px-3 py-1.5" aria-label="Referencias de navegador">
               {browserReferences.map((ref, index) => <button key={ref.id} type="button" onClick={() => { setBrowserReferences((current) => current.filter((item) => item.id !== ref.id)); if (ref.markerId) window.dispatchEvent(new CustomEvent('codeclub:remove-browser-marker', { detail: { markerId: ref.markerId } })); }} className="browser-reference-preview relative flex h-14 w-32 shrink-0 items-center gap-1.5 overflow-hidden rounded-[9px] border-0 bg-[#161616] px-2 text-left text-[#cfcfcf]" title={`Quitar @${ref.title}`}>
@@ -2600,7 +2677,7 @@ const ERROR_RECOVERY_TIPS = [
   'Consejo: probá seleccionar nuevamente el proveedor y el modelo.',
 ];
 
-function ErrorRecoveryNotice({ configurationError }: { configurationError: boolean }) {
+function ErrorRecoveryNotice({ configurationError, errorMessage }: { configurationError: boolean; errorMessage?: string }) {
   const [step, setStep] = useState(0);
   const [tipVisible, setTipVisible] = useState(false);
   const [tip] = useState(() => ERROR_RECOVERY_TIPS[Math.floor(Math.random() * ERROR_RECOVERY_TIPS.length)]);
@@ -2619,11 +2696,14 @@ function ErrorRecoveryNotice({ configurationError }: { configurationError: boole
   }, [configurationError, step]);
 
   const label = tipVisible ? tip : configurationError ? 'Revisando la configuración' : `Reconectando ${step + 1}/5`;
-  return <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '8px 0 2px', color: 'rgba(216, 216, 216, 0.58)', fontSize: '12px', lineHeight: '18px' }}>
+  return <div style={{ display: 'grid', gap: '6px', margin: '8px 0 2px', color: 'rgba(216, 216, 216, 0.58)', fontSize: '12px', lineHeight: '18px' }}>
+    {errorMessage && <div style={{ color: 'rgba(220, 150, 150, 0.86)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{errorMessage}</div>}
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
     <span style={{ display: 'grid', width: '18px', height: '18px', flexShrink: 0, placeItems: 'center' }}>
       {!tipVisible ? <Wifi size={15} strokeWidth={1.7} aria-hidden="true" /> : <Lightbulb size={15} strokeWidth={1.7} aria-hidden="true" />}
     </span>
     <span style={{ display: 'block', lineHeight: '18px' }}>{label}</span>
+    </div>
   </div>;
 }
 

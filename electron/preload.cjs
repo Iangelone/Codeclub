@@ -22,4 +22,16 @@ contextBridge.exposeInMainWorld('codeclub', {
   windowMaximize: () => ipcRenderer.invoke('window:maximize'),
   windowClose: () => ipcRenderer.invoke('window:close'),
   reloadApp: () => ipcRenderer.invoke('app:reload'),
+  setComputerOverlay: (payload) => ipcRenderer.invoke('computer:overlay', payload),
+  onComputerEscape: (handler) => {
+    const listener = () => handler();
+    ipcRenderer.on('computer:escape', listener);
+    return () => ipcRenderer.removeListener('computer:escape', listener);
+  },
+  computerMenuAction: (action) => ipcRenderer.send('computer:menu-action', action),
+  onComputerContext: (handler) => {
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on('computer:context-action', listener);
+    return () => ipcRenderer.removeListener('computer:context-action', listener);
+  },
 });
