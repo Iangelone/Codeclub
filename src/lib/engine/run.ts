@@ -43,11 +43,6 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
     onToolExecutionEnd: async (info: any) => {
       await callbacks.onToolExecutionEnd?.(info);
     },
-    timeout: {
-      stepMs: 60_000,
-      chunkMs: 30_000,
-      toolMs: 60_000,
-    },
     onChunk: ({ chunk }: any) => {
       if (chunk.type === 'reasoning-delta') {
         reasoning += chunk.text ?? '';

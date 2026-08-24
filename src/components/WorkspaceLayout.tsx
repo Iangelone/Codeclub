@@ -1,7 +1,7 @@
 'use client';
 
 import { createElement, useEffect, useRef, useState, type FormEvent } from 'react';
-import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, Bolt, ChevronDown, Circle, CircleCheck, CirclePlus, Clock, CopyX, EllipsisVertical, FileWarning, FolderOpen, FolderPen, FolderTree, GitBranch, GitCompare, Grid2X2, Heart, Home, Info, ListTodo, MoreHorizontal, MousePointerClick, Pause, Pencil, Play, Plus, RotateCw, Search, ScrollText, SquareTerminal, Trash2, X } from 'lucide-react';
+import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, Bolt, ChevronDown, Circle, CircleCheck, CirclePlus, Clock, CopyX, EllipsisVertical, FileWarning, FolderOpen, FolderPen, FolderTree, GitBranch, GitCompare, Grid2X2, Heart, Home, Info, ListTodo, MoreHorizontal, MousePointerClick, Pause, Pencil, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { GlobeCheck } from 'lucide-react';
 import { Terminal as XtermTerminal } from '@xterm/xterm';
@@ -27,7 +27,7 @@ type Side = 'left' | 'right';
 type RecentChat = { id: string; title: string; customName?: boolean; projectPath?: string; projectName?: string };
 type SidebarSection = 'new-chat' | 'projects' | 'scheduled' | 'extensions';
 type ChatContextMenu = { chat: RecentChat; x: number; y: number };
-type RightPanelTab = 'files' | 'review' | 'browser' | 'artifacts' | 'terminals' | 'trace';
+type RightPanelTab = 'files' | 'review' | 'browser' | 'artifacts' | 'terminals';
 type RightPanelInstance = { instanceId: string; tab: RightPanelTab; label: string };
 type RightPanelContextMenu = { panel: RightPanelInstance; x: number; y: number };
 type ScheduledTask = { id: string; name: string; prompt: string; schedule: string; repeat: string; interval: string; every: string; time: string; status: 'active' | 'paused'; executionTarget: string; provider: string; model: string; apiKey: string; project: string; reasoning: string; notifications: string; lastRun?: string };
@@ -68,7 +68,6 @@ const rightPanelTabs: Array<{ id: RightPanelTab; label: string; icon: typeof Fol
   { id: 'browser', label: 'Navegador', icon: AppWindowMac },
   { id: 'artifacts', label: 'Artifacts', icon: ListTodo },
   { id: 'terminals', label: 'Terminales', icon: SquareTerminal },
-  { id: 'trace', label: 'Trazabilidad', icon: ScrollText },
 ];
 
 function ResizeHandle({ side, value, maxValue, onStart, onKeyboardResize }: { side: Side; value: number; maxValue: number; onStart: (event: React.PointerEvent<HTMLDivElement>) => void; onKeyboardResize: (value: number) => void }) {
@@ -120,7 +119,6 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
   const [activeRightPanelId, setActiveRightPanelId] = useState('');
   const [filesTreeVisible, setFilesTreeVisible] = useState(false);
   const [reviewChangesVisible, setReviewChangesVisible] = useState(false);
-  const [traceSnapshot, setTraceSnapshot] = useState<any>(null);
   const [rightMenuOpen, setRightMenuOpen] = useState(false);
   const rightMenuRef = useRef<HTMLDivElement | null>(null);
   const [rightContextMenu, setRightContextMenu] = useState<RightPanelContextMenu | null>(null);
@@ -131,13 +129,6 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
   const [sizesReady, setSizesReady] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(1280);
   const resizeRef = useRef<{ side: Side; startX: number; startWidth: number } | null>(null);
-
-  useEffect(() => {
-    const updateTrace = (event: Event) => setTraceSnapshot((event as CustomEvent).detail || null);
-    window.addEventListener('codeclub:trace-update', updateTrace);
-    window.dispatchEvent(new CustomEvent('codeclub:trace-request'));
-    return () => window.removeEventListener('codeclub:trace-update', updateTrace);
-  }, []);
 
   const rightMaxWidth = Math.max(
     MIN_WIDTH,
@@ -480,7 +471,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
       setRightMenuOpen(false);
       return;
     }
-    const base = tab === 'trace' ? (language === 'en' ? 'Trace' : 'Trazabilidad') : panelText[tab];
+    const base = panelText[tab];
     const count = rightPanels.filter((panel) => panel.tab === tab).length + 1;
     rightPanelSequence.current += 1;
     const panel = { instanceId: `${tab}-${rightPanelSequence.current}`, tab, label: tab === 'browser' || tab === 'terminals' ? `${base} ${count}` : base };
@@ -587,7 +578,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
         <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
           <div ref={rightMenuRef} className="relative flex h-11 min-w-0 shrink-0 items-center gap-2 px-2">
             <div role="tablist" aria-label="Paneles abiertos" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {rightPanels.map((panel) => { const item = rightPanelTabs.find((candidate) => candidate.id === panel.tab) ?? rightPanelTabs[0]; const Icon = item.icon; const label = panel.tab === 'trace' ? (language === 'en' ? 'Trace' : 'Trazabilidad') : panelText[panel.tab]; const displayLabel = panel.tab === 'browser' || panel.tab === 'terminals' ? `${label} ${panel.label.split(' ').pop()}` : label; const active = activeRightPanelId === panel.instanceId; return <div key={panel.instanceId} className={`group flex h-8 min-w-0 shrink-0 items-center rounded-lg transition-colors ${active ? 'bg-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-md hover:bg-white/[0.12]' : 'hover:bg-white/[0.06]'}`}><button type="button" role="tab" aria-selected={active} aria-controls={`right-panel-${panel.instanceId}`} onClick={() => setActiveRightPanelId(panel.instanceId)} onContextMenu={(event) => { event.preventDefault(); setRightMenuOpen(false); setRightContextMenu({ panel, x: event.clientX, y: event.clientY }); }} className={`flex h-full min-w-0 items-center gap-2 rounded-lg px-2.5 text-[12px] font-medium focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${active ? 'text-(--codeclub-text-strong)' : 'text-(--codeclub-text-muted)'}`}><Icon size={15} strokeWidth={1.8} aria-hidden="true" /><span className="max-w-[150px] truncate">{displayLabel}</span></button><button type="button" onClick={() => closeRightPanel(panel.instanceId)} className={`mr-1 grid h-5 w-5 shrink-0 place-items-center rounded-md transition-opacity hover:bg-white/[0.1] hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${active ? 'text-(--codeclub-text-strong) opacity-100' : 'text-(--codeclub-text-muted) opacity-0 group-hover:opacity-100'}`} aria-label={`${sidebarText.close} ${displayLabel}`}><X size={12} strokeWidth={2} aria-hidden="true" /></button></div>; })}
+              {rightPanels.map((panel) => { const item = rightPanelTabs.find((candidate) => candidate.id === panel.tab) ?? rightPanelTabs[0]; const Icon = item.icon; const label = panelText[panel.tab]; const displayLabel = panel.tab === 'browser' || panel.tab === 'terminals' ? `${label} ${panel.label.split(' ').pop()}` : label; const active = activeRightPanelId === panel.instanceId; return <div key={panel.instanceId} className={`group flex h-8 min-w-0 shrink-0 items-center rounded-lg transition-colors ${active ? 'bg-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-md hover:bg-white/[0.12]' : 'hover:bg-white/[0.06]'}`}><button type="button" role="tab" aria-selected={active} aria-controls={`right-panel-${panel.instanceId}`} onClick={() => setActiveRightPanelId(panel.instanceId)} onContextMenu={(event) => { event.preventDefault(); setRightMenuOpen(false); setRightContextMenu({ panel, x: event.clientX, y: event.clientY }); }} className={`flex h-full min-w-0 items-center gap-2 rounded-lg px-2.5 text-[12px] font-medium focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${active ? 'text-(--codeclub-text-strong)' : 'text-(--codeclub-text-muted)'}`}><Icon size={15} strokeWidth={1.8} aria-hidden="true" /><span className="max-w-[150px] truncate">{displayLabel}</span></button><button type="button" onClick={() => closeRightPanel(panel.instanceId)} className={`mr-1 grid h-5 w-5 shrink-0 place-items-center rounded-md transition-opacity hover:bg-white/[0.1] hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${active ? 'text-(--codeclub-text-strong) opacity-100' : 'text-(--codeclub-text-muted) opacity-0 group-hover:opacity-100'}`} aria-label={`${sidebarText.close} ${displayLabel}`}><X size={12} strokeWidth={2} aria-hidden="true" /></button></div>; })}
               <button type="button" onClick={() => setRightMenuOpen((open) => !open)} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-transparent text-(--codeclub-text-strong) transition-colors hover:bg-white/[0.08] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Abrir paneles de la sidebar derecha" aria-haspopup="menu" aria-expanded={rightMenuOpen}><CirclePlus size={17} strokeWidth={1.8} aria-hidden="true" /></button>
             </div>
             <AnimatePresence>
@@ -599,7 +590,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
             {rightPanels.find((panel) => panel.instanceId === activeRightPanelId)?.tab === 'review' && <button type="button" onClick={() => setReviewChangesVisible((visible) => !visible)} className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-transparent transition-colors hover:bg-white/[0.08] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${reviewChangesVisible ? 'text-(--codeclub-text-strong)' : 'text-(--codeclub-text-muted)'}`} aria-label={reviewChangesVisible ? 'Ocultar árbol de cambios' : 'Mostrar árbol de cambios'} aria-pressed={reviewChangesVisible} title={reviewChangesVisible ? 'Ocultar cambios' : 'Mostrar cambios'}><FolderOpen size={16} strokeWidth={1.8} aria-hidden="true" /></button>}
           </div>
           <div className="absolute inset-x-0 top-11 bottom-0 flex min-h-0 flex-col overflow-hidden">
-            {rightPanels.length === 0 ? <RightPanelEmptyState onSelect={openRightPanel} /> : rightPanels.map((panel) => <div key={panel.instanceId} className={`flex min-h-0 min-w-0 flex-1 flex-col ${activeRightPanelId === panel.instanceId ? 'flex' : 'hidden'}`}><RightSidebarContent panel={panel} projectName={activeProjectName} projectPath={activeProjectPath} filesTreeVisible={filesTreeVisible} onToggleFilesTree={() => setFilesTreeVisible((visible) => !visible)} reviewChangesVisible={reviewChangesVisible} traceSnapshot={traceSnapshot} /></div>)}
+            {rightPanels.length === 0 ? <RightPanelEmptyState onSelect={openRightPanel} /> : rightPanels.map((panel) => <div key={panel.instanceId} className={`flex min-h-0 min-w-0 flex-1 flex-col ${activeRightPanelId === panel.instanceId ? 'flex' : 'hidden'}`}><RightSidebarContent panel={panel} projectName={activeProjectName} projectPath={activeProjectPath} filesTreeVisible={filesTreeVisible} onToggleFilesTree={() => setFilesTreeVisible((visible) => !visible)} reviewChangesVisible={reviewChangesVisible} /></div>)}
           </div>
         </div>
       </motion.aside>
@@ -1399,7 +1390,7 @@ function ArtifactsPanelContent({ projectPath, projectName }: { projectPath?: str
 function RightPanelEmptyState({ onSelect }: { onSelect: (tab: RightPanelTab) => void }) {
   const language = useAppLanguage();
   const text = language === 'en' ? { choose: 'Choose a panel', open: 'Open a tool to view it in this sidebar.' } : { choose: 'Elegí un panel', open: 'Abrí una herramienta para verla en esta sidebar.' };
-  const panelLabels = { ...rightSidebarTranslations[language], trace: language === 'en' ? 'Trace' : 'Trazabilidad' };
+  const panelLabels = rightSidebarTranslations[language];
   return <section className="flex min-h-0 flex-1 flex-col items-center justify-center px-5 text-center" aria-label={text.choose}>
     <div className="max-w-[250px]">
       <p className="mt-3 mb-0 text-[13px] text-(--codeclub-text-strong)">{text.choose}</p>
@@ -1411,44 +1402,25 @@ function RightPanelEmptyState({ onSelect }: { onSelect: (tab: RightPanelTab) => 
   </section>;
 }
 
-function RightSidebarContent({ panel, projectName, projectPath, filesTreeVisible, onToggleFilesTree, reviewChangesVisible, traceSnapshot }: { panel: RightPanelInstance; projectName: string; projectPath?: string; filesTreeVisible: boolean; onToggleFilesTree: () => void; reviewChangesVisible: boolean; traceSnapshot: any }) {
+function RightSidebarContent({ panel, projectName, projectPath, filesTreeVisible, onToggleFilesTree, reviewChangesVisible }: { panel: RightPanelInstance; projectName: string; projectPath?: string; filesTreeVisible: boolean; onToggleFilesTree: () => void; reviewChangesVisible: boolean }) {
   const { tab } = panel;
   const language = useAppLanguage();
   const text = rightSidebarTranslations[language];
   const current = rightPanelTabs.find((item) => item.id === tab) ?? rightPanelTabs[0];
   const Icon = current.icon;
-  const traceLabel = language === 'en' ? 'Trace' : 'Trazabilidad';
   const descriptions: Record<RightPanelTab, string> = language === 'en' ? {
-    files: 'Explore files from the active project.', review: 'Review workspace changes and activity.', browser: 'Open and control pages inside Electron.', artifacts: 'View plans, TODOs and AI results.', terminals: 'Manage persistent session terminals.', trace: 'Real context and execution steps.',
+    files: 'Explore files from the active project.', review: 'Review workspace changes and activity.', browser: 'Open and control pages inside Electron.', artifacts: 'View plans, TODOs and AI results.', terminals: 'Manage persistent session terminals.',
   } : {
-    files: 'Explorá los archivos del proyecto activo.', review: 'Revisá cambios y actividad del workspace.', browser: 'Abrí y controlá páginas dentro de Electron.', artifacts: 'Consultá planes, TODOs y resultados de la IA.', terminals: 'Gestioná terminales persistentes de la sesión.', trace: 'Consultá el contexto y los pasos reales de la ejecución.',
+    files: 'Explorá los archivos del proyecto activo.', review: 'Revisá cambios y actividad del workspace.', browser: 'Abrí y controlá páginas dentro de Electron.', artifacts: 'Consultá planes, TODOs y resultados de la IA.', terminals: 'Gestioná terminales persistentes de la sesión.',
   };
   if (tab === 'files') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={text.files} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="h-full min-h-0 flex-1 overflow-hidden">{projectPath ? <ProjectPanelView projectPath={projectPath} showFileTree={filesTreeVisible} onToggleFileTree={onToggleFilesTree} /> : <div className="flex h-full flex-col items-center justify-center px-5 text-center"><div><FolderPen size={28} strokeWidth={1.3} className="mx-auto text-(--codeclub-text-muted)" aria-hidden="true" /><p className="mt-3 mb-0 text-[12px] text-(--codeclub-text-strong)">{language === 'en' ? 'No active project' : 'Sin proyecto activo'}</p><p className="mt-1 mb-0 text-[11px] leading-5 text-(--codeclub-text-muted)">{language === 'en' ? 'Link a folder to explore its files.' : 'Vinculá una carpeta para explorar sus archivos.'}</p></div></div>}</motion.section>;
   if (tab === 'review') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-hidden"><ReviewPanel projectPath={projectPath} visible={reviewChangesVisible} /></motion.section>;
   if (tab === 'browser') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="h-full min-h-0 flex-1 overflow-hidden"><BrowserPanel /></motion.section>;
   if (tab === 'artifacts') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-hidden"><ArtifactsPanel projectPath={projectPath} projectName={projectName} /></motion.section>;
   if (tab === 'terminals') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-hidden"><TerminalPanel projectPath={projectPath} /></motion.section>;
-  if (tab === 'trace') return <TracePanel snapshot={traceSnapshot} label={traceLabel} />;
   return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-auto px-3 py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
     <div className="mt-5 grid min-h-[180px] place-items-center rounded-xl bg-transparent px-5 text-center"><div><Icon size={28} strokeWidth={1.3} className="mx-auto text-(--codeclub-text-muted)" aria-hidden="true" /><p className="mt-3 mb-0 text-[12px] text-(--codeclub-text-strong)">{projectPath ? projectName : 'Sin proyecto activo'}</p><p className="mt-1 mb-0 text-[11px] leading-5 text-(--codeclub-text-muted)">{descriptions[tab]}</p></div></div>
   </motion.section>;
-}
-
-function TracePanel({ snapshot, label }: { snapshot: any; label: string }) {
-  const messages = Array.isArray(snapshot?.messages) ? snapshot.messages : [];
-  const format = (value: unknown) => typeof value === 'string' ? value : JSON.stringify(value, null, 2);
-  return <motion.section key="trace" id="right-panel-trace" role="tabpanel" aria-label={label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="trace-panel-scroll min-h-0 flex-1 overflow-y-auto bg-[#171717] px-3 py-3 [scrollbar-color:#444444_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#444444]">
-    <div className="mb-4 border-b border-white/[0.08] pb-3"><div className="flex items-center gap-2 text-[13px] font-medium text-(--codeclub-text-strong)"><ScrollText size={15} strokeWidth={1.7} className="text-(--codeclub-text-muted)" aria-hidden="true" />{label}</div><p className="m-0 mt-1 text-[10px] leading-4 text-(--codeclub-text-muted)">{snapshot?.projectName || 'Sin proyecto'}{snapshot?.chatId ? ` · ${snapshot.chatId}` : ''}</p></div>
-    <div className="space-y-2 text-[11px] leading-5">
-      <TraceBlock title="CONTEXTO"><div className="text-(--codeclub-text-muted)">Proveedor: <span className="text-(--codeclub-text)">{snapshot?.context?.provider || '—'}</span><br />Modelo: <span className="text-(--codeclub-text)">{snapshot?.context?.model || '—'}</span></div></TraceBlock>
-      {messages.length === 0 && <div className="rounded-lg border border-white/[0.06] px-3 py-4 text-center text-(--codeclub-text-muted)">Todavía no hay actividad en este chat.</div>}
-      {messages.map((message: any, index: number) => <div key={`${message.role}-${index}`} className="space-y-1.5"><TraceBlock title={message.role === 'user' ? 'USUARIO' : 'AGENTE'}><div className="whitespace-pre-wrap break-words text-(--codeclub-text)">{message.displayContent || message.content || '—'}</div></TraceBlock>{message.reasoning && <TraceBlock title="RAZONAMIENTO"><div className="whitespace-pre-wrap break-words text-(--codeclub-text-muted)">{message.reasoning}</div></TraceBlock>}{Array.isArray(message.tools) && message.tools.map((tool: any, toolIndex: number) => <details key={`${tool.name || 'tool'}-${toolIndex}`} className="group rounded-lg border border-white/[0.06] bg-white/[0.02]"><summary className="cursor-pointer list-none px-3 py-2 text-(--codeclub-text-muted) transition-colors hover:text-(--codeclub-text-strong)"><span className="mr-2 text-[10px] text-(--codeclub-accent)">TOOL</span>{tool.name || 'herramienta'}<span className="float-right text-[10px] opacity-60">{tool.status || tool.output?.status || ''}</span></summary><div className="border-t border-white/[0.06] px-3 py-2 text-[10px] text-(--codeclub-text-muted)"><p className="m-0 whitespace-pre-wrap break-words">{format(tool.input || tool.args || {})}</p>{tool.output && <p className="mt-2 mb-0 whitespace-pre-wrap break-words">{format(tool.output)}</p>}</div></details>)}</div>)}
-    </div>
-  </motion.section>;
-}
-
-function TraceBlock({ title, children }: { title: string; children: React.ReactNode }) {
-  return <div className="rounded-lg border border-white/[0.06] px-3 py-2"><div className="mb-1 text-[10px] font-medium tracking-[0.08em] text-(--codeclub-text-muted)">{title}</div>{children}</div>;
 }
 
 function SidebarItem({ icon, label, active, disabled = false, onClick }: { icon: React.ReactNode; label: string; active: boolean; disabled?: boolean; onClick: () => void }) {

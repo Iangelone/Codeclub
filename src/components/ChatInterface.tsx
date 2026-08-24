@@ -305,7 +305,6 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [commandKind, setCommandKind] = useState('');
-  const [shiningAction, setShiningAction] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [projectOptions, setProjectOptions] = useState<ProjectOption[]>([]);
   const [skillOptions, setSkillOptions] = useState<SessionSkill[]>([]);
@@ -754,27 +753,6 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     return readProjectIndex();
   };
 
-  const toggleCommandMenu = (kind: string) => {
-    if (menuOpen && commandKind === kind) {
-      setMenuOpen(false);
-      setCommandKind('');
-      return;
-    }
-    if (kind === 'project') {
-      void readProjectsForCommandMenu().then((projects) => {
-        setProjectOptions([{ id: '__none__', label: chatText.noProject, type: 'project', projectPath: null, isNone: true }, ...projects.map((project: any) => ({ id: project.id || project.path, label: project.name, type: 'project', projectPath: project.path, projectId: project.id }))]);
-        openCommandMenu(kind);
-      });
-      return;
-    }
-    openCommandMenu(kind);
-  };
-
-  const triggerActionShine = (action: string) => {
-    setShiningAction(action);
-    window.setTimeout(() => setShiningAction((current) => current === action ? '' : current), 1400);
-  };
-
   useEffect(() => {
     window.dispatchEvent(new CustomEvent('codeclub:command-menu-state', {
       detail: { open: menuOpen, kind: menuOpen ? commandKind : '' },
@@ -822,6 +800,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   });
   const activeSelection = commandKind === 'provider' ? currentProvider : commandKind === 'model' ? currentModel : commandKind === 'project' && activeProject ? { id: activeProject.projectPath, label: activeProject.name } : commandKind === 'language' ? { id: language, label: language === 'en' ? 'English' : 'Español' } : null;
   const slashCommands: CatalogItem[] = [
+    { id: 'adjuntar', label: chatText.attach, description: language === 'en' ? 'Attach files to the message' : 'Adjuntar archivos al mensaje', aliases: ['adjuntar', 'attach'], type: 'command', icon: Paperclip },
     { id: 'proveedor', label: chatText.slash.provider, description: chatText.slash.providerDescription, aliases: ['proveedor', 'provider'], type: 'command', icon: Radar },
     { id: 'modelo', label: chatText.slash.model, description: chatText.slash.modelDescription, aliases: ['modelo', 'model'], type: 'command', icon: Box },
     { id: 'proyecto', label: projectsSlashLabel, description: chatText.slash.projectDescription, aliases: ['proyecto', 'proyectos', 'project', 'projects'], type: 'command', icon: Folder },
@@ -886,6 +865,15 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
 
   const handleItemClick = (item: CatalogItem) => {
     if (item.type === 'command') {
+      if (item.id === 'adjuntar') {
+        setInput('');
+        setSearchQuery('');
+        setMenuOpen(false);
+        setCommandKind('');
+        void handleAttachFiles();
+        chatInputRef.current?.focus();
+        return;
+      }
       if (item.id === 'proveedor' || item.id === 'modelo') {
         setInput('');
         setSearchQuery('');
@@ -2453,7 +2441,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             {activeExtensions.map((extension) => { const Icon = extensionIcons[extension.id] || Box; return <button key={extension.id} type="button" onClick={() => setActiveExtensions((current) => current.filter((item) => item.id !== extension.id))} className="flex shrink-0 items-center gap-1 rounded-full border border-[#3d9bff]/50 bg-[#1687ff]/10 px-2.5 py-1 text-[10px] text-[#b9dcff] hover:bg-[#1687ff]/20" title="Quitar complemento de esta sesión"><Icon size={11} /><span>{extension.name}</span><span className="text-[#8bc7ff]/70">×</span></button>; })}
           </div>}
           <div ref={commandMenuHostRef} className="w-full" />
-          <form onSubmit={handleSubmit} aria-label="Compositor de mensaje" className="composer-box-inner relative flex min-h-[70px] w-full min-w-0 flex-col items-stretch gap-1 rounded-[21px] border-0 bg-(--codeclub-surface-raised) px-1.5 pb-1 pl-4 pr-3 pt-2 @max-[520px]:pl-3 @max-[520px]:pr-2 [&>button.absolute]:hidden">
+          <form onSubmit={handleSubmit} aria-label="Compositor de mensaje" className="composer-box-inner relative flex min-h-[44px] w-full min-w-0 flex-col items-stretch gap-0 rounded-[8px] border-0 bg-(--codeclub-surface-raised) px-1.5 pb-3 pl-4 pr-3 pt-3 @max-[520px]:pl-3 @max-[520px]:pr-2 [&>button.absolute]:hidden">
            {false && (
           <button type="button" onClick={handleAttachFiles} className="text-white/40 hover:text-white transition-colors" aria-label="Añadir archivos" style={{ flex: '0 0 28px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, background: 'transparent', cursor: 'pointer' }}>
             <Paperclip size={16} strokeWidth={1.8} />
@@ -2518,14 +2506,11 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             }}
             onFocus={() => { if (commandKind !== 'credential') setMenuOpen(false); }}
             aria-label={chatText.message}
-            className={`order-1 min-h-[22px] h-auto max-h-[180px] w-full min-w-0 flex-none resize-none self-stretch overflow-y-hidden border-0 bg-transparent px-0 py-0.5 pr-2.5 text-xs leading-[1.4] text-(--codeclub-text-strong) outline-none placeholder:text-(--codeclub-text-muted) [scrollbar-width:none] ${isAgentBusy ? 'opacity-[0.55]' : 'opacity-100'}`}
+            className={`order-1 min-h-[22px] h-auto max-h-[180px] w-full min-w-0 flex-none resize-none self-stretch overflow-y-hidden border-0 bg-transparent px-0 py-0.5 pr-10 text-xs leading-[1.4] text-(--codeclub-text-strong) outline-none placeholder:text-(--codeclub-text-muted) [scrollbar-width:none] ${isAgentBusy ? 'opacity-[0.55]' : 'opacity-100'}`}
             placeholder={agentStatusText}
           />
           {artifactReference && <button type="button" onClick={() => setArtifactReference(null)} className="absolute left-[16px] top-1/2 z-10 max-w-[130px] -translate-y-1/2 truncate rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar referencia">@{artifactReference.kind} · {artifactReference.title}</button>}
-          <div className="order-2 flex min-h-[30px] min-w-0 items-center justify-start gap-3 @max-[520px]:gap-1.5">
-            <button type="button" onClick={() => { triggerActionShine('attach'); void handleAttachFiles(); }} aria-label={chatText.attach} title={chatText.attach} className="composer-action group flex shrink-0 items-center justify-center gap-1.5 rounded-lg border-0 bg-transparent text-(--codeclub-text-muted) hover:bg-(--codeclub-surface-raised) hover:text-(--codeclub-text-strong)"><Paperclip className={attachedFiles.length > 0 ? 'text-(--codeclub-text-strong)' : ''} size={15} strokeWidth={1.8} /><span className={`composer-action-label text-[11px] @max-[520px]:hidden ${shiningAction === 'attach' || attachedFiles.length > 0 ? 'composer-action-shine' : ''}`}>{chatText.attach}</span></button>
-            <button type="button" data-command-menu-kind="provider" onClick={() => { triggerActionShine('provider'); toggleCommandMenu('provider'); }} aria-label={chatText.slash.provider} title={chatText.slash.provider} className={`composer-action group flex shrink-0 items-center justify-center gap-1.5 rounded-lg border-0 text-(--codeclub-text-muted) hover:bg-(--codeclub-surface-raised) hover:text-(--codeclub-text-strong) ${menuOpen && commandKind === 'provider' ? 'bg-(--codeclub-surface-raised) text-(--codeclub-text-muted)' : 'bg-transparent'}`}><Radar className={menuOpen && commandKind === 'provider' ? 'text-(--codeclub-text-strong)' : ''} size={15} strokeWidth={1.8} /><span className={`composer-action-label text-[11px] @max-[520px]:hidden ${shiningAction === 'provider' || (menuOpen && commandKind === 'provider') ? 'composer-action-shine' : ''}`}>{chatText.slash.provider}</span></button>
-            <button type="button" data-command-menu-kind="model" onClick={() => { triggerActionShine('model'); toggleCommandMenu('model'); }} aria-label={chatText.slash.model} title={chatText.slash.model} className={`composer-action group flex shrink-0 items-center justify-center gap-1.5 rounded-lg border-0 text-(--codeclub-text-muted) hover:bg-(--codeclub-surface-raised) hover:text-(--codeclub-text-strong) ${menuOpen && commandKind === 'model' ? 'bg-(--codeclub-surface-raised) text-(--codeclub-text-muted)' : 'bg-transparent'}`}><Box className={menuOpen && commandKind === 'model' ? 'text-(--codeclub-text-strong)' : ''} size={15} strokeWidth={1.8} /><span className={`composer-action-label text-[11px] @max-[520px]:hidden ${shiningAction === 'model' || (menuOpen && commandKind === 'model') ? 'composer-action-shine' : ''}`}>{chatText.slash.model}</span></button>
+          <div className="absolute right-3 top-2 flex min-h-[30px] min-w-0 items-center justify-end gap-3 @max-[520px]:gap-1.5">
             <motion.button type={isAgentBusy ? 'button' : 'submit'} onClick={isAgentBusy ? cancelGeneration : undefined} disabled={!sendButtonActive} animate={{ scale: sendButtonActive ? 1 : 0.94, opacity: sendButtonActive ? 1 : 0.62 }} whileHover={{ scale: sendButtonActive ? 1.06 : 0.98 }} whileTap={{ scale: 0.9 }} transition={{ type: 'spring', stiffness: 460, damping: 28 }} className={`send-button ml-auto flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full text-(--codeclub-text-strong) shadow-none transition-colors disabled:cursor-not-allowed ${sendButtonActive ? 'send-button-shine border border-(--codeclub-border-soft) bg-(--codeclub-send-active-radial)' : 'border border-transparent bg-(--codeclub-surface-raised)'}`} aria-label={isAgentBusy ? "Cancelar generación" : credentialProvider ? "Guardar credencial" : "Enviar"} title={isAgentBusy ? "Cancelar generación" : credentialProvider ? "Guardar credencial" : "Enviar"}>
             {isAgentBusy ? <Square size={13} strokeWidth={2.4} fill="currentColor" /> : <ArrowUp size={15} strokeWidth={2.2} />}
             </motion.button>
@@ -2545,7 +2530,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           initial={false}
           animate={{ opacity: menuOpen ? 1 : 0, y: menuOpen ? 0 : -6, scale: menuOpen ? 1 : 0.985 }}
           transition={{ type: 'spring', stiffness: 420, damping: 32, mass: 0.7 }}
-          style={{ position: 'static', width: 'calc(100% - 16px)', margin: '0 8px', display: menuOpen && (commandKind === 'credential' || commandKind === 'custom-config' || hasCommandMenuResults) ? 'grid' : 'none', gap: '8px', padding: '8px', border: 0, borderRadius: '10px', background: 'transparent', boxShadow: 'none', zIndex: 10, outline: 'none' }}
+          style={{ position: 'static', width: 'calc(100% - 16px)', margin: '0 8px', display: menuOpen ? 'grid' : 'none', gap: '8px', padding: '8px', border: 0, borderRadius: '10px', background: 'transparent', boxShadow: 'none', zIndex: 10, outline: 'none' }}
         >
           {commandKind !== 'credential' && commandKind !== 'custom-config' && <div style={{ position: 'relative' }}>
             <input
@@ -2594,6 +2579,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 <small style={{ color: 'var(--codeclub-accent)', fontSize: '11px', opacity: 0.88 }}>{chatText.selected}</small>
               </div>
             )}
+            {!hasCommandMenuResults && <div role="status" style={{ minHeight: '32px', display: 'grid', placeItems: 'center', padding: '8px 9px', color: 'rgba(216, 216, 216, 0.48)', fontSize: '11px' }}>{language === 'en' ? 'No results found' : 'No se encontraron resultados'}</div>}
             {commandMenuItems.map((item, index) => (
               <motion.button
                 key={item.id}
@@ -2611,7 +2597,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 transition={{ duration: 0.16, ease: 'easeOut' }}
                 style={{ position: 'relative', minHeight: '32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', border: 0, borderRadius: '7px', background: 'transparent', fontSize: '12px', padding: '0 9px', textAlign: 'left', cursor: 'pointer', overflow: 'hidden' }}
               >
-                {index === activeCommandIndex && <motion.span layoutId="command-menu-active" transition={{ type: 'spring', stiffness: 520, damping: 34 }} aria-hidden="true" style={{ position: 'absolute', inset: 0, borderRadius: '7px', background: '#2F2F2F', zIndex: 0 }} />}
+                <motion.span aria-hidden="true" animate={{ opacity: index === activeCommandIndex ? 1 : 0 }} transition={{ duration: 0.12, ease: 'easeOut' }} style={{ position: 'absolute', inset: 0, borderRadius: '7px', background: '#2F2F2F', zIndex: 0, pointerEvents: 'none' }} />
                 <span className="relative z-[1] flex min-w-0 items-center gap-2">{item.icon && React.createElement(item.icon, { size: 14, strokeWidth: 1.8 })}<span className="truncate">{item.label}</span></span>
                 <small className="relative z-[1]" style={{ color: 'rgba(216, 216, 216, 0.36)', fontSize: '11px' }}>
                   {item.type === 'command' ? item.description : item.type === 'language' ? item.description : item.type === 'development' ? item.description : item.type === 'provider' ? chatText.provider : item.type === 'project' ? chatText.project : item.type === 'skill' ? item.source : item.type === 'extension' ? chatText.extension : chatText.model}
