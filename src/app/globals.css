@@ -51,6 +51,88 @@ body {
   border-left: 1px solid var(--codeclub-border-faint);
 }
 
+/* Tabs de la sidebar derecha: compactas, suaves y tipo pill. */
+#codeclub-right-sidebar [role="tablist"] > div {
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+
+#codeclub-right-sidebar [role="tablist"] > div:has(> button[aria-selected="true"]) {
+  border-color: transparent;
+  background: #252525;
+  box-shadow: none;
+}
+
+#codeclub-right-sidebar [role="tablist"] > div > button[role="tab"] {
+  gap: 6px;
+  border-radius: 8px;
+  padding-right: 6px;
+  padding-left: 8px;
+}
+
+#codeclub-right-sidebar [role="tablist"] > div > button[aria-label^="Cerrar"] {
+  width: 18px;
+  height: 18px;
+  margin-right: 3px;
+}
+
+#codeclub-right-sidebar [role="tablist"] > div > button[aria-label^="Cerrar"] {
+  border-radius: 999px;
+}
+
+#codeclub-right-sidebar [role="tablist"] > button[aria-haspopup="menu"] {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+}
+
+#codeclub-right-sidebar [role="menu"] > [role="menuitemradio"] + [role="menuitemradio"] {
+  position: relative;
+  margin-top: 7px;
+}
+
+#codeclub-right-sidebar [role="menu"] > [role="menuitemradio"] + [role="menuitemradio"]::before {
+  position: absolute;
+  top: -4px;
+  right: 4px;
+  left: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  content: '';
+}
+
+#codeclub-left-sidebar nav[aria-label="Navegación principal"] > button + button {
+  position: relative;
+  margin-top: 7px;
+}
+
+#codeclub-left-sidebar nav[aria-label="Navegación principal"] > button + button::before {
+  position: absolute;
+  top: -4px;
+  right: 8px;
+  left: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  content: '';
+}
+
+#codeclub-left-sidebar + [role="menu"] > [role="menuitem"] + [role="menuitem"],
+section[aria-label="Espacio de trabajo"] > [role="menu"][aria-label="Menú del chat"] > [role="menuitem"] + [role="menuitem"] {
+  position: relative;
+  margin-top: 7px;
+}
+
+#codeclub-left-sidebar + [role="menu"] > [role="menuitem"] + [role="menuitem"]::before,
+section[aria-label="Espacio de trabajo"] > [role="menu"][aria-label="Menú del chat"] > [role="menuitem"] + [role="menuitem"]::before {
+  position: absolute;
+  top: -4px;
+  right: 4px;
+  left: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  content: '';
+}
+
 /* Cada panel abierto debe heredar la altura completa de la sidebar. */
 #codeclub-right-sidebar > div > div[role="tabpanel"],
 #codeclub-right-sidebar > div > div.flex-1.flex-col,
