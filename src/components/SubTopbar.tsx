@@ -4,6 +4,8 @@ import { ArrowLeft, ArrowRight, ChevronRight, Download, House, RefreshCw, Search
 import { motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 import { rightSidebarTranslations, useAppLanguage } from '../lib/i18n';
+import { nativeInvoke } from '../lib/runtime';
+import { readGlobalChats, readProjectMeta } from '../lib/projectManager';
 
 const controlClass = 'grid h-8 w-8 shrink-0 place-items-center rounded-lg border-0 bg-transparent text-(--codeclub-icon) transition-colors hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)';
 
@@ -18,6 +20,10 @@ export default function SubTopbar({ activeProject }: { activeProject: { name: st
   const [updateVersion, setUpdateVersion] = useState('');
   const [updateDownloaded, setUpdateDownloaded] = useState(false);
   const [navigation, setNavigation] = useState({ leftBack: false, leftForward: false, rightBack: false, rightForward: false });
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchFiles, setSearchFiles] = useState<Array<{ path: string; kind: string }>>([]);
+  const [searchChats, setSearchChats] = useState<Array<{ id: string; name: string; projectPath?: string }>>([]);
   useEffect(() => {
     const update = () => {
       const container = breadcrumbRef.current;
@@ -50,6 +56,21 @@ export default function SubTopbar({ activeProject }: { activeProject: { name: st
   }, []);
   useEffect(() => {
     let cancelled = false;
+    const loadSearchIndex = async () => {
+      if (!activeProject.path) { setSearchFiles([]); setSearchChats(await readGlobalChats()); return; }
+      try {
+        const [files, meta] = await Promise.all([
+          nativeInvoke<Array<{ path: string; kind: string }>>('codeclub_list_files', { projectPath: activeProject.path, maxFiles: 1200 }),
+          readProjectMeta(activeProject.path),
+        ]);
+        if (!cancelled) { setSearchFiles(files.filter((file) => file.kind !== 'directory')); setSearchChats(meta?.chats ?? []); }
+      } catch { if (!cancelled) { setSearchFiles([]); setSearchChats([]); } }
+    };
+    void loadSearchIndex();
+    return () => { cancelled = true; };
+  }, [activeProject.path]);
+  useEffect(() => {
+    let cancelled = false;
     const api = (window as any).codeclub;
     const applyState = (state: { state?: string; version?: string }) => {
       if (cancelled) return;
@@ -64,6 +85,18 @@ export default function SubTopbar({ activeProject }: { activeProject: { name: st
     return () => { cancelled = true; };
   }, []);
   const visibleBreadcrumb = collapsed && breadcrumb.length > 4 ? breadcrumb.slice(-4) : breadcrumb;
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const visibleFiles = searchFiles.filter((file) => !normalizedQuery || file.path.toLowerCase().includes(normalizedQuery)).slice(0, 3);
+  const visibleChats = searchChats.filter((chat) => !normalizedQuery || chat.name.toLowerCase().includes(normalizedQuery)).slice(0, 3);
+  const hasSearchResults = visibleFiles.length > 0 || visibleChats.length > 0;
+  const openSearchFile = (path: string) => {
+    setSearchOpen(false);
+    window.dispatchEvent(new CustomEvent('codeclub:open-folders', { detail: { path, projectPath: activeProject.path, projectName: activeProject.name } }));
+  };
+  const openSearchChat = (chat: { id: string; name: string; projectPath?: string }) => {
+    setSearchOpen(false);
+    window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: { chatId: chat.id, name: chat.name, projectPath: chat.projectPath || activeProject.path, projectName: activeProject.name } }));
+  };
   return <div className="codeclub-graphite flex h-11 min-w-0 items-center gap-2 px-3 text-(--codeclub-text) backdrop-blur-xl backdrop-saturate-150" role="toolbar" aria-label={text.rightPanel}>
     <div className="flex shrink-0 items-center gap-1">
       <motion.button type="button" disabled={!navigation.leftBack && !navigation.rightBack} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:right-panel-back'))} className={`${controlClass} disabled:cursor-not-allowed disabled:opacity-35`} whileHover={navigation.leftBack || navigation.rightBack ? { scale: 1.06 } : undefined} whileTap={navigation.leftBack || navigation.rightBack ? { scale: 0.92 } : undefined} transition={{ type: 'spring', stiffness: 420, damping: 26 }} aria-label={text.back} title={text.back}><ArrowLeft size={18} strokeWidth={1.7} /></motion.button>
@@ -78,10 +111,18 @@ export default function SubTopbar({ activeProject }: { activeProject: { name: st
       {visibleBreadcrumb.map((segment, index) => <span key={`${segment}-${index}`} className="flex h-full shrink-0 items-center gap-1 leading-none"><span className="px-2 leading-none text-(--codeclub-text-strong)">{segment}</span>{index < visibleBreadcrumb.length - 1 && <ChevronRight size={16} strokeWidth={1.7} className="shrink-0 text-(--codeclub-text-muted)" aria-hidden="true" />}</span>)}
       <div ref={fullBreadcrumbRef} className="pointer-events-none absolute left-0 top-0 flex h-full w-max items-center gap-1 opacity-0" aria-hidden="true"><House size={17} /><ChevronRight size={16} />{breadcrumb.map((segment, index) => <span key={`${segment}-${index}`} className="flex shrink-0 items-center gap-1"><span className="px-2">{segment}</span>{index < breadcrumb.length - 1 && <ChevronRight size={16} />}</span>)}</div>
     </div>
-    <label className="flex h-8 min-w-[150px] max-w-[360px] flex-[0.42] items-center gap-2 rounded-lg bg-(--codeclub-acrylic-active) px-3 text-[13px] text-(--codeclub-text-muted)">
+    <div className="relative flex h-8 min-w-[150px] max-w-[360px] flex-[0.42] items-center">
+    <label className="flex h-8 w-full items-center gap-2 rounded-lg bg-(--codeclub-acrylic-active) px-3 text-[13px] text-(--codeclub-text-muted)">
       <span className="sr-only">{language === 'en' ? `Search in ${activeProject.name}` : `Buscar en ${activeProject.name}`}</span>
-      <input className="min-w-0 flex-1 bg-transparent text-(--codeclub-text-strong) outline-none placeholder:text-(--codeclub-text-muted)" placeholder={language === 'en' ? `Search in ${activeProject.name}` : `Buscar en ${activeProject.name}`} aria-label={language === 'en' ? `Search in ${activeProject.name}` : `Buscar en ${activeProject.name}`} />
+      <input value={searchQuery} onChange={(event) => { setSearchQuery(event.target.value); setSearchOpen(true); }} onFocus={() => setSearchOpen(true)} onKeyDown={(event) => { if (event.key === 'Escape') { setSearchOpen(false); setSearchQuery(''); } }} className="min-w-0 flex-1 bg-transparent text-(--codeclub-text-strong) outline-none placeholder:text-(--codeclub-text-muted)" placeholder={language === 'en' ? `Search in ${activeProject.name}` : `Buscar en ${activeProject.name}`} aria-label={language === 'en' ? `Search in ${activeProject.name}` : `Buscar en ${activeProject.name}`} />
       <Search size={16} strokeWidth={1.8} className="shrink-0" aria-hidden="true" />
     </label>
+    {searchOpen && <div className="absolute right-0 top-10 z-50 w-[min(360px,calc(100vw-24px))] overflow-hidden rounded-xl border border-(--codeclub-border-soft) bg-(--codeclub-surface-raised) p-1.5 shadow-2xl">
+      {hasSearchResults ? <>
+        {visibleFiles.length > 0 && <><p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-(--codeclub-text-muted)">{language === 'en' ? 'Files' : 'Archivos'}</p>{visibleFiles.map((file) => <button key={`file-${file.path}`} type="button" onClick={() => openSearchFile(file.path)} className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] text-(--codeclub-text) hover:bg-(--codeclub-hover)"><span className="min-w-0 flex-1 truncate">{file.path}</span></button>)}</>}
+        {visibleChats.length > 0 && <><p className="mt-1 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-(--codeclub-text-muted)">{language === 'en' ? 'Chats' : 'Chats'}</p>{visibleChats.map((chat) => <button key={`chat-${chat.id}`} type="button" onClick={() => openSearchChat(chat)} className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] text-(--codeclub-text) hover:bg-(--codeclub-hover)"><span className="min-w-0 flex-1 truncate">{chat.name}</span></button>)}</>}
+      </> : <p className="px-2.5 py-2 text-[12px] text-(--codeclub-text-muted)">{language === 'en' ? 'No matches found.' : 'No se encontraron coincidencias.'}</p>}
+    </div>}
+    </div>
   </div>;
 }
