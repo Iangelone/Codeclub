@@ -1,6 +1,6 @@
 {
   "name": "codeclub-desktop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Local-first desktop IDE for building software with AI agents.",
   "author": "Iangelone",
   "private": true,
@@ -70,7 +70,9 @@
   "build": {
     "appId": "com.codeclub.desktop",
     "productName": "Codeclub",
-    "directories": { "output": "release" },
+    "directories": {
+      "output": "release"
+    },
     "files": [
       "out/**/*",
       "electron-dist/**/*",
@@ -79,7 +81,14 @@
       "package.json"
     ],
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "icon": "public/icono/256.png"
     },
     "nsis": {
