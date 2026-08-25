@@ -117,6 +117,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
   const [rightWidth, setRightWidth] = useState(DEFAULT_RIGHT);
   const [rightPanels, setRightPanels] = useState<RightPanelInstance[]>([]);
   const [activeRightPanelId, setActiveRightPanelId] = useState('');
+  const [selectedRightFilePath, setSelectedRightFilePath] = useState('');
   const [filesTreeVisible, setFilesTreeVisible] = useState(false);
   const [reviewChangesVisible, setReviewChangesVisible] = useState(false);
   const [rightMenuOpen, setRightMenuOpen] = useState(false);
@@ -513,6 +514,26 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
     };
   }, [activeProjectPath, rightPanels]);
 
+  useEffect(() => {
+    const openRightFile = (event: Event) => {
+      const detail = (event as CustomEvent<{ path?: string; projectPath?: string }>).detail || {};
+      if (!detail.path || (detail.projectPath && detail.projectPath !== activeProjectPath)) return;
+      setSelectedRightFilePath(detail.path);
+      setFilesTreeVisible(true);
+      const existing = rightPanels.find((panel) => panel.tab === 'files');
+      if (existing) {
+        setActiveRightPanelId(existing.instanceId);
+        return;
+      }
+      rightPanelSequence.current += 1;
+      const panel = { instanceId: `files-${rightPanelSequence.current}`, tab: 'files' as const, label: panelText.files };
+      setRightPanels((current) => [...current, panel]);
+      setActiveRightPanelId(panel.instanceId);
+    };
+    window.addEventListener('codeclub:open-right-file', openRightFile);
+    return () => window.removeEventListener('codeclub:open-right-file', openRightFile);
+  }, [activeProjectPath, panelText.files, rightPanels]);
+
   const closeRightPanel = (instanceId: string) => {
     const index = rightPanels.findIndex((panel) => panel.instanceId === instanceId);
     if (index < 0) return;
@@ -590,7 +611,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
             {rightPanels.find((panel) => panel.instanceId === activeRightPanelId)?.tab === 'review' && <button type="button" onClick={() => setReviewChangesVisible((visible) => !visible)} className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-transparent transition-colors hover:bg-white/[0.08] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${reviewChangesVisible ? 'text-(--codeclub-text-strong)' : 'text-(--codeclub-text-muted)'}`} aria-label={reviewChangesVisible ? 'Ocultar árbol de cambios' : 'Mostrar árbol de cambios'} aria-pressed={reviewChangesVisible} title={reviewChangesVisible ? 'Ocultar cambios' : 'Mostrar cambios'}><FolderOpen size={16} strokeWidth={1.8} aria-hidden="true" /></button>}
           </div>
           <div className="absolute inset-x-0 top-11 bottom-0 flex min-h-0 flex-col overflow-hidden">
-            {rightPanels.length === 0 ? <RightPanelEmptyState onSelect={openRightPanel} /> : rightPanels.map((panel) => <div key={panel.instanceId} className={`flex min-h-0 min-w-0 flex-1 flex-col ${activeRightPanelId === panel.instanceId ? 'flex' : 'hidden'}`}><RightSidebarContent panel={panel} projectName={activeProjectName} projectPath={activeProjectPath} filesTreeVisible={filesTreeVisible} onToggleFilesTree={() => setFilesTreeVisible((visible) => !visible)} reviewChangesVisible={reviewChangesVisible} /></div>)}
+            {rightPanels.length === 0 ? <RightPanelEmptyState onSelect={openRightPanel} /> : rightPanels.map((panel) => <div key={panel.instanceId} className={`flex min-h-0 min-w-0 flex-1 flex-col ${activeRightPanelId === panel.instanceId ? 'flex' : 'hidden'}`}><RightSidebarContent panel={panel} projectName={activeProjectName} projectPath={activeProjectPath} selectedFilePath={selectedRightFilePath} filesTreeVisible={filesTreeVisible} onToggleFilesTree={() => setFilesTreeVisible((visible) => !visible)} reviewChangesVisible={reviewChangesVisible} /></div>)}
           </div>
         </div>
       </motion.aside>
@@ -1402,7 +1423,7 @@ function RightPanelEmptyState({ onSelect }: { onSelect: (tab: RightPanelTab) => 
   </section>;
 }
 
-function RightSidebarContent({ panel, projectName, projectPath, filesTreeVisible, onToggleFilesTree, reviewChangesVisible }: { panel: RightPanelInstance; projectName: string; projectPath?: string; filesTreeVisible: boolean; onToggleFilesTree: () => void; reviewChangesVisible: boolean }) {
+function RightSidebarContent({ panel, projectName, projectPath, selectedFilePath, filesTreeVisible, onToggleFilesTree, reviewChangesVisible }: { panel: RightPanelInstance; projectName: string; projectPath?: string; selectedFilePath?: string; filesTreeVisible: boolean; onToggleFilesTree: () => void; reviewChangesVisible: boolean }) {
   const { tab } = panel;
   const language = useAppLanguage();
   const text = rightSidebarTranslations[language];
@@ -1413,7 +1434,7 @@ function RightSidebarContent({ panel, projectName, projectPath, filesTreeVisible
   } : {
     files: 'Explorá los archivos del proyecto activo.', review: 'Revisá cambios y actividad del workspace.', browser: 'Abrí y controlá páginas dentro de Electron.', artifacts: 'Consultá planes, TODOs y resultados de la IA.', terminals: 'Gestioná terminales persistentes de la sesión.',
   };
-  if (tab === 'files') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={text.files} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="h-full min-h-0 flex-1 overflow-hidden">{projectPath ? <ProjectPanelView projectPath={projectPath} showFileTree={filesTreeVisible} onToggleFileTree={onToggleFilesTree} /> : <div className="flex h-full flex-col items-center justify-center px-5 text-center"><div><FolderPen size={28} strokeWidth={1.3} className="mx-auto text-(--codeclub-text-muted)" aria-hidden="true" /><p className="mt-3 mb-0 text-[12px] text-(--codeclub-text-strong)">{language === 'en' ? 'No active project' : 'Sin proyecto activo'}</p><p className="mt-1 mb-0 text-[11px] leading-5 text-(--codeclub-text-muted)">{language === 'en' ? 'Link a folder to explore its files.' : 'Vinculá una carpeta para explorar sus archivos.'}</p></div></div>}</motion.section>;
+  if (tab === 'files') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={text.files} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="h-full min-h-0 flex-1 overflow-hidden">{projectPath ? <ProjectPanelView projectPath={projectPath} selectedPath={selectedFilePath} showFileTree={filesTreeVisible} onToggleFileTree={onToggleFilesTree} /> : <div className="flex h-full flex-col items-center justify-center px-5 text-center"><div><FolderPen size={28} strokeWidth={1.3} className="mx-auto text-(--codeclub-text-muted)" aria-hidden="true" /><p className="mt-3 mb-0 text-[12px] text-(--codeclub-text-strong)">{language === 'en' ? 'No active project' : 'Sin proyecto activo'}</p><p className="mt-1 mb-0 text-[11px] leading-5 text-(--codeclub-text-muted)">{language === 'en' ? 'Link a folder to explore its files.' : 'Vinculá una carpeta para explorar sus archivos.'}</p></div></div>}</motion.section>;
   if (tab === 'review') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-hidden"><ReviewPanel projectPath={projectPath} visible={reviewChangesVisible} /></motion.section>;
   if (tab === 'browser') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="h-full min-h-0 flex-1 overflow-hidden"><BrowserPanel /></motion.section>;
   if (tab === 'artifacts') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-hidden"><ArtifactsPanel projectPath={projectPath} projectName={projectName} /></motion.section>;

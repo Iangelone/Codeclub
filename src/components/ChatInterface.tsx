@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUp, Box, Bug, Camera, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Languages, LayoutTemplate, Lightbulb, ListChecks, ListTodo, MessageSquare, Monitor, MousePointer2, Orbit, Paperclip, Pencil, Presentation, Radar, RotateCcw, Search, ScrollText, Square, Table2, Terminal, Folder, FolderTree, WandSparkles, Wifi, X } from 'lucide-react';
+import { ArrowUp, Box, Camera, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Languages, LayoutTemplate, Lightbulb, ListChecks, ListTodo, MessageSquare, Monitor, MoreHorizontal, MousePointer2, Orbit, Paperclip, Pencil, Presentation, Radar, RotateCcw, Search, ScrollText, Square, Table2, Terminal, ThumbsDown, ThumbsUp, Folder, FolderTree, WandSparkles, Wifi, X } from 'lucide-react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -251,8 +251,17 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     { id: 'test-full-development-flow', label: 'Test: flujo completo', description: 'Probar ciclo de desarrollo', type: 'development', prompt: 'Ejecutá un flujo completo y verificable: inspeccioná archivos con listFiles, buscá texto con searchText, leé un archivo con readFile, creá un plan con createPlan, agregá un TODO con todo, ejecutá un comando seguro con runCommand, consultá getExecutionLog y resumí toda la evidencia. No modifiques archivos.' },
   ];
   const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
-  const [copiedToolLogIndex, setCopiedToolLogIndex] = useState<number | null>(null);
   const [copiedTraceIndex, setCopiedTraceIndex] = useState<number | null>(null);
+  const [moreMenuIndex, setMoreMenuIndex] = useState<number | null>(null);
+  const [messageFeedback, setMessageFeedback] = useState<Record<number, 'up' | 'down'>>({});
+  useEffect(() => {
+    if (moreMenuIndex === null) return;
+    const closeMenu = (event: MouseEvent) => {
+      if (!(event.target as HTMLElement).closest('[data-message-actions]')) setMoreMenuIndex(null);
+    };
+    document.addEventListener('mousedown', closeMenu);
+    return () => document.removeEventListener('mousedown', closeMenu);
+  }, [moreMenuIndex]);
   const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [input, setInput] = useState('');
   const [artifactReference, setArtifactReference] = useState<any>(null);
@@ -2095,18 +2104,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     }
   };
 
-  const handleCopyToolLog = async (tools: any[] = [], messageIndex: number) => {
-    if (!tools.length) return;
-    const log = tools.map((event) => `${event.at || ''} | ${event.name} | ${event.output?.status === 'running' ? 'running' : event.output?.error ? 'error' : 'completed'}\nInput: ${JSON.stringify(event.input ?? {}, null, 2)}\nOutput: ${JSON.stringify(event.output ?? {}, null, 2)}`).join('\n\n');
-    try {
-      if (!await copyText(log)) return;
-      setCopiedToolLogIndex(messageIndex);
-      window.setTimeout(() => setCopiedToolLogIndex((current) => current === messageIndex ? null : current), 3000);
-    } catch (error) {
-      console.error('No se pudo copiar el log de tools:', error);
-    }
-  };
-
   const handleRetryMessage = async (messageIndex: number) => {
     if (isAgentBusy) return;
     const message = messages[messageIndex];
@@ -2387,16 +2384,15 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               }} disabled={isAgentBusy} />}
               {m.role === 'assistant' && i === messages.length - 1 && <ApprovalCards approvals={pendingApprovals} onResolve={resolveToolApproval} />}
               {m.role === 'assistant' && <ChangeSummaryCard changes={m.meta?.changes} />}
-              {m.role === 'assistant' && (!isStreaming || i !== messages.length - 1 || m.meta?.status === 'error') && <div style={{ alignSelf: 'start', display: 'flex', alignItems: 'center', gap: '4px', opacity: 0.72 }}>
-                <button type="button" aria-label={copiedMessageIndex === i ? 'Mensaje copiado' : 'Copiar mensaje'} title={copiedMessageIndex === i ? 'Copiado' : 'Copiar'} onClick={() => void handleCopyMessage(m.content, i)} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: copiedMessageIndex === i ? '#F8EAD8' : 'rgba(216, 216, 216, 0.62)', cursor: 'pointer', transition: 'color 700ms ease' }}>
-                  {copiedMessageIndex === i ? <Check size={13} strokeWidth={2.2} /> : <Copy size={13} strokeWidth={2} />}
-                </button>
-                {m.role === 'assistant' && <button type="button" aria-label="Abrir Artifacts" title="Abrir Artifacts" onClick={() => { const projectPath = activeProject?.projectPath || activeChat?.projectPath || ''; if (projectPath) window.dispatchEvent(new CustomEvent('codeclub:active-project', { detail: { projectPath, projectName: activeProject?.name || '' } })); window.dispatchEvent(new CustomEvent('codeclub:open-artifacts', { detail: { projectPath } })); }} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: 'pointer' }}><ListTodo size={13} strokeWidth={1.8} /></button>}
-                {m.role === 'assistant' && m.tools?.length > 0 && <button type="button" aria-label={copiedToolLogIndex === i ? 'Log copiado' : 'Copiar log de tools'} title={copiedToolLogIndex === i ? 'Log copiado' : 'Copiar log de tools'} onClick={() => void handleCopyToolLog(m.tools, i)} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: copiedToolLogIndex === i ? '#F8EAD8' : 'rgba(216, 216, 216, 0.62)', cursor: 'pointer', transition: 'color 700ms ease' }}>{copiedToolLogIndex === i ? <Check size={13} strokeWidth={2.2} /> : <Bug size={13} strokeWidth={1.8} />}</button>}
-                {m.role === 'assistant' && isDevelopmentBuild && <button type="button" aria-label={copiedTraceIndex === i ? 'Trazabilidad copiada' : 'Copiar trazabilidad completa'} title={copiedTraceIndex === i ? 'Trazabilidad copiada' : 'Copiar trazabilidad completa'} onClick={() => void handleCopyTrace(m, i)} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: copiedTraceIndex === i ? '#F8EAD8' : 'rgba(216, 216, 216, 0.62)', cursor: 'pointer', transition: 'color 700ms ease' }}>{copiedTraceIndex === i ? <Check size={13} strokeWidth={2.2} /> : <ScrollText size={13} strokeWidth={1.8} />}</button>}
-                {previousUserMessageIndex(i) >= 0 && <button type="button" aria-label="Regenerar respuesta" title="Regenerar respuesta" onClick={() => handleRetryMessage(previousUserMessageIndex(i))} disabled={isAgentBusy} style={{ width: '22px', height: '22px', display: 'grid', placeItems: 'center', border: 0, borderRadius: '6px', background: 'transparent', color: 'rgba(216, 216, 216, 0.62)', cursor: isAgentBusy ? 'not-allowed' : 'pointer' }}>
-                  <RotateCcw size={13} strokeWidth={2} />
-                </button>}
+              {m.role === 'assistant' && (!isStreaming || i !== messages.length - 1 || m.meta?.status === 'error') && <div data-message-actions={i} className="relative flex items-center gap-1 self-start opacity-100">
+                <button type="button" aria-label={copiedMessageIndex === i ? 'Mensaje copiado' : 'Copiar mensaje'} title={copiedMessageIndex === i ? 'Copiado' : 'Copiar'} onClick={() => void handleCopyMessage(m.content, i)} className={`grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent transition-colors hover:bg-white/[0.08] ${copiedMessageIndex === i ? 'text-[#F8EAD8]' : 'text-[#e0e0e0]'}`}>{copiedMessageIndex === i ? <Check size={15} strokeWidth={2.2} /> : <Copy size={15} strokeWidth={2} />}</button>
+                <button type="button" aria-label="Marcar respuesta como útil" title="Útil" onClick={() => setMessageFeedback((current) => ({ ...current, [i]: current[i] === 'up' ? undefined as never : 'up' }))} className={`grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent transition-colors hover:bg-white/[0.08] ${messageFeedback[i] === 'up' ? 'text-[#8BC7FF]' : 'text-[#e0e0e0]'}`}><ThumbsUp size={15} strokeWidth={1.9} /></button>
+                <button type="button" aria-label="Marcar respuesta como no útil" title="No útil" onClick={() => setMessageFeedback((current) => ({ ...current, [i]: current[i] === 'down' ? undefined as never : 'down' }))} className={`grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent transition-colors hover:bg-white/[0.08] ${messageFeedback[i] === 'down' ? 'text-[#8BC7FF]' : 'text-[#e0e0e0]'}`}><ThumbsDown size={15} strokeWidth={1.9} /></button>
+                <button type="button" aria-label="Más opciones de la respuesta" title="Más opciones" aria-expanded={moreMenuIndex === i} onClick={() => setMoreMenuIndex((current) => current === i ? null : i)} className="grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent text-[#e0e0e0] transition-colors hover:bg-white/[0.08] hover:text-white"><MoreHorizontal size={16} strokeWidth={2.2} /></button>
+                <AnimatePresence>{moreMenuIndex === i && <motion.div initial={{ opacity: 0, y: 6, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 6, scale: 0.96 }} transition={{ duration: 0.14, ease: 'easeOut' }} className="absolute bottom-[calc(100%+8px)] left-0 z-30 grid min-w-[190px] gap-0.5 rounded-xl border border-white/[0.1] bg-[#292929]/95 p-1.5 shadow-2xl backdrop-blur-xl">
+                  {isDevelopmentBuild && <button type="button" onClick={() => { void handleCopyTrace(m, i); setMoreMenuIndex(null); }} className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12px] text-[#dddddd] hover:bg-white/[0.08]"><ScrollText size={14} />{language === 'en' ? 'Copy trace' : 'Copiar trazabilidad'}</button>}
+                  {previousUserMessageIndex(i) >= 0 && <><div className="mx-1 border-t border-white/[0.08]" aria-hidden="true" /><button type="button" disabled={isAgentBusy} onClick={() => { handleRetryMessage(previousUserMessageIndex(i)); setMoreMenuIndex(null); }} className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12px] text-[#dddddd] hover:bg-white/[0.08] disabled:opacity-40"><RotateCcw size={14} />{language === 'en' ? 'Regenerate response' : 'Regenerar respuesta'}</button></>}
+                </motion.div>}</AnimatePresence>
               </div>}
               </motion.div>}
               </React.Fragment>;

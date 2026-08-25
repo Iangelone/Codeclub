@@ -178,8 +178,8 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
           {availableProjects.length === 0 ? <div className="px-3 py-2 text-[11px] text-[#777777]">No hay proyectos indexados</div> : availableProjects.map((project) => <button key={project.path} type="button" onClick={() => selectActiveProject(project)} className="flex min-h-[32px] items-center gap-2 rounded-lg border-0 bg-transparent px-2.5 text-left text-xs text-[#bdbdbd] hover:bg-[#1e1e1e] hover:text-[#eeeeee]"><Folder size={14} /><span className="min-w-0 flex-1 truncate">{project.name}</span></button>)}
         </div>}
       </div>
-      <div className="workspace-pane acrylic-panel min-h-0 min-w-0 flex-1 overflow-hidden">
-        <div key={showExtensions ? 'extensions' : 'chat'} className="workspace-panel-content h-full min-h-0 min-w-0">
+      <div className="workspace-pane acrylic-panel min-h-0 min-w-0 flex-1 overflow-hidden bg-(--codeclub-center)">
+        <div key={showExtensions ? 'extensions' : 'chat'} className="workspace-panel-content h-full min-h-0 min-w-0 bg-(--codeclub-center)">
           {showExtensions ? <ExtensionsPanel selectedProject={selectedProject} /> : <ChatInterface
             catalog={catalog}
             defaultProvider={defaultProvider}

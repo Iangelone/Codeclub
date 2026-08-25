@@ -187,7 +187,7 @@ const projectFile = (projectPath: string, relativePath: string) => {
 };
 
 async function listProjectFiles(projectPath: string, maxFiles: number) {
-  const result: Array<{ path: string; kind: string; size?: number }> = [];
+  const result: Array<{ path: string; kind: string; size?: number; modifiedAt?: number }> = [];
   async function visit(folder: string, relative = ''): Promise<void> {
     if (result.length >= maxFiles) return;
     for (const entry of await fs.readdir(folder, { withFileTypes: true })) {
@@ -199,7 +199,7 @@ async function listProjectFiles(projectPath: string, maxFiles: number) {
         await visit(entryPath, entryRelative);
       } else {
         const stat = await fs.stat(entryPath);
-        result.push({ path: entryRelative.replaceAll(path.sep, '/'), kind: 'file', size: stat.size });
+        result.push({ path: entryRelative.replaceAll(path.sep, '/'), kind: 'file', size: stat.size, modifiedAt: stat.mtimeMs });
       }
       if (result.length >= maxFiles) return;
     }

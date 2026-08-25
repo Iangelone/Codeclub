@@ -103,7 +103,7 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
 
 
   return (
-    <main id="codeclub-extensions-panel" className="extensions-panel-scroll h-full min-h-0 overflow-x-hidden overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden bg-[#1A1A1A]">
+    <main id="codeclub-extensions-panel" className="extensions-panel-scroll h-full min-h-0 overflow-x-hidden overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden bg-(--codeclub-center)">
       <div className="mx-auto min-w-0 w-full max-w-[1040px] px-6 py-7 lg:px-8">
         <header>
           <h1 className="m-0 text-[28px] font-normal tracking-[-0.04em] text-[#eeeeee]">{text.title}</h1>
