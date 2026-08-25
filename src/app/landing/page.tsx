@@ -1,6 +1,6 @@
 import { Download, FolderGit2, Globe2, Sparkles } from 'lucide-react';
 
-const downloadUrl = 'https://github.com/Iangelone/Codeclub/releases/download/v0.1.1/Codeclub.Setup.0.1.1.exe';
+const downloadUrl = 'https://github.com/Iangelone/Codeclub/releases/latest/download/Codeclub%20Setup.exe';
 const repositoryUrl = 'https://github.com/Iangelone/Codeclub';
 
 export const metadata = {

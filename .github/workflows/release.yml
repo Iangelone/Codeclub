@@ -30,6 +30,13 @@ jobs:
       - name: Build installer
         run: npm run package:win
 
+      - name: Verify stable installer name
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "release/Codeclub Setup.exe")) {
+            throw "The stable installer artifact was not generated."
+          }
+
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
