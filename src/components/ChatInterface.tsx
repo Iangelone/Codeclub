@@ -757,9 +757,19 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     const bridge = (window as any).codeclub;
     if (typeof bridge?.listProjects === 'function') {
       const projects = await bridge.listProjects();
-      return (projects || []).map((project: any) => ({ id: project.id, path: project.path, name: project.name }));
+      const normalized = (projects || []).map((project: any) => ({ id: project.id, path: project.path, name: project.name }));
+      try {
+        const openProjectIds = JSON.parse(window.localStorage.getItem('codeclub:open-projects') || 'null');
+        if (Array.isArray(openProjectIds)) return normalized.filter((project: any) => openProjectIds.includes(project.id));
+      } catch { /* Si la lista está dañada, mostramos el índice completo. */ }
+      return normalized;
     }
-    return readProjectIndex();
+    const projects = await readProjectIndex();
+    try {
+      const openProjectIds = JSON.parse(window.localStorage.getItem('codeclub:open-projects') || 'null');
+      if (Array.isArray(openProjectIds)) return projects.filter((project: any) => openProjectIds.includes(project.id));
+    } catch { /* Si la lista está dañada, mostramos el índice completo. */ }
+    return projects;
   };
 
   useEffect(() => {
@@ -795,8 +805,15 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
         else openCommandMenu('skill');
       }
     };
+    const handleOpenProjectsChanged = () => {
+      if (commandKind !== 'project' || !menuOpen) return;
+      void readProjectsForCommandMenu().then((projects) => {
+        setProjectOptions([{ id: '__none__', label: chatText.noProject, type: 'project', projectPath: null, isNone: true }, ...projects.map((project: any) => ({ id: project.id || project.path, label: project.name, type: 'project', projectPath: project.path, projectId: project.id }))]);
+      });
+    };
     window.addEventListener('codeclub:open-command-menu', handleOpenCommandMenu);
-    return () => window.removeEventListener('codeclub:open-command-menu', handleOpenCommandMenu);
+    window.addEventListener('codeclub:open-projects-changed', handleOpenProjectsChanged);
+    return () => { window.removeEventListener('codeclub:open-command-menu', handleOpenCommandMenu); window.removeEventListener('codeclub:open-projects-changed', handleOpenProjectsChanged); };
   }, [menuOpen, commandKind]);
 
   const commandOptions: CatalogItem[] = commandKind === 'project' ? projectOptions : commandKind === 'skill' ? skillOptions.map((skill) => ({ ...skill, type: 'skill', label: skill.name })) : commandKind === 'language' ? languageOptions : commandKind === 'development' ? developmentOptions : catalog;
@@ -2908,6 +2925,7 @@ function TabbedProjectView({ projectPath, initialSelectedPath = '', showFileTree
     const tabPath = existingTab || requestedTabPath;
     const displayPath = fsPath ? fsPath.split(/[\\/]/).filter(Boolean).pop() || path : path;
     setSelectedPath(tabPath);
+    window.dispatchEvent(new CustomEvent('codeclub:recent-item', { detail: { kind: 'file', path: tabPath, name: displayPath, projectPath } }));
     setTabs((current) => {
       if (existingTab || current.some((item) => item.toLowerCase() === tabPath.toLowerCase())) return current;
       if (replaceCurrent && selectedPath && current.includes(selectedPath)) return current.map((item) => item === selectedPath ? tabPath : item);

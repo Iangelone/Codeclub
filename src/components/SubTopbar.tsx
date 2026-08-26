@@ -1,8 +1,8 @@
 'use client';
 
-import { ArrowLeft, ArrowRight, ChevronRight, Download, House, RefreshCw, Search } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ChevronRight, Download, FileText, House, MessageSquare, RefreshCw, Search } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { rightSidebarTranslations, useAppLanguage } from '../lib/i18n';
 import { nativeInvoke } from '../lib/runtime';
 import { readGlobalChats, readProjectMeta } from '../lib/projectManager';
@@ -110,13 +110,35 @@ export default function SubTopbar({ activeProject }: { activeProject: { name: st
   const hasSearchResults = visibleFiles.length > 0 || visibleChats.length > 0;
   const fallbackRecentItems: RecentSearchItem[] = [...searchChats.slice(0, 2).map((chat) => ({ kind: 'chat' as const, id: chat.id, name: chat.name })), ...[...searchFiles].sort((left, right) => (right.modifiedAt ?? 0) - (left.modifiedAt ?? 0)).slice(0, 2).map((file) => ({ kind: 'file' as const, path: file.path, name: file.path }))].slice(0, 3);
   const displayedRecentItems = recentItems.length > 0 ? recentItems : fallbackRecentItems;
-  const rememberRecent = (item: RecentSearchItem) => {
+  const fileTitle = (path: string) => path.split(/[\\/]/).pop() || path;
+  const rememberRecent = (item: RecentSearchItem, projectPath = activeProject.path) => {
+    const itemStorageKey = projectPath ? `codeclub:search-recents:${projectPath}` : 'codeclub:search-recents:global';
     setRecentItems((current) => {
-      const next = [item, ...current.filter((entry) => !(entry.kind === item.kind && (entry.path || entry.id) === (item.path || item.id)))].slice(0, 3);
-      try { localStorage.setItem(recentStorageKey, JSON.stringify(next)); } catch { /* almacenamiento opcional */ }
-      return next;
+      const storedCurrent = itemStorageKey === recentStorageKey ? current : (() => { try { const stored = JSON.parse(localStorage.getItem(itemStorageKey) || '[]'); return Array.isArray(stored) ? stored : []; } catch { return []; } })();
+      const next = [item, ...storedCurrent.filter((entry) => !(entry.kind === item.kind && (entry.path || entry.id) === (item.path || item.id)))].slice(0, 3);
+      try { localStorage.setItem(itemStorageKey, JSON.stringify(next)); } catch { /* almacenamiento opcional */ }
+      return itemStorageKey === recentStorageKey ? next : current;
     });
   };
+  useEffect(() => {
+    const rememberEventItem = (event: Event) => {
+      const detail = (event as CustomEvent<{ kind?: 'file' | 'chat'; path?: string; id?: string; name?: string; projectPath?: string }>).detail || {};
+      if (detail.kind === 'file' && detail.path) rememberRecent({ kind: 'file', path: detail.path, name: detail.name || detail.path }, detail.projectPath);
+      if (detail.kind === 'chat' && detail.id && detail.name) rememberRecent({ kind: 'chat', id: detail.id, name: detail.name }, detail.projectPath);
+    };
+    const rememberOpenedChat = (event: Event) => {
+      const detail = (event as CustomEvent<{ chatId?: string; name?: string; projectPath?: string }>).detail || {};
+      if (detail.chatId && detail.name) rememberRecent({ kind: 'chat', id: detail.chatId, name: detail.name }, detail.projectPath);
+    };
+    const rememberRenamedChat = (event: Event) => {
+      const detail = (event as CustomEvent<{ chatId?: string; newName?: string; projectPath?: string }>).detail || {};
+      if (detail.chatId && detail.newName) rememberRecent({ kind: 'chat', id: detail.chatId, name: detail.newName }, detail.projectPath);
+    };
+    window.addEventListener('codeclub:recent-item', rememberEventItem);
+    window.addEventListener('codeclub:open-chat', rememberOpenedChat);
+    window.addEventListener('codeclub:rename-chat', rememberRenamedChat);
+    return () => { window.removeEventListener('codeclub:recent-item', rememberEventItem); window.removeEventListener('codeclub:open-chat', rememberOpenedChat); window.removeEventListener('codeclub:rename-chat', rememberRenamedChat); };
+  }, [activeProject.path, recentStorageKey]);
   const openSearchFile = (path: string) => {
     setSearchOpen(false);
     rememberRecent({ kind: 'file', path, name: path });
@@ -151,13 +173,13 @@ export default function SubTopbar({ activeProject }: { activeProject: { name: st
       <input value={searchQuery} onChange={(event) => { setSearchQuery(event.target.value); setSearchOpen(true); }} onFocus={() => setSearchOpen(true)} onKeyDown={(event) => { if (event.key === 'Escape') { setSearchOpen(false); setSearchQuery(''); } }} className="min-w-0 flex-1 bg-transparent text-(--codeclub-text-strong) outline-none placeholder:text-(--codeclub-text-muted)" placeholder={language === 'en' ? `Search in ${activeProject.name}` : `Buscar en ${activeProject.name}`} aria-label={language === 'en' ? `Search in ${activeProject.name}` : `Buscar en ${activeProject.name}`} />
       <Search size={16} strokeWidth={1.8} className="shrink-0" aria-hidden="true" />
     </label>
-    {searchOpen && <div className="absolute right-0 top-10 z-50 w-[min(360px,calc(100vw-24px))] overflow-hidden rounded-xl border border-(--codeclub-border-soft) bg-(--codeclub-surface-raised) p-1.5 shadow-2xl">
+    {searchOpen && <div className="absolute right-0 top-10 z-50 w-[min(360px,calc(100vw-24px))] overflow-hidden rounded-xl border border-white/[0.08] bg-[#2C2C2C]/90 p-1 shadow-2xl backdrop-blur-xl">
       {searchLoading ? <p className="px-2.5 py-2 text-[12px] text-(--codeclub-text-muted)">{language === 'en' ? 'Loading recent files...' : 'Cargando archivos recientes...'}</p> : !normalizedQuery && displayedRecentItems.length > 0 ? <>
         <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-(--codeclub-text-muted)">{language === 'en' ? 'Recents' : 'Recientes'}</p>
-        {displayedRecentItems.map((item) => <button key={`${item.kind}-${item.path || item.id}`} type="button" onClick={() => openRecent(item)} className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] text-(--codeclub-text) hover:bg-(--codeclub-hover)"><span className="mr-2 text-[10px] uppercase text-(--codeclub-text-muted)">{item.kind === 'file' ? (language === 'en' ? 'File' : 'Archivo') : 'Chat'}</span><span className="min-w-0 flex-1 truncate">{item.name}</span></button>)}
+        <div>{displayedRecentItems.map((item, index) => <Fragment key={`${item.kind}-${item.path || item.id}`}>{index > 0 && <div className="mx-2 my-1 h-px bg-[#444444]" aria-hidden="true" />}<button type="button" onClick={() => openRecent(item)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12px] text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)">{item.kind === 'file' ? <FileText size={15} strokeWidth={1.8} className="shrink-0 text-(--codeclub-icon)" aria-hidden="true" /> : <MessageSquare size={15} strokeWidth={1.8} className="shrink-0 text-(--codeclub-icon)" aria-hidden="true" />}<span className="min-w-0 flex-1 truncate">{item.kind === 'file' ? fileTitle(item.name) : item.name}</span></button></Fragment>)}</div>
       </> : hasSearchResults ? <>
-        {visibleFiles.length > 0 && <><p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-(--codeclub-text-muted)">{language === 'en' ? 'Files' : 'Archivos'}</p>{visibleFiles.map((file) => <button key={`file-${file.path}`} type="button" onClick={() => openSearchFile(file.path)} className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] text-(--codeclub-text) hover:bg-(--codeclub-hover)"><span className="min-w-0 flex-1 truncate">{file.path}</span></button>)}</>}
-        {visibleChats.length > 0 && <><p className="mt-1 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-(--codeclub-text-muted)">{language === 'en' ? 'Chats' : 'Chats'}</p>{visibleChats.map((chat) => <button key={`chat-${chat.id}`} type="button" onClick={() => openSearchChat(chat)} className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-[12px] text-(--codeclub-text) hover:bg-(--codeclub-hover)"><span className="min-w-0 flex-1 truncate">{chat.name}</span></button>)}</>}
+        <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-(--codeclub-text-muted)">{language === 'en' ? 'Matches' : 'Coincidencias'}</p>
+        <div>{[...visibleFiles.map((file) => ({ type: 'file' as const, file })), ...visibleChats.map((chat) => ({ type: 'chat' as const, chat }))].map((result, index) => <Fragment key={result.type === 'file' ? `file-${result.file.path}` : `chat-${result.chat.id}`}>{index > 0 && <div className="mx-2 my-1 h-px bg-[#444444]" aria-hidden="true" />}{result.type === 'file' ? <button type="button" onClick={() => openSearchFile(result.file.path)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12px] text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)"><FileText size={15} strokeWidth={1.8} className="shrink-0 text-(--codeclub-icon)" aria-hidden="true" /><span className="min-w-0 flex-1 truncate">{fileTitle(result.file.path)}</span></button> : <button type="button" onClick={() => openSearchChat(result.chat)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12px] text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)"><MessageSquare size={15} strokeWidth={1.8} className="shrink-0 text-(--codeclub-icon)" aria-hidden="true" /><span className="min-w-0 flex-1 truncate">{result.chat.name}</span></button>}</Fragment>)}</div>
       </> : <p className="px-2.5 py-2 text-[12px] text-(--codeclub-text-muted)">{language === 'en' ? 'No matches found.' : 'No se encontraron coincidencias.'}</p>}
     </div>}
     </div>

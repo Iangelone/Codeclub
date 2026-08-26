@@ -13,6 +13,7 @@ export default function Topbar({ leftOpen, rightOpen, topbarOpen, onToggleLeft, 
   const noDragStyle = { WebkitAppRegion: 'no-drag' } as React.CSSProperties;
   const persistOpenProjects = (nextProjects: Array<{ id: string; name: string; path: string }>) => {
     window.localStorage.setItem('codeclub:open-projects', JSON.stringify(nextProjects.map((project) => project.id)));
+    window.dispatchEvent(new CustomEvent('codeclub:open-projects-changed'));
   };
   const nativeWindow = (action: 'windowMinimize' | 'windowMaximize' | 'windowClose') => { const api = (window as any).codeclub; if (!api?.[action]) { console.error(`Electron bridge no disponible: ${action}`); return; } void Promise.resolve(api[action]()).catch((error) => console.error(`Falló ${action}`, error)); };
   useEffect(() => {
