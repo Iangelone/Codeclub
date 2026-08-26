@@ -280,7 +280,7 @@ section[aria-label="Espacio de trabajo"] > [role="menu"][aria-label="Menú del c
   min-height: 40px;
   gap: 8px;
   padding-inline: 8px;
-  background: #191919;
+  background: #111111;
   position: relative;
   z-index: 20;
 }
@@ -289,7 +289,7 @@ section[aria-label="Espacio de trabajo"] > [role="menu"][aria-label="Menú del c
   top: 40px;
 }
 
-[aria-label="Controles del navegador"] button {
+[aria-label="Controles del navegador"] > div.flex.shrink-0 > button {
   width: 28px;
   height: 28px;
 }
@@ -297,6 +297,85 @@ section[aria-label="Espacio de trabajo"] > [role="menu"][aria-label="Menú del c
 [aria-label="Controles del navegador"] input {
   height: 32px;
   font-size: 16px;
+}
+
+[aria-label="Controles del navegador"] input::-webkit-calendar-picker-indicator {
+  display: none;
+}
+
+.codeclub-browser-history-menu {
+  position: fixed;
+  z-index: 1000;
+  overflow: hidden;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(44, 44, 44, 0.96);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(18px);
+}
+
+.codeclub-browser-history-row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  border-radius: 9px;
+  padding: 8px 10px;
+  color: #eeeeee;
+  text-align: left;
+  cursor: pointer;
+  background: transparent;
+}
+
+.codeclub-browser-history-row:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.codeclub-browser-history-icon {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  place-items: center;
+  color: #b8b8b8;
+}
+
+.codeclub-browser-history-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.codeclub-browser-history-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.codeclub-browser-history-title,
+.codeclub-browser-history-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.codeclub-browser-history-title {
+  font-size: 12px;
+}
+
+.codeclub-browser-history-detail {
+  color: #858585;
+  font-size: 10px;
+}
+
+.codeclub-browser-history-divider {
+  height: 1px;
+  margin: 3px 10px;
+  background: #444444;
 }
 
 [aria-label="Controles del navegador"] form {

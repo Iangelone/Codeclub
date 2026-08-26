@@ -1,7 +1,7 @@
 'use client';
 
 import { createElement, useEffect, useRef, useState, type FormEvent } from 'react';
-import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, Bolt, ChevronDown, Circle, CircleCheck, CirclePlus, Clock, CopyX, EllipsisVertical, FileWarning, FolderOpen, FolderPen, FolderTree, GitBranch, GitCompare, Grid2X2, Heart, Home, Info, ListTodo, MoreHorizontal, MousePointerClick, Pause, Pencil, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
+import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, Bolt, ChevronDown, Circle, CircleCheck, CirclePlus, Clock, CopyX, EllipsisVertical, ExternalLink, FileWarning, FolderOpen, FolderPen, FolderTree, GitBranch, GitCompare, Grid2X2, Heart, Home, Info, ListTodo, MoreHorizontal, MousePointerClick, Pause, Pencil, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { GlobeCheck } from 'lucide-react';
 import { Terminal as XtermTerminal } from '@xterm/xterm';
@@ -28,7 +28,7 @@ type RecentChat = { id: string; title: string; customName?: boolean; projectPath
 type SidebarSection = 'new-chat' | 'projects' | 'scheduled' | 'extensions';
 type ChatContextMenu = { chat: RecentChat; x: number; y: number };
 type RightPanelTab = 'files' | 'review' | 'browser' | 'artifacts' | 'terminals';
-type RightPanelInstance = { instanceId: string; tab: RightPanelTab; label: string };
+type RightPanelInstance = { instanceId: string; tab: RightPanelTab; label: string; iconUrl?: string };
 type RightPanelContextMenu = { panel: RightPanelInstance; x: number; y: number };
 type ScheduledTask = { id: string; name: string; prompt: string; schedule: string; repeat: string; interval: string; every: string; time: string; status: 'active' | 'paused'; executionTarget: string; provider: string; model: string; apiKey: string; project: string; reasoning: string; notifications: string; lastRun?: string };
 
@@ -323,10 +323,10 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
       if (!rightMenuRef.current?.contains(event.target as Node)) setRightMenuOpen(false);
     };
     const closeWithEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setRightMenuOpen(false); };
-    window.addEventListener('pointerdown', closeMenu);
+    document.addEventListener('pointerdown', closeMenu, true);
     window.addEventListener('keydown', closeWithEscape);
     return () => {
-      window.removeEventListener('pointerdown', closeMenu);
+      document.removeEventListener('pointerdown', closeMenu, true);
       window.removeEventListener('keydown', closeWithEscape);
     };
   }, [rightMenuOpen]);
@@ -515,6 +515,16 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
   }, [activeProjectPath, rightPanels]);
 
   useEffect(() => {
+    const updateBrowserTab = (event: Event) => {
+      const detail = (event as CustomEvent<{ favicon?: string; title?: string; clearFavicon?: boolean }>).detail || {};
+      if (!detail.favicon && !detail.title && !detail.clearFavicon) return;
+      setRightPanels((current) => current.map((panel) => panel.tab === 'browser' ? { ...panel, iconUrl: detail.clearFavicon ? undefined : detail.favicon || panel.iconUrl, label: detail.title?.trim() || panel.label } : panel));
+    };
+    window.addEventListener('codeclub:browser-tab-meta', updateBrowserTab);
+    return () => window.removeEventListener('codeclub:browser-tab-meta', updateBrowserTab);
+  }, []);
+
+  useEffect(() => {
     const openRightFile = (event: Event) => {
       const detail = (event as CustomEvent<{ path?: string; projectPath?: string }>).detail || {};
       if (!detail.path || (detail.projectPath && detail.projectPath !== activeProjectPath)) return;
@@ -599,7 +609,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
         <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
           <div ref={rightMenuRef} className="relative flex h-11 min-w-0 shrink-0 items-center gap-2 px-2">
             <div role="tablist" aria-label="Paneles abiertos" className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {rightPanels.map((panel) => { const item = rightPanelTabs.find((candidate) => candidate.id === panel.tab) ?? rightPanelTabs[0]; const Icon = item.icon; const label = panelText[panel.tab]; const displayLabel = panel.tab === 'browser' || panel.tab === 'terminals' ? `${label} ${panel.label.split(' ').pop()}` : label; const active = activeRightPanelId === panel.instanceId; return <div key={panel.instanceId} className={`group flex h-8 min-w-0 shrink-0 items-center rounded-lg transition-colors ${active ? 'bg-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-md hover:bg-white/[0.12]' : 'hover:bg-white/[0.06]'}`}><button type="button" role="tab" aria-selected={active} aria-controls={`right-panel-${panel.instanceId}`} onClick={() => setActiveRightPanelId(panel.instanceId)} onContextMenu={(event) => { event.preventDefault(); setRightMenuOpen(false); setRightContextMenu({ panel, x: event.clientX, y: event.clientY }); }} className={`flex h-full min-w-0 items-center gap-2 rounded-lg px-2.5 text-[12px] font-medium focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${active ? 'text-(--codeclub-text-strong)' : 'text-(--codeclub-text-muted)'}`}><Icon size={15} strokeWidth={1.8} aria-hidden="true" /><span className="max-w-[150px] truncate">{displayLabel}</span></button><button type="button" onClick={() => closeRightPanel(panel.instanceId)} className={`mr-1 grid h-5 w-5 shrink-0 place-items-center rounded-md transition-opacity hover:bg-white/[0.1] hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${active ? 'text-(--codeclub-text-strong) opacity-100' : 'text-(--codeclub-text-muted) opacity-0 group-hover:opacity-100'}`} aria-label={`${sidebarText.close} ${displayLabel}`}><X size={12} strokeWidth={2} aria-hidden="true" /></button></div>; })}
+              {rightPanels.map((panel) => { const item = rightPanelTabs.find((candidate) => candidate.id === panel.tab) ?? rightPanelTabs[0]; const Icon = item.icon; const label = panelText[panel.tab]; const displayLabel = panel.tab === 'browser' ? panel.label : panel.tab === 'terminals' ? `${label} ${panel.label.split(' ').pop()}` : label; const active = activeRightPanelId === panel.instanceId; return <div key={panel.instanceId} className={`group flex h-8 min-w-0 shrink-0 items-center rounded-lg transition-colors ${active ? 'bg-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-md hover:bg-white/[0.12]' : 'hover:bg-white/[0.06]'}`}><button type="button" role="tab" aria-selected={active} aria-controls={`right-panel-${panel.instanceId}`} onClick={() => setActiveRightPanelId(panel.instanceId)} onContextMenu={(event) => { event.preventDefault(); setRightMenuOpen(false); setRightContextMenu({ panel, x: event.clientX, y: event.clientY }); }} className={`flex h-full min-w-0 items-center gap-2 rounded-lg px-2.5 text-[12px] font-medium focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${active ? 'text-(--codeclub-text-strong)' : 'text-(--codeclub-text-muted)'}`}>{panel.iconUrl ? <img src={panel.iconUrl} alt="" onError={(event) => { event.currentTarget.style.display = 'none'; window.dispatchEvent(new CustomEvent('codeclub:browser-tab-meta', { detail: { clearFavicon: true } })); }} className="h-[15px] w-[15px] shrink-0 rounded-sm object-contain" /> : <Icon size={15} strokeWidth={1.8} aria-hidden="true" />}<span className="max-w-[150px] truncate">{displayLabel}</span></button><button type="button" onClick={() => closeRightPanel(panel.instanceId)} className={`mr-1 grid h-5 w-5 shrink-0 place-items-center rounded-md transition-opacity hover:bg-white/[0.1] hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${active ? 'text-(--codeclub-text-strong) opacity-100' : 'text-(--codeclub-text-muted) opacity-0 group-hover:opacity-100'}`} aria-label={`${sidebarText.close} ${displayLabel}`}><X size={12} strokeWidth={2} aria-hidden="true" /></button></div>; })}
               <button type="button" onClick={() => setRightMenuOpen((open) => !open)} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-transparent text-(--codeclub-text-muted) transition-colors hover:bg-white/[0.08] hover:text-(--codeclub-text) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Abrir paneles de la sidebar derecha" aria-haspopup="menu" aria-expanded={rightMenuOpen}><Plus size={16} strokeWidth={1.7} aria-hidden="true" /></button>
             </div>
             <AnimatePresence>
@@ -842,10 +852,84 @@ function BrowserPanel() {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [browserHistory, setBrowserHistory] = useState<{ url: string; title: string }[]>([]);
+  const browserAddressMenuRef = useRef<HTMLDivElement | null>(null);
+  const browserAddressFocusedRef = useRef(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedElement, setSelectedElement] = useState<{ title: string; text: string; html: string; x: number; y: number; markerId: string } | null>(null);
   const [selectionComment, setSelectionComment] = useState('');
   const selectionCommentRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const rememberBrowserPage = (url: string, title?: string) => {
+    if (!url || url.startsWith('data:')) return;
+    const entry = { url, title: title?.trim() || url.replace(/^https?:\/\//, '').replace(/\/$/, '') };
+    setBrowserHistory((current) => {
+      const next = [entry, ...current.filter((item) => item.url !== url)].slice(0, 20);
+      localStorage.setItem('codeclub:browser-history', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('codeclub:browser-history') || '[]');
+      if (Array.isArray(saved)) setBrowserHistory(saved.filter((item) => item?.url).slice(0, 20));
+    } catch { /* ignore malformed local history */ }
+  }, []);
+
+  useEffect(() => {
+    const input = document.getElementById('codeclub-browser-address') as HTMLInputElement | null;
+    if (!input) return undefined;
+    input.removeAttribute('list');
+    const menu = document.createElement('div');
+    menu.className = 'codeclub-browser-history-menu';
+    menu.setAttribute('role', 'listbox');
+    menu.style.display = 'none';
+    document.body.appendChild(menu);
+    browserAddressMenuRef.current = menu;
+    const reposition = () => {
+      const rect = input.getBoundingClientRect();
+      menu.style.left = `${rect.left}px`;
+      menu.style.top = `${rect.bottom + 6}px`;
+      menu.style.width = `${rect.width}px`;
+    };
+    const show = () => { browserAddressFocusedRef.current = true; reposition(); menu.style.display = 'block'; };
+    const hide = () => { window.setTimeout(() => { if (!menu.matches(':hover') && document.activeElement !== input) { browserAddressFocusedRef.current = false; menu.style.display = 'none'; } }, 120); };
+    input.addEventListener('focus', show);
+    input.addEventListener('blur', hide);
+    window.addEventListener('resize', reposition);
+    window.addEventListener('scroll', reposition, true);
+    return () => { input.removeEventListener('focus', show); input.removeEventListener('blur', hide); window.removeEventListener('resize', reposition); window.removeEventListener('scroll', reposition, true); menu.remove(); browserAddressMenuRef.current = null; };
+  }, []);
+
+  useEffect(() => {
+    const menu = browserAddressMenuRef.current;
+    const input = document.getElementById('codeclub-browser-address') as HTMLInputElement | null;
+    if (!menu || !input) return;
+    const query = address.trim();
+    const normalizedQuery = query.toLowerCase();
+    const matchingHistory = browserHistory.filter((item) => !normalizedQuery || `${item.title} ${item.url}`.toLowerCase().includes(normalizedQuery));
+    menu.replaceChildren();
+    menu.style.display = browserAddressFocusedRef.current ? 'block' : 'none';
+    const addIcon = (svg: string) => { const icon = document.createElement('span'); icon.className = 'codeclub-browser-history-icon'; icon.innerHTML = svg; return icon; };
+    const addRow = (label: string, detail: string, svg: string, onClick: () => void) => {
+      const row = document.createElement('button');
+      row.type = 'button'; row.className = 'codeclub-browser-history-row'; row.setAttribute('role', 'option');
+      row.append(addIcon(svg));
+      const copy = document.createElement('span'); copy.className = 'codeclub-browser-history-copy';
+      const title = document.createElement('span'); title.className = 'codeclub-browser-history-title'; title.textContent = label;
+      const meta = document.createElement('span'); meta.className = 'codeclub-browser-history-detail'; meta.textContent = detail;
+      copy.append(title, meta); row.append(copy); row.addEventListener('mousedown', (event) => event.preventDefault()); row.addEventListener('click', onClick); menu.appendChild(row);
+    };
+    if (query) {
+      addRow(language === 'es' ? `Buscar en la web: ${query}` : `Search the web for: ${query}`, language === 'es' ? 'Buscar en la web' : 'Search the web', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>', () => { const next = `https://www.google.com/search?q=${encodeURIComponent(query)}`; window.dispatchEvent(new CustomEvent('codeclub:browser-navigate', { detail: { url: next } })); });
+    }
+    matchingHistory.slice(0, 5).forEach((item, index) => {
+      if (query || index > 0) { const divider = document.createElement('div'); divider.className = 'codeclub-browser-history-divider'; menu.appendChild(divider); }
+      addRow(item.title, item.url.replace(/^https?:\/\//, '').replace(/\/$/, ''), '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>', () => { window.dispatchEvent(new CustomEvent('codeclub:browser-navigate', { detail: { url: item.url } })); });
+    });
+    if (menu.childElementCount === 0) menu.style.display = 'none';
+  }, [address, browserHistory, language]);
 
   useEffect(() => {
     if (!selectedElement) return;
@@ -1008,9 +1092,9 @@ function BrowserPanel() {
   useEffect(() => {
     const view = webviewRef.current;
     if (!view) return undefined;
-    const syncUrl = () => { const next = view.getURL?.() || currentUrl; if (next === EMPTY_BROWSER_URL) { setAddress(''); return; } setAddress(next); };
+    const syncUrl = () => { const next = view.getURL?.() || currentUrl; if (next === EMPTY_BROWSER_URL) { setAddress(''); return; } setAddress(next); rememberBrowserPage(next, view.getTitle?.()); };
     const start = () => { setLoading(true); setLoadError(''); };
-    const stop = async () => { setLoading(false); syncUrl(); if (view.getURL?.() === EMPTY_BROWSER_URL) await view.insertCSS?.(`html,body{height:100%!important;margin:0!important}body{display:grid!important;place-items:center!important;position:relative!important;background:#202124!important}body::before{content:'⌁  Navegador';position:absolute;top:calc(50% - 82px);left:0;right:0;text-align:center;color:#e8eaed;font:500 22px Arial,sans-serif;letter-spacing:-.02em}body::after{content:'Ingresá una dirección para empezar';position:absolute;top:calc(50% - 42px);left:0;right:0;text-align:center;color:#9aa0a6;font:14px Arial,sans-serif}form{width:min(520px,calc(100% - 48px))!important;height:44px!important;margin:0!important;padding:0 12px!important;border:1px solid #3c4043!important;border-radius:14px!important;background:#2c2c2c!important;box-sizing:border-box!important}form:hover,form:focus-within{background:#353535!important;border-color:#5f6368!important}`); void publishState(); };
+    const stop = async () => { setLoading(false); syncUrl(); try { const pageUrl = view.getURL?.() || currentUrl; const favicon = await view.executeJavaScript(`document.querySelector('link[rel~="icon"],link[rel="shortcut icon"]')?.href || ''`); const domain = new URL(pageUrl).hostname; window.dispatchEvent(new CustomEvent('codeclub:browser-tab-meta', { detail: { favicon: favicon || undefined, title: view.getTitle?.() || domain, clearFavicon: !favicon } })); } catch { /* page may have navigated */ } if (view.getURL?.() === EMPTY_BROWSER_URL) await view.insertCSS?.(`html,body{height:100%!important;margin:0!important}body{display:grid!important;place-items:center!important;position:relative!important;background:#202124!important}body::before{content:'⌁  Navegador';position:absolute;top:calc(50% - 82px);left:0;right:0;text-align:center;color:#e8eaed;font:500 22px Arial,sans-serif;letter-spacing:-.02em}body::after{content:'Ingresá una dirección para empezar';position:absolute;top:calc(50% - 42px);left:0;right:0;text-align:center;color:#9aa0a6;font:14px Arial,sans-serif}form{width:min(520px,calc(100% - 48px))!important;height:44px!important;margin:0!important;padding:0 12px!important;border:1px solid #3c4043!important;border-radius:14px!important;background:#2c2c2c!important;box-sizing:border-box!important}form:hover,form:focus-within{background:#353535!important;border-color:#5f6368!important}`); void publishState(); };
     const fail = (event: Event) => {
       const detail = event as Event & { errorCode?: number; errorDescription?: string; isMainFrame?: boolean };
       if (detail.isMainFrame === false || detail.errorCode === -3) return;
@@ -1018,17 +1102,25 @@ function BrowserPanel() {
       setLoadError(detail.errorDescription || 'No se pudo cargar esta página.');
     };
     const navigate = () => syncUrl();
+    const faviconUpdated = (event: Event) => {
+      const favicons = (event as Event & { favicons?: string[] }).favicons || [];
+      let domain = '';
+      try { domain = new URL(view.getURL?.() || currentUrl).hostname; } catch { /* invalid or empty URL */ }
+      window.dispatchEvent(new CustomEvent('codeclub:browser-tab-meta', { detail: { favicon: favicons[0], title: view.getTitle?.() || domain, clearFavicon: !favicons[0] } }));
+    };
     view.addEventListener('did-start-loading', start);
     view.addEventListener('did-stop-loading', stop);
     view.addEventListener('did-fail-load', fail);
     view.addEventListener('did-navigate', navigate);
     view.addEventListener('did-navigate-in-page', navigate);
+    view.addEventListener('page-favicon-updated', faviconUpdated);
     return () => {
       view.removeEventListener('did-start-loading', start);
       view.removeEventListener('did-stop-loading', stop);
       view.removeEventListener('did-fail-load', fail);
       view.removeEventListener('did-navigate', navigate);
       view.removeEventListener('did-navigate-in-page', navigate);
+      view.removeEventListener('page-favicon-updated', faviconUpdated);
     };
   }, []);
 
@@ -1109,18 +1201,23 @@ function BrowserPanel() {
 
   const submitAddress = (event: FormEvent) => {
     event.preventDefault();
+    if (address.startsWith('Buscar en la web:')) {
+      const query = address.slice('Buscar en la web:'.length).trim();
+      if (query) { const next = `https://www.google.com/search?q=${encodeURIComponent(query)}`; setAddress(next); setCurrentUrl(next); rememberBrowserPage(next, query); }
+      return;
+    }
     const next = normalizeBrowserAddress(address);
-    if (next) { setAddress(next); setCurrentUrl(next); }
+    if (next) { setAddress(next); setCurrentUrl(next); rememberBrowserPage(next); }
   };
   const viewProps = { ref: (node: any) => { webviewRef.current = node; }, src: currentUrl || EMPTY_BROWSER_URL, className: 'absolute inset-0 border-0 bg-[#202124]', hidden: !currentUrl, style: { display: currentUrl ? 'inline-flex' : 'none' }, title: text.browser, allowpopups: 'true' };
 
   return <div className="relative h-full min-h-0 bg-[#202124] text-[#e8eaed]">
-    <div className="flex h-10 shrink-0 items-center gap-3 bg-[#171717] px-3" aria-label="Controles del navegador">{!currentUrl && !loadError && <div className="absolute top-10 right-0 bottom-0 left-0 z-[1] flex flex-col items-center justify-center gap-5 bg-[#202124]"><GlobeCheck aria-hidden="true" className="text-[#9aa0a6]" size={38} strokeWidth={1.7} /><form onSubmit={submitAddress} className="flex h-[52px] w-[min(520px,calc(100%-32px))] items-center gap-2 rounded-[14px] border border-[#3c4043] bg-[#1a1a1a] px-3 shadow-[0_8px_30px_#00000040] transition-colors hover:bg-[#1f1f1f] focus-within:border-[#5f6368]"><span className="grid h-8 w-8 shrink-0 place-items-center text-[24px] text-[#8a8a8a]">⌕</span><input autoFocus value={address} onChange={(event) => setAddress(event.target.value)} className="h-9 min-w-0 flex-1 bg-transparent px-2 text-[13px] text-[#e8eaed] outline-none placeholder:text-[#9a9a9a]" placeholder="Ingresá una URL" aria-label="Ingresar una URL" /><button type="submit" aria-label="Abrir URL" className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-transparent text-[24px] text-[#8a8a8a] hover:bg-white/[0.06] hover:text-[#f1f1f1]">↗</button></form></div>}
-      <div className="flex shrink-0 items-center gap-1"><button type="button" onClick={() => webviewRef.current?.goBack?.()} className="grid h-8 w-8 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.back} title={text.back}><ArrowLeft size={18} /></button><button type="button" onClick={() => webviewRef.current?.goForward?.()} className="grid h-8 w-8 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.forward} title={text.forward}><ArrowRight size={18} /></button><button type="button" onClick={() => webviewRef.current?.reload?.()} className="grid h-8 w-8 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.reload} title={text.reload}><RotateCw size={18} className={loading ? 'animate-spin' : ''} /></button><button type="button" onClick={() => { setAddress(''); setCurrentUrl(DEFAULT_BROWSER_URL); setLoadError(''); setLoading(false); }} className="grid h-8 w-8 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.home} title={text.home}><Home size={17} /></button></div>
-      <form onSubmit={submitAddress} className="min-w-0 flex-1"><label className="sr-only" htmlFor="codeclub-browser-address">Direccion web</label><input id="codeclub-browser-address" value={address.replace(/^https?:\/\//, '').replace(/\/$/, '')} onChange={(event) => setAddress(event.target.value)} onFocus={(event) => event.currentTarget.select()} className="h-9 w-full bg-transparent text-center text-[20px] font-medium text-[#f1f3f4] outline-none placeholder:text-[#8a8a8a]" aria-label="Direccion web" placeholder="Escribí una URL para navegar" /></form>
-      <div className="relative flex shrink-0 items-center gap-1"><button type="button" className={`grid h-8 w-8 place-items-center rounded-full hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${selectionMode ? 'bg-[#3d9bff22] text-[#8bc7ff]' : 'text-[#b8b8b8]'}`} aria-label="Seleccionar elemento" title="Seleccionar elemento" aria-pressed={selectionMode} onClick={() => selectionMode ? void clearPagePicker() : void startPagePicker()}><MousePointerClick size={19} /></button><button type="button" onClick={() => setMenuOpen((open) => !open)} className="grid h-8 w-8 place-items-center rounded-full text-[#b8b8b8] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Mas opciones del navegador" aria-expanded={menuOpen}><EllipsisVertical size={19} /></button>{menuOpen && <div className="absolute top-10 right-0 z-20 w-44 rounded-lg border border-white/[0.08] bg-[#2C2C2C]/95 p-1 shadow-xl backdrop-blur-xl"><button type="button" onClick={() => { webviewRef.current?.reload?.(); setMenuOpen(false); }} className="flex w-full rounded-md px-2.5 py-2 text-left text-[11px] text-[#eeeeee] hover:bg-white/[0.08]">Recargar pagina</button><button type="button" onClick={() => { window.open(currentUrl, '_blank'); setMenuOpen(false); }} className="flex w-full rounded-md px-2.5 py-2 text-left text-[11px] text-[#eeeeee] hover:bg-white/[0.08]">Abrir fuera de Codeclub</button></div>}</div>
+    <div className="flex h-9 shrink-0 items-center gap-2 bg-[#171717] px-2.5" aria-label="Controles del navegador">{!currentUrl && !loadError && <div className="absolute top-9 right-0 bottom-0 left-0 z-[1] flex flex-col items-center justify-center gap-5 bg-[#202124]"><GlobeCheck aria-hidden="true" className="text-[#9aa0a6]" size={38} strokeWidth={1.7} /><form onSubmit={submitAddress} className="flex h-[52px] w-[min(520px,calc(100%-32px))] items-center gap-2 rounded-[14px] border border-[#3c4043] bg-[#1a1a1a] px-3 shadow-[0_8px_30px_#00000040] transition-colors hover:bg-[#1f1f1f] focus-within:border-[#5f6368]"><span className="grid h-8 w-8 shrink-0 place-items-center text-[24px] text-[#8a8a8a]">⌕</span><input autoFocus value={address} onChange={(event) => setAddress(event.target.value)} className="h-9 min-w-0 flex-1 bg-transparent px-2 text-[13px] text-[#e8eaed] outline-none placeholder:text-[#9a9a9a]" placeholder="Ingresá una URL" aria-label="Ingresar una URL" /><button type="submit" aria-label="Abrir URL" className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-transparent text-[24px] text-[#8a8a8a] hover:bg-white/[0.06] hover:text-[#f1f1f1]">↗</button></form></div>}
+      <div className="flex shrink-0 items-center gap-0.5"><button type="button" onClick={() => webviewRef.current?.goBack?.()} className="grid h-7 w-7 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.back} title={text.back}><ArrowLeft size={16} /></button><button type="button" onClick={() => webviewRef.current?.goForward?.()} className="grid h-7 w-7 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.forward} title={text.forward}><ArrowRight size={16} /></button><button type="button" onClick={() => webviewRef.current?.reload?.()} className="grid h-7 w-7 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.reload} title={text.reload}><RotateCw size={16} className={loading ? 'animate-spin' : ''} /></button><button type="button" onClick={() => { setAddress(''); setCurrentUrl(DEFAULT_BROWSER_URL); setLoadError(''); setLoading(false); }} className="grid h-7 w-7 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.home} title={text.home}><Home size={15} /></button></div>
+      <form onSubmit={submitAddress} className="min-w-0 flex-1"><label className="sr-only" htmlFor="codeclub-browser-address">Direccion web</label><input id="codeclub-browser-address" value={address.replace(/^https?:\/\//, '').replace(/\/$/, '')} onChange={(event) => setAddress(event.target.value)} onFocus={(event) => event.currentTarget.select()} className="h-8 w-full bg-transparent text-center text-[17px] font-medium text-[#f1f3f4] outline-none placeholder:text-[#8a8a8a]" aria-label="Direccion web" placeholder="Escribí una URL para navegar" /></form>
+      <div className="relative flex shrink-0 items-center gap-0.5"><button type="button" className={`grid h-7 w-7 place-items-center rounded-full hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${selectionMode ? 'bg-[#3d9bff22] text-[#8bc7ff]' : 'text-[#b8b8b8]'}`} aria-label="Seleccionar elemento" title="Seleccionar elemento" aria-pressed={selectionMode} onClick={() => selectionMode ? void clearPagePicker() : void startPagePicker()}><MousePointerClick size={17} /></button><button type="button" onClick={() => setMenuOpen((open) => !open)} className="grid h-7 w-7 place-items-center rounded-full text-[#b8b8b8] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.moreOptions} title={text.moreOptions} aria-expanded={menuOpen}><EllipsisVertical size={17} /></button>{menuOpen && <div className="absolute top-9 right-0 z-20 w-56 rounded-xl border border-white/[0.08] bg-[#2C2C2C]/95 p-1.5 shadow-xl backdrop-blur-xl"><button type="button" onClick={() => { webviewRef.current?.reload?.(); setMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[11px] whitespace-nowrap text-[#eeeeee] hover:bg-white/[0.08]"><RotateCw className="shrink-0 text-[#b8b8b8]" size={14} strokeWidth={1.8} aria-hidden="true" /><span className="min-w-0 truncate">{text.reload}</span></button><div className="mx-2 my-1 h-px bg-[#444444]" /><button type="button" onClick={() => { window.open(currentUrl, '_blank'); setMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[11px] whitespace-nowrap text-[#eeeeee] hover:bg-white/[0.08]"><ExternalLink className="shrink-0 text-[#b8b8b8]" size={14} strokeWidth={1.8} aria-hidden="true" /><span className="min-w-0 truncate">{text.openOutside}</span></button></div>}</div>
     </div>
-    <div className="absolute top-10 right-0 bottom-0 left-0 overflow-hidden">{createElement('webview', viewProps)}</div>{selectedElement && <div className="absolute z-20 w-[210px] max-w-[calc(100%-16px)] rounded-xl border border-white/[0.1] bg-[#292929]/95 p-2 shadow-2xl backdrop-blur-xl" style={{ left: `clamp(8px, ${selectedElement.x}px, calc(100% - 218px))`, top: `clamp(48px, ${selectedElement.y + 48}px, calc(100% - 152px))` }}><textarea ref={selectionCommentRef} value={selectionComment} onChange={(event) => setSelectionComment(event.target.value)} onInput={(event) => { const input = event.currentTarget; input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 126)}px`; input.style.overflowY = input.scrollHeight > 126 ? 'auto' : 'hidden'; }} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); discardSelectedReference(); } if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); addSelectedReference(); } }} rows={1} placeholder="Agregá un comentario..." className="selection-comment-scrollbar max-h-[126px] w-full resize-none overflow-y-hidden bg-transparent px-1 text-[13px] leading-[18px] text-[#eeeeee] outline-none placeholder:text-[#858585]" aria-label="Agregar un comentario al elemento seleccionado" /></div>}{loadError && <div className="absolute inset-0 z-10 grid place-items-center bg-[#202124] px-6 text-center"><div className="max-w-[360px]"><p className="m-0 text-[15px] font-medium text-[#f1f3f4]">No se pudo abrir esta página</p><p className="mt-2 mb-0 break-words text-[12px] leading-5 text-[#a7a7a7]">{loadError}</p><p className="mt-1 mb-0 break-words text-[11px] text-[#777777]">{currentUrl}</p><button type="button" onClick={() => { setLoadError(''); setLoading(true); webviewRef.current?.reload?.(); }} className="mt-4 rounded-lg bg-white/[0.08] px-3 py-1.5 text-[11px] text-[#eeeeee] hover:bg-white/[0.14]">Reintentar</button></div></div>}
+    <div className="absolute top-9 right-0 bottom-0 left-0 overflow-hidden">{createElement('webview', viewProps)}</div>{selectedElement && <div className="absolute z-20 w-[210px] max-w-[calc(100%-16px)] rounded-xl border border-white/[0.1] bg-[#292929]/95 p-2 shadow-2xl backdrop-blur-xl" style={{ left: `clamp(8px, ${selectedElement.x}px, calc(100% - 218px))`, top: `clamp(48px, ${selectedElement.y + 48}px, calc(100% - 152px))` }}><textarea ref={selectionCommentRef} value={selectionComment} onChange={(event) => setSelectionComment(event.target.value)} onInput={(event) => { const input = event.currentTarget; input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 126)}px`; input.style.overflowY = input.scrollHeight > 126 ? 'auto' : 'hidden'; }} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); discardSelectedReference(); } if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); addSelectedReference(); } }} rows={1} placeholder="Agregá un comentario..." className="selection-comment-scrollbar max-h-[126px] w-full resize-none overflow-y-hidden bg-transparent px-1 text-[13px] leading-[18px] text-[#eeeeee] outline-none placeholder:text-[#858585]" aria-label="Agregar un comentario al elemento seleccionado" /></div>}{loadError && <div className="absolute inset-0 z-10 grid place-items-center bg-[#202124] px-6 text-center"><div className="max-w-[360px]"><p className="m-0 text-[15px] font-medium text-[#f1f3f4]">No se pudo abrir esta página</p><p className="mt-2 mb-0 break-words text-[12px] leading-5 text-[#a7a7a7]">{loadError}</p><p className="mt-1 mb-0 break-words text-[11px] text-[#777777]">{currentUrl}</p><button type="button" onClick={() => { setLoadError(''); setLoading(true); webviewRef.current?.reload?.(); }} className="mt-4 rounded-lg bg-white/[0.08] px-3 py-1.5 text-[11px] text-[#eeeeee] hover:bg-white/[0.14]">Reintentar</button></div></div>}
   </div>;
 }
 

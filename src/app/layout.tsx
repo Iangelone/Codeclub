@@ -5,7 +5,7 @@ const contentSecurityPolicy = [
   "default-src 'self' file:",
   `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''}`,
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: file:",
+  "img-src 'self' data: blob: file: https:",
   "font-src 'self' data:",
   "connect-src 'self' https: ws:",
   "worker-src 'self' blob:",
