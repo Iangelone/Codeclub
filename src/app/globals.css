@@ -231,19 +231,24 @@ section[aria-label="Espacio de trabajo"] > [role="menu"][aria-label="Menú del c
   height: 24px;
   gap: 6px;
   padding: 0 8px;
-  border: 1px solid #444444;
-  border-radius: 6px;
   margin-bottom: 4px;
-  background: #2f2f2f;
-  color: #eeeeee;
-}
-
-[id^="right-panel-files"] main > div:first-child[class*="h-8"] > div > button {
-  color: #eeeeee;
+  border-radius: 6px;
 }
 
 [id^="right-panel-files"] main > div:first-child[class*="h-8"] {
-  background: #191919;
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  background: #111111;
+  scrollbar-width: none;
+}
+
+[id^="right-panel-files"] main > div:first-child[class*="h-8"]::-webkit-scrollbar {
+  display: none;
+}
+
+[id^="right-panel-files"] aside {
+  border-top-left-radius: 12px;
 }
 
 [id^="right-panel-review"] > section > div[class*="items-start"] {
@@ -410,6 +415,18 @@ section[aria-label="Espacio de trabajo"] > [role="menu"][aria-label="Menú del c
   z-index: 10;
   pointer-events: auto;
   cursor: pointer;
+}
+
+/* Todo control interactivo muestra el cursor correspondiente. */
+button:not(:disabled),
+[role="button"],
+[role="tab"] {
+  cursor: pointer;
+}
+
+button:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
 }
 
 .composer-action-shine {

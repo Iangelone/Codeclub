@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUp, Box, Camera, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Languages, LayoutTemplate, Lightbulb, ListChecks, ListTodo, MessageSquare, Monitor, MoreHorizontal, MousePointer2, Orbit, Paperclip, Pencil, Presentation, Radar, RotateCcw, Search, ScrollText, Square, Table2, Terminal, ThumbsDown, ThumbsUp, Folder, FolderTree, WandSparkles, Wifi, X } from 'lucide-react';
+import { ArrowUp, Box, Braces, Camera, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Languages, LayoutTemplate, Lightbulb, ListChecks, ListTodo, MessageSquare, Monitor, MoreHorizontal, MousePointer2, Orbit, Paperclip, Pencil, Presentation, Radar, RotateCcw, Search, ScrollText, Square, Table2, Terminal, ThumbsDown, ThumbsUp, Folder, FolderTree, WandSparkles, Wifi, X } from 'lucide-react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -2618,6 +2618,7 @@ function MaterialFileIcon({ name, kind }: { name: string; kind: FileTreeNode['ki
   const iconName = associations?.[name.toLowerCase()] ?? (extension ? materialIconManifest.fileExtensions?.[extension] : undefined) ?? (kind === 'directory' ? materialIconManifest.folder : materialIconManifest.file);
   const iconPath = iconName ? materialIconManifest.iconDefinitions?.[iconName]?.iconPath : undefined;
   const iconFile = iconPath?.split('/').pop();
+  if (kind === 'file' && (extension === 'json' || extension === 'jsonl')) return <Braces size={15} strokeWidth={1.5} className="shrink-0 text-[#f9a825]" />;
   if (!iconFile) return kind === 'directory' ? <Folder size={14} className="text-[#a89b72]" /> : <FileCode2 size={14} className="text-[#777777]" />;
   return <img src={`/material-icons/${iconFile}`} alt="" aria-hidden="true" className="h-[17px] w-[17px] shrink-0" />;
 }
@@ -2875,6 +2876,8 @@ function TabbedProjectView({ projectPath, initialSelectedPath = '', showFileTree
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [tabs, setTabs] = useState<string[]>([]);
   const [selectedPath, setSelectedPath] = useState(initialSelectedPath);
+  const [fileContextMenu, setFileContextMenu] = useState<{ path: string; x: number; y: number } | null>(null);
+  const fileContextMenuRef = useRef<HTMLDivElement | null>(null);
   const [files, setFiles] = useState<Record<string, OpenFile>>({});
   const saveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const panelRef = useRef<HTMLDivElement>(null);
@@ -2967,6 +2970,15 @@ function TabbedProjectView({ projectPath, initialSelectedPath = '', showFileTree
 
   useEffect(() => () => Object.values(saveTimersRef.current).forEach((timer) => clearTimeout(timer)), []);
 
+  useEffect(() => {
+    if (!fileContextMenu) return undefined;
+    const closeMenu = (event: PointerEvent) => { if (!fileContextMenuRef.current?.contains(event.target as Node)) setFileContextMenu(null); };
+    const closeWithEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setFileContextMenu(null); };
+    window.addEventListener('pointerdown', closeMenu);
+    window.addEventListener('keydown', closeWithEscape);
+    return () => { window.removeEventListener('pointerdown', closeMenu); window.removeEventListener('keydown', closeWithEscape); };
+  }, [fileContextMenu]);
+
   const handleContentChange = (path: string, content: string) => {
     if (!projectPath) return;
     const file = files[path];
@@ -2984,6 +2996,7 @@ function TabbedProjectView({ projectPath, initialSelectedPath = '', showFileTree
   };
 
   const closeFile = (path: string) => {
+    setFileContextMenu(null);
     setTabs((current) => {
       const index = current.indexOf(path);
       const next = current.filter((item) => item !== path);
@@ -2993,11 +3006,27 @@ function TabbedProjectView({ projectPath, initialSelectedPath = '', showFileTree
     setFiles((current) => { const next = { ...current }; delete next[path]; return next; });
   };
 
+  const closeOtherFiles = (path: string) => {
+    setTabs([path]);
+    setSelectedPath(path);
+    setFiles((current) => ({ [path]: current[path] }));
+    setFileContextMenu(null);
+  };
+
+  const closeFilesToRight = (path: string) => {
+    const index = tabs.indexOf(path);
+    if (index < 0) return;
+    const remaining = tabs.slice(0, index + 1);
+    setTabs(remaining);
+    setFiles((current) => Object.fromEntries(remaining.filter((item) => current[item]).map((item) => [item, current[item]])));
+    setFileContextMenu(null);
+  };
+
   const tree = buildFileTree(entries);
   const renderTree = (nodes: FileTreeNode[], depth = 0): React.ReactNode => nodes.map((node) => {
     const isOpen = expanded.has(node.path);
     return <React.Fragment key={node.path}>
-      <button type="button" onClick={() => node.kind === 'directory' ? setExpanded((current) => { const next = new Set(current); next.has(node.path) ? next.delete(node.path) : next.add(node.path); return next; }) : void openFile(node.path)} className={`flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[12px] ${selectedPath === node.path ? 'bg-[var(--color-surface-7)] text-[#eeeeee]' : 'text-[#bdbdbd] hover:bg-[var(--color-surface-3)]'}`} style={{ paddingLeft: `${8 + depth * 14}px` }}>
+      <button type="button" onClick={() => node.kind === 'directory' ? setExpanded((current) => { const next = new Set(current); next.has(node.path) ? next.delete(node.path) : next.add(node.path); return next; }) : void openFile(node.path)} className={`flex w-full items-center gap-1.5 rounded-md border px-2 py-1.5 text-left text-[12px] ${selectedPath === node.path ? 'border-[#3d9bff] bg-[#3d9bff12] text-[#eeeeee]' : 'border-transparent text-[#bdbdbd] hover:bg-[var(--color-surface-3)]'}`} style={{ paddingLeft: `${8 + depth * 14}px` }}>
         {node.kind === 'directory' ? (isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />) : <span className="w-[13px]" />}
         <MaterialFileIcon name={node.name} kind={node.kind} />
         <span className="min-w-0 flex-1 truncate">{node.name}</span>
@@ -3006,11 +3035,11 @@ function TabbedProjectView({ projectPath, initialSelectedPath = '', showFileTree
     </React.Fragment>;
   });
 
-  return <div ref={panelRef} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleFileDrop} className="flex h-full w-full min-w-0 flex-col overflow-hidden bg-[#171717] text-[#eeeeee] [&>div:first-child]:hidden">
+  return <div ref={panelRef} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleFileDrop} className="flex h-full w-full min-w-0 flex-col overflow-hidden rounded-tl-lg bg-[#111111] text-[#eeeeee] [&>div:first-child]:hidden">
     <div className="flex h-9 shrink-0 items-center justify-between border-b border-[#2b2b2b] px-4"><span className="text-[13px] leading-none">/</span><button type="button" onClick={() => setShowFileTree((visible) => !visible)} className="grid h-7 w-7 place-items-center rounded-[9px] bg-[#202020] text-[#eeeeee] hover:bg-[#2b2b2b]" title={text.toggleTree} aria-label={text.toggleTree}><FolderOpen size={16} /></button></div>
     {loading ? <div className="flex flex-1 items-center justify-center text-xs text-[#777777]">{text.loadingFiles}</div> : <div className="flex min-h-0 flex-1">
-      <main className="flex min-w-0 flex-1 flex-col bg-[#171717]">{tabs.length ? <><div className="flex h-8 shrink-0 items-end gap-1 overflow-x-auto border-b border-[#2b2b2b] bg-[#171717] px-2">{tabs.map((path) => <div key={path} className={`group flex h-7 max-w-[190px] min-w-[110px] items-center gap-2 border-x border-t px-3 text-[11px] ${selectedPath === path ? 'border-[#2b2b2b] bg-[#1c1c1c] text-[#eeeeee]' : 'border-transparent text-[#777777]'}`}><button type="button" onClick={() => setSelectedPath(path)} className="min-w-0 flex-1 truncate bg-transparent text-left">{path.split(/[\\/]/).pop()}</button><button type="button" onClick={() => closeFile(path)} className="rounded p-0.5 text-[#666666] hover:bg-white/10 hover:text-white" title={text.closeTab} aria-label={`${text.closeTab}: ${path}` }><X size={12} /></button></div>)}</div><div className="min-h-0 flex-1 overflow-hidden bg-transparent">{files[selectedPath] ? <FilePreview projectPath={projectPath || ''} file={files[selectedPath]} onChange={(content) => handleContentChange(selectedPath, content)} /> : <div className="p-4 text-xs text-[#777777]">{text.loadingFile}</div>}</div></> : <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center"><FolderOpen size={44} strokeWidth={1.4} className="text-[#a7a7a7]" /><div><p className="m-0 text-[18px] font-semibold text-[#eeeeee]">{text.openFile}</p><p className="m-0 mt-3 max-w-[360px] text-[16px] leading-6 text-[#a7a7a7]">{text.selectFile}</p></div></div>}</main>
-<AnimatePresence initial={false}>{showFileTree && <motion.aside initial={{ width: 0, opacity: 0 }} animate={{ width: 374, opacity: 1 }} exit={{ width: 0, opacity: 0 }} transition={{ type: 'spring', stiffness: 420, damping: 34 }} className="flex w-[374px] shrink-0 flex-col overflow-hidden border-l border-[#2b2b2b] bg-[#171717]"><div className="min-h-0 flex-1 overflow-auto px-3 py-3 [scrollbar-width:none]">{tree.length ? renderTree(tree) : <div className="p-3 text-sm text-[#777777]">{text.noFiles}</div>}</div></motion.aside>}</AnimatePresence>
+      <main className="flex min-w-0 flex-1 flex-col bg-[#111111]">{tabs.length ? <><div className="flex h-8 shrink-0 items-end gap-1 overflow-x-auto border-b border-[#2b2b2b] bg-[#111111] px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{tabs.map((path) => { const fileName = path.split(/[\\/]/).pop() || path; return <div key={path} onContextMenu={(event) => { event.preventDefault(); setFileContextMenu({ path, x: event.clientX, y: event.clientY }); }} className={`group flex h-7 max-w-[190px] min-w-[110px] shrink-0 items-center gap-2 rounded-md px-2.5 text-[11px] transition-colors ${selectedPath === path ? 'bg-[#2C2C2C] text-[#eeeeee]' : 'text-[#777777] hover:text-[#bdbdbd]'}`}><MaterialFileIcon name={fileName} kind="file" /><button type="button" onClick={() => setSelectedPath(path)} className="min-w-0 flex-1 truncate bg-transparent text-left">{fileName}</button><button type="button" onClick={() => closeFile(path)} className={`grid h-5 w-5 shrink-0 place-items-center rounded-md text-[#777777] transition-opacity hover:bg-white/10 hover:text-white ${selectedPath === path ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} title={text.closeTab} aria-label={`${text.closeTab}: ${path}` }><X size={12} /></button></div>; })}</div><div className="min-h-0 flex-1 overflow-hidden bg-transparent">{files[selectedPath] ? <FilePreview projectPath={projectPath || ''} file={files[selectedPath]} onChange={(content) => handleContentChange(selectedPath, content)} /> : <div className="p-4 text-xs text-[#777777]">{text.loadingFile}</div>}</div></> : <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center"><FolderOpen size={44} strokeWidth={1.4} className="text-[#a7a7a7]" /><div><p className="m-0 text-[18px] font-semibold text-[#eeeeee]">{text.openFile}</p><p className="m-0 mt-3 max-w-[360px] text-[16px] leading-6 text-[#a7a7a7]">{text.selectFile}</p></div></div>}</main>
+<AnimatePresence initial={false}>{showFileTree && <motion.aside initial={{ width: 0, opacity: 0 }} animate={{ width: 374, opacity: 1 }} exit={{ width: 0, opacity: 0 }} transition={{ type: 'spring', stiffness: 420, damping: 34 }} className="flex w-[374px] shrink-0 flex-col overflow-hidden border-l border-t border-[#2b2b2b] bg-[#111111]"><div className="min-h-0 flex-1 overflow-auto px-3 py-3 [scrollbar-width:none]">{tree.length ? renderTree(tree) : <div className="p-3 text-sm text-[#777777]">{text.noFiles}</div>}</div></motion.aside>}</AnimatePresence>{fileContextMenu && <div ref={fileContextMenuRef} className="fixed z-[100] grid w-52 gap-0.5 rounded-xl border border-white/[0.08] bg-[#2C2C2C]/95 p-1 shadow-2xl backdrop-blur-xl" style={{ left: fileContextMenu.x, top: fileContextMenu.y }} role="menu" aria-label={text.openFile}><button type="button" onClick={() => closeFile(fileContextMenu.path)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><X size={14} aria-hidden="true" />{text.closeTab}</button><button type="button" onClick={() => closeOtherFiles(fileContextMenu.path)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><Copy size={14} aria-hidden="true" />{text.closeOtherTabs}</button><button type="button" onClick={() => closeFilesToRight(fileContextMenu.path)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><ChevronRight size={14} aria-hidden="true" />{text.closeTabsToRight}</button></div>}
     </div>}
   </div>;
 }
