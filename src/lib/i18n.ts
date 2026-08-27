@@ -136,12 +136,12 @@ export const sidebarTranslations = {
   es: {
     chat: 'Chat', projects: 'Proyectos', agents: 'Agentes', extensions: 'Extensiones', chats: 'Chats', settings: 'Ajustes', tasks: 'Tareas', devices: 'Dispositivos', recent: 'Recientes', support: 'Apoyar Codeclub',
     projectName: 'Nombre del proyecto', newFile: 'Nuevo archivo', newFolder: 'Nueva carpeta', ready: 'Listo para revisión',
-    couldNotCreate: 'No se pudo crear', newChat: 'Nuevo chat', createNew: 'Crear nuevo...', open: 'Abrir', close: 'Cerrar', rename: 'Renombrar', delete: 'Eliminar', clearChats: 'Limpiar chats', clearProjectChats: 'Limpiar todos los chats de este proyecto', newName: 'Nuevo nombre', deleteElement: 'Eliminar elemento', selectFolder: 'Seleccionar carpeta para el proyecto',
+    couldNotCreate: 'No se pudo crear', newChat: 'Nuevo chat', createNew: 'Crear nuevo...', open: 'Abrir', close: 'Cerrar', rename: 'Renombrar', delete: 'Eliminar', clearChats: 'Limpiar chats', clearHistory: 'Limpiar historial', clearProjectChats: 'Limpiar todos los chats de este proyecto', newName: 'Nuevo nombre', deleteElement: 'Eliminar elemento', selectFolder: 'Seleccionar carpeta para el proyecto',
   },
   en: {
     chat: 'Chat', projects: 'Projects', agents: 'Agents', extensions: 'Extensions', chats: 'Chats', settings: 'Settings', tasks: 'Tasks', devices: 'Devices', recent: 'Recent', support: 'Support Codeclub',
     projectName: 'Project name', newFile: 'New file', newFolder: 'New folder', ready: 'Ready for review',
-    couldNotCreate: 'Could not create', newChat: 'New chat', createNew: 'Create new...', open: 'Open', close: 'Close', rename: 'Rename', delete: 'Delete', clearChats: 'Clear chats', clearProjectChats: 'Clear all chats from this project', newName: 'New name', deleteElement: 'Delete item', selectFolder: 'Select folder for project',
+    couldNotCreate: 'Could not create', newChat: 'New chat', createNew: 'Create new...', open: 'Open', close: 'Close', rename: 'Rename', delete: 'Delete', clearChats: 'Clear chats', clearHistory: 'Clear history', clearProjectChats: 'Clear all chats from this project', newName: 'New name', deleteElement: 'Delete item', selectFolder: 'Select folder for project',
   },
 } as const;
 
