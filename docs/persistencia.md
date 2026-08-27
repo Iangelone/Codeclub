@@ -1,40 +1,31 @@
-# Persistencia y configuración
+# Persistence and configuration
+## What is stored
 
-## Qué se guarda
-
-| Alcance | Datos |
+| Scope | Data |
 | --- | --- |
-| Global | preferencias, idioma, chats de Inicio, plugins y settings globales. |
-| Proyecto | chats, metadata, tareas, planes, TODOs, artifacts y configuración propia. |
-| Sesión | PTY, terminales abiertas, WebView y estado vivo de selección. |
+| Global | Preferences, language, Home chats, plugins, and global settings. |
+| Project | Chats, metadata, tasks, plans, TODOs, artifacts, and project configuration. |
+| Session | PTYs, open terminals, WebView state, and live selection state. |
 
-## Módulos
+## Modules
 
-- `src/lib/persistence.ts`: settings y valores livianos del renderer.
-- `src/lib/projectManager.ts`: índice de proyectos, metadata y chats.
-- `src/lib/usage.ts`: tokens, costo, proveedor, modelo y duración.
-- `src/lib/execution-log.ts`: historial de ejecuciones y tools.
-- `src/lib/engine/planning.ts`: planes, TODOs y estados.
-- `src/lib/agent-plugins.ts`: plugins, skills y MCP.
-- `localStorage`: idioma, tamaños de sidebars, proyecto activo y preferencias de UI.
+- src/lib/persistence.ts: renderer settings and lightweight values.
+- src/lib/projectManager.ts: project index, metadata, and chats.
+- src/lib/usage.ts: tokens, cost, provider, model, and duration.
+- src/lib/execution-log.ts: execution and tool history.
+- src/lib/engine/planning.ts: plans, TODOs, and statuses.
+- src/lib/agent-plugins.ts: plugins, skills, and MCP.
+- localStorage: language, sidebar sizes, active project, and UI preferences.
 
-## Separación de chats
+A project chat must not appear in Home. Each record keeps projectPath when applicable.
 
-```text
-Inicio       -> chats globales
-Proyecto A   -> chats de A
-Proyecto B   -> chats de B
-```
+## Practical rules
 
-Un chat de proyecto no debe aparecer en Inicio. Cada registro conserva el `projectPath` cuando corresponde.
+- Use absolute paths and validate that they stay inside the expected project.
+- Never store API keys in messages, logs, or visible artifacts.
+- Emit an event after writing data so the UI can refresh.
+- Keep useful empty states when no project is active.
+- Prevent tasks and artifacts from one project leaking into another.
+- Clean up session processes when terminals or panels unmount.
 
-## Reglas prácticas
-
-- Usar rutas absolutas y validar que estén dentro del proyecto esperado.
-- No guardar API keys en mensajes, logs ni artifacts visibles.
-- Emitir un evento después de escribir datos para que la UI se actualice.
-- Mantener estados vacíos útiles cuando no hay proyecto activo.
-- Evitar que una tarea o un artifact de un proyecto se mezcle con otro.
-- Limpiar procesos de sesión al desmontar terminales o paneles.
-
-> La persistencia es local; borrar la carpeta de datos de Electron elimina la información guardada de la app.
+> Persistence is local; deleting Electron's data directory removes the app's stored information.

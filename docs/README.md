@@ -1,35 +1,33 @@
-# Documentación de Codeclub
+# Codeclub documentation
+> A compact guide to understanding, using, and maintaining the app.
 
-> La guía corta para entender, usar y mantener la app.
+## Index
 
-## Índice
-
-| Documento | Responde a |
+| Document | Answers |
 | --- | --- |
-| [Arquitectura](arquitectura.md) | ¿Cómo está armada la app? |
-| [Flujos y eventos](flujos.md) | ¿Cómo se comunican sus partes? |
-| [Persistencia](persistencia.md) | ¿Dónde se guardan chats, tareas y settings? |
-| [Sidebar derecha](sidebar-derecha.md) | ¿Qué hacen sus paneles? |
-| [Terminal y navegador](terminal-y-navegador.md) | ¿Cómo funcionan las herramientas interactivas? |
-| [Accesibilidad](accesibilidad.md) | ¿Cómo hacer UI usable y observable? |
-| [Desarrollo](desarrollo.md) | ¿Cómo correr, verificar y publicar? |
-| [Synapse](synapse.md) | ¿Qué visión tienen Dispositivos y la trazabilidad? |
+| [About Codeclub](about.md) | What is the project trying to be? |
+| [Architecture](arquitectura.md) | How is the app put together? |
+| [Flows and events](flujos.md) | How do its parts communicate? |
+| [Persistence](persistencia.md) | Where are chats, tasks, and settings stored? |
+| [Right sidebar](sidebar-derecha.md) | What do its panels do? |
+| [Terminal and browser](terminal-y-navegador.md) | How do the interactive tools work? |
+| [Accessibility](accesibilidad.md) | How do we keep the UI usable and observable? |
+| [Development](desarrollo.md) | How do we run, verify, and publish? |
+| [Synapse](synapse.md) | What is the vision for Devices and traceability? |
 
-## Mapa mental
+## Mental model
 
-```text
-Proyecto -> Chat -> Agente -> Tool -> Resultado
-     |       |       |         |
-     |       |       |         +-> archivos / terminal / navegador / artifacts
-     |       |       +-> modelo y proveedor
-     |       +-> historial persistente
-     +-> settings, chats y tareas propias
-```
+    Project -> Chat -> Agent -> Tool -> Result
+        |       |       |        |
+        |       |       |        +-> files / terminal / browser / artifacts
+        |       |       +-> model and provider
+        |       +-> persistent history
+        +-> project settings, chats, and tasks
 
-## Principios
+## Principles
 
-- **Local-first:** los datos de trabajo viven localmente.
-- **Proyecto primero:** cada proyecto puede tener chats, tareas y artifacts propios.
-- **Agente flexible:** el modelo elige tools del catálogo disponible.
-- **Evidencia visible:** planes, TODOs, uso y logs ayudan a entender qué pasó.
-- **UI simple:** pocos colores, controles chicos y estados claros.
+- Local-first: working data lives locally.
+- Project-first: each project can have its own chats, tasks, and artifacts.
+- Flexible agent: the model chooses tools from the available catalog.
+- Visible evidence: plans, TODOs, usage, and logs make the work easier to understand.
+- Simple UI: few colors, compact controls, and clear states.

@@ -1,67 +1,38 @@
-# Flujos y eventos
+# Flows and events
+## A normal message
 
-## Un mensaje normal
+1. The user writes in ChatInterface.
+2. The message is added to the active chat.
+3. The agent receives the current project and tool catalog.
+4. AI SDK streams the response and tool calls.
+5. A tool performs local work or requests IPC.
+6. The result returns to chat and may open a panel.
+7. Usage, results, and errors remain available for auditing.
 
-1. El usuario escribe en `ChatInterface`.
-2. Se agrega el mensaje al chat activo.
-3. El agente recibe el proyecto actual y el catálogo de tools.
-4. AI SDK transmite la respuesta y las llamadas a tools.
-5. Cada tool ejecuta trabajo local o pide IPC.
-6. El resultado vuelve al chat y puede abrir un panel.
-7. Uso, resultado y errores quedan disponibles para auditoría.
+    prompt -> model -> tool -> Electron -> result -> chat / artifact
 
-```text
-prompt -> modelo -> tool -> Electron -> resultado -> chat / artifact
-```
+## Active project
 
-## Proyecto activo
+Home mode has no project path and must continue to work with global data.
 
-El proyecto activo se comparte por eventos. El modo Inicio no tiene path de proyecto y debe seguir funcionando con datos globales.
-
-| Evento | Uso |
+| Event | Use |
 | --- | --- |
-| `codeclub:project-switch` | Cambiar proyecto desde la topbar o sidebar. |
-| `codeclub:project-selection-changed` | Avisar qué proyecto ve un panel. |
-| `codeclub:active-project` | Sincronizar el proyecto activo. |
-| `codeclub:project-meta-changed` | Refrescar metadata y chats. |
+| codeclub:project-switch | Switch projects. |
+| codeclub:project-selection-changed | Tell a panel which project it displays. |
+| codeclub:active-project | Synchronize the active project. |
+| codeclub:project-meta-changed | Refresh metadata and chats. |
+| codeclub:open-chat | Open an existing chat. |
+| codeclub:open-empty-chat | Create or show an empty chat. |
+| codeclub:open-extensions | Show Extensions. |
+| codeclub:open-artifacts | Open Artifacts in the right sidebar. |
+| codeclub:open-right-panel | Open the browser or another right panel. |
 
-## Navegación
+Tasks use codeclub:scheduled-tasks-changed; artifacts use codeclub:artifacts-changed and codeclub:artifact-reference; usage uses codeclub:usage-updated.
 
-| Evento | Resultado |
-| --- | --- |
-| `codeclub:open-chat` | Abrir un chat existente. |
-| `codeclub:open-empty-chat` | Crear o mostrar un chat vacío. |
-| `codeclub:open-extensions` | Mostrar Extensiones. |
-| `codeclub:open-artifacts` | Abrir Artifacts en la sidebar derecha. |
-| `codeclub:open-right-panel` | Abrir el navegador u otro panel derecho. |
-| `codeclub:right-panel-back` | Volver a la pestaña anterior. |
-| `codeclub:right-panel-forward` | Avanzar en pestañas visitadas. |
+## Language and reload
 
-## Navegador y selección DOM
+ChatInterface emits codeclub:language-change with language es or en. Components using useAppLanguage update without a reload, and the document lang attribute changes too. The topbar can detect a newer release and perform a full Electron window reload.
 
-```text
-BrowserPanel -> browser-state -> Computer Use
-Computer Use -> browser-action -> BrowserPanel
-selección DOM -> comentario -> referencia -> ChatInterface
-```
+## Rule for new events
 
-Los comentarios se numeran en la página y la tarjeta se manda al chat como referencia, sin mezclarla con la burbuja textual del usuario.
-
-## Tareas y artifacts
-
-- `codeclub:scheduled-tasks-changed`: refresca tareas persistentes.
-- `codeclub:artifacts-changed`: refresca planes y TODOs.
-- `codeclub:artifact-reference`: agrega un artifact como referencia al chat.
-- `codeclub:usage-updated`: actualiza métricas de uso.
-
-## Idioma
-
-`ChatInterface` emite `codeclub:language-change` con `{ language: 'es' | 'en' }`. Los componentes que usan `useAppLanguage()` se actualizan sin recargar la app y también cambia el atributo `lang` del documento.
-
-## Update y recarga
-
-La topbar consulta si existe una release más nueva. Si la hay, el icono de actualización se ilumina. El botón de recarga ejecuta una recarga completa de la ventana de Electron.
-
-## Regla para nuevos eventos
-
-Antes de agregar un evento, definir emisor, payload, consumidores y cleanup. Los listeners deben instalarse y removerse dentro del mismo `useEffect`.
+Define the emitter, payload, consumers, and cleanup before adding an event. Install and remove listeners within the same useEffect.

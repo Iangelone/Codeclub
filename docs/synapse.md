@@ -1,46 +1,21 @@
-# Synapse y Dispositivos
+# Synapse and Devices
+Synapse is the vision for connecting a feature to its code, tasks, validations, and release. It is not another Kanban board: it should show what is being built and what evidence supports it.
 
-## Qué es Synapse
+The Devices section is currently disabled. The future idea is to connect an Android phone to the IDE through a QR code:
 
-Synapse es la visión para conectar una feature con su código, tareas, validaciones y release. No es otro Kanban: muestra qué se está construyendo y qué evidencia lo sostiene.
+    Codeclub on PC -> QR -> Android app -> secure channel -> IDE
 
-## Dispositivos
+There is no mobile runtime or active connection yet. The entry remains visible so the direction is discoverable, but it is not presented as a usable feature.
 
-La sección **Dispositivos** reemplazó visualmente a Synapse en la sidebar izquierda y hoy está desactivada. La idea futura es conectar un celular Android al IDE mediante un QR.
+## Feature model
 
-```text
-Codeclub en PC -> QR -> app Android -> canal seguro -> IDE
-```
-
-Todavía no hay runtime móvil ni conexión activa. Por eso el acceso se conserva en la interfaz, pero no se puede abrir como función usable.
-
-## Modelo de una feature
-
-| Pipeline | Flujo |
+| Pipeline | Flow |
 | --- | --- |
-| Visual | Wireframe → UI → Responsive → Aprobado |
-| Frontend | Componentes → Estados → Integración → Validado |
-| API | Contrato → Endpoint → Errores → Conectado |
-| Datos | Modelo → Persistencia → Verificado |
-| QA | Tests → Revisión → Validación visual → Listo |
-| Release | Changelog → Commit → Deploy → Monitoreo |
+| Visual | Wireframe -> UI -> Responsive -> Approved |
+| Frontend | Components -> States -> Integration -> Validated |
+| API | Contract -> Endpoint -> Errors -> Connected |
+| Data | Model -> Persistence -> Verified |
+| QA | Tests -> Review -> Visual validation -> Ready |
+| Release | Changelog -> Commit -> Deploy -> Monitoring |
 
-## Qué debería mostrar
-
-- objetivo y criterio de éxito;
-- estado general y bloqueos;
-- archivos y componentes relacionados;
-- planes y TODOs;
-- commits y cambios de Git;
-- validaciones ejecutadas;
-- screenshots y referencias;
-- decisiones tomadas por la persona o la IA.
-
-## MVP futuro
-
-1. Crear una feature.
-2. Generar pipelines.
-3. Vincular archivos y tareas.
-4. Leer estado básico de Git.
-5. Mostrar avance y bloqueos.
-6. Abrir el archivo o panel relacionado.
+A future MVP should create a feature, generate pipelines, link files and tasks, read basic Git status, show progress and blockers, and open related files or panels.

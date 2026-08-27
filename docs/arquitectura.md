@@ -1,60 +1,29 @@
-# Arquitectura
+# Architecture
+## The idea in one line
 
-## La idea en una línea
+    Next.js renders -> React coordinates -> Electron executes -> Windows responds
 
-```text
-Next.js muestra -> React coordina -> Electron ejecuta -> Windows responde
-```
+## Layers
 
-## Capas
+The renderer uses Next.js, React, and Tailwind. It owns the interface and asks the AI SDK for agent work. Electron and Node.js own IPC, the filesystem, processes, WebView, and PTYs.
 
-```text
-Renderer: Next.js + React + Tailwind
-  page -> Topbar + WorkspaceLayout
-  WorkspaceLayout -> ChatPanel / ExtensionsPanel / paneles laterales
-  ChatInterface -> AI SDK -> tools
-
-Proceso nativo: Electron + Node.js
-  preload.cjs -> bridge seguro
-  main.ts -> IPC, filesystem, procesos, WebView y PTY
-```
-
-## Piezas principales
-
-| Archivo | Responsabilidad |
+| File | Responsibility |
 | --- | --- |
-| `src/app/page.tsx` | Entrada de la ventana y estado general. |
-| `src/components/Topbar.tsx` | Proyectos, update, recarga y controles de ventana. |
-| `src/components/SubTopbar.tsx` | Navegación contextual, breadcrumbs y búsqueda. |
-| `src/components/WorkspaceLayout.tsx` | Tres columnas, resize y paneles internos. |
-| `src/components/WorkspaceManager.tsx` | Navegación entre chat, tareas y extensiones. |
-| `src/components/ChatInterface.tsx` | Input, mensajes, streaming, referencias y tools. |
-| `src/components/ExtensionsPanel.tsx` | Plugins, skills y servidores MCP. |
-| `src/lib/engine/` | Ejecución, tools, planes, TODOs y auditoría. |
-| `src/lib/projectManager.ts` | Proyectos, metadata y chats. |
-| `src/lib/i18n.ts` | Catálogo español/inglés y cambio de idioma. |
-| `electron/preload.cjs` | API permitida para el renderer. |
-| `electron/main.ts` | Operaciones nativas y ciclo de Electron. |
+| src/app/page.tsx | Window entry point and general state. |
+| src/components/Topbar.tsx | Projects, updates, reload, and window controls. |
+| src/components/WorkspaceLayout.tsx | Three columns, resizing, and panels. |
+| src/components/ChatInterface.tsx | Input, messages, streaming, references, and tools. |
+| src/components/ExtensionsPanel.tsx | Plugins, skills, and MCP servers. |
+| src/lib/engine/ | Execution, tools, plans, TODOs, and auditing. |
+| src/lib/projectManager.ts | Projects, metadata, and chats. |
+| src/lib/i18n.ts | Spanish/English catalog and language switching. |
+| electron/preload.cjs | The limited API exposed to the renderer. |
+| electron/main.ts | Native operations and Electron lifecycle. |
 
-## Layout
+## Renderer security
 
-```text
-Topbar
-┌──────────────┬──────────────────────────┬──────────────┐
-│ izquierda    │ panel central            │ derecha      │
-│ navegación   │ chat / tareas / plugins  │ tools        │
-└──────────────┴──────────────────────────┴──────────────┘
-```
+React does not import fs, child_process, or native APIs. Operations go through nativeInvoke and the preload bridge; the main process validates arguments before touching the system.
 
-Las sidebars se redimensionan, pero el panel central conserva un mínimo. La sidebar derecha usa pestañas; Browser y Terminales pueden tener más de una instancia.
+## Extensibility
 
-## Seguridad del renderer
-
-- React no importa `fs`, `child_process` ni APIs nativas.
-- Las operaciones pasan por `nativeInvoke`.
-- `preload.cjs` expone una superficie limitada.
-- El proceso principal valida argumentos antes de tocar el sistema.
-
-## Extensibilidad
-
-El agente puede descubrir tools, skills y MCP sin llenar cada system prompt con una lista fija. Las descripciones de las tools explican cuándo usarlas y el modelo decide el flujo.
+The agent discovers tools, skills, and MCP servers from the available catalog instead of receiving a fixed list in every prompt. Tool descriptions explain when an integration is useful; the model decides the flow.

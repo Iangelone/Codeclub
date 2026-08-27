@@ -1,160 +1,98 @@
-# Guía para agentes y colaboradores
+# Guide for agents and collaborators
 
-Este archivo explica cómo trabajar en Codeclub sin romper su arquitectura ni su identidad visual.
+This file explains how to work in Codeclub without breaking its architecture or visual identity.
 
-## Qué es Codeclub
+## What Codeclub is
 
-Codeclub es una app de escritorio Windows, local-first y orientada a desarrollo con IA. El renderer muestra la interfaz; Electron hace las operaciones nativas.
+Codeclub is a local-first Windows desktop app for AI-assisted development. The renderer displays the interface; Electron performs native operations.
 
-> Regla simple: React decide qué mostrar y Electron decide cómo tocar el sistema.
+> Simple rule: React decides what to show, and Electron decides how to touch the system.
 
 ## Stack
 
-| Parte | Tecnología |
+| Area | Technology |
 | --- | --- |
 | UI | Next.js 16.3, React 19, TypeScript |
-| Estilos | Tailwind CSS 4 y tokens propios |
+| Styling | Tailwind CSS 4 and project tokens |
 | Desktop | Electron 43, Node.js, TypeScript |
-| IA | AI SDK v7 y proveedores OpenAI-compatible |
-| Terminal | `@xterm/xterm`, `@xterm/addon-fit`, `node-pty` |
+| AI | AI SDK v7 and OpenAI-compatible providers |
+| Terminal | @xterm/xterm, @xterm/addon-fit, node-pty |
 | Editor | CodeMirror 6 |
-| Datos | filesystem local, Electron storage y `localStorage` para settings livianos |
+| Data | Local filesystem, Electron storage, and localStorage for lightweight settings |
 
-## Mapa del código
+## Repository map
 
-```text
-src/app/page.tsx                 entrada de la app
-src/app/layout.tsx               layout raíz y metadatos
-src/app/globals.css              tokens, superficies y estados globales
-src/components/Topbar.tsx        proyectos, actualización y controles de ventana
-src/components/SubTopbar.tsx     navegación contextual y recarga
-src/components/WorkspaceLayout.tsx layout, resize y paneles
-src/components/WorkspaceManager.tsx navegación de vistas y chats
-src/components/ChatPanel.tsx     wrapper del chat
-src/components/ChatInterface.tsx input, streaming, mensajes y tools
-src/components/ExtensionsPanel.tsx plugins, skills y MCP
-src/lib/engine/                 ejecución, tools, planes y auditoría
-src/lib/projectManager.ts       proyectos y chats por proyecto
-src/lib/persistence.ts           settings locales
-src/lib/runtime.ts               puente del renderer hacia IPC
-electron/preload.cjs             API segura expuesta al renderer
-electron/main.ts                 filesystem, terminales, WebView y procesos
-```
+| Area | Main files |
+| --- | --- |
+| App shell | src/app/page.tsx, src/app/layout.tsx, src/app/globals.css |
+| Layout | src/components/Topbar.tsx, SubTopbar.tsx, WorkspaceLayout.tsx |
+| Workspace | src/components/WorkspaceManager.tsx, ChatPanel.tsx, ChatInterface.tsx |
+| Extensions | src/components/ExtensionsPanel.tsx |
+| Engine | src/lib/engine/ |
+| Projects | src/lib/projectManager.ts |
+| Runtime | src/lib/runtime.ts and electron/preload.cjs |
+| Native process | electron/main.ts |
 
-## Flujo de una petición
+## Request flow
 
-```text
-usuario
-  -> ChatInterface
-  -> AI SDK / agente
-  -> tool elegida por el agente
-  -> evento o IPC
-  -> Electron / Windows
-  -> resultado y auditoría
-  -> chat, artifact o panel lateral
-```
+    user -> ChatInterface -> AI SDK / agent -> selected tool
+         -> event or IPC -> Electron / Windows -> result and audit
+         -> chat, artifact, or side panel
 
-El renderer **no** usa Node.js directamente. Toda operación nativa pasa por `nativeInvoke` y el bridge de `preload.cjs`.
+The renderer never uses Node.js directly. Native work goes through nativeInvoke and the preload bridge.
 
-## Estado actual de la app
+## Current product surface
 
-- Chats globales y chats separados por proyecto.
-- Sidebar izquierda con Inicio, Tareas, Extensiones y Dispositivos desactivado visualmente.
-- Sidebar derecha redimensionable con Archivos, Revisar, Navegador, Artifacts y Terminales.
-- Tareas persistentes por proyecto, con frecuencia, modelo, proveedor, API key y ejecución manual.
-- Browser WebView con selección DOM, comentarios numerados y referencias al chat.
-- Terminales interactivas con PowerShell y PTY.
-- Plugins, skills y MCP globales o filtrados por proyecto.
-- Interfaz en español e inglés mediante `src/lib/i18n.ts`.
-- Indicador de actualización y recarga completa de la app desde la topbar.
-- Logo, icono de ventana y bandeja integrados desde `public/`.
+- Global chats and project-specific chats.
+- Left sidebar with Home, Tasks, Extensions, and visually disabled Devices.
+- Resizable right sidebar with Files, Review, Browser, Artifacts, and Terminals.
+- Project-scoped scheduled tasks with provider, model, prompt, frequency, and manual execution.
+- Browser WebView with DOM selection, numbered comments, and chat references.
+- Interactive PowerShell terminals backed by PTY.
+- Global or project-filtered plugins, skills, and MCP servers.
+- Spanish and English through src/lib/i18n.ts.
+- Update indicator and full app reload from the topbar.
 
-## Convenciones de UI
+## UI conventions
 
-- Mantener fondos `#111111`, `#161616`, `#191919`, `#1E1E1E`.
-- Mantener bordes `#202020`, `#2B2B2B`, `#2C2C2C`.
-- Mantener acentos `#8BC7FF`, `#3D9BFF`, `#1687FF`.
-- Preferir controles pequeños, grises y minimalistas.
-- Usar Motion solo para transiciones sutiles y resize.
-- Las sidebars deben respetar el mínimo del panel central.
-- Todo control solo-icono necesita `aria-label` y `title`.
-- No agregar un dropdown nativo si ya existe un selector visual compartido.
+- Keep surfaces #111111, #161616, #191919, and #1E1E1E.
+- Keep borders #202020, #2B2B2B, and #2C2C2C.
+- Keep accents #8BC7FF, #3D9BFF, and #1687FF.
+- Prefer compact, gray, minimal controls.
+- Use Motion only for subtle transitions and resizing.
+- Preserve the minimum width of the central panel.
+- Every icon-only control needs aria-label and title.
+- Do not add a native dropdown where a shared visual selector already exists.
 
-## Idiomas
+## Language and events
 
-La fuente común está en `src/lib/i18n.ts`.
+Use the shared catalog in src/lib/i18n.ts and useAppLanguage() for shared UI. New internal events must start with codeclub:. Document their emitter, detail payload, consumers, and listener cleanup. Install and remove listeners in the same useEffect.
 
-```ts
-const language = useAppLanguage();
-const text = translations[language];
-```
+## Persistence and safety
 
-Al cambiar el idioma se emite `codeclub:language-change`. No hardcodear textos nuevos en un solo idioma dentro de UI compartida.
+- Never save API keys in messages, logs, or artifacts.
+- Validate paths and prevent access outside the active project.
+- Keep global data separate from project data.
+- Refresh UI after native mutations through events.
+- Do not use destructive commands without confirming the exact target.
 
-## Eventos
+## Commands
 
-Todos los eventos internos empiezan con `codeclub:`. Al crear uno nuevo, documentar:
+    npm install
+    npm run dev
+    npm run next:dev
+    npm run next:build
+    npm run electron:compile
+    npm run electron:dev
+    npm run desktop:build
+    npm run package:win
 
-1. quién lo emite;
-2. qué contiene `detail`;
-3. quién lo consume;
-4. cómo se limpia el listener.
+## Releases and verification
 
-## Persistencia y seguridad
+package:win creates the Windows installer in release/. Releases start from a vX.Y.Z tag and are published by .github/workflows/release.yml. Never commit release artifacts or credentials. If the version changes, update package.json and package-lock.json together.
 
-- No guardar API keys en mensajes, logs ni artifacts.
-- Validar paths y evitar salir del proyecto activo.
-- Mantener globales separados de datos por proyecto.
-- Actualizar la UI después de mutaciones nativas mediante eventos.
-- No usar comandos destructivos sin confirmar el objetivo exacto.
+Before delivery, run next:build, electron:compile, and git diff --check. Also test language switching, project changes and persistence, sidebar resizing, tools, browser selection, terminal behavior, focus, labels, and empty states.
 
-## Comandos
+## Next.js rule
 
-```bash
-npm install
-npm run dev
-npm run next:dev
-npm run next:build
-npm run electron:compile
-npm run electron:dev
-npm run desktop:build
-npm run package:win
-```
-
-## Releases
-
-- `npm run package:win` genera localmente el instalador Windows en `release/`.
-- No subir `release/` ni credenciales; ambos quedan fuera del repositorio.
-- Las releases se disparan al pushear un tag `vX.Y.Z`.
-- `.github/workflows/release.yml` construye en Windows y publica el `.exe`, `.blockmap`,
-  `latest.yml` y `builder-debug.yml`.
-- El usuario final descarga solo `Codeclub Setup X.Y.Z.exe`.
-- El workflow usa `--publish never` en electron-builder y publica con GitHub Actions para
-  evitar errores por falta de `GH_TOKEN`.
-- Antes de crear un tag, probar `npm run package:win` e instalar el `.exe` localmente.
-- Si se cambia la versión, actualizar `package.json` y `package-lock.json` juntos.
-
-## Verificación antes de entregar
-
-- [ ] `npm run next:build`
-- [ ] `npm run electron:compile`
-- [ ] `git diff --check`
-- [ ] probar idioma ES/EN;
-- [ ] probar cambio de proyecto y persistencia;
-- [ ] probar sidebars, resize y panel central mínimo;
-- [ ] probar tools, navegador, selección y terminal;
-- [ ] revisar foco, labels y estados vacíos.
-
-## Regla de Next.js
-
-Antes de escribir código, consultar las guías instaladas en `node_modules/next/dist/docs/` cuando el cambio toque APIs o convenciones de Next.js.
-
-<!-- BEGIN:nextjs-agent-rules -->
-
-# This is NOT the Next.js you know
-
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
-
-This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
-
-<!-- END:nextjs-agent-rules -->
+Before changing Next.js APIs or conventions, consult the installed guides in node_modules/next/dist/docs/. This version may differ from familiar Next.js behavior.

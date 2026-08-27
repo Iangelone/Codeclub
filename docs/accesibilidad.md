@@ -1,46 +1,38 @@
-# Accesibilidad y Computer Use
+# Accessibility and Computer Use
+## The golden rule
 
-## Regla de oro
+If a person cannot understand or reach a control, an agent should not be expected to depend on it either.
 
-Si una persona no puede entender o alcanzar un control, tampoco debería poder depender de él un agente.
+## Conventions
 
-## Convenciones
+- Every icon-only button has aria-label and title.
+- Tabs use role=tab, aria-selected, and aria-controls.
+- Menus use role=menu and role=menuitem where appropriate.
+- Decorative icons use aria-hidden=true.
+- Inputs have a visible label or aria-label.
+- Resize handles expose orientation and ARIA values.
+- Empty states explain what to do next.
+- Visible focus uses the electric accent.
 
-- Todo botón solo-icono tiene `aria-label` y `title`.
-- Tabs usan `role="tab"`, `aria-selected` y `aria-controls`.
-- Menús usan `role="menu"` y `role="menuitem"` cuando corresponde.
-- Iconos decorativos llevan `aria-hidden="true"`.
-- Inputs tienen label visible o `aria-label`.
-- Separadores de resize exponen orientación y valores ARIA.
-- Estados vacíos explican qué hacer después.
-- El foco visible usa el acento eléctrico.
+## Stable IDs
 
-## IDs estables
+Do not change these without updating tools that inspect the DOM:
 
-No cambiar sin actualizar las tools que inspeccionan el DOM:
-
-| ID | Región |
+| ID | Region |
 | --- | --- |
-| `codeclub-left-sidebar` | sidebar izquierda |
-| `codeclub-right-sidebar` | sidebar derecha |
-| `codeclub-terminal-panel` | terminal |
-| `codeclub-browser-address` | dirección del navegador |
+| codeclub-left-sidebar | left sidebar |
+| codeclub-right-sidebar | right sidebar |
+| codeclub-terminal-panel | terminal |
+| codeclub-browser-address | browser address bar |
 
 ## Checklist
 
-- [ ] ¿Se puede llegar con Tab?
-- [ ] ¿El foco se ve?
-- [ ] ¿El lector conoce nombre, rol y estado?
-- [ ] ¿Computer Use encuentra el control por label, role o id?
-- [ ] ¿La UI explica errores y estados vacíos?
-- [ ] ¿El cambio de idioma traduce también labels accesibles?
-- [ ] ¿El overlay no bloquea scroll ni selección?
+- [ ] Can it be reached with Tab?
+- [ ] Is focus visible?
+- [ ] Does the screen reader know its name, role, and state?
+- [ ] Can Computer Use find it by label, role, or ID?
+- [ ] Does the UI explain errors and empty states?
+- [ ] Does language switching translate accessible labels too?
+- [ ] Does the overlay avoid blocking scrolling or selection?
 
-## Evitar
-
-- `div` clickeables sin teclado.
-- Inputs sin nombre.
-- Selectores basados solo en clases Tailwind o posición.
-- Cambiar textos o IDs sin revisar tools.
-- `aria-hidden` en elementos interactivos.
-- Animaciones que impidan leer o usar la interfaz.
+Avoid clickable divs without keyboard support, unnamed inputs, selectors based only on classes or position, changing text or IDs without reviewing tools, aria-hidden on interactive elements, and animations that make the interface hard to use.

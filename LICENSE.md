@@ -1,59 +1,59 @@
-# Codeclub — Licencia dual
+# Codeclub — Dual License
 
 Copyright (c) 2026 Codeclub.
 
-Codeclub se distribuye bajo una licencia dual. Podés usar la opción gratuita si tu uso entra en la sección **Uso gratuito**. Para cualquier otro uso hace falta una licencia comercial.
+Codeclub is distributed under a dual license. You may use the free option if your use falls within the **Free Use** section. Any other use requires a commercial license.
 
-> Esta licencia cubre el código, los binarios y la documentación de Codeclub, salvo que un archivo indique otra licencia.
+> This license covers the Codeclub source code, binaries, and documentation, unless a file states otherwise.
 
-## 1. Uso gratuito
+## 1. Free Use
 
-Se concede una licencia mundial, no exclusiva y sin regalías para usar, copiar, modificar y distribuir Codeclub en estos casos:
+A worldwide, non-exclusive, royalty-free license is granted to use, copy, modify, and distribute Codeclub in the following cases:
 
-- uso personal;
-- aprendizaje y educación;
-- organizaciones sin fines de lucro;
-- desarrollo de proyectos open source sin actividad comercial directa;
-- freelancers sin sociedad constituida con ingresos brutos anuales menores a USD 60.000;
-- evaluación comercial durante un máximo de 30 días.
+- personal use;
+- learning and education;
+- nonprofit organizations;
+- development of open-source projects without direct commercial activity;
+- freelancers without an incorporated company whose annual gross revenue is less than USD 60,000;
+- commercial evaluation for a maximum of 30 days.
 
-La distribución debe conservar este aviso de copyright y la atribución a Codeclub.
+Distribution must preserve this copyright notice and attribution to Codeclub.
 
-## 2. Licencia comercial
+## 2. Commercial License
 
-Se necesita una licencia comercial para:
+A commercial license is required for:
 
-- empresas o entidades con fines de lucro;
-- usar Codeclub para prestar servicios a terceros;
-- desarrollar productos, plataformas o SaaS comerciales;
-- usarlo en producción empresarial;
-- freelancers con ingresos brutos anuales iguales o superiores a USD 60.000;
-- cualquier uso que genere un beneficio económico directo o indirecto fuera de los casos gratuitos.
+- companies or for-profit entities;
+- using Codeclub to provide services to third parties;
+- developing commercial products, platforms, or SaaS;
+- using it in enterprise production;
+- freelancers whose annual gross revenue is equal to or greater than USD 60,000;
+- any use that generates a direct or indirect economic benefit outside the free-use cases.
 
-Para consultar condiciones comerciales: **codeclubide@gmail.com**.
+For commercial terms, contact: **codeclubide@gmail.com**.
 
-## 3. Restricciones
+## 3. Restrictions
 
-No está permitido:
+The following are not permitted:
 
-- eliminar los avisos de copyright;
-- presentar Codeclub como un producto propio sin atribución;
-- sublicenciar el uso comercial sin una licencia válida;
-- usar la marca Codeclub para sugerir respaldo oficial sin autorización.
+- removing copyright notices;
+- presenting Codeclub as one's own product without attribution;
+- sublicensing commercial use without a valid license;
+- using the Codeclub trademark to suggest official endorsement without authorization.
 
-## 4. Sin garantía
+## 4. No Warranty
 
-Codeclub se entrega **“tal cual”**, sin garantías explícitas o implícitas. Los autores no serán responsables por daños, pérdida de datos o reclamos derivados del uso del software, en la medida permitida por la ley aplicable.
+Codeclub is provided **“as is”**, without express or implied warranties. The authors shall not be liable for damages, data loss, or claims arising from the use of the software, to the extent permitted by applicable law.
 
-## 5. Definiciones
+## 5. Definitions
 
-- **Codeclub:** código fuente, binarios, documentación y materiales de este repositorio.
-- **Uso comercial:** uso por una entidad con fines de lucro o para obtener un beneficio económico.
-- **Freelancer:** persona física que presta servicios sin una sociedad constituida.
+- **Codeclub:** the source code, binaries, documentation, and materials in this repository.
+- **Commercial use:** use by a for-profit entity or use intended to obtain an economic benefit.
+- **Freelancer:** an individual who provides services without an incorporated company.
 
-## 6. Contacto
+## 6. Contact
 
-- Licencias comerciales: `codeclubide@gmail.com`
-- Donaciones: [ko-fi.com/iangeldev](https://ko-fi.com/iangeldev)
+- Commercial licensing: codeclubide@gmail.com
+- Donations: [ko-fi.com/iangeldev](https://ko-fi.com/iangeldev)
 
-Si una parte de esta licencia no resulta válida, el resto continúa vigente. Los derechos no otorgados expresamente quedan reservados.
+If any part of this license is found to be invalid, the remainder will remain in effect. Rights not expressly granted are reserved.

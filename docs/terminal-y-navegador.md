@@ -1,57 +1,30 @@
-# Terminal y navegador
+# Terminal and browser
+## Terminals
 
-## Terminales
+The visual terminal uses @xterm/xterm. Electron creates a real PTY with node-pty and keeps the native session alive.
 
-La terminal visual usa `@xterm/xterm`. Electron crea una PTY real con `node-pty` y mantiene la sesión nativa.
+    xterm -> onData -> IPC -> node-pty
+    node-pty -> output -> IPC -> xterm
 
-```text
-xterm -> onData -> IPC -> node-pty
-node-pty -> salida -> IPC -> xterm
-```
+It includes PowerShell in the project directory, keyboard input, history, arrows and Ctrl+C, ANSI output, scrolling, visual fitting with @xterm/addon-fit, and cleanup when a tab closes.
 
-Incluye:
+## Browser
 
-- PowerShell con el proyecto como directorio de trabajo;
-- escritura de teclas, historial, flechas y Ctrl+C;
-- salida ANSI y scroll;
-- ajuste visual con `@xterm/addon-fit`;
-- cleanup al cerrar la pestaña.
+BrowserPanel uses an Electron webview. Its toolbar provides back and forward, reload and home, an address bar, element selection, and a menu to open outside Codeclub.
 
-## Navegador
+## DOM selection and comments
 
-`BrowserPanel` usa un `webview` de Electron. La toolbar tiene:
+1. Activate Select.
+2. Click a visible element.
+3. Write an optional comment.
+4. Confirm with Enter.
+5. The page receives a numbered bubble.
+6. The card appears as a chat reference.
 
-- atrás y adelante;
-- recarga y página inicial;
-- barra de dirección;
-- selección de elementos;
-- menú para recargar o abrir fuera de Codeclub.
+The reference contains sanitized HTML, visible text, URL, and comment. It must not send page credentials or secrets.
 
-## Selección DOM y comentarios
+## Computer Use and security
 
-1. Activar **Seleccionar**.
-2. Hacer clic en un elemento visible.
-3. Escribir un comentario opcional.
-4. Confirmar con Enter.
-5. La página recibe una burbuja numerada.
-6. La tarjeta aparece como referencia del chat.
+The browser publishes observable state such as URL, title, text, and visible controls. Actions use selectors generated from that state. ERR_ABORTED (-3) is a normal cancellation when one navigation replaces another.
 
-La referencia contiene el HTML sanitizado, texto visible, URL y comentario. No debe mandar credenciales ni secretos de la página.
-
-## Computer Use
-
-El navegador publica estado observable: URL, título, texto y controles visibles. Las acciones usan selectores generados por ese estado.
-
-```text
-browser-state -> modelo / Computer Use
-browser-action <- click | type | key | scroll
-```
-
-`ERR_ABORTED (-3)` se considera una cancelación normal cuando una navegación reemplaza a otra.
-
-## Seguridad
-
-- No ejecutar JavaScript arbitrario desde el renderer fuera de los flujos controlados.
-- Sanitizar referencias antes de agregarlas al prompt.
-- No mostrar API keys o cookies en el chat.
-- Mantener foco, labels y cleanup de listeners.
+Do not execute arbitrary JavaScript from the renderer, expose API keys or cookies in chat, or skip focus, label, and listener cleanup.
