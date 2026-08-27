@@ -635,7 +635,7 @@ function PanelManager({ activeSection, projectPath }: { activeSection: SidebarSe
   const synapseVisible = activeSection === 'projects';
   const scheduledVisible = activeSection === 'scheduled';
   return <section role="region" className="codeclub-graphite relative min-h-0 min-w-0 flex-1 overflow-hidden backdrop-blur-xl" aria-label="Gestor de paneles" aria-live="polite">
-    <div className="codeclub-panel-shell h-full w-full overflow-hidden bg-(--codeclub-center)">
+    <div className={`codeclub-panel-shell h-full w-full ${chatVisible ? 'overflow-visible' : 'overflow-hidden'} bg-(--codeclub-center)`}>
       <div className={`h-full min-h-0 min-w-0 ${chatVisible ? 'block' : 'hidden'}`} aria-hidden={!chatVisible}><ChatPanel /></div>
       {synapseVisible && <div className="relative z-10 h-full min-h-0 min-w-0"><SynapsePanel /></div>}
       {scheduledVisible && <div className="relative z-10 h-full min-h-0 min-w-0"><ScheduledPanel projectPath={projectPath} /></div>}

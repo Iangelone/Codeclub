@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUp, Box, Braces, Camera, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Languages, LayoutTemplate, Lightbulb, ListChecks, ListTodo, MessageSquare, Monitor, MoreHorizontal, MousePointer2, Orbit, Paperclip, Pencil, Presentation, Radar, RotateCcw, Search, ScrollText, Square, Table2, Terminal, ThumbsDown, ThumbsUp, Folder, FolderTree, WandSparkles, Wifi, X } from 'lucide-react';
+import { ArrowUp, Box, Braces, Camera, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Languages, LayoutTemplate, ListChecks, ListTodo, MessageSquare, Monitor, MoreHorizontal, MousePointer2, Orbit, Paperclip, Pencil, Presentation, Radar, RotateCcw, Search, ScrollText, Square, Table2, Terminal, ThumbsDown, ThumbsUp, Folder, FolderTree, WandSparkles, X } from 'lucide-react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -47,6 +47,11 @@ const getBrowserReferenceFavicon = (reference: { title: string; url?: string }) 
 
 type ChatAttachment = { path: string; name: string; mediaType: string; size?: number; previewUrl?: string; previewText?: string };
 type ChatMessage = { role: string; content: string; attachments: ChatAttachment[]; [key: string]: any };
+function formatChatTime(value: unknown, language: AppLanguage) {
+  const date = value ? new Date(value as string | number) : new Date();
+  if (Number.isNaN(date.getTime())) return '--:--';
+  return new Intl.DateTimeFormat(language === 'en' ? 'en-US' : 'es-AR', { hour: 'numeric', minute: '2-digit' }).format(date);
+}
 type CatalogItem = { id: string; type?: string; label?: string; name?: string; description?: string; aliases?: string[]; source?: string; [key: string]: any };
 type ProjectOption = CatalogItem & { path?: string; projectPath?: string | null; projectId?: string; isNone?: boolean };
 type SessionSkill = CatalogItem & { name: string; source: string; content: string; pluginRoot?: string };
@@ -282,6 +287,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const visualAnimationRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const [composerDocked, setComposerDocked] = useState(true);
+  const [timelineVisible, setTimelineVisible] = useState(true);
   const composerDockedRef = useRef(false);
 
   useEffect(() => {
@@ -453,9 +459,17 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       const target = chatInputRef.current;
       if (!target) return;
       target.style.height = 'auto';
-      target.style.height = `${Math.min(target.scrollHeight, 180)}px`;
-      target.style.overflowY = target.scrollHeight > 180 ? 'auto' : 'hidden';
+      const maxHeight = 240;
+      target.style.height = `${Math.min(target.scrollHeight, maxHeight)}px`;
+      target.style.overflowY = target.scrollHeight > maxHeight ? 'auto' : 'hidden';
     });
+  };
+  const messagesAreaRef = useRef<HTMLDivElement | null>(null);
+  const shouldAutoScrollMessagesRef = useRef(true);
+  const handleMessagesScroll = () => {
+    const area = messagesAreaRef.current;
+    if (!area) return;
+    shouldAutoScrollMessagesRef.current = area.scrollHeight - area.scrollTop - area.clientHeight < 80;
   };
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const rememberRecentArtifact = (kind: 'chat', detail: any) => {
@@ -487,6 +501,10 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   useEffect(() => {
     composerDockedRef.current = composerDocked;
   }, [composerDocked]);
+
+  useEffect(() => {
+    void getSetting('codeclub_timeline_visible', true).then((value) => setTimelineVisible(value !== false));
+  }, []);
 
   useEffect(() => {
     const nextPath = selectedProject?.projectPath || null;
@@ -824,6 +842,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     { id: 'proyecto', label: projectsSlashLabel, description: chatText.slash.projectDescription, aliases: ['proyecto', 'proyectos', 'project', 'projects'], type: 'command', icon: Folder },
     { id: 'habilidad', label: chatText.slash.skill, description: chatText.slash.skillDescription, aliases: ['habilidad', 'skill'], type: 'command', icon: WandSparkles },
     { id: 'idioma', label: language === 'en' ? 'Language' : 'Idioma', description: language === 'en' ? 'Change language' : 'Cambiar idioma', aliases: ['idioma', 'language', 'lang'], type: 'command', icon: Languages },
+    { id: 'timeline', label: timelineVisible ? (language === 'en' ? 'Hide timeline' : 'Ocultar línea vertical') : (language === 'en' ? 'Show timeline' : 'Mostrar línea vertical'), description: language === 'en' ? 'Show or hide the chat timeline line' : 'Mostrar u ocultar la línea vertical del chat', aliases: ['timeline', 'línea', 'linea', 'vertical'], type: 'command', icon: Eye },
     ...(isDevelopmentBuild ? [{ id: 'desarrollo', label: language === 'en' ? 'Development' : 'Desarrollo', description: language === 'en' ? 'Insert a development prompt' : 'Inyectar un prompt de desarrollo', aliases: ['desarrollo', 'desarrollar', 'development', 'develop'], type: 'command' as const, icon: Code2 }] : []),
     { id: 'overlay', label: computerUseActive ? (language === 'en' ? 'Disable Computer Use overlay' : 'Desactivar overlay de Computer Use') : (language === 'en' ? 'Enable Computer Use overlay' : 'Activar overlay de Computer Use'), description: language === 'en' ? 'Show or hide the PC control overlay' : 'Mostrar u ocultar el overlay de control de PC', aliases: ['overlay', 'overlay-pc', 'computer-overlay'], type: 'command', icon: Monitor },
     ...availableExtensions.filter((extension) => enabledExtensions[extension.id]).map((extension) => ({ id: extension.id, label: extension.name, description: extension.description, type: 'extension' as const, icon: extensionIcons[extension.id] || Box, extension })),
@@ -849,7 +868,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   }, [activeCommandIndex, menuOpen, commandMenuItems.length]);
 
   useEffect(() => {
-    if (!composerDocked) return;
+    if (!composerDocked || !shouldAutoScrollMessagesRef.current) return;
     messagesEndRef.current?.scrollIntoView({ block: 'end', behavior: 'auto' });
   }, [messages, isStreaming, pendingApprovals, composerDocked]);
 
@@ -915,6 +934,17 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
         setInput('');
         setSearchQuery('');
         openCommandMenu('language');
+        return;
+      }
+      if (item.id === 'timeline') {
+        const nextVisible = !timelineVisible;
+        setTimelineVisible(nextVisible);
+        void setSetting('codeclub_timeline_visible', nextVisible);
+        setInput('');
+        setSearchQuery('');
+        setMenuOpen(false);
+        setCommandKind('');
+        chatInputRef.current?.focus();
         return;
       }
       if (item.id === 'desarrollo') {
@@ -1482,10 +1512,11 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         ? { ...message, tools: message.tools.map((event: any) => event.id === resolvedAskUserId ? { ...event, answer: visibleContent } : event) }
         : message)
       : baseMessages;
-    const userMessage = { role: 'user', content, displayContent: resumeAskUserId ? '' : visibleContent, hidden: Boolean(resumeAskUserId), browserReferences: messageBrowserReferences, computerContext: messageComputerContext, attachments: attachments.map(({ path, name, mediaType, size, previewUrl }) => ({ path, name, mediaType, size, previewUrl })) };
+    const userMessage = { role: 'user', content, displayContent: resumeAskUserId ? '' : visibleContent, createdAt: Date.now(), hidden: Boolean(resumeAskUserId), browserReferences: messageBrowserReferences, computerContext: messageComputerContext, attachments: attachments.map(({ path, name, mediaType, size, previewUrl }) => ({ path, name, mediaType, size, previewUrl })) };
     const newMessages = [...contextualBaseMessages, userMessage];
     const pendingAssistant = { role: 'assistant', content: '', timeline: [], tools: [], agentName: 'Desarrollo' };
     runtime.messages = [...newMessages, pendingAssistant];
+    shouldAutoScrollMessagesRef.current = true;
     setComposerDocked(true);
     setMessages(runtime.messages);
     setInput('');
@@ -2359,9 +2390,9 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
   }
 
   return (
-    <div ref={chatPanelRef} role="region" aria-label={`Chat${activeChat?.name ? `: ${activeChat.name}` : ''}`} className="chat-interface-container @container mx-auto grid h-full w-full max-w-[680px] min-w-0 grid-rows-[minmax(0,1fr)_auto] place-items-stretch gap-2.5 overflow-visible px-3 pb-[5vh]" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleComposerDrop}>
+    <div ref={chatPanelRef} role="region" aria-label={`Chat${activeChat?.name ? `: ${activeChat.name}` : ''}`} className={`chat-interface-container @container mx-auto flex h-full w-full max-w-[680px] min-w-0 flex-col gap-0 overflow-visible px-3 pb-5 ${timelineVisible ? '' : 'timeline-hidden'}`} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleComposerDrop}>
       {/* Zona de mensajes */}
-      <div className={`messages-area relative min-h-0 h-full flex-col gap-1.5 overflow-y-auto overscroll-contain pb-2.5 [scrollbar-width:none] ${composerDocked ? 'flex' : 'hidden'}`} role="log" aria-label="Mensajes del chat" aria-live="polite" aria-relevant="additions text">
+      <div ref={messagesAreaRef} onScroll={handleMessagesScroll} className={`messages-area relative min-h-0 min-w-0 flex-1 flex-col gap-1.5 overflow-y-auto overscroll-contain bg-transparent [scrollbar-width:none] ${composerDocked ? 'flex' : 'hidden'}`} role="log" aria-label="Mensajes del chat" aria-live="polite" aria-relevant="additions text">
         <div aria-hidden="true" className="min-h-0 flex-1" />
         {showEmptyGreeting && <div aria-hidden={messages.length > 0} className={`pointer-events-none absolute inset-0 grid place-items-center whitespace-nowrap px-5 text-lg font-medium tracking-[-0.02em] text-(--codeclub-text-strong) transition-[opacity,transform] duration-300 ${messages.length === 0 ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0'}`}>{chatText.greeting}, {username}?</div>}
         {messages.map((turnMessage, turnIndex) => {
@@ -2370,22 +2401,26 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           const resolvedAskUserTurn = assistantMessage?.tools?.some((event: any) => event.name === 'askUser' && event.answer);
           if (resolvedAskUserTurn) return null;
           const turnMessages = assistantMessage ? [turnMessage, assistantMessage] : [turnMessage];
-          return <div className="chat-turn" key={`turn-${turnIndex}`} role="article" aria-label={`Intercambio ${turnIndex + 1}`} style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: turnIndex > 0 ? '32px' : 0 }}>
+          const turnTime = formatChatTime(turnMessage.createdAt || turnMessage.timestamp, language);
+          const isProcessingTurn = Boolean(turnMessage && !turnMessage.hidden && isStreaming && agentState !== 'error' && assistantMessage && turnIndex + 1 === messages.length - 1);
+          const hasErrorTurn = assistantMessage?.meta?.status === 'error';
+          const isLastTurn = turnIndex >= messages.length - 2;
+          return <div className={`chat-turn ${isLastTurn ? 'is-last' : ''}`} key={`turn-${turnIndex}`} role="article" aria-label={`Intercambio ${turnIndex + 1}`} style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: turnIndex > 0 ? '28px' : 0 }}>
+            <span className="chat-turn-time" aria-label={`Hora ${turnTime}`}>
+              <span>{turnTime}</span>
+              {isProcessingTurn && <ProcessingStatusStateFixed startedAt={agentStartedAtRef.current || Date.now()} state={agentState} attempt={connectionAttempt} language={language} toolName={activeToolName} toolInput={activeToolInput} />}
+              {hasErrorTurn && <span className="chat-turn-advice">{language === 'en' ? 'Check the selected provider and model.' : 'Revisá el proveedor y modelo seleccionados.'}</span>}
+            </span>
             {turnMessages.map((turnItem, turnOffset) => {
               const m = turnItem;
               const i = turnIndex + turnOffset;
               const isLiveAssistant = m.role === 'assistant' && isStreaming && i === messages.length - 1;
               return <React.Fragment key={m.role === 'assistant' && isStreaming && i === messages.length - 1 ? `${i}-${m.content.length}` : i}>
-            {m.role === 'user' && !m.hidden && isStreaming && agentState !== 'error' && messages[i + 1]?.role === 'assistant' && i + 1 === messages.length - 1 && <ProcessingStatusStateFixed startedAt={agentStartedAtRef.current || Date.now()} provider={currentProvider?.label || currentProvider?.id || 'Proveedor'} model={currentModel?.label || currentModel?.id || 'Modelo'} state={agentState} attempt={connectionAttempt} language={language} toolName={activeToolName} toolInput={activeToolInput} />}
-            {m.role === 'user' && messages[i + 1]?.role === 'assistant' && messages[i + 1]?.meta && !(isStreaming && i + 1 === messages.length - 1) && <CompletedStatusFixed language={language} provider={messages[i + 1].meta.provider} model={messages[i + 1].meta.model} durationMs={messages[i + 1].meta.durationMs} status={messages[i + 1].meta.status} errorName={messages[i + 1].meta.errorName} />}
-            {m.role === 'user' && !m.hidden && (
-              <div aria-hidden="true" style={{ alignSelf: 'stretch', borderTop: '1px solid rgba(255, 255, 255, 0.08)', margin: '0 0 38px' }} />
-            )}
-            {m.role === 'assistant' && m.meta?.status === 'error' ? <ErrorRecoveryNotice configurationError={m.meta.configuration === true} errorMessage={m.meta.errorMessage || m.content} /> : <motion.div initial={isLiveAssistant ? { opacity: 0.58, y: 2 } : false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.24, ease: 'easeOut' }} className={m.role === 'assistant' ? 'chat-assistant-message' : 'chat-user-message'} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '5px', maxWidth: '80%', minWidth: 0, marginTop: m.role === 'assistant' ? '50px' : 0 }}>
+            {<motion.div initial={isLiveAssistant ? { opacity: 0.58, y: 2 } : false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.24, ease: 'easeOut' }} className={`group/message ${m.role === 'assistant' ? 'chat-assistant-message' : 'chat-user-message'}`} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '5px', maxWidth: m.role === 'user' ? '70%' : '100%', minWidth: 0 }}>
               {m.role === 'user' && m.attachments?.length > 0 && <div className="chat-attachments" aria-label="Archivos adjuntos">{m.attachments.map((file) => file.mediaType?.startsWith('image/') ? <div key={file.path || file.name} className="chat-attachment-card" title={file.name}><img src={file.previewUrl || convertFileSrc(file.path)} alt={file.name} /></div> : <div key={file.path || file.name} className="chat-attachment-card chat-attachment-file" title={file.name}>{file.previewText ? <pre className="chat-attachment-preview-text">{file.previewText}</pre> : <span>{file.name.split('.').pop()?.toUpperCase().slice(0, 6) || 'FILE'}</span>}</div>)}</div>}
               {m.role === 'user' && m.browserReferences?.length > 0 && <div className="chat-browser-references" aria-label="Referencias de navegador">{m.browserReferences.map((ref: { id: string; title: string; text: string }, referenceIndex: number) => <div key={ref.id || `${ref.title}-${referenceIndex}`} className="chat-browser-reference-card"><span className="chat-browser-reference-number">{referenceIndex + 1}</span><span className="min-w-0"><span className="block truncate text-[11px] text-[#d6d6d6]">{ref.title}</span><span className="mt-0.5 block truncate text-[11px] text-[#858585]">{getBrowserReferenceComment(ref.text)}</span></span></div>)}</div>}
-              <div className={`min-w-0 w-fit max-w-full break-words [overflow-wrap:anywhere] text-sm leading-6 text-(--codeclub-text-strong) ${m.role === 'user' && getVisibleUserContent(m).trim() ? 'rounded-[24px_24px_4px_24px] bg-(--codeclub-user-bubble) px-5 py-3.5 leading-[1.4]' : ''}`}>
-                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{ p: ({ children }) => <p style={{ margin: m.role === 'user' ? 0 : '0 0 12px', lineHeight: m.role === 'user' ? 1.4 : 1.6 }}>{children}</p>, ul: ({ children }) => <ul style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ul>, ol: ({ children }) => <ol style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ol>, li: ({ children }) => <li style={{ margin: m.role === 'user' ? 0 : '4px 0' }}>{children}</li>, table: ({ children }) => <div style={{ overflowX: 'auto', margin: '12px 0' }}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>{children}</table></div>, th: ({ children }) => <th style={{ border: '1px solid #2b2b2b', padding: '7px 9px', background: '#1c1c1c', textAlign: 'left', fontWeight: 600 }}>{children}</th>, td: ({ children }) => <td style={{ border: '1px solid #2b2b2b', padding: '7px 9px', verticalAlign: 'top' }}>{children}</td>, h1: ({ children }) => <h1 style={{ margin: '18px 0 10px', fontSize: '20px' }}>{children}</h1>, h2: ({ children }) => <h2 style={{ margin: '16px 0 8px', fontSize: '17px' }}>{children}</h2>, h3: ({ children }) => <h3 style={{ margin: '14px 0 7px', fontSize: '15px' }}>{children}</h3> }}>{normalizeChatContent(m.role === 'user' ? getVisibleUserContent(m) : (m.displayContent || m.content))}</ReactMarkdown>
+              <div className={`min-w-0 max-w-full break-words [overflow-wrap:anywhere] text-sm leading-6 text-(--codeclub-text-strong) ${m.role === 'user' && getVisibleUserContent(m).trim() ? 'w-fit overflow-hidden rounded-[22px] bg-(--codeclub-user-bubble) px-4 py-2.5 leading-6' : 'w-full'}`}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{ p: ({ children }) => <p style={{ margin: m.role === 'user' ? 0 : '0 0 12px', lineHeight: m.role === 'user' ? 1.4 : 1.6 }}>{children}</p>, ul: ({ children }) => <ul style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ul>, ol: ({ children }) => <ol style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ol>, li: ({ children }) => <li style={{ margin: m.role === 'user' ? 0 : '4px 0' }}>{children}</li>, table: ({ children }) => <div style={{ overflowX: 'auto', margin: '12px 0' }}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>{children}</table></div>, th: ({ children }) => <th style={{ border: '1px solid #2b2b2b', padding: '7px 9px', background: '#1c1c1c', textAlign: 'left', fontWeight: 600 }}>{children}</th>, td: ({ children }) => <td style={{ border: '1px solid #2b2b2b', padding: '7px 9px', verticalAlign: 'top' }}>{children}</td>, h1: ({ children }) => <h1 style={{ margin: '18px 0 10px', fontSize: '20px' }}>{children}</h1>, h2: ({ children }) => <h2 style={{ margin: '16px 0 8px', fontSize: '17px' }}>{children}</h2>, h3: ({ children }) => <h3 style={{ margin: '14px 0 7px', fontSize: '15px' }}>{children}</h3> }}>{normalizeChatContent(m.role === 'user' ? getVisibleUserContent(m) : (m.meta?.status === 'error' ? (language === 'en' ? 'No response' : 'Sin respuesta') : (m.displayContent || m.content)))}</ReactMarkdown>
                 {m.role === 'assistant' && isStreaming && agentState !== 'error' && i === messages.length - 1 && !m.content && !m.timeline?.some((event: any) => event.type === 'tool') && <span className="chat-thinking-label composer-action-shine" style={{ display: 'inline-block', fontSize: '13px' }}>Pensando</span>}
               </div>
               {m.role === 'assistant' && <ExecutionTimeline timeline={m.timeline} active={isLiveAssistant && !m.content?.trim()} language={language} />}
@@ -2398,7 +2433,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               }} disabled={isAgentBusy} />}
               {m.role === 'assistant' && i === messages.length - 1 && <ApprovalCards approvals={pendingApprovals} onResolve={resolveToolApproval} />}
               {m.role === 'assistant' && <ChangeSummaryCard changes={m.meta?.changes} />}
-              {m.role === 'assistant' && (!isStreaming || i !== messages.length - 1 || m.meta?.status === 'error') && <div data-message-actions={i} className="relative flex items-center gap-1 self-start opacity-100">
+              {m.role === 'assistant' && (!isStreaming || i !== messages.length - 1 || m.meta?.status === 'error') && <div data-message-actions={i} className="message-actions relative flex items-center gap-1 self-start opacity-100">
                 <button type="button" aria-label={copiedMessageIndex === i ? 'Mensaje copiado' : 'Copiar mensaje'} title={copiedMessageIndex === i ? 'Copiado' : 'Copiar'} onClick={() => void handleCopyMessage(m.content, i)} className={`grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent transition-colors hover:bg-white/[0.08] ${copiedMessageIndex === i ? 'text-[#F8EAD8]' : 'text-[#e0e0e0]'}`}>{copiedMessageIndex === i ? <Check size={15} strokeWidth={2.2} /> : <Copy size={15} strokeWidth={2} />}</button>
                 <button type="button" aria-label="Marcar respuesta como útil" title="Útil" onClick={() => setMessageFeedback((current) => ({ ...current, [i]: current[i] === 'up' ? undefined as never : 'up' }))} className={`grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent transition-colors hover:bg-white/[0.08] ${messageFeedback[i] === 'up' ? 'text-[#8BC7FF]' : 'text-[#e0e0e0]'}`}><ThumbsUp size={15} strokeWidth={1.9} /></button>
                 <button type="button" aria-label="Marcar respuesta como no útil" title="No útil" onClick={() => setMessageFeedback((current) => ({ ...current, [i]: current[i] === 'down' ? undefined as never : 'down' }))} className={`grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent transition-colors hover:bg-white/[0.08] ${messageFeedback[i] === 'down' ? 'text-[#8BC7FF]' : 'text-[#e0e0e0]'}`}><ThumbsDown size={15} strokeWidth={1.9} /></button>
@@ -2413,12 +2448,11 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             })}
           </div>;
         })}
-        <div ref={messagesEndRef} aria-hidden="true" />
+        <div ref={messagesEndRef} className="scroll-mb-16" aria-hidden="true" />
       </div>
 
-      <div className="chat-composer relative grid w-full min-w-0 justify-self-center gap-2.5">
-        <div className="composer-row flex w-full min-w-0 items-center gap-2">
-          <div className="composer-box min-h-10 min-w-0 flex-1 overflow-hidden rounded-[22px] border border-(--codeclub-border-soft) bg-(--codeclub-surface-raised) p-0 shadow-none [&>[aria-label='Referencia de artifact']]:relative [&>[aria-label='Referencia de artifact']]:z-50 [&>[aria-label='Referencia de artifact']>span]:hidden">
+      <div className="chat-composer composer-row flex w-full min-w-0 shrink-0 items-center gap-2 bg-transparent">
+          <div className="composer-box min-h-10 min-w-0 flex-1 overflow-visible rounded-[22px] border border-(--codeclub-border-soft) bg-(--codeclub-surface-raised) p-0 shadow-none [&>[aria-label='Referencia de artifact']]:relative [&>[aria-label='Referencia de artifact']]:z-50 [&>[aria-label='Referencia de artifact']>span]:hidden">
           {artifactReference && <div className="flex min-h-[28px] items-center gap-2 px-4 py-1.5" aria-label="Referencia de artifact"><span className="shrink-0 text-[10px] uppercase tracking-[0.08em] text-[#666]">Referencia</span><button type="button" onClick={() => setArtifactReference(null)} className="min-w-0 max-w-[260px] truncate rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-left text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar referencia">@{artifactReference.kind} · {artifactReference.title}</button></div>}
           {computerContext && <div className="flex min-h-[28px] items-center gap-2 border-b border-[#202020] px-4 py-1.5" aria-label="Contexto de Computer Use"><span className="shrink-0 rounded-full border border-[#3D9BFF]/60 bg-[#1687FF]/10 px-2 py-0.5 text-[10px] font-medium text-[#8BC7FF]">PC</span><span className="min-w-0 flex-1 truncate text-[10px] text-[#bdbdbd]">{computerContext.title || 'Ventana desconocida'} · ({computerContext.x}, {computerContext.y})</span><button type="button" onClick={() => setComputerContext(null)} className="grid h-5 w-5 shrink-0 place-items-center rounded-full text-[#777] hover:bg-white/[0.08] hover:text-[#eee]" title="Quitar contexto de Computer Use" aria-label="Quitar contexto de Computer Use"><X size={12} /></button></div>}
           {browserReferences.length > 0 && (
@@ -2451,7 +2485,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             {activeExtensions.map((extension) => { const Icon = extensionIcons[extension.id] || Box; return <button key={extension.id} type="button" onClick={() => setActiveExtensions((current) => current.filter((item) => item.id !== extension.id))} className="flex shrink-0 items-center gap-1 rounded-full border border-[#3d9bff]/50 bg-[#1687ff]/10 px-2.5 py-1 text-[10px] text-[#b9dcff] hover:bg-[#1687ff]/20" title="Quitar complemento de esta sesión"><Icon size={11} /><span>{extension.name}</span><span className="text-[#8bc7ff]/70">×</span></button>; })}
           </div>}
           <div ref={commandMenuHostRef} className="w-full" />
-          <form onSubmit={handleSubmit} aria-label="Compositor de mensaje" className="composer-box-inner relative flex min-h-[44px] w-full min-w-0 flex-col items-stretch gap-0 rounded-[8px] border-0 bg-(--codeclub-surface-raised) px-1.5 pb-3 pl-4 pr-3 pt-3 @max-[520px]:pl-3 @max-[520px]:pr-2 [&>button.absolute]:hidden">
+          <form onSubmit={handleSubmit} aria-label="Compositor de mensaje" className="composer-box-inner relative flex min-h-[44px] w-full min-w-0 flex-col items-stretch gap-0 rounded-none border-0 bg-transparent px-1.5 pb-3 pl-4 pr-3 pt-3 @max-[520px]:pl-3 @max-[520px]:pr-2 [&>button.absolute]:hidden">
            {false && (
           <button type="button" onClick={handleAttachFiles} className="text-white/40 hover:text-white transition-colors" aria-label="Añadir archivos" style={{ flex: '0 0 28px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, background: 'transparent', cursor: 'pointer' }}>
             <Paperclip size={16} strokeWidth={1.8} />
@@ -2516,7 +2550,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             }}
             onFocus={() => { if (commandKind !== 'credential') setMenuOpen(false); }}
             aria-label={chatText.message}
-            className={`order-1 min-h-[22px] h-auto max-h-[180px] w-full min-w-0 flex-none resize-none self-stretch overflow-y-hidden border-0 bg-transparent px-0 py-0.5 pr-10 text-xs leading-[1.4] text-(--codeclub-text-strong) outline-none placeholder:text-(--codeclub-text-muted) [scrollbar-width:none] ${isAgentBusy ? 'opacity-[0.55]' : 'opacity-100'}`}
+            className={`order-1 min-h-[22px] h-auto max-h-[240px] w-full min-w-0 flex-none resize-none self-stretch overflow-y-hidden box-border border-0 bg-transparent px-0 py-0.5 pr-10 text-xs leading-[1.4] text-(--codeclub-text-strong) outline-none placeholder:text-(--codeclub-text-muted) [scrollbar-width:none] ${isAgentBusy ? 'opacity-[0.55]' : 'opacity-100'}`}
             placeholder={agentStatusText}
           />
           {artifactReference && <button type="button" onClick={() => setArtifactReference(null)} className="absolute left-[16px] top-1/2 z-10 max-w-[130px] -translate-y-1/2 truncate rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar referencia">@{artifactReference.kind} · {artifactReference.title}</button>}
@@ -2527,8 +2561,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           </div>
           </form>
           </div>
-        </div>
-
         {commandMenuHostRef.current && createPortal((<motion.div
           ref={commandMenuRef}
           tabIndex={-1}
@@ -2752,7 +2784,7 @@ function toolActivityLabel(name: string, input: Record<string, any>, language: A
   return detail ? `${prefix} ${detail}` : prefix;
 }
 
-function ProcessingStatusStateFixed({ startedAt, provider, model, state, attempt, language, toolName, toolInput }: { startedAt: number; provider: string; model: string; state: string; attempt: number; language: AppLanguage; toolName?: string; toolInput?: Record<string, any> }) {
+function ProcessingStatusStateFixed({ startedAt, state, attempt, language, toolName, toolInput }: { startedAt: number; state: string; attempt: number; language: AppLanguage; toolName?: string; toolInput?: Record<string, any> }) {
   const [elapsed, setElapsed] = useState(() => Math.max(0, Date.now() - startedAt));
   useEffect(() => {
     const timer = window.setInterval(() => setElapsed(Math.max(0, Date.now() - startedAt)), 1000);
@@ -2761,52 +2793,7 @@ function ProcessingStatusStateFixed({ startedAt, provider, model, state, attempt
   const status = language === 'en' ? 'Thinking' : 'Pensando';
   const elapsedLabel = formatProcessingDuration(elapsed);
   const processingLabel = language === 'en' ? `${status} for ${elapsedLabel}` : `${status} desde hace ${elapsedLabel}`;
-  return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', padding: '0 0 5px', color: '#777', fontSize: '13px' }}><span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{provider} · {model}</span><span style={{ flexShrink: 0 }}>{processingLabel}</span></div>;
-}
-
-function CompletedStatusFixed({ language, provider, model, durationMs, status, errorName }: { language: AppLanguage; provider: string; model: string; durationMs: number; status?: string; errorName?: string }) {
-  const stateLabel = status === 'cancelled'
-    ? (language === 'en' ? 'Cancelled' : 'Cancelado')
-    : language === 'en' ? 'Completed in' : 'Completado en';
-  return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', alignSelf: 'stretch', margin: '20px 0 -6px', color: 'rgba(216, 216, 216, 0.52)', fontSize: '12px', letterSpacing: '0.01em' }}><span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{provider} · {model}</span><span style={{ flexShrink: 0 }}>{stateLabel} {formatProcessingDuration(durationMs)}</span></div>;
-}
-
-const ERROR_RECOVERY_TIPS = [
-  'Consejo: verificá que la API key corresponda al proveedor seleccionado.',
-  'Consejo: algunos proveedores tardan unos segundos en aceptar una conexión nueva.',
-  'Consejo: revisá la URL base y el modelo activo antes de volver a intentar.',
-  'Consejo: si el error aparece de forma intermitente, puede ser una demora de red.',
-  'Consejo: probá seleccionar nuevamente el proveedor y el modelo.',
-];
-
-function ErrorRecoveryNotice({ configurationError, errorMessage }: { configurationError: boolean; errorMessage?: string }) {
-  const [step, setStep] = useState(0);
-  const [tipVisible, setTipVisible] = useState(false);
-  const [tip] = useState(() => ERROR_RECOVERY_TIPS[Math.floor(Math.random() * ERROR_RECOVERY_TIPS.length)]);
-
-  useEffect(() => {
-    if (configurationError) {
-      const timer = window.setTimeout(() => setTipVisible(true), 1800);
-      return () => window.clearTimeout(timer);
-    }
-    if (step >= 5) {
-      const timer = window.setTimeout(() => setTipVisible(true), 350);
-      return () => window.clearTimeout(timer);
-    }
-    const timer = window.setTimeout(() => setStep((current) => Math.min(5, current + 1)), 420);
-    return () => window.clearTimeout(timer);
-  }, [configurationError, step]);
-
-  const label = tipVisible ? tip : configurationError ? 'Revisando la configuración' : `Reconectando ${step + 1}/5`;
-  return <div style={{ display: 'grid', gap: '6px', margin: '8px 0 2px', color: 'rgba(216, 216, 216, 0.58)', fontSize: '12px', lineHeight: '18px' }}>
-    {errorMessage && <div style={{ color: 'rgba(220, 150, 150, 0.86)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{errorMessage}</div>}
-    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-    <span style={{ display: 'grid', width: '18px', height: '18px', flexShrink: 0, placeItems: 'center' }}>
-      {!tipVisible ? <Wifi size={15} strokeWidth={1.7} aria-hidden="true" /> : <Lightbulb size={15} strokeWidth={1.7} aria-hidden="true" />}
-    </span>
-    <span style={{ display: 'block', lineHeight: '18px' }}>{label}</span>
-    </div>
-  </div>;
+  return <span className="chat-turn-processing" style={{ color: '#777', fontSize: '11px' }}>{processingLabel}</span>;
 }
 
 function ExecutionTimeline({ timeline = [], active, language }: { timeline?: any[]; active: boolean; language: AppLanguage }) {
