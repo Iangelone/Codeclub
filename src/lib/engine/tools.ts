@@ -242,7 +242,7 @@ function createSwarmTool(ctx: { projectPath: string; projectScoped?: boolean; re
 
 export function selectToolsForPrompt(toolset: Record<string, any>, _mode: 'development', prompt: string) {
   const text = prompt.toLowerCase();
-  const keys = new Set(['searchTools', 'executeTool', 'askUser', 'createPlan', 'updatePlan', 'todo', 'getTaskStatus']);
+  const keys = new Set(['searchTools', 'executeTool', 'searchSkills', 'loadSkill', 'searchPlugins', 'searchChatContext', 'askUser', 'createPlan', 'updatePlan', 'todo', 'getTaskStatus']);
 
   const add = (...names: string[]) => names.forEach((name) => keys.add(name));
   const has = (...terms: string[]) => terms.some((term) => text.includes(term));
@@ -263,7 +263,7 @@ export function selectToolsForPrompt(toolset: Record<string, any>, _mode: 'devel
   return Object.fromEntries([...keys].filter((name) => toolset[name]).map((name) => [name, toolset[name]]));
 }
 
-export function createDynamicToolAccess(availableTools: Record<string, any>, recordToolEvent?: (name: string, input: any, output: any) => void) {
+export function createDynamicToolAccess(availableTools: Record<string, any>, recordToolEvent?: (name: string, input: any, output: any) => void, discovery?: { plugins?: Array<{ id: string; name: string; description?: string; scope?: string; skills?: Array<{ id: string; name: string; description?: string; content?: string }>; mcpServers?: Record<string, unknown> }>; searchChatContext?: (query: string, page: number, pageSize: number) => Promise<unknown> }) {
   const keywordMap: Record<string, string[]> = {
     listFiles: ['archivos', 'archivo', 'carpetas', 'carpeta', 'workspace', 'proyecto', 'inspeccionar', 'listar', 'files', 'folders'],
     readFile: ['leer', 'archivo', 'contenido', 'file', 'read'],
@@ -302,6 +302,14 @@ export function createDynamicToolAccess(availableTools: Record<string, any>, rec
       schema: plainSchema(definition.inputSchema),
     }));
   const definitions = new Map(entries.map((entry) => [entry.name, availableTools[entry.name]]));
+  const skillEntries = (discovery?.plugins || []).flatMap((plugin) => (plugin.skills || []).map((skill) => ({ ...skill, pluginName: plugin.name, pluginId: plugin.id, scope: plugin.scope })));
+  const searchCatalog = (items: Array<Record<string, unknown>>, query: string, page: number, pageSize: number) => {
+    const normalizedQuery = normalize(query.trim());
+    const terms = normalizedQuery.split(/\s+/).filter((term) => term.length > 2);
+    const ranked = items.map((item) => ({ item, score: terms.reduce((score, term) => score + (normalize(JSON.stringify(item)).includes(term) ? 1 : 0), 0) })).filter(({ score }) => !terms.length || score > 0).sort((a, b) => b.score - a.score).map(({ item }) => item);
+    const start = (Math.max(page, 1) - 1) * pageSize;
+    return { query: normalizedQuery, page: Math.max(page, 1), pageSize, total: ranked.length, hasMore: start + pageSize < ranked.length, results: ranked.slice(start, start + pageSize) };
+  };
   return wrapToolSet({
     searchTools: tool({
       description: 'Search available Codeclub tools and return compact descriptions plus exact input schemas. Use this before executeTool when a capability or parameter is uncertain; never invent tool names or inputs.',
@@ -359,6 +367,29 @@ export function createDynamicToolAccess(availableTools: Record<string, any>, rec
           return output;
         }
       },
+    }),
+    searchSkills: tool({
+      description: 'Search installed skills by name or description. Returns metadata only; use loadSkill to read a matching skill when needed.',
+      inputSchema: jsonSchema({ type: 'object', properties: { query: { type: 'string' }, page: { type: 'number' }, pageSize: { type: 'number' } }, additionalProperties: false }),
+      execute: async ({ query, page, pageSize }) => searchCatalog(skillEntries.map(({ content, ...skill }) => skill), String(query || ''), Number(page) || 1, Math.min(Math.max(Number(pageSize) || 10, 1), 20)),
+    }),
+    loadSkill: tool({
+      description: 'Load the complete content of one skill returned by searchSkills. Use the exact skill id or name.',
+      inputSchema: jsonSchema({ type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' } }, additionalProperties: false }),
+      execute: async ({ id, name }) => {
+        const skill = skillEntries.find((entry) => entry.id === id || entry.name === name);
+        return skill ? { id: skill.id, name: skill.name, pluginName: skill.pluginName, description: skill.description, content: skill.content || '' } : { ok: false, error: 'Skill no encontrada.' };
+      },
+    }),
+    searchPlugins: tool({
+      description: 'Search installed Agent Plugins and return compact metadata, skills and MCP server names without loading their instructions.',
+      inputSchema: jsonSchema({ type: 'object', properties: { query: { type: 'string' }, page: { type: 'number' }, pageSize: { type: 'number' } }, additionalProperties: false }),
+      execute: async ({ query, page, pageSize }) => searchCatalog((discovery?.plugins || []).map((plugin) => ({ id: plugin.id, name: plugin.name, description: plugin.description || '', scope: plugin.scope, skills: (plugin.skills || []).map((skill) => ({ id: skill.id, name: skill.name, description: skill.description || '' })), mcpServers: Object.keys(plugin.mcpServers || {}) })), String(query || ''), Number(page) || 1, Math.min(Math.max(Number(pageSize) || 10, 1), 20)),
+    }),
+    searchChatContext: tool({
+      description: 'Search previous chat titles and message content and return compact matching context. Use this only when the current request needs prior conversation context.',
+      inputSchema: jsonSchema({ type: 'object', properties: { query: { type: 'string' }, page: { type: 'number' }, pageSize: { type: 'number' } }, required: ['query'], additionalProperties: false }),
+      execute: async ({ query, page, pageSize }) => discovery?.searchChatContext ? discovery.searchChatContext(String(query || ''), Number(page) || 1, Math.min(Math.max(Number(pageSize) || 5, 1), 10)) : { query, total: 0, results: [] },
     }),
   });
 }

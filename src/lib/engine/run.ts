@@ -15,11 +15,9 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
   let content = '';
   let reasoning = '';
   const startedAt = Date.now();
-  const styleInstruction = '\n\nUse clear, concise language and respond in the user\'s language. Avoid emojis unless the user explicitly asks for them.';
-
   const result = streamText({
     model,
-    system: `${system}${styleInstruction}`,
+    system,
     messages,
     tools,
     experimental_transform: smoothStream(),

@@ -34,7 +34,6 @@ import { LANGUAGE_STORAGE_KEY, rightSidebarTranslations, type AppLanguage, useAp
 import { connectAllAgentPluginMcp, loadAgentPlugins } from '../lib/agent-plugins';
 
 const formatProcessingDuration = (durationMs: number) => durationMs >= 60000 ? `${(durationMs / 60000).toFixed(1)}min` : `${Math.max(0, Math.round(durationMs / 1000))}s`;
-const TOOL_ACCESS_HINT = 'Instrucción operativa: si necesitás una capacidad, buscá la herramienta por nombre o intención con searchTools, revisá el schema devuelto y ejecutala con executeTool. No inventes herramientas ni parámetros, y verificá el resultado real.';
 const getBrowserReferenceFavicon = (reference: { title: string; url?: string }) => {
   try {
     if (!reference.url && reference.title.toLowerCase().includes('google')) return 'https://www.google.com/favicon.ico';
@@ -333,7 +332,6 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const automaticTitleRef = useRef<string>('');
   const chatRuntimesRef = useRef(new Map<string, ChatRuntime>());
   const lastSelectedProjectRef = useRef<{ projectPath: string; projectName: string } | null | undefined>(selectedProject ? { projectPath: selectedProject.projectPath, projectName: selectedProject.projectName || 'Proyecto' } : undefined);
-  const projectChangeNoticeRef = useRef<string | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState('blank');
   const [selectedStructurePath, setSelectedStructurePath] = useState('');
 
@@ -491,13 +489,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   }, [composerDocked]);
 
   useEffect(() => {
-    const previous = lastSelectedProjectRef.current;
     const nextPath = selectedProject?.projectPath || null;
-    if (previous !== undefined && previous?.projectPath !== nextPath) {
-      projectChangeNoticeRef.current = nextPath
-        ? `El usuario cambió el proyecto seleccionado a "${selectedProject?.projectName || 'Proyecto'}". Usá este proyecto como contexto de trabajo para este mensaje.`
-        : 'El usuario quitó el proyecto seleccionado. Trabajá solo con contexto global hasta que elija otro.';
-    }
     lastSelectedProjectRef.current = selectedProject ? { projectPath: selectedProject.projectPath, projectName: selectedProject.projectName || 'Proyecto' } : null;
     setActiveProject((current: any) => {
       if (!selectedProject) return null;
@@ -1430,7 +1422,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       content = `${content}\n\n${refsText}`;
       setBrowserReferences([]);
     }
-    content = `${content}\n\n${TOOL_ACCESS_HINT}`;
     const abortController = new AbortController();
     let pluginMcpClose: (() => Promise<unknown>) | undefined;
     const generationStartedAt = Date.now();
@@ -1534,8 +1525,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         fetch: desktopModelFetch,
       });
       const contextProjectPath = activeProject?.projectPath || '';
-      const projectChangeNotice = projectChangeNoticeRef.current;
-      projectChangeNoticeRef.current = null;
       const runMode: AgentMode = 'development';
       let routeSpecialist: AgentSpecialist = 'primary';
       let assistantContent = '';
@@ -1577,9 +1566,10 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         modelId: currentModel.id,
       });
       const externalMcpTools: Record<string, any> = {};
+      let loadedPlugins: Awaited<ReturnType<typeof loadAgentPlugins>> = [];
       try {
-        const plugins = await loadAgentPlugins(contextProjectPath);
-        const pluginMcp = await connectAllAgentPluginMcp(plugins);
+        loadedPlugins = await loadAgentPlugins(contextProjectPath);
+        const pluginMcp = await connectAllAgentPluginMcp(loadedPlugins);
         Object.assign(externalMcpTools, pluginMcp.tools);
         pluginMcpClose = pluginMcp.close;
       } catch (error) {
@@ -1590,7 +1580,26 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       routeSpecialist = inferAgentSpecialist(content, runMode);
       const selectedToolset = Object.fromEntries(Object.entries(developmentTools).filter(([name]) => !['swarm', 'subagent', 'listAvailableTools'].includes(name)));
       const availableToolset = { ...selectedToolset, ...externalMcpTools };
-      const dynamicToolAccess = createDynamicToolAccess(availableToolset, recordToolEvent);
+      const searchChatContext = async (query: string, page: number, pageSize: number) => {
+        const normalized = query.toLowerCase().trim();
+        const sources: Array<{ id: string; title: string; project: string; projectPath?: string; chatId: string }> = [];
+        const globalChats = await readGlobalChats();
+        sources.push(...globalChats.map((item) => ({ id: `global:${item.id}`, title: item.name, project: item.projectName || 'Sin proyecto', chatId: item.id })));
+        if (contextProjectPath) {
+          const meta = await readProjectMeta(contextProjectPath);
+          sources.push(...(meta?.chats || []).map((item) => ({ id: `project:${item.id}`, title: item.customName ? item.name : item.name || 'Chat', project: meta?.name || 'Proyecto activo', projectPath: contextProjectPath, chatId: item.id })));
+        }
+        const matches = [];
+        for (const source of sources) {
+          const messages = source.projectPath ? await readProjectChatHistory(source.projectPath, source.chatId) : await readGlobalChatHistory(source.chatId);
+          const excerpts = messages.map((message: any) => String(message?.displayContent || message?.content || '')).filter((text) => !normalized || text.toLowerCase().includes(normalized));
+          if (normalized && !source.title.toLowerCase().includes(normalized) && excerpts.length === 0) continue;
+          matches.push({ id: source.id, title: source.title, project: source.project, excerpts: excerpts.slice(-2).map((text) => text.slice(0, 500)) });
+        }
+        const start = (Math.max(page, 1) - 1) * pageSize;
+        return { query, page: Math.max(page, 1), pageSize, total: matches.length, hasMore: start + pageSize < matches.length, results: matches.slice(start, start + pageSize) };
+      };
+      const dynamicToolAccess = createDynamicToolAccess(availableToolset, recordToolEvent, { plugins: loadedPlugins, searchChatContext });
       const artifactNames = ['createPlan', 'updatePlan', 'todo', 'getTaskStatus', 'switchProject'];
       const artifactTools = Object.fromEntries(artifactNames.filter((name) => selectedToolset[name]).map((name) => [name, selectedToolset[name]]));
       tools = { ...dynamicToolAccess, ...artifactTools, ...externalMcpTools };
@@ -1638,20 +1647,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       }
       beforeWorkspaceSnapshot = await readWorkspaceSnapshot(toolProjectPath);
       updateAssistantMessage();
-      const activeSkillsContext = activeSkills.length > 0
-        ? `Habilidades cargadas explícitamente para esta sesión:\n${activeSkills.map((skill) => `## ${skill.name}\n${skill.content.slice(0, 120000)}`).join('\n\n')}`
-        : '';
-      const activeExtensionsContext = activeExtensions.length > 0
-        ? `Complementos activados explícitamente para esta sesión:\n${activeExtensions.map((extension) => `## ${extension.name}\n${extension.instruction}`).join('\n\n')}`
-        : '';
       const system = [
-        projectChangeNotice,
-        activeSkillsContext,
-        activeExtensionsContext,
-        'Sos el agente principal de Desarrollo de Codeclub. Ejecutá las tools necesarias y respondé con evidencia real. Si una tool falla, informá el error; nunca afirmes éxito sin un resultado comprobable.',
-        'Si el pedido menciona una herramienta o capacidad que no identificás, buscala con searchTools usando el nombre o la intención, revisá su schema y ejecutala con executeTool. No inventes nombres, parámetros ni reemplaces una tool por una respuesta de texto; informá el resultado real.',
-        'Cuando uses askUser, devolvé entre 2 y 4 opciones breves y accionables siempre que la pregunta permita respuestas cerradas. Si no hay opciones razonables, dejá options vacío y hacé una pregunta abierta para que el usuario responda en el chat.',
-        `Proyecto activo: ${contextProjectPath || 'sin proyecto'}.`,
+        'You are Codeclub\'s coding agent. Think and operate internally in English. On demand, discover and use tools, skills, plugins, and prior chat context. Verify real results; never invent. Reply in the user\'s language.',
       ].filter(Boolean).join(' ');
       // Algunos proveedores compatibles rechazan response_format junto con tools.
       // Los artifacts ya quedan validados y persistidos por sus tools; dejamos el
