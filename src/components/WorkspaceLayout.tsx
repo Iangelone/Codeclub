@@ -567,8 +567,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
   }, [activeProjectPath, panelText.files, rightPanels]);
 
   useEffect(() => {
-    const runCodeInTerminal = (event: Event) => {
-      const detail = (event as CustomEvent<{ code?: string; language?: string }>).detail || {};
+    const openTerminalAndRun = (detail: { code?: string; language?: string; cwd?: string }) => {
       if (!detail.code?.trim()) return;
       window.dispatchEvent(new CustomEvent('codeclub:open-right-sidebar'));
       const existing = rightPanels.find((panel) => panel.tab === 'terminals');
@@ -583,9 +582,28 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
       setActiveRightPanelId(panel.instanceId);
       window.setTimeout(() => window.dispatchEvent(new CustomEvent('codeclub:terminal-run-code', { detail })), 0);
     };
+    const runCodeInTerminal = (event: Event) => {
+      const detail = (event as CustomEvent<{ code?: string; language?: string }>).detail || {};
+      const candidate = detail.code?.trim().replace(/^['"`]|['"`]$/g, '');
+      const looksLikePath = Boolean(candidate && !/[\s(){}[\];=]/.test(candidate) && (/^[./\\]/.test(candidate) || /\.[a-z0-9]{1,8}$/i.test(candidate)));
+      if (!activeProjectPath || !looksLikePath) {
+        openTerminalAndRun(detail);
+        return;
+      }
+      void nativeInvoke<{ kind?: string }>('codeclub_path_kind', { projectPath: activeProjectPath, path: candidate }).then((result) => {
+        if (result?.kind === 'file') {
+          window.dispatchEvent(new CustomEvent('codeclub:open-right-sidebar'));
+          window.dispatchEvent(new CustomEvent('codeclub:open-right-file', { detail: { path: candidate, projectPath: activeProjectPath } }));
+        } else if (result?.kind === 'directory') {
+          openTerminalAndRun({ code: candidate, cwd: candidate });
+        } else {
+          openTerminalAndRun(detail);
+        }
+      }).catch(() => openTerminalAndRun(detail));
+    };
     window.addEventListener('codeclub:execute-inline-code', runCodeInTerminal);
     return () => window.removeEventListener('codeclub:execute-inline-code', runCodeInTerminal);
-  }, [panelText.terminals, rightPanels]);
+  }, [activeProjectPath, panelText.terminals, rightPanels]);
 
   const closeRightPanel = (instanceId: string) => {
     const index = rightPanels.findIndex((panel) => panel.instanceId === instanceId);
@@ -1265,9 +1283,13 @@ function BrowserPanel() {
 }
 
 type TerminalInfo = { id: string; name: string; shell: string; cwd: string; status: string };
-type TerminalRunRequest = { code: string; language?: string };
+type TerminalRunRequest = { code: string; language?: string; cwd?: string };
 
-function buildTerminalRunCommand({ code, language = 'text' }: TerminalRunRequest) {
+function buildTerminalRunCommand({ code, language = 'text', cwd }: TerminalRunRequest, projectPath?: string) {
+  if (cwd) {
+    const target = `${String(projectPath || '').replace(/[\\/]+$/, '')}\\${cwd.replace(/^[/\\]+/, '').replace(/[\\/]+/g, '\\')}`.replace(/'/g, "''");
+    return `Set-Location -LiteralPath '${target}'\r\n`;
+  }
   const normalizedLanguage = language.toLowerCase();
   const interpreter = normalizedLanguage === 'javascript' || normalizedLanguage === 'js' || normalizedLanguage === 'typescript' || normalizedLanguage === 'ts'
     ? 'node'
@@ -1295,11 +1317,11 @@ function TerminalPanel({ projectPath }: { projectPath?: string }) {
         pendingRunRef.current = detail;
         return;
       }
-      void nativeInvoke('codeclub_terminal_write', { id, data: buildTerminalRunCommand(detail) });
+      void nativeInvoke('codeclub_terminal_write', { id, data: buildTerminalRunCommand(detail, projectPath) });
     };
     window.addEventListener('codeclub:terminal-run-code', runCode);
     return () => window.removeEventListener('codeclub:terminal-run-code', runCode);
-  }, []);
+  }, [projectPath]);
 
   useEffect(() => {
     if (!containerRef.current) return undefined;
@@ -1353,7 +1375,7 @@ function TerminalPanel({ projectPath }: { projectPath?: string }) {
         if (pendingRunRef.current) {
           const pending = pendingRunRef.current;
           pendingRunRef.current = null;
-          void nativeInvoke('codeclub_terminal_write', { id: created.id, data: buildTerminalRunCommand(pending) });
+          void nativeInvoke('codeclub_terminal_write', { id: created.id, data: buildTerminalRunCommand(pending, projectPath) });
         }
         const poll = async () => {
           if (pollInFlight) return;

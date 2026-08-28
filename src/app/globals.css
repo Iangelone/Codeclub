@@ -72,6 +72,10 @@ body {
   bottom: 0;
 }
 
+.chat-turn > .chat-user-message + .chat-assistant-message {
+  margin-top: 14px;
+}
+
 .timeline-hidden .chat-turn::before {
   display: none;
 }

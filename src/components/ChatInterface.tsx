@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUp, Box, Braces, Camera, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Languages, LayoutTemplate, ListChecks, ListTodo, MessageSquare, Monitor, MoreHorizontal, MousePointer2, Orbit, Paperclip, Pencil, Play, Presentation, Radar, RotateCcw, Search, ScrollText, Square, Table2, Terminal, ThumbsDown, ThumbsUp, Folder, FolderTree, WandSparkles, X } from 'lucide-react';
+import { ArrowUp, Box, Braces, Camera, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Languages, LayoutTemplate, ListChecks, ListTodo, MessageSquare, Minimize2, Monitor, MoreHorizontal, MousePointer2, Orbit, Paperclip, Pencil, Play, Presentation, Radar, RotateCcw, Search, ScrollText, Square, Table2, Terminal, ThumbsDown, ThumbsUp, Folder, FolderTree, WandSparkles, X } from 'lucide-react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -34,6 +34,7 @@ import { LANGUAGE_STORAGE_KEY, rightSidebarTranslations, type AppLanguage, useAp
 import { connectAllAgentPluginMcp, loadAgentPlugins } from '../lib/agent-plugins';
 
 const formatProcessingDuration = (durationMs: number) => durationMs >= 60000 ? `${(durationMs / 60000).toFixed(1)}min` : `${Math.max(0, Math.round(durationMs / 1000))}s`;
+const limitResponseLength = (content: string, maxLength = 500) => content.length > maxLength ? `${content.slice(0, maxLength - 1).trimEnd()}…` : content;
 const getBrowserReferenceFavicon = (reference: { title: string; url?: string }) => {
   try {
     if (!reference.url && reference.title.toLowerCase().includes('google')) return 'https://www.google.com/favicon.ico';
@@ -352,6 +353,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const abortControllerRef = useRef<AbortController | null>(null);
   const [composerDocked, setComposerDocked] = useState(true);
   const [timelineVisible, setTimelineVisible] = useState(true);
+  const [responseSaverEnabled, setResponseSaverEnabled] = useState(false);
   const composerDockedRef = useRef(false);
 
   useEffect(() => {
@@ -568,6 +570,10 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
 
   useEffect(() => {
     void getSetting('codeclub_timeline_visible', true).then((value) => setTimelineVisible(value !== false));
+  }, []);
+
+  useEffect(() => {
+    void getSetting('codeclub_response_saver', false).then((value) => setResponseSaverEnabled(value === true));
   }, []);
 
   useEffect(() => {
@@ -907,6 +913,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     { id: 'habilidad', label: chatText.slash.skill, description: chatText.slash.skillDescription, aliases: ['habilidad', 'skill'], type: 'command', icon: WandSparkles },
     { id: 'idioma', label: language === 'en' ? 'Language' : 'Idioma', description: language === 'en' ? 'Change language' : 'Cambiar idioma', aliases: ['idioma', 'language', 'lang'], type: 'command', icon: Languages },
     { id: 'timeline', label: timelineVisible ? (language === 'en' ? 'Hide timeline' : 'Ocultar línea vertical') : (language === 'en' ? 'Show timeline' : 'Mostrar línea vertical'), description: language === 'en' ? 'Show or hide the chat timeline line' : 'Mostrar u ocultar la línea vertical del chat', aliases: ['timeline', 'línea', 'linea', 'vertical'], type: 'command', icon: Eye },
+    { id: 'ahorro', label: responseSaverEnabled ? (language === 'en' ? 'Disable response saving' : 'Desactivar ahorro de respuestas') : (language === 'en' ? 'Save response length' : 'Ahorrar respuestas'), description: language === 'en' ? 'Limit responses to 500 characters' : 'Limitar respuestas a 500 caracteres', aliases: ['ahorro', 'compactar', 'breve', 'conciso'], type: 'command', icon: Minimize2 },
     ...(isDevelopmentBuild ? [{ id: 'desarrollo', label: language === 'en' ? 'Development' : 'Desarrollo', description: language === 'en' ? 'Insert a development prompt' : 'Inyectar un prompt de desarrollo', aliases: ['desarrollo', 'desarrollar', 'development', 'develop'], type: 'command' as const, icon: Code2 }] : []),
     { id: 'overlay', label: computerUseActive ? (language === 'en' ? 'Disable Computer Use overlay' : 'Desactivar overlay de Computer Use') : (language === 'en' ? 'Enable Computer Use overlay' : 'Activar overlay de Computer Use'), description: language === 'en' ? 'Show or hide the PC control overlay' : 'Mostrar u ocultar el overlay de control de PC', aliases: ['overlay', 'overlay-pc', 'computer-overlay'], type: 'command', icon: Monitor },
     ...availableExtensions.filter((extension) => enabledExtensions[extension.id]).map((extension) => ({ id: extension.id, label: extension.name, description: extension.description, type: 'extension' as const, icon: extensionIcons[extension.id] || Box, extension })),
@@ -1004,6 +1011,19 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
         const nextVisible = !timelineVisible;
         setTimelineVisible(nextVisible);
         void setSetting('codeclub_timeline_visible', nextVisible);
+        setInput('');
+        setSearchQuery('');
+        setMenuOpen(false);
+        setCommandKind('');
+        chatInputRef.current?.focus();
+        return;
+      }
+      if (item.id === 'ahorro') {
+        setResponseSaverEnabled((current) => {
+          const next = !current;
+          void setSetting('codeclub_response_saver', next);
+          return next;
+        });
         setInput('');
         setSearchQuery('');
         setMenuOpen(false);
@@ -1744,6 +1764,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       updateAssistantMessage();
       const system = [
         'You are Codeclub\'s coding agent. Think and operate internally in English. On demand, discover and use tools, skills, plugins, and prior chat context. Verify real results; never invent. Reply in the user\'s language.',
+        responseSaverEnabled ? 'Keep the final response concise and within a strict maximum of 500 characters. Preserve only the most useful facts and omit lengthy explanations.' : '',
       ].filter(Boolean).join(' ');
       // Algunos proveedores compatibles rechazan response_format junto con tools.
       // Los artifacts ya quedan validados y persistidos por sus tools; dejamos el
@@ -1777,7 +1798,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           callbacks: {
             onTextDelta: (content) => {
               if (!isCurrentGeneration()) return;
-              assistantContent = content;
+              assistantContent = responseSaverEnabled ? limitResponseLength(content) : content;
               updateAssistantMessage();
             },
             onReasoningDelta: (content) => {
@@ -1940,6 +1961,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         if (continuationActions.includes('merge') || continuationActions.includes('stop')) swarmOpen = false;
       }
 
+      if (responseSaverEnabled) assistantContent = limitResponseLength(assistantContent);
       if (!isCurrentGeneration() || abortController.signal.aborted) return;
       const changes = contextProjectPath ? summarizeWorkspaceDelta(beforeWorkspaceSnapshot, await readWorkspaceSnapshot(toolProjectPath)) : null;
       const assistantMessage = { role: 'assistant', content: assistantContent || 'La ejecución terminó sin texto final, pero las evidencias quedaron registradas.', timeline: assistantTimeline, tools: assistantTools, agentName: 'Desarrollo', meta: { provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt, status: 'completed', changes, usage: latestUsage ? { inputTokens: latestUsage.inputTokens, outputTokens: latestUsage.outputTokens, totalTokens: latestUsage.totalTokens, reasoningTokens: latestUsage.reasoningTokens } : null } };
@@ -2128,6 +2150,16 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           },
         },
       }));
+      setInput('');
+      return;
+    }
+
+    if (/^\/(ahorro|compactar)$/i.test(input.trim())) {
+      setResponseSaverEnabled((current) => {
+        const next = !current;
+        void setSetting('codeclub_response_saver', next);
+        return next;
+      });
       setInput('');
       return;
     }
@@ -2479,7 +2511,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               const m = turnItem;
               const i = turnIndex + turnOffset;
               const isLiveAssistant = m.role === 'assistant' && isStreaming && i === messages.length - 1;
-              return <React.Fragment key={m.role === 'assistant' && isStreaming && i === messages.length - 1 ? `${i}-${m.content.length}` : i}>
+              return <React.Fragment key={`${m.role}-${i}`}>
             {<motion.div initial={isLiveAssistant ? { opacity: 0.58, y: 2 } : false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.24, ease: 'easeOut' }} className={`group/message ${m.role === 'assistant' ? 'chat-assistant-message' : 'chat-user-message'}`} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '5px', maxWidth: m.role === 'user' ? '70%' : '100%', minWidth: 0 }}>
               {m.role === 'user' && m.attachments?.length > 0 && <div className="chat-attachments" aria-label="Archivos adjuntos">{m.attachments.map((file) => file.mediaType?.startsWith('image/') ? <div key={file.path || file.name} className="chat-attachment-card" title={file.name}><img src={file.previewUrl || convertFileSrc(file.path)} alt={file.name} /></div> : <div key={file.path || file.name} className="chat-attachment-card chat-attachment-file" title={file.name}>{file.previewText ? <pre className="chat-attachment-preview-text">{file.previewText}</pre> : <span>{file.name.split('.').pop()?.toUpperCase().slice(0, 6) || 'FILE'}</span>}</div>)}</div>}
               {m.role === 'user' && m.browserReferences?.length > 0 && <div className="chat-browser-references" aria-label="Referencias de navegador">{m.browserReferences.map((ref: { id: string; title: string; text: string }, referenceIndex: number) => <div key={ref.id || `${ref.title}-${referenceIndex}`} className="chat-browser-reference-card"><span className="chat-browser-reference-number">{referenceIndex + 1}</span><span className="min-w-0"><span className="block truncate text-[11px] text-[#d6d6d6]">{ref.title}</span><span className="mt-0.5 block truncate text-[11px] text-[#858585]">{getBrowserReferenceComment(ref.text)}</span></span></div>)}</div>}
@@ -2503,7 +2535,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                   h2: ({ children }) => <h2>{children}</h2>,
                   h3: ({ children }) => <h3>{children}</h3>,
                 }}>{normalizeChatContent(m.role === 'user' ? getVisibleUserContent(m) : (m.meta?.status === 'error' ? (language === 'en' ? 'No response' : 'Sin respuesta') : (m.displayContent || m.content)))}</ReactMarkdown>
-                {m.role === 'assistant' && isStreaming && agentState !== 'error' && i === messages.length - 1 && !m.content && !m.timeline?.some((event: any) => event.type === 'tool') && <span className="chat-thinking-label composer-action-shine" style={{ display: 'inline-block', fontSize: '13px' }}>Pensando</span>}
+                {m.role === 'assistant' && isStreaming && agentState !== 'error' && i === messages.length - 1 && !m.content && !m.timeline?.some((event: any) => event.type === 'tool') && <motion.span initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: 'easeOut' }} className="chat-thinking-label composer-action-shine" style={{ display: 'inline-block', fontSize: '13px' }}>Pensando</motion.span>}
               </div>
               {m.role === 'assistant' && <ExecutionTimeline timeline={m.timeline} active={isLiveAssistant && !m.content?.trim()} language={language} />}
               {m.role === 'assistant' && <AskUserCards tools={m.tools} onSelect={(answer, questionId) => void sendMessage(answer, messages, false, false, [], questionId)} onRespondInChat={() => {

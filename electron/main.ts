@@ -459,6 +459,15 @@ async function invokeNativeCommand(command: string, args: any = {}) {
     }
     case 'codeclub_get_app_version': return app.getVersion();
     case 'codeclub_list_files': return listProjectFiles(args.projectPath, Math.min(Number(args.maxFiles) || 400, 1200));
+    case 'codeclub_path_kind': {
+      const target = projectFile(String(args.projectPath || ''), String(args.path || '.'));
+      try {
+        const stat = await fs.stat(target);
+        return { kind: stat.isDirectory() ? 'directory' : stat.isFile() ? 'file' : 'other' };
+      } catch {
+        return { kind: 'missing' };
+      }
+    }
     case 'codeclub_read_file': return fs.readFile(projectFile(args.projectPath, args.path), 'utf8');
     case 'codeclub_search_text': return searchProjectText(args.projectPath, args.query, Math.min(Number(args.maxMatches) || 80, 200));
     case 'codeclub_write_file': {
