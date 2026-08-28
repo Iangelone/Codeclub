@@ -1826,6 +1826,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           })),
           tools,
           structuredOutput,
+          maxOutputTokens: responseSaverEnabled ? 160 : undefined,
           signal: abortController.signal,
           callbacks: {
             onTextDelta: (content) => {

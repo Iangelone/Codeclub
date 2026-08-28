@@ -7,6 +7,7 @@ type RunStreamArgs = {
   messages: ModelMessage[];
   tools: Record<string, any>;
   structuredOutput?: any;
+  maxOutputTokens?: number;
   callbacks: EngineCallbacks;
   signal?: AbortSignal;
 };
@@ -20,6 +21,7 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
     system,
     messages,
     tools,
+    ...(maxOutputTokens ? { maxOutputTokens } : {}),
     experimental_transform: smoothStream(),
     // Sin límite fijo: después de una tool el modelo puede continuar hasta
     // responder. La cancelación sigue bajo control del usuario/watchdog.
