@@ -566,6 +566,27 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
     return () => window.removeEventListener('codeclub:open-right-file', openRightFile);
   }, [activeProjectPath, panelText.files, rightPanels]);
 
+  useEffect(() => {
+    const runCodeInTerminal = (event: Event) => {
+      const detail = (event as CustomEvent<{ code?: string; language?: string }>).detail || {};
+      if (!detail.code?.trim()) return;
+      window.dispatchEvent(new CustomEvent('codeclub:open-right-sidebar'));
+      const existing = rightPanels.find((panel) => panel.tab === 'terminals');
+      if (existing) {
+        setActiveRightPanelId(existing.instanceId);
+        window.setTimeout(() => window.dispatchEvent(new CustomEvent('codeclub:terminal-run-code', { detail })), 0);
+        return;
+      }
+      rightPanelSequence.current += 1;
+      const panel = { instanceId: `terminals-${rightPanelSequence.current}`, tab: 'terminals' as const, label: `${panelText.terminals} 1` };
+      setRightPanels((current) => [...current, panel]);
+      setActiveRightPanelId(panel.instanceId);
+      window.setTimeout(() => window.dispatchEvent(new CustomEvent('codeclub:terminal-run-code', { detail })), 0);
+    };
+    window.addEventListener('codeclub:execute-inline-code', runCodeInTerminal);
+    return () => window.removeEventListener('codeclub:execute-inline-code', runCodeInTerminal);
+  }, [panelText.terminals, rightPanels]);
+
   const closeRightPanel = (instanceId: string) => {
     const index = rightPanels.findIndex((panel) => panel.instanceId === instanceId);
     if (index < 0) return;
@@ -1244,12 +1265,41 @@ function BrowserPanel() {
 }
 
 type TerminalInfo = { id: string; name: string; shell: string; cwd: string; status: string };
+type TerminalRunRequest = { code: string; language?: string };
+
+function buildTerminalRunCommand({ code, language = 'text' }: TerminalRunRequest) {
+  const normalizedLanguage = language.toLowerCase();
+  const interpreter = normalizedLanguage === 'javascript' || normalizedLanguage === 'js' || normalizedLanguage === 'typescript' || normalizedLanguage === 'ts'
+    ? 'node'
+    : normalizedLanguage === 'python' || normalizedLanguage === 'py'
+      ? 'python'
+      : normalizedLanguage === 'bash' || normalizedLanguage === 'sh' || normalizedLanguage === 'shell' ? 'bash' : '';
+  const payload = code.replace(/\r?\n/g, '\r\n');
+  if (interpreter) return `@'\r\n${payload}\r\n'@ | ${interpreter}\r\n`;
+  return `& ([scriptblock]::Create(@'\r\n${payload}\r\n'@))\r\n`;
+}
 
 function TerminalPanel({ projectPath }: { projectPath?: string }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<XtermTerminal | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const outputRef = useRef('');
+  const pendingRunRef = useRef<TerminalRunRequest | null>(null);
+
+  useEffect(() => {
+    const runCode = (event: Event) => {
+      const detail = (event as CustomEvent<TerminalRunRequest>).detail;
+      if (!detail?.code?.trim()) return;
+      const id = sessionIdRef.current;
+      if (!id) {
+        pendingRunRef.current = detail;
+        return;
+      }
+      void nativeInvoke('codeclub_terminal_write', { id, data: buildTerminalRunCommand(detail) });
+    };
+    window.addEventListener('codeclub:terminal-run-code', runCode);
+    return () => window.removeEventListener('codeclub:terminal-run-code', runCode);
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current) return undefined;
@@ -1300,6 +1350,11 @@ function TerminalPanel({ projectPath }: { projectPath?: string }) {
           return;
         }
         sessionIdRef.current = created.id;
+        if (pendingRunRef.current) {
+          const pending = pendingRunRef.current;
+          pendingRunRef.current = null;
+          void nativeInvoke('codeclub_terminal_write', { id: created.id, data: buildTerminalRunCommand(pending) });
+        }
         const poll = async () => {
           if (pollInFlight) return;
           pollInFlight = true;

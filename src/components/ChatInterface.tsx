@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUp, Box, Braces, Camera, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Languages, LayoutTemplate, ListChecks, ListTodo, MessageSquare, Monitor, MoreHorizontal, MousePointer2, Orbit, Paperclip, Pencil, Presentation, Radar, RotateCcw, Search, ScrollText, Square, Table2, Terminal, ThumbsDown, ThumbsUp, Folder, FolderTree, WandSparkles, X } from 'lucide-react';
+import { ArrowUp, Box, Braces, Camera, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Languages, LayoutTemplate, ListChecks, ListTodo, MessageSquare, Monitor, MoreHorizontal, MousePointer2, Orbit, Paperclip, Pencil, Play, Presentation, Radar, RotateCcw, Search, ScrollText, Square, Table2, Terminal, ThumbsDown, ThumbsUp, Folder, FolderTree, WandSparkles, X } from 'lucide-react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -44,6 +44,69 @@ const getBrowserReferenceFavicon = (reference: { title: string; url?: string }) 
     return '';
   }
 };
+const getMarkdownLinkFavicon = (href?: string) => {
+  try {
+    const url = new URL(href || '');
+    if (!['http:', 'https:'].includes(url.protocol)) return '';
+    return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(url.hostname)}&sz=32`;
+  } catch {
+    return '';
+  }
+};
+const getMarkdownNodeText = (node: React.ReactNode): string => React.Children.toArray(node).map((child) => React.isValidElement(child) ? getMarkdownNodeText(child.props.children) : String(child)).join('');
+const getMarkdownCodeDetails = (children: React.ReactNode) => {
+  const codeElement = React.Children.toArray(children).find((child) => React.isValidElement(child)) as React.ReactElement<{ className?: string; children?: React.ReactNode }> | undefined;
+  const className = codeElement?.props.className || '';
+  const language = className.match(/language-([^\s]+)/)?.[1] || 'text';
+  const content = codeElement?.props.children ?? children;
+  return { language, content: getMarkdownNodeText(content) };
+};
+
+function MarkdownCodeBlock({ children }: { children?: React.ReactNode }) {
+  const [copied, setCopied] = useState(false);
+  const { language, content } = getMarkdownCodeDetails(children);
+  const label = language === 'text' ? 'Texto' : language.charAt(0).toUpperCase() + language.slice(1);
+
+  const handleCopy = async () => {
+    await copyText(content);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1400);
+  };
+
+  return <div className="chat-code-card">
+    <div className="chat-code-card-header">
+      <span className="chat-code-card-language"><Code2 size={14} strokeWidth={1.8} aria-hidden="true" />{label}</span>
+      <span className="chat-code-card-actions">
+        <button type="button" className="chat-code-card-icon-button" onClick={() => window.dispatchEvent(new CustomEvent('codeclub:execute-inline-code', { detail: { code: content, language } }))} aria-label="Ejecutar código" title="Ejecutar código"><Play size={13} strokeWidth={2} aria-hidden="true" /></button>
+        <span className="chat-code-card-divider" aria-hidden="true">|</span>
+        <button type="button" className="chat-code-card-copy" onClick={() => void handleCopy()} aria-label={copied ? 'Código copiado' : 'Copiar código'} title={copied ? 'Copiado' : 'Copiar'}>
+          {copied ? <Check size={14} strokeWidth={2.2} aria-hidden="true" /> : <Copy size={14} strokeWidth={1.9} aria-hidden="true" />}
+          <span>{copied ? 'Copiado' : 'Copiar'}</span>
+        </button>
+      </span>
+    </div>
+    <pre>{children}</pre>
+  </div>;
+}
+
+function MarkdownInlineCode({ children }: { children?: React.ReactNode }) {
+  const [copied, setCopied] = useState(false);
+  const content = getMarkdownNodeText(children);
+  const handleCopy = async () => {
+    await copyText(content);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1400);
+  };
+
+  return <code className="chat-inline-code">
+    <span>{children}</span>
+    <span className="chat-inline-code-actions">
+      <span className="chat-inline-code-divider" aria-hidden="true">|</span>
+      <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('codeclub:execute-inline-code', { detail: { code: content } }))} aria-label="Ejecutar código inline" title="Ejecutar código inline"><Play size={11} strokeWidth={2} aria-hidden="true" /></button>
+      <button type="button" onClick={() => void handleCopy()} aria-label={copied ? 'Código copiado' : 'Copiar código inline'} title={copied ? 'Copiado' : 'Copiar'}>{copied ? <Check size={11} strokeWidth={2.2} aria-hidden="true" /> : <Copy size={11} strokeWidth={1.9} aria-hidden="true" />}</button>
+    </span>
+  </code>;
+}
 
 type ChatAttachment = { path: string; name: string; mediaType: string; size?: number; previewUrl?: string; previewText?: string };
 type ChatMessage = { role: string; content: string; attachments: ChatAttachment[]; [key: string]: any };
@@ -2420,8 +2483,26 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             {<motion.div initial={isLiveAssistant ? { opacity: 0.58, y: 2 } : false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.24, ease: 'easeOut' }} className={`group/message ${m.role === 'assistant' ? 'chat-assistant-message' : 'chat-user-message'}`} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '5px', maxWidth: m.role === 'user' ? '70%' : '100%', minWidth: 0 }}>
               {m.role === 'user' && m.attachments?.length > 0 && <div className="chat-attachments" aria-label="Archivos adjuntos">{m.attachments.map((file) => file.mediaType?.startsWith('image/') ? <div key={file.path || file.name} className="chat-attachment-card" title={file.name}><img src={file.previewUrl || convertFileSrc(file.path)} alt={file.name} /></div> : <div key={file.path || file.name} className="chat-attachment-card chat-attachment-file" title={file.name}>{file.previewText ? <pre className="chat-attachment-preview-text">{file.previewText}</pre> : <span>{file.name.split('.').pop()?.toUpperCase().slice(0, 6) || 'FILE'}</span>}</div>)}</div>}
               {m.role === 'user' && m.browserReferences?.length > 0 && <div className="chat-browser-references" aria-label="Referencias de navegador">{m.browserReferences.map((ref: { id: string; title: string; text: string }, referenceIndex: number) => <div key={ref.id || `${ref.title}-${referenceIndex}`} className="chat-browser-reference-card"><span className="chat-browser-reference-number">{referenceIndex + 1}</span><span className="min-w-0"><span className="block truncate text-[11px] text-[#d6d6d6]">{ref.title}</span><span className="mt-0.5 block truncate text-[11px] text-[#858585]">{getBrowserReferenceComment(ref.text)}</span></span></div>)}</div>}
-              <div className={`min-w-0 max-w-full break-words [overflow-wrap:anywhere] text-sm leading-6 text-(--codeclub-text-strong) ${m.role === 'user' && getVisibleUserContent(m).trim() ? 'w-fit overflow-hidden rounded-[22px] bg-(--codeclub-user-bubble) px-4 py-2.5 leading-6' : 'w-full'}`}>
-                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{ p: ({ children }) => <p style={{ margin: m.role === 'user' ? 0 : '0 0 12px', lineHeight: m.role === 'user' ? 1.4 : 1.6 }}>{children}</p>, ul: ({ children }) => <ul style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ul>, ol: ({ children }) => <ol style={{ margin: m.role === 'user' ? 0 : '10px 0 12px', paddingLeft: '22px' }}>{children}</ol>, li: ({ children }) => <li style={{ margin: m.role === 'user' ? 0 : '4px 0' }}>{children}</li>, table: ({ children }) => <div style={{ overflowX: 'auto', margin: '12px 0' }}><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>{children}</table></div>, th: ({ children }) => <th style={{ border: '1px solid #2b2b2b', padding: '7px 9px', background: '#1c1c1c', textAlign: 'left', fontWeight: 600 }}>{children}</th>, td: ({ children }) => <td style={{ border: '1px solid #2b2b2b', padding: '7px 9px', verticalAlign: 'top' }}>{children}</td>, h1: ({ children }) => <h1 style={{ margin: '18px 0 10px', fontSize: '20px' }}>{children}</h1>, h2: ({ children }) => <h2 style={{ margin: '16px 0 8px', fontSize: '17px' }}>{children}</h2>, h3: ({ children }) => <h3 style={{ margin: '14px 0 7px', fontSize: '15px' }}>{children}</h3> }}>{normalizeChatContent(m.role === 'user' ? getVisibleUserContent(m) : (m.meta?.status === 'error' ? (language === 'en' ? 'No response' : 'Sin respuesta') : (m.displayContent || m.content)))}</ReactMarkdown>
+              <div className={`chat-markdown min-w-0 max-w-full break-words [overflow-wrap:anywhere] text-sm leading-6 text-(--codeclub-text-strong) ${m.role === 'user' ? 'chat-markdown-user' : 'chat-markdown-assistant'} ${m.role === 'user' && getVisibleUserContent(m).trim() ? 'w-fit overflow-hidden rounded-[22px] bg-(--codeclub-user-bubble) px-4 py-2.5 leading-6' : 'w-full'}`}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{
+                  p: ({ children }) => <p>{children}</p>,
+                  ul: ({ children }) => <ul>{children}</ul>,
+                  ol: ({ children }) => <ol>{children}</ol>,
+                  li: ({ children }) => <li>{children}</li>,
+                  blockquote: ({ children }) => <blockquote>{children}</blockquote>,
+                  a: ({ children, href }) => {
+                    const favicon = getMarkdownLinkFavicon(href);
+                    return <a href={href} target="_blank" rel="noreferrer">{favicon && <img src={favicon} alt="" aria-hidden="true" className="chat-markdown-link-icon" loading="lazy" />}{children}</a>;
+                  },
+                  table: ({ children }) => <div className="chat-markdown-table"><table>{children}</table></div>,
+                  th: ({ children }) => <th>{children}</th>,
+                  td: ({ children }) => <td>{children}</td>,
+                  pre: ({ children }) => <MarkdownCodeBlock>{children}</MarkdownCodeBlock>,
+                  code: ({ children, className }) => className ? <code className={className}>{children}</code> : <MarkdownInlineCode>{children}</MarkdownInlineCode>,
+                  h1: ({ children }) => <h1>{children}</h1>,
+                  h2: ({ children }) => <h2>{children}</h2>,
+                  h3: ({ children }) => <h3>{children}</h3>,
+                }}>{normalizeChatContent(m.role === 'user' ? getVisibleUserContent(m) : (m.meta?.status === 'error' ? (language === 'en' ? 'No response' : 'Sin respuesta') : (m.displayContent || m.content)))}</ReactMarkdown>
                 {m.role === 'assistant' && isStreaming && agentState !== 'error' && i === messages.length - 1 && !m.content && !m.timeline?.some((event: any) => event.type === 'tool') && <span className="chat-thinking-label composer-action-shine" style={{ display: 'inline-block', fontSize: '13px' }}>Pensando</span>}
               </div>
               {m.role === 'assistant' && <ExecutionTimeline timeline={m.timeline} active={isLiveAssistant && !m.content?.trim()} language={language} />}

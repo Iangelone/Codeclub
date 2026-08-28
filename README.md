@@ -3,6 +3,10 @@
 
 Codeclub brings chat, projects, terminals, a browser, development tools, and visible work evidence into one focused Windows app. It is designed to make agent-assisted development practical: the agent can help, while the person stays in control.
 
+<p align="center">
+  <img src="docs/assets/codeclub-workspace.png" alt="Codeclub AI workspace" width="1000">
+</p>
+
 [![Status](https://img.shields.io/badge/status-beta-3d9bff)](#status) [![Platform](https://img.shields.io/badge/platform-Windows-1687ff)](#requirements)
 
 ## In plain terms

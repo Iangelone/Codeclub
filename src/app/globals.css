@@ -120,6 +120,301 @@ body {
   justify-content: center;
 }
 
+/* Markdown del chat: Tailwind resetea listas y elementos semánticos, así que
+   el renderer necesita una superficie tipográfica propia y consistente. */
+.chat-markdown > :first-child {
+  margin-top: 0;
+}
+
+.chat-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-markdown p {
+  margin: 0 0 12px;
+  line-height: 1.6;
+}
+
+.chat-markdown-user p {
+  margin-bottom: 0;
+  line-height: 1.4;
+}
+
+.chat-markdown h1,
+.chat-markdown h2,
+.chat-markdown h3 {
+  color: var(--codeclub-text-strong);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.chat-markdown h1 {
+  margin: 18px 0 10px;
+  font-size: 20px;
+}
+
+.chat-markdown h2 {
+  margin: 16px 0 8px;
+  font-size: 17px;
+}
+
+.chat-markdown h3 {
+  margin: 14px 0 7px;
+  font-size: 15px;
+}
+
+.chat-markdown ul,
+.chat-markdown ol {
+  margin: 10px 0 12px;
+  padding-left: 24px;
+}
+
+.chat-markdown-user ul,
+.chat-markdown-user ol {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.chat-markdown ul {
+  list-style-type: disc;
+}
+
+.chat-markdown ol {
+  list-style-type: decimal;
+}
+
+.chat-markdown ul ul {
+  list-style-type: circle;
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+.chat-markdown li {
+  margin: 4px 0;
+  padding-left: 2px;
+}
+
+.chat-markdown li::marker {
+  color: var(--codeclub-text-muted);
+}
+
+.chat-markdown blockquote {
+  margin: 12px 0;
+  padding: 2px 0 2px 14px;
+  border-left: 3px solid #454545;
+  color: var(--codeclub-text-muted);
+  font-style: italic;
+}
+
+.chat-markdown a {
+  color: var(--codeclub-accent-bright);
+  text-decoration: underline;
+  text-decoration-color: rgba(139, 199, 255, 0.5);
+  text-underline-offset: 2px;
+}
+
+.chat-markdown a:hover {
+  color: #b8ddff;
+}
+
+.chat-markdown-link-icon {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 5px;
+  vertical-align: -2px;
+  object-fit: contain;
+}
+
+.chat-markdown hr {
+  margin: 18px 0;
+  border: 0;
+  border-top: 1px solid var(--codeclub-border);
+}
+
+.chat-markdown :not(pre) > code {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #343434;
+  border-radius: 5px;
+  background: #1d1d1d;
+  padding: 2px 5px;
+  color: #e6e6e6;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Consolas, monospace);
+  font-size: 0.9em;
+}
+
+.chat-inline-code > span:first-child {
+  min-width: 0;
+}
+
+.chat-inline-code-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--codeclub-text-muted);
+}
+
+.chat-inline-code-actions button {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+}
+
+.chat-inline-code-actions button:hover {
+  background: var(--codeclub-hover);
+  color: var(--codeclub-text-strong);
+}
+
+.chat-inline-code-divider {
+  color: #555555;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.chat-markdown pre {
+  margin: 14px 0;
+  overflow-x: auto;
+  border: 1px solid #2b2b2b;
+  border-radius: 8px;
+  background: #181818;
+  padding: 12px 14px;
+  line-height: 1.55;
+  white-space: pre;
+}
+
+.chat-code-card {
+  margin: 14px 0;
+  overflow: hidden;
+  border: 1px solid #2b2b2b;
+  border-radius: 18px;
+  background: #1b1b1b;
+}
+
+.chat-code-card-header {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 12px 0 14px;
+  border-bottom: 1px solid #292929;
+  background: #1e1e1e;
+  color: var(--codeclub-text-muted);
+  font-size: 11px;
+}
+
+.chat-code-card-language,
+.chat-code-card-actions,
+.chat-code-card-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.chat-code-card-language {
+  color: var(--codeclub-text);
+  font-weight: 600;
+}
+
+.chat-code-card-copy {
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding: 5px 6px;
+  color: var(--codeclub-text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.chat-code-card-actions {
+  gap: 5px;
+}
+
+.chat-code-card-icon-button {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding: 0;
+  color: var(--codeclub-text-muted);
+  cursor: pointer;
+}
+
+.chat-code-card-icon-button:hover {
+  background: var(--codeclub-hover);
+  color: var(--codeclub-text-strong);
+}
+
+.chat-code-card-divider {
+  color: #505050;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.chat-code-card-copy:hover {
+  background: var(--codeclub-hover);
+  color: var(--codeclub-text-strong);
+}
+
+.chat-code-card > pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.chat-markdown pre code {
+  display: block;
+  background: transparent;
+  padding: 0;
+  color: #d7d7d7;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Consolas, monospace);
+  font-size: 12px;
+}
+
+.chat-markdown-table {
+  width: 100%;
+  margin: 12px 0;
+  overflow-x: auto;
+}
+
+.chat-markdown table {
+  width: 100%;
+  min-width: 420px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.chat-markdown th,
+.chat-markdown td {
+  border: 1px solid #2b2b2b;
+  padding: 7px 9px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.chat-markdown th {
+  background: #1c1c1c;
+  color: var(--codeclub-text-strong);
+  font-weight: 600;
+}
+
+.chat-markdown td {
+  color: var(--codeclub-text);
+}
+
 .chat-turn-advice {
   color: var(--codeclub-text-muted);
   font-size: 11px;
