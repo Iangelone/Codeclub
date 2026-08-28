@@ -109,6 +109,28 @@ function MarkdownInlineCode({ children }: { children?: React.ReactNode }) {
   </code>;
 }
 
+const MemoizedChatMarkdown = React.memo(function MemoizedChatMarkdown({ content }: { content: string }) {
+  return <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{
+    p: ({ children }) => <p>{children}</p>,
+    ul: ({ children }) => <ul>{children}</ul>,
+    ol: ({ children }) => <ol>{children}</ol>,
+    li: ({ children }) => <li>{children}</li>,
+    blockquote: ({ children }) => <blockquote>{children}</blockquote>,
+    a: ({ children, href }) => {
+      const favicon = getMarkdownLinkFavicon(href);
+      return <a href={href} target="_blank" rel="noreferrer">{favicon && <img src={favicon} alt="" aria-hidden="true" className="chat-markdown-link-icon" loading="lazy" />}{children}</a>;
+    },
+    table: ({ children }) => <div className="chat-markdown-table"><table>{children}</table></div>,
+    th: ({ children }) => <th>{children}</th>,
+    td: ({ children }) => <td>{children}</td>,
+    pre: ({ children }) => <MarkdownCodeBlock>{children}</MarkdownCodeBlock>,
+    code: ({ children, className }) => className ? <code className={className}>{children}</code> : <MarkdownInlineCode>{children}</MarkdownInlineCode>,
+    h1: ({ children }) => <h1>{children}</h1>,
+    h2: ({ children }) => <h2>{children}</h2>,
+    h3: ({ children }) => <h3>{children}</h3>,
+  }}>{content}</ReactMarkdown>;
+});
+
 type ChatAttachment = { path: string; name: string; mediaType: string; size?: number; previewUrl?: string; previewText?: string };
 type ChatMessage = { role: string; content: string; attachments: ChatAttachment[]; [key: string]: any };
 function formatChatTime(value: unknown, language: AppLanguage) {
@@ -1650,9 +1672,17 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       let latestUsage: any = null;
       let executionSequence = 0;
       const executionCallQueues = new Map<string, string[]>();
+      let assistantUpdateFrame: number | null = null;
       const updateAssistantMessage = () => {
         runtime.messages = [...newMessages, { role: 'assistant', content: assistantContent, reasoning: assistantReasoning, timeline: assistantTimeline, tools: assistantTools, agentName: 'Desarrollo' }];
         if (isVisibleGeneration()) setMessages(runtime.messages);
+      };
+      const scheduleAssistantMessageUpdate = () => {
+        if (assistantUpdateFrame !== null) return;
+        assistantUpdateFrame = window.requestAnimationFrame(() => {
+          assistantUpdateFrame = null;
+          updateAssistantMessage();
+        });
       };
       const recordToolEvent = (name: string, input: any, output: any) => {
         runtime.tool = name;
@@ -1801,7 +1831,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             onTextDelta: (content) => {
               if (!isCurrentGeneration()) return;
               assistantContent = responseSaverEnabled ? limitResponseLength(content) : content;
-              updateAssistantMessage();
+              scheduleAssistantMessageUpdate();
             },
             onReasoningDelta: (content) => {
               if (!isCurrentGeneration()) return;
@@ -1974,6 +2004,10 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       if (!isCurrentGeneration() || abortController.signal.aborted) return;
       const changes = contextProjectPath ? summarizeWorkspaceDelta(beforeWorkspaceSnapshot, await readWorkspaceSnapshot(toolProjectPath)) : null;
       const assistantMessage = { role: 'assistant', content: assistantContent || 'La ejecución terminó sin texto final, pero las evidencias quedaron registradas.', timeline: assistantTimeline, tools: assistantTools, agentName: 'Desarrollo', meta: { provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt, status: 'completed', changes, usage: latestUsage ? { inputTokens: latestUsage.inputTokens, outputTokens: latestUsage.outputTokens, totalTokens: latestUsage.totalTokens, reasoningTokens: latestUsage.reasoningTokens } : null } };
+      if (assistantUpdateFrame !== null) {
+        window.cancelAnimationFrame(assistantUpdateFrame);
+        assistantUpdateFrame = null;
+      }
       // La respuesta ya se muestra progresivamente durante el stream. Al finalizar
       // conservamos el contenido completo para evitar una burbuja vacíoa si la
       // animación visual se interrumpe al cambiar de estado.
@@ -2530,25 +2564,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                   animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
                   transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
                 >
-                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{
-                  p: ({ children }) => <p>{children}</p>,
-                  ul: ({ children }) => <ul>{children}</ul>,
-                  ol: ({ children }) => <ol>{children}</ol>,
-                  li: ({ children }) => <li>{children}</li>,
-                  blockquote: ({ children }) => <blockquote>{children}</blockquote>,
-                  a: ({ children, href }) => {
-                    const favicon = getMarkdownLinkFavicon(href);
-                    return <a href={href} target="_blank" rel="noreferrer">{favicon && <img src={favicon} alt="" aria-hidden="true" className="chat-markdown-link-icon" loading="lazy" />}{children}</a>;
-                  },
-                  table: ({ children }) => <div className="chat-markdown-table"><table>{children}</table></div>,
-                  th: ({ children }) => <th>{children}</th>,
-                  td: ({ children }) => <td>{children}</td>,
-                  pre: ({ children }) => <MarkdownCodeBlock>{children}</MarkdownCodeBlock>,
-                  code: ({ children, className }) => className ? <code className={className}>{children}</code> : <MarkdownInlineCode>{children}</MarkdownInlineCode>,
-                  h1: ({ children }) => <h1>{children}</h1>,
-                  h2: ({ children }) => <h2>{children}</h2>,
-                  h3: ({ children }) => <h3>{children}</h3>,
-                }}>{normalizeChatContent(m.role === 'user' ? getVisibleUserContent(m) : (m.meta?.status === 'error' ? (language === 'en' ? 'No response' : 'Sin respuesta') : (m.displayContent || m.content)))}</ReactMarkdown>
+                <MemoizedChatMarkdown content={normalizeChatContent(m.role === 'user' ? getVisibleUserContent(m) : (m.meta?.status === 'error' ? (language === 'en' ? 'No response' : 'Sin respuesta') : (m.displayContent || m.content)))} />
                 </motion.div>
                 {m.role === 'assistant' && isStreaming && agentState !== 'error' && i === messages.length - 1 && !m.content && !m.timeline?.some((event: any) => event.type === 'tool') && <motion.span initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: 'easeOut' }} className="chat-thinking-label composer-action-shine" style={{ display: 'inline-block', fontSize: '13px' }}>Pensando</motion.span>}
               </div>
