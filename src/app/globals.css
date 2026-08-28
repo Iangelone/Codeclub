@@ -282,13 +282,21 @@ body {
 
 .chat-markdown pre {
   margin: 14px 0;
-  overflow-x: auto;
+  overflow: auto;
+  scrollbar-width: none;
   border: 1px solid #2b2b2b;
   border-radius: 8px;
   background: #181818;
   padding: 12px 14px;
   line-height: 1.55;
   white-space: pre;
+}
+
+.chat-markdown pre::-webkit-scrollbar,
+.chat-markdown-table::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .chat-code-card {
@@ -387,13 +395,18 @@ body {
 .chat-markdown-table {
   width: 100%;
   margin: 12px 0;
-  overflow-x: auto;
+  overflow: auto;
+  scrollbar-width: none;
+  border: 1px solid #2b2b2b;
+  border-radius: 11px;
+  background: #151515;
 }
 
 .chat-markdown table {
   width: 100%;
   min-width: 420px;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: 12px;
 }
 
@@ -409,6 +422,22 @@ body {
   background: #1c1c1c;
   color: var(--codeclub-text-strong);
   font-weight: 600;
+}
+
+.chat-markdown tr:first-child th:first-child {
+  border-top-left-radius: 10px;
+}
+
+.chat-markdown tr:first-child th:last-child {
+  border-top-right-radius: 10px;
+}
+
+.chat-markdown tr:last-child td:first-child {
+  border-bottom-left-radius: 10px;
+}
+
+.chat-markdown tr:last-child td:last-child {
+  border-bottom-right-radius: 10px;
 }
 
 .chat-markdown td {
