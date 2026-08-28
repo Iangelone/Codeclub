@@ -28,7 +28,7 @@ type RecentChat = { id: string; title: string; customName?: boolean; projectPath
 type SidebarSection = 'new-chat' | 'projects' | 'scheduled' | 'extensions';
 type ChatContextMenu = { chat: RecentChat; x: number; y: number };
 type RightPanelTab = 'files' | 'review' | 'browser' | 'artifacts' | 'terminals';
-type RightPanelInstance = { instanceId: string; tab: RightPanelTab; label: string; iconUrl?: string };
+type RightPanelInstance = { instanceId: string; tab: RightPanelTab; label: string; iconUrl?: string; terminalId?: string };
 type RightPanelContextMenu = { panel: RightPanelInstance; x: number; y: number };
 type ScheduledTask = { id: string; name: string; prompt: string; schedule: string; repeat: string; interval: string; every: string; time: string; status: 'active' | 'paused'; executionTarget: string; provider: string; model: string; apiKey: string; project: string; reasoning: string; notifications: string; lastRun?: string };
 
@@ -565,6 +565,42 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
     window.addEventListener('codeclub:open-right-file', openRightFile);
     return () => window.removeEventListener('codeclub:open-right-file', openRightFile);
   }, [activeProjectPath, panelText.files, rightPanels]);
+
+  useEffect(() => {
+    const openTerminalPanel = (event: Event) => {
+      const detail = (event as CustomEvent<{ terminalId?: string; projectPath?: string }>).detail || {};
+      if (detail.projectPath && detail.projectPath !== activeProjectPath) return;
+      window.dispatchEvent(new CustomEvent('codeclub:open-right-sidebar'));
+      const existing = detail.terminalId ? rightPanels.find((panel) => panel.terminalId === detail.terminalId) : rightPanels.find((panel) => panel.tab === 'terminals');
+      if (existing) {
+        setActiveRightPanelId(existing.instanceId);
+        return;
+      }
+      rightPanelSequence.current += 1;
+      const terminalCount = rightPanels.filter((panel) => panel.tab === 'terminals').length + 1;
+      const panel = { instanceId: `terminals-${rightPanelSequence.current}`, tab: 'terminals' as const, label: `${panelText.terminals} ${terminalCount}`, terminalId: detail.terminalId };
+      setRightPanels((current) => [...current, panel]);
+      setActiveRightPanelId(panel.instanceId);
+    };
+    window.addEventListener('codeclub:open-terminal-panel', openTerminalPanel);
+    return () => window.removeEventListener('codeclub:open-terminal-panel', openTerminalPanel);
+  }, [activeProjectPath, panelText.terminals, rightPanels]);
+
+  useEffect(() => {
+    const closeTerminalPanel = (event: Event) => {
+      const detail = (event as CustomEvent<{ terminalId?: string; projectPath?: string }>).detail || {};
+      if (detail.projectPath && detail.projectPath !== activeProjectPath) return;
+      if (!detail.terminalId) return;
+      setRightPanels((current) => {
+        const panel = current.find((item) => item.terminalId === detail.terminalId);
+        if (!panel) return current;
+        setActiveRightPanelId((active) => active === panel.instanceId ? (current.find((item) => item.instanceId !== panel.instanceId)?.instanceId || '') : active);
+        return current.filter((item) => item.instanceId !== panel.instanceId);
+      });
+    };
+    window.addEventListener('codeclub:terminal-closed', closeTerminalPanel);
+    return () => window.removeEventListener('codeclub:terminal-closed', closeTerminalPanel);
+  }, [activeProjectPath]);
 
   useEffect(() => {
     const openTerminalAndRun = (detail: { code?: string; language?: string; cwd?: string }) => {
@@ -1301,7 +1337,7 @@ function buildTerminalRunCommand({ code, language = 'text', cwd }: TerminalRunRe
   return `& ([scriptblock]::Create(@'\r\n${payload}\r\n'@))\r\n`;
 }
 
-function TerminalPanel({ projectPath }: { projectPath?: string }) {
+function TerminalPanel({ projectPath, terminalId }: { projectPath?: string; terminalId?: string }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<XtermTerminal | null>(null);
   const sessionIdRef = useRef<string | null>(null);
@@ -1366,12 +1402,17 @@ function TerminalPanel({ projectPath }: { projectPath?: string }) {
     const start = async () => {
       outputRef.current = '';
       try {
-        const created = await nativeInvoke<TerminalInfo>('codeclub_terminal_create', { request: { projectPath, shell: 'powershell', name: 'PowerShell' } });
+        const existing = terminalId ? await nativeInvoke<{ info?: TerminalInfo; output?: string }>('codeclub_terminal_snapshot', { id: terminalId }) : null;
+        const created = existing?.info || await nativeInvoke<TerminalInfo>('codeclub_terminal_create', { request: { projectPath, shell: 'powershell', name: 'PowerShell' } });
         if (cancelled) {
-          await nativeInvoke('codeclub_terminal_delete', { id: created.id }).catch(() => undefined);
+          if (!terminalId) await nativeInvoke('codeclub_terminal_delete', { id: created.id }).catch(() => undefined);
           return;
         }
         sessionIdRef.current = created.id;
+        if (existing?.output) {
+          outputRef.current = String(existing.output);
+          terminalRef.current?.write(outputRef.current);
+        }
         if (pendingRunRef.current) {
           const pending = pendingRunRef.current;
           pendingRunRef.current = null;
@@ -1405,9 +1446,9 @@ function TerminalPanel({ projectPath }: { projectPath?: string }) {
       if (timer) window.clearInterval(timer);
       const id = sessionIdRef.current;
       sessionIdRef.current = null;
-      if (id) void nativeInvoke('codeclub_terminal_delete', { id }).catch(() => undefined);
+      if (id && !terminalId) void nativeInvoke('codeclub_terminal_delete', { id }).catch(() => undefined);
     };
-  }, [projectPath]);
+  }, [projectPath, terminalId]);
 
   return <div ref={containerRef} id="codeclub-terminal-panel" className="h-full min-h-0 w-full bg-[#191919] p-3" onClick={() => terminalRef.current?.focus()} aria-label="Terminal PowerShell" />;
 }
@@ -1635,7 +1676,7 @@ function RightSidebarContent({ panel, projectName, projectPath, selectedFilePath
   if (tab === 'review') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-hidden"><ReviewPanel projectPath={projectPath} visible={reviewChangesVisible} /></motion.section>;
   if (tab === 'browser') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="h-full min-h-0 flex-1 overflow-hidden"><BrowserPanel /></motion.section>;
   if (tab === 'artifacts') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-hidden"><ArtifactsPanel projectPath={projectPath} projectName={projectName} /></motion.section>;
-  if (tab === 'terminals') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-hidden"><TerminalPanel projectPath={projectPath} /></motion.section>;
+  if (tab === 'terminals') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-hidden"><TerminalPanel projectPath={projectPath} terminalId={panel.terminalId} /></motion.section>;
   return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-auto px-3 py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
     <div className="mt-5 grid min-h-[180px] place-items-center rounded-xl bg-transparent px-5 text-center"><div><Icon size={28} strokeWidth={1.3} className="mx-auto text-(--codeclub-text-muted)" aria-hidden="true" /><p className="mt-3 mb-0 text-[12px] text-(--codeclub-text-strong)">{projectPath ? projectName : 'Sin proyecto activo'}</p><p className="mt-1 mb-0 text-[11px] leading-5 text-(--codeclub-text-muted)">{descriptions[tab]}</p></div></div>
   </motion.section>;

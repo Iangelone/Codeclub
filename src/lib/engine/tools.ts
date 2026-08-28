@@ -2,7 +2,7 @@ import { nativeInvoke as invoke } from '../runtime';
 import { jsonSchema as aiJsonSchema, tool } from 'ai';
 import type { ToolContext } from './types';
 import { runStream } from './run';
-import { createId, readAgentState, writeAgentState, type TaskStatus } from './planning';
+import { createId, readAgentState, updateAgentState, waitForAgentStateMutations, type AgentPlan, type AgentState, type TaskStatus } from './planning';
 import { appendGenerationUsage } from '../usage';
 import { readExecutionLog } from '../execution-log';
 import { readProjectIndex } from '../projectManager';
@@ -549,12 +549,13 @@ export function createTools(ctx: ToolContext) {
           createdAt: now,
           updatedAt: now,
         };
-        const state = await readAgentState(projectPath);
-        state.plans = [...(state.plans || (state.plan ? [state.plan] : [])), plan];
-        state.plan = plan;
-        await writeAgentState(projectPath, state);
-        recordToolEvent('createPlan', { title, steps }, plan);
-        return plan;
+        const state = await updateAgentState(projectPath, (state) => {
+          state.plans = [...(state.plans || (state.plan ? [state.plan] : [])), plan];
+          state.plan = plan;
+        });
+        const createdPlan = state.plans.find((item) => item.id === plan.id) || plan;
+        recordToolEvent('createPlan', { title, steps }, createdPlan);
+        return createdPlan;
       },
     }),
     updatePlan: tool({
@@ -572,22 +573,26 @@ export function createTools(ctx: ToolContext) {
       }),
       execute: async ({ planId, title, status, stepId, stepStatus }) => {
         setAgentState('tool_call');
-        const state = await readAgentState(projectPath);
-        if (!state.plan || (planId && state.plan.id !== planId)) return { ok: false, error: 'No se encontró el plan indicado.' };
-        const plans = state.plans || (state.plan ? [state.plan] : []);
-        const target = planId ? plans.find((item) => item.id === planId) : plans[plans.length - 1];
-        if (!target) return { ok: false, error: 'No se encontró el plan indicado.' };
-        if (title) target.title = title;
-        if (status) target.status = status as TaskStatus;
-        if (stepId && stepStatus) {
-          const step = target.steps.find((item) => item.id === stepId);
-          if (!step) return { ok: false, error: 'No se encontró el paso indicado.' };
-          step.status = stepStatus as TaskStatus;
-        }
-        target.updatedAt = new Date().toISOString();
-        state.plans = plans;
-        state.plan = target;
-        await writeAgentState(projectPath, state);
+        let result: AgentPlan | null = null;
+        const state = await updateAgentState(projectPath, (next) => {
+          if (!next.plan || (planId && !next.plans.some((item) => item.id === planId))) return;
+          const plans = next.plans || (next.plan ? [next.plan] : []);
+          const target = planId ? plans.find((item) => item.id === planId) : plans[plans.length - 1];
+          if (!target) return;
+          if (title) target.title = title;
+          if (status) target.status = status as TaskStatus;
+          if (stepId && stepStatus) {
+            const step = target.steps.find((item) => item.id === stepId);
+            if (!step) return;
+            step.status = stepStatus as TaskStatus;
+          }
+          target.updatedAt = new Date().toISOString();
+          next.plans = plans;
+          next.plan = target;
+          result = target;
+        });
+        if (!result) return { ok: false, error: stepId && stepStatus ? 'No se encontró el plan o paso indicado.' : 'No se encontró el plan indicado.' };
+        const target = state.plans.find((item) => item.id === result!.id) || result;
         recordToolEvent('updatePlan', { planId, title, status, stepId, stepStatus }, target);
         return target;
       },
@@ -608,23 +613,25 @@ export function createTools(ctx: ToolContext) {
       }),
       execute: async ({ action, id, title, description, status }) => {
         setAgentState('tool_call');
-        const state = await readAgentState(projectPath);
-        if (action === 'add' && title) {
-          const now = new Date().toISOString();
-          state.todos.push({ id: createId('todo'), title, description, status: (status || 'pending') as TaskStatus, createdAt: now, updatedAt: now });
-        } else if (action === 'update' && id) {
-          const todo = state.todos.find((item) => item.id === id);
-          if (!todo) return { ok: false, error: 'No se encontró el TODO indicado.' };
-          if (title) todo.title = title;
-          if (description !== undefined) todo.description = description;
-          if (status) todo.status = status as TaskStatus;
-          todo.updatedAt = new Date().toISOString();
-        } else if (action === 'remove' && id) {
-          state.todos = state.todos.filter((item) => item.id !== id);
-        } else if (action === 'clear') {
-          state.todos = [];
-        }
-        await writeAgentState(projectPath, state);
+        let missingTodo = false;
+        const state = await updateAgentState(projectPath, (next) => {
+          if (action === 'add' && title) {
+            const now = new Date().toISOString();
+            next.todos.push({ id: createId('todo'), title, description, status: (status || 'pending') as TaskStatus, createdAt: now, updatedAt: now });
+          } else if (action === 'update' && id) {
+            const todo = next.todos.find((item) => item.id === id);
+            if (!todo) { missingTodo = true; return; }
+            if (title) todo.title = title;
+            if (description !== undefined) todo.description = description;
+            if (status) todo.status = status as TaskStatus;
+            todo.updatedAt = new Date().toISOString();
+          } else if (action === 'remove' && id) {
+            next.todos = next.todos.filter((item) => item.id !== id);
+          } else if (action === 'clear') {
+            next.todos = [];
+          }
+        });
+        if (missingTodo) return { ok: false, error: 'No se encontró el TODO indicado.' };
         const output = { ok: true, todos: state.todos };
         recordToolEvent('todo', { action, id, title, description, status }, output);
         return output;
@@ -635,6 +642,7 @@ export function createTools(ctx: ToolContext) {
       inputSchema: jsonSchema({ type: 'object', properties: {}, additionalProperties: false }),
       execute: async () => {
         setAgentState('tool_call');
+        await waitForAgentStateMutations(projectPath);
         const state = await readAgentState(projectPath);
         recordToolEvent('getTaskStatus', {}, state);
         return state;
@@ -670,7 +678,7 @@ export function createTools(ctx: ToolContext) {
       },
     }),
     createSkill: tool({
-      description: 'Create a complete Agent Plugins package globally or in the active project, including plugin.json and skills/<skillName>/SKILL.md.',
+      description: 'Create a complete Agent Plugins package globally or in the active project, including plugin.json and skills/<skillName>/SKILL.md. The tool verifies both files and returns their real storage paths; do not try to read pluginPath with workspace file tools.',
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
@@ -704,25 +712,28 @@ export function createTools(ctx: ToolContext) {
         const pluginPath = scope === 'project' ? `project/plugins/${pluginName}` : `global/plugins/${pluginName}`;
         const manifestPath = `${pluginPath}/plugin.json`;
         const schema = 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json';
-        let manifest: any = { '$schema': schema, name: pluginName };
-        try { manifest = JSON.parse(String((await readPluginFile(scope, pluginName, 'plugin.json')).content)); } catch { /* paquete nuevo */ }
-        if (manifest.name !== pluginName || manifest['$schema'] !== schema) return { ok: false, error: 'El plugin existente tiene un manifest incompatible.' };
+        let existingManifest: any = null;
+        try { existingManifest = await readPluginFile(scope, pluginName, 'plugin.json'); } catch { /* paquete nuevo */ }
+        if (existingManifest) return { ok: false, error: 'El plugin ya existe; no se sobrescribió.' };
+        const manifest: any = { '$schema': schema, name: pluginName };
         manifest.version = String(version || manifest.version || '0.1.0');
         manifest.description = String(manifest.description || pluginDescription);
         if (author) manifest.author = { name: String(author).trim().slice(0, 200) };
         if (license) manifest.license = String(license).trim().slice(0, 80);
         if (homepage) manifest.homepage = String(homepage).trim().slice(0, 500);
         const pluginSkillContent = `---\nname: ${pluginSkillName}\ndescription: ${pluginDescription}\n---\n\n${pluginInstructions}\n`;
-        await writePluginFile(scope, pluginName, 'plugin.json', JSON.stringify(manifest, null, 2) + '\n');
-        await writePluginFile(scope, pluginName, `skills/${pluginSkillName}/SKILL.md`, pluginSkillContent);
-        const pluginOutput = { ok: true, plugin: pluginName, pluginPath, manifestPath, skillName: pluginSkillName, skillPath: `${pluginPath}/skills/${pluginSkillName}/SKILL.md`, scope, workspace: scope === 'project' ? projectPath : null, availableInSession: true, format: 'agent-plugins-1.0.0' };
+        const manifestWrite = await writePluginFile(scope, pluginName, 'plugin.json', JSON.stringify(manifest, null, 2) + '\n');
+        const skillWrite = await writePluginFile(scope, pluginName, `skills/${pluginSkillName}/SKILL.md`, pluginSkillContent);
+        const verifiedManifest = await readPluginFile(scope, pluginName, 'plugin.json');
+        const verifiedSkill = await readPluginFile(scope, pluginName, `skills/${pluginSkillName}/SKILL.md`);
+        const pluginOutput = { ok: true, plugin: pluginName, pluginPath, manifestPath, skillName: pluginSkillName, skillPath: `${pluginPath}/skills/${pluginSkillName}/SKILL.md`, absolutePluginPath: manifestWrite.pluginPath || skillWrite.pluginPath, absoluteManifestPath: manifestWrite.absolutePath, absoluteSkillPath: skillWrite.absolutePath, verified: { manifest: Boolean(verifiedManifest.content), skill: Boolean(verifiedSkill.content) }, scope, workspace: scope === 'project' ? projectPath : null, availableInSession: true, format: 'agent-plugins-1.0.0' };
         recordToolEvent('createSkill', { name: pluginName, skillName: pluginSkillName, description: pluginDescription, pluginPath }, pluginOutput);
         window.dispatchEvent(new CustomEvent('codeclub:skills-changed', { detail: { projectPath, pluginName, skillName: pluginSkillName } }));
         return pluginOutput;
       },
     }),
     createExtension: tool({
-      description: 'Create a complete Agent Plugins package with one skill. Agent Plugins is the canonical format for new extensions.',
+      description: 'Create a complete Agent Plugins package with one skill. The tool verifies both files and returns their real storage paths; do not try to verify pluginPath with workspace file tools or searchPlugins in the same turn.',
       inputSchema: jsonSchema({ type: 'object', properties: { name: { type: 'string' }, description: { type: 'string' }, instructions: { type: 'string' }, scope: { type: 'string', enum: ['global', 'project'] } }, required: ['name', 'description', 'instructions'], additionalProperties: false }),
       execute: async ({ name, description, instructions, scope: requestedScope }) => {
         setAgentState('running');
@@ -735,18 +746,24 @@ export function createTools(ctx: ToolContext) {
         if (!/^[a-z0-9]+(?:[-.][a-z0-9]+)*$/.test(pluginName) || !pluginDescription || !pluginInstructions) return { ok: false, error: 'El plugin requiere nombre, descripción e instrucciones válidas.' };
         const pluginPath = scope === 'project' ? `project/plugins/${pluginName}` : `global/plugins/${pluginName}`;
         const schema = 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json';
+        try {
+          await readPluginFile(scope, pluginName, 'plugin.json');
+          return { ok: false, error: 'La extensión ya existe; no se sobrescribió.' };
+        } catch { /* extensión nueva */ }
         const manifest = { '$schema': schema, name: pluginName, version: '0.1.0', description: pluginDescription };
         const skillContent = `---\nname: ${pluginName}\ndescription: ${pluginDescription}\n---\n\n${pluginInstructions}\n`;
-        await writePluginFile(scope, pluginName, 'plugin.json', JSON.stringify(manifest, null, 2) + '\n');
-        await writePluginFile(scope, pluginName, `skills/${pluginName}/SKILL.md`, skillContent);
-        const pluginOutput = { ok: true, plugin: pluginName, pluginPath, scope, workspace: scope === 'project' ? projectPath : null, format: 'agent-plugins-1.0.0', availableInSession: true };
+        const manifestWrite = await writePluginFile(scope, pluginName, 'plugin.json', JSON.stringify(manifest, null, 2) + '\n');
+        const skillWrite = await writePluginFile(scope, pluginName, `skills/${pluginName}/SKILL.md`, skillContent);
+        const verifiedManifest = await readPluginFile(scope, pluginName, 'plugin.json');
+        const verifiedSkill = await readPluginFile(scope, pluginName, `skills/${pluginName}/SKILL.md`);
+        const pluginOutput = { ok: true, plugin: pluginName, pluginPath, manifestPath: `${pluginPath}/plugin.json`, skillPath: `${pluginPath}/skills/${pluginName}/SKILL.md`, absolutePluginPath: manifestWrite.pluginPath || skillWrite.pluginPath, absoluteManifestPath: manifestWrite.absolutePath, absoluteSkillPath: skillWrite.absolutePath, verified: { manifest: Boolean(verifiedManifest.content), skill: Boolean(verifiedSkill.content) }, scope, workspace: scope === 'project' ? projectPath : null, format: 'agent-plugins-1.0.0', availableInSession: true };
         recordToolEvent('createExtension', { name: pluginName, description: pluginDescription }, pluginOutput);
         window.dispatchEvent(new CustomEvent('codeclub:skills-changed', { detail: { projectPath, pluginName } }));
         return pluginOutput;
       },
     }),
     deleteExtension: tool({
-      description: 'Delete an Agent Plugins package from global scope or the active project.',
+      description: 'Delete an Agent Plugins package from global scope or the active project. The native delete result is authoritative and includes the removed storage path; do not verify with searchPlugins in the same turn.',
       inputSchema: jsonSchema({ type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' }, scope: { type: 'string', enum: ['global', 'project'] } }, additionalProperties: false }),
       execute: async ({ id, name, scope: requestedScope }) => {
         setAgentState('running');
@@ -755,15 +772,16 @@ export function createTools(ctx: ToolContext) {
         const scope = scopeResult.scope;
         const pluginId = String(id || name || '').replace(/^custom-/, '').trim().toLowerCase();
         if (!/^[a-z0-9]+(?:[-.][a-z0-9]+)*$/.test(pluginId)) return { ok: false, error: 'Indicá el nombre válido del plugin.' };
-        try { await invoke('codeclub_delete_agent_plugin', { projectPath, pluginId, scope }); } catch (error) { return { ok: false, error: String(error) }; }
-        const pluginOutput = { ok: true, deleted: pluginId, scope, format: 'agent-plugins-1.0.0' };
+        let deletion: any;
+        try { deletion = await invoke('codeclub_delete_agent_plugin', { projectPath, pluginId, scope }); } catch (error) { return { ok: false, error: String(error) }; }
+        const pluginOutput = { ok: true, deleted: pluginId, deletedPath: deletion?.pluginPath || null, verified: deletion?.ok === true, scope, format: 'agent-plugins-1.0.0' };
         recordToolEvent('deleteExtension', { id, name, pluginId }, pluginOutput);
         window.dispatchEvent(new CustomEvent('codeclub:skills-changed', { detail: { projectPath, pluginId } }));
         return pluginOutput;
       },
     }),
     createMcpServer: tool({
-      description: 'Create a complete Agent Plugins package containing an MCP server globally or in the active project.',
+      description: 'Create a complete Agent Plugins package containing an MCP server globally or in the active project. The tool verifies plugin.json and mcp.json and returns their real storage paths; do not verify them with workspace file tools or connect the server in the same turn.',
       inputSchema: jsonSchema({ type: 'object', properties: { name: { type: 'string', description: 'MCP server display name.' }, pluginName: { type: 'string', description: 'Optional Agent Plugin name.' }, type: { type: 'string', enum: ['stdio', 'streamable-http', 'sse'] }, url: { type: 'string' }, command: { type: 'string', description: 'Executable token for stdio.' }, args: { type: 'array', items: { type: 'string' } }, env: { type: 'object', additionalProperties: { type: 'string' } }, cwd: { type: 'string' }, scope: { type: 'string', enum: ['global', 'project'] } }, required: ['name'], additionalProperties: false }),
       execute: async ({ name, pluginName, url, type, command, args, env, cwd, scope: requestedScope }) => {
         setAgentState('running');
@@ -793,18 +811,24 @@ export function createTools(ctx: ToolContext) {
         if (!/^[a-z0-9]+(?:[-.][a-z0-9]+)*$/.test(mcpPluginName) || mcpPluginName.length > 64 || mcpPluginName.includes('--') || mcpPluginName.includes('..')) return { ok: false, error: 'El nombre del plugin debe usar minúsculas, números, guiones o puntos.' };
         if (!/^https:\/\/\S+$/i.test(cleanUrl) && !/^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(?:\/\S*)?$/i.test(cleanUrl)) return { ok: false, error: 'El endpoint MCP debe usar HTTPS; HTTP solo está permitido para loopback.' };
         const pluginPath = scope === 'project' ? `project/plugins/${mcpPluginName}` : `global/plugins/${mcpPluginName}`;
+        try {
+          await readPluginFile(scope, mcpPluginName, 'plugin.json');
+          return { ok: false, error: 'El servidor MCP ya existe; no se sobrescribió.' };
+        } catch { /* paquete MCP nuevo */ }
         const manifest = { '$schema': 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json', name: mcpPluginName, version: '0.1.0', description: `MCP server ${serverName}` };
         const mcpConfig = { '$schema': 'https://agent-plugins.org/schemas/1.0.0/mcp.schema.json', mcpServers: { [serverName]: serverConfig } };
-        await writePluginFile(scope, mcpPluginName, 'plugin.json', JSON.stringify(manifest, null, 2) + '\n');
-        await writePluginFile(scope, mcpPluginName, 'mcp.json', JSON.stringify(mcpConfig, null, 2) + '\n');
-        const pluginServer = { ok: true, plugin: mcpPluginName, pluginPath, scope, workspace: scope === 'project' ? projectPath : null, serverName, ...serverConfig, format: 'agent-plugins-1.0.0', availableNextMessage: true };
+        const manifestWrite = await writePluginFile(scope, mcpPluginName, 'plugin.json', JSON.stringify(manifest, null, 2) + '\n');
+        const configWrite = await writePluginFile(scope, mcpPluginName, 'mcp.json', JSON.stringify(mcpConfig, null, 2) + '\n');
+        const verifiedManifest = await readPluginFile(scope, mcpPluginName, 'plugin.json');
+        const verifiedConfig = await readPluginFile(scope, mcpPluginName, 'mcp.json');
+        const pluginServer = { ok: true, plugin: mcpPluginName, pluginPath, manifestPath: `${pluginPath}/plugin.json`, configPath: `${pluginPath}/mcp.json`, absolutePluginPath: manifestWrite.pluginPath || configWrite.pluginPath, absoluteManifestPath: manifestWrite.absolutePath, absoluteConfigPath: configWrite.absolutePath, verified: { manifest: Boolean(verifiedManifest.content), config: Boolean(verifiedConfig.content) }, scope, workspace: scope === 'project' ? projectPath : null, serverName, ...serverConfig, format: 'agent-plugins-1.0.0', availableNextMessage: true };
         recordToolEvent('createMcpServer', { name, pluginName: mcpPluginName, ...serverConfig }, pluginServer);
         window.dispatchEvent(new CustomEvent('codeclub:mcp-changed', { detail: { projectPath, pluginName: mcpPluginName } }));
         return pluginServer;
       },
     }),
     deleteMcpServer: tool({
-      description: 'Delete an Agent Plugins MCP package globally or from the active project.',
+      description: 'Delete an Agent Plugins MCP package globally or from the active project. The native delete result is authoritative and includes the removed storage path; do not verify with searchPlugins in the same turn.',
       inputSchema: jsonSchema({ type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' }, url: { type: 'string' }, scope: { type: 'string', enum: ['global', 'project'] } }, additionalProperties: false }),
       execute: async ({ id, name, url, scope: requestedScope }) => {
         setAgentState('running');
@@ -813,8 +837,9 @@ export function createTools(ctx: ToolContext) {
         const scope = scopeResult.scope;
         const pluginId = String(id || name || '').trim().toLowerCase();
         if (!/^[a-z0-9]+(?:[-.][a-z0-9]+)*$/.test(pluginId)) return { ok: false, error: 'Indicá el nombre válido del plugin MCP.' };
-        try { await invoke('codeclub_delete_agent_plugin', { projectPath, pluginId, scope }); } catch (error) { return { ok: false, error: String(error) }; }
-        const pluginOutput = { ok: true, deleted: pluginId, scope, format: 'agent-plugins-1.0.0' };
+        let deletion: any;
+        try { deletion = await invoke('codeclub_delete_agent_plugin', { projectPath, pluginId, scope }); } catch (error) { return { ok: false, error: String(error) }; }
+        const pluginOutput = { ok: true, deleted: pluginId, deletedPath: deletion?.pluginPath || null, verified: deletion?.ok === true, scope, format: 'agent-plugins-1.0.0' };
         recordToolEvent('deleteMcpServer', { id, name, url, pluginId }, pluginOutput);
         window.dispatchEvent(new CustomEvent('codeclub:mcp-changed', { detail: { projectPath, pluginId } }));
         return pluginOutput;
@@ -843,10 +868,12 @@ export function createTools(ctx: ToolContext) {
       },
     }),
     terminal: tool({
-      description: 'Create a persistent background terminal process and optionally send any command without confirmation. It does not open a visible UI tab.',
+      description: 'Manage a persistent terminal session. Use action create to start one, snapshot to read its output, write to send input, stop to terminate it, or delete to close it. Created sessions open in the visible Terminales tab.',
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
+          action: { type: 'string', enum: ['create', 'snapshot', 'write', 'stop', 'delete'], description: 'Operation to perform. Defaults to create.' },
+          id: { type: 'string', description: 'Terminal session ID for snapshot, write, stop or delete.' },
           shell: {
             type: 'string',
             enum: ['auto', 'powershell', 'git-bash', 'wsl', 'cmd'],
@@ -854,8 +881,9 @@ export function createTools(ctx: ToolContext) {
           },
           command: {
             type: 'string',
-            description: 'Optional command to type into the background terminal.',
+            description: 'Command to send when creating or writing to a terminal.',
           },
+          data: { type: 'string', description: 'Raw input to send when action is write.' },
           name: {
             type: 'string',
             description: 'Optional process label for internal tracking.',
@@ -863,8 +891,30 @@ export function createTools(ctx: ToolContext) {
         },
         additionalProperties: false,
       }),
-      execute: async ({ shell, command, name }) => {
+      execute: async ({ action = 'create', id, shell, command, data, name }) => {
         setAgentState('running');
+        if (action !== 'create') {
+          if (!id) return { ok: false, error: 'Indicá el id de la terminal.' };
+          if (action === 'snapshot') {
+            const snapshot = await invoke<any>('codeclub_terminal_snapshot', { id });
+            window.dispatchEvent(new CustomEvent('codeclub:open-terminal-panel', { detail: { terminalId: id, projectPath } }));
+            const output = { ok: true, id, info: snapshot.info, output: snapshot.output || '' };
+            recordToolEvent('terminal', { action, id }, output);
+            return output;
+          }
+          if (action === 'write') {
+            const text = String(data ?? command ?? '');
+            await invoke('codeclub_terminal_write', { id, data: text });
+            const output = { ok: true, id, written: text.length };
+            recordToolEvent('terminal', { action, id, data: text }, output);
+            return output;
+          }
+          const output = await invoke<any>(`codeclub_terminal_${action}`, { id });
+          if (action === 'delete') window.dispatchEvent(new CustomEvent('codeclub:terminal-closed', { detail: { terminalId: id, projectPath } }));
+          const result = { ok: true, id, info: output };
+          recordToolEvent('terminal', { action, id }, result);
+          return result;
+        }
         const terminal = await invoke<any>('codeclub_terminal_create', {
           request: {
             projectPath,
@@ -886,6 +936,7 @@ export function createTools(ctx: ToolContext) {
           background: true,
           commandSent: Boolean(command),
         };
+        window.dispatchEvent(new CustomEvent('codeclub:open-terminal-panel', { detail: { terminalId: terminal.id, projectPath } }));
         recordToolEvent('terminal', { shell, command, name }, output);
         return output;
       },
@@ -907,7 +958,7 @@ export function createTools(ctx: ToolContext) {
         }
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('codeclub:open-right-panel'));
-          window.dispatchEvent(new CustomEvent('codeclub:browser-navigate', { detail: { url: normalized } }));
+          window.setTimeout(() => window.dispatchEvent(new CustomEvent('codeclub:browser-navigate', { detail: { url: normalized } })), 0);
         }
         const output = { ok: true, url: normalized, openedIn: 'Navegador' };
         recordToolEvent('openBrowser', { url: normalized }, output);
@@ -992,7 +1043,16 @@ export function createTools(ctx: ToolContext) {
       execute: async () => {
         const screenshot = await invoke<any>('codeclub_computer_screenshot');
         const { createWorker } = await import('tesseract.js');
-        const worker = await createWorker('eng+spa');
+        const assetBase = typeof window === 'undefined'
+          ? undefined
+          : new URL('./tesseract/', window.location.href).toString();
+        const worker = await createWorker('eng+spa', 1, {
+          ...(assetBase ? {
+            workerPath: `${assetBase}worker.min.js`,
+            corePath: `${assetBase}tesseract-core-simd-lstm.wasm.js`,
+            langPath: assetBase,
+          } : {}),
+        });
         try {
           const image = `data:${screenshot.mimeType};base64,${screenshot.data}`;
           const result = await worker.recognize(image);

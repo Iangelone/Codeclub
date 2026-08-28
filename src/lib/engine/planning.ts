@@ -34,6 +34,11 @@ export interface AgentState {
 }
 
 const statePath = (projectPath: string) => getProjectFilePath(projectPath, 'agent-state.json');
+const stateMutationQueues = new Map<string, Promise<void>>();
+
+export async function waitForAgentStateMutations(projectPath: string): Promise<void> {
+  await stateMutationQueues.get(projectPath);
+}
 
 export async function readAgentState(projectPath: string): Promise<AgentState> {
   const path = await statePath(projectPath);
@@ -51,6 +56,25 @@ export async function writeAgentState(projectPath: string, state: AgentState): P
   const path = await statePath(projectPath);
   await makeDirectory(await getProjectFilePath(projectPath));
   await writeDesktopText(path, JSON.stringify(state));
+}
+
+export async function updateAgentState(projectPath: string, mutate: (state: AgentState) => void | Promise<void>): Promise<AgentState> {
+  const previous = stateMutationQueues.get(projectPath) || Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => { release = resolve; });
+  const queued = previous.then(() => current);
+  stateMutationQueues.set(projectPath, queued);
+
+  try {
+    await previous;
+    const state = await readAgentState(projectPath);
+    await mutate(state);
+    await writeAgentState(projectPath, state);
+    return await readAgentState(projectPath);
+  } finally {
+    release();
+    if (stateMutationQueues.get(projectPath) === queued) stateMutationQueues.delete(projectPath);
+  }
 }
 
 export const createId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

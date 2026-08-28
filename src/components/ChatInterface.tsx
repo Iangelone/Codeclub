@@ -1648,6 +1648,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       let assistantTimeline: any[] = [];
       let executionStartedAt = Date.now();
       let latestUsage: any = null;
+      let executionSequence = 0;
+      const executionCallQueues = new Map<string, string[]>();
       const updateAssistantMessage = () => {
         runtime.messages = [...newMessages, { role: 'assistant', content: assistantContent, reasoning: assistantReasoning, timeline: assistantTimeline, tools: assistantTools, agentName: 'Desarrollo' }];
         if (isVisibleGeneration()) setMessages(runtime.messages);
@@ -1843,29 +1845,36 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               const innerToolName = name === 'executeTool' ? toolCall?.input?.name : name;
               const innerToolInput = name === 'executeTool' ? toolCall?.input?.input || {} : toolCall?.input || {};
               if (String(innerToolName || '').startsWith('computer')) setComputerUseActive(true);
-              const eventKey = callId || toolCall?.toolCallId || '';
-              const existingIndex = eventKey ? assistantTools.findIndex((event) => event.callId === eventKey) : -1;
-              const nextEvent = { id: existingIndex >= 0 ? assistantTools[existingIndex].id : (eventKey || crypto.randomUUID?.() || `${Date.now()}-${assistantTools.length}`), callId: eventKey, name, input: toolCall?.input || {}, output: { status: 'running' }, startedAt: Date.now(), durationMs: null, at: new Date().toISOString() };
-              assistantTools = existingIndex >= 0 ? assistantTools.map((event, index) => index === existingIndex ? { ...event, ...nextEvent } : event) : [...assistantTools, nextEvent];
+              const sourceCallId = callId || toolCall?.toolCallId || '';
+              const eventKey = `${sourceCallId || 'tool'}:${++executionSequence}`;
+              const queueKey = `${sourceCallId}|${name}`;
+              executionCallQueues.set(queueKey, [...(executionCallQueues.get(queueKey) || []), eventKey]);
+              const nextEvent = { id: eventKey, callId: eventKey, sourceCallId, name, input: toolCall?.input || {}, output: { status: 'running' }, startedAt: Date.now(), durationMs: null, at: new Date().toISOString() };
+              assistantTools = [...assistantTools, nextEvent];
               assistantTimeline = [...assistantTimeline, { type: 'tool', id: nextEvent.id, name, input: nextEvent.input, status: 'running' }];
               runtime.tool = name;
               publishRuntime();
               if (isVisibleGeneration()) { setActiveToolName(String(innerToolName || name)); setActiveToolInput(innerToolInput); }
               updateAssistantMessage();
-              void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'tool.execution.start', input: { callId, toolCallId: toolCall?.toolCallId, toolName: toolCall?.toolName, input: toolCall?.input }, output: { status: 'started' } });
+              void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'tool.execution.start', input: { callId: eventKey, sourceCallId, toolCallId: toolCall?.toolCallId, toolName: toolCall?.toolName, input: toolCall?.input }, output: { status: 'started' } });
             },
             onToolExecutionEnd: ({ callId, toolCall, toolExecutionMs, toolOutput }) => {
               if (!isCurrentGeneration()) return;
               const toolResult = toolOutput?.output ?? toolOutput?.result ?? toolOutput;
               const toolStatus = toolOutput?.type === 'tool-result' && toolResult?.ok !== false ? 'completed' : 'error';
-              const eventKey = callId || toolCall?.toolCallId || '';
+              const sourceCallId = callId || toolCall?.toolCallId || '';
+              const name = toolCall?.toolName || 'tool';
+              const queueKey = `${sourceCallId}|${name}`;
+              const queuedKeys = executionCallQueues.get(queueKey) || [];
+              const eventKey = queuedKeys.shift() || '';
+              if (queuedKeys.length) executionCallQueues.set(queueKey, queuedKeys); else executionCallQueues.delete(queueKey);
               if (eventKey) {
                 assistantTools = assistantTools.map((event) => event.callId === eventKey ? { ...event, durationMs: toolExecutionMs } : event);
                 const toolEvent = assistantTools.find((event) => event.callId === eventKey);
                 if (toolEvent) assistantTimeline = assistantTimeline.map((event) => event.id === toolEvent.id ? { ...event, status: toolStatus, output: toolOutput, durationMs: toolExecutionMs } : event);
               }
               updateAssistantMessage();
-              void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'tool.execution.end', input: { callId, toolCallId: toolCall?.toolCallId, toolName: toolCall?.toolName }, output: { durationMs: toolExecutionMs, status: toolStatus } });
+              void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'tool.execution.end', input: { callId: eventKey || `${sourceCallId}:unmatched`, sourceCallId, toolCallId: toolCall?.toolCallId, toolName: toolCall?.toolName }, output: { durationMs: toolExecutionMs, status: toolStatus } });
             },
             onToolCall: () => {
               if (!isCurrentGeneration()) return;
@@ -2067,7 +2076,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       runtime.state = 'idle';
       runtime.tool = '';
       runtime.pendingApprovals = [];
-      chatRuntimesRef.current.delete(chatId);
       window.dispatchEvent(new CustomEvent('codeclub:agent-activity', { detail: { chatId, state: 'idle', tool: '', agent: 'Desarrollo' } }));
     }
     setPendingApprovals([]);
@@ -2668,8 +2676,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             placeholder={agentStatusText}
           />
           {artifactReference && <button type="button" onClick={() => setArtifactReference(null)} className="absolute left-[16px] top-1/2 z-10 max-w-[130px] -translate-y-1/2 truncate rounded-full border border-[#2b2b2b] bg-[#1a1a1a] px-2.5 py-1 text-[10px] text-[#cfcfcf] hover:bg-[#202020]" title="Quitar referencia">@{artifactReference.kind} · {artifactReference.title}</button>}
-          <div className="absolute right-3 top-2 flex min-h-[30px] min-w-0 items-center justify-end gap-3 @max-[520px]:gap-1.5">
-            <motion.button type={isAgentBusy ? 'button' : 'submit'} onClick={isAgentBusy ? cancelGeneration : undefined} disabled={!sendButtonActive} animate={{ scale: sendButtonActive ? 1 : 0.94, opacity: sendButtonActive ? 1 : 0.62 }} whileHover={{ scale: sendButtonActive ? 1.06 : 0.98 }} whileTap={{ scale: 0.9 }} transition={{ type: 'spring', stiffness: 460, damping: 28 }} className={`send-button ml-auto flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full text-(--codeclub-text-strong) shadow-none transition-colors disabled:cursor-not-allowed ${sendButtonActive ? 'send-button-shine border border-(--codeclub-border-soft) bg-(--codeclub-send-active-radial)' : 'border border-transparent bg-(--codeclub-surface-raised)'}`} aria-label={isAgentBusy ? "Cancelar generación" : credentialProvider ? "Guardar credencial" : "Enviar"} title={isAgentBusy ? "Cancelar generación" : credentialProvider ? "Guardar credencial" : "Enviar"}>
+          <div className="absolute right-3 top-2 z-20 flex min-h-[30px] min-w-0 items-center justify-end gap-3 @max-[520px]:gap-1.5">
+            <motion.button type={isAgentBusy ? 'button' : 'submit'} onPointerDown={(event) => { if (!isAgentBusy) return; event.preventDefault(); event.stopPropagation(); cancelGeneration(); }} onClick={isAgentBusy ? cancelGeneration : undefined} disabled={!sendButtonActive} animate={{ scale: sendButtonActive ? 1 : 0.94, opacity: sendButtonActive ? 1 : 0.62 }} whileHover={{ scale: sendButtonActive ? 1.06 : 0.98 }} whileTap={{ scale: 0.9 }} transition={{ type: 'spring', stiffness: 460, damping: 28 }} className={`send-button ml-auto flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full text-(--codeclub-text-strong) shadow-none transition-colors disabled:cursor-not-allowed ${sendButtonActive ? 'send-button-shine border border-(--codeclub-border-soft) bg-(--codeclub-send-active-radial)' : 'border border-transparent bg-(--codeclub-surface-raised)'}`} aria-label={isAgentBusy ? "Cancelar generación" : credentialProvider ? "Guardar credencial" : "Enviar"} title={isAgentBusy ? "Cancelar generación" : credentialProvider ? "Guardar credencial" : "Enviar"}>
             {isAgentBusy ? <Square size={13} strokeWidth={2.4} fill="currentColor" /> : <ArrowUp size={15} strokeWidth={2.2} />}
             </motion.button>
           </div>

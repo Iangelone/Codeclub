@@ -520,7 +520,7 @@ async function invokeNativeCommand(command: string, args: any = {}) {
       const target = pluginFile(scope, projectPath, pluginId, String(args.path || ''));
       await fs.mkdir(path.dirname(target), { recursive: true });
       await fs.writeFile(target, String(args.content ?? ''), 'utf8');
-      return { ok: true, path: String(args.path || ''), scope, pluginPath: pluginDirectory(scope, projectPath, pluginId) };
+      return { ok: true, path: String(args.path || ''), absolutePath: target, scope, pluginPath: pluginDirectory(scope, projectPath, pluginId) };
     }
     case 'codeclub_delete_agent_plugin': {
       const projectPath = String(args.projectPath || '');
