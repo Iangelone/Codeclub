@@ -248,7 +248,7 @@ async function startMcpSession(request: any) {
   const lines = createInterface({ input: child.stdout });
   lines.on('line', (line) => { try { const value = JSON.parse(line); const pending = value.id == null ? undefined : session.pending.get(Number(value.id)); if (!pending) return; session.pending.delete(Number(value.id)); if (value.error) pending.reject(new Error(JSON.stringify(value.error))); else pending.resolve(value.result ?? null); } catch { /* MCP puede emitir logs en stdout; se ignoran. */ } });
   child.on('error', (error) => { for (const pending of session.pending.values()) pending.reject(error); session.pending.clear(); });
-  const initialize = await mcpRequest(session, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'Codeclub', version: '0.1.0' } });
+  const initialize = await mcpRequest(session, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'Codeclub', version: app.getVersion() } });
   void initialize;
   child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
   const tools = await mcpRequest(session, 'tools/list', {});
@@ -647,7 +647,10 @@ function setupAutoUpdater() {
   autoUpdater.on('download-progress', (progress) => publishAutoUpdate({ state: 'downloading', version: autoUpdateState.version, percent: progress.percent }));
   autoUpdater.on('update-downloaded', (info) => publishAutoUpdate({ state: 'downloaded', version: info.version }));
   autoUpdater.on('error', (error) => publishAutoUpdate({ state: 'error', error: error instanceof Error ? error.message : String(error) }));
-  const check = () => void autoUpdater.checkForUpdates().catch((error) => publishAutoUpdate({ state: 'error', error: error instanceof Error ? error.message : String(error) }));
+  const check = () => {
+    if (['checking', 'downloading', 'downloaded'].includes(autoUpdateState.state)) return;
+    void autoUpdater.checkForUpdates().catch((error) => publishAutoUpdate({ state: 'error', error: error instanceof Error ? error.message : String(error) }));
+  };
   check();
   setInterval(check, 15 * 60 * 1000);
 }
@@ -702,6 +705,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('app:update-status', () => autoUpdateState);
   ipcMain.handle('app:check-for-updates', async () => {
     if (!app.isPackaged) return { state: 'not-available' } satisfies AutoUpdateState;
+    if (['checking', 'downloading', 'downloaded'].includes(autoUpdateState.state)) return autoUpdateState;
     try { await autoUpdater.checkForUpdates(); return autoUpdateState; } catch (error) { const state = { state: 'error', error: error instanceof Error ? error.message : String(error) } satisfies AutoUpdateState; publishAutoUpdate(state); return state; }
   });
   ipcMain.handle('app:install-update', () => { if (autoUpdateState.state === 'downloaded') autoUpdater.quitAndInstall(); return autoUpdateState; });

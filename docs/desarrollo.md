@@ -25,16 +25,16 @@
 
 Then manually exercise chat, project switching, persistence, right-sidebar resizing, browser selection and references, artifacts, terminals, both languages, updates, reload, and window controls.
 
-## Beta release workflow
+## Release workflow
 
 The version lives in package.json and package-lock.json. Build and install locally before changing it for a release.
 
     npm install
     npm run package:win
 
-The installer appears at release/Codeclub Setup X.Y.Z.exe. The package script builds Next.js, compiles Electron, and runs electron-builder for Windows x64 with publishing disabled.
+The installer appears at `release/Codeclub Setup.exe`. The package script builds Next.js, compiles Electron, and runs electron-builder for Windows x64 with publishing disabled. The build also produces `latest.yml` and the blockmap required by `electron-updater`.
 
-After verification, push a vX.Y.Z tag. The release workflow builds on windows-latest and publishes the installer, blockmap, latest.yml, builder diagnostics, hashes, and source code. Normal users only need the .exe.
+After verification, push a `vX.Y.Z` tag. The release workflow builds on windows-latest and publishes the installer, blockmap, `latest.yml`, builder diagnostics, hashes, and source code. Normal users only need the `.exe`; future installers are detected automatically through GitHub Releases and installed when the app restarts.
 
 ## Known issues
 
