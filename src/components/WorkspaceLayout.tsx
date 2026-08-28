@@ -1,6 +1,6 @@
 'use client';
 
-import { createElement, useEffect, useRef, useState, type FormEvent } from 'react';
+import { createElement, memo, useEffect, useRef, useState, type FormEvent } from 'react';
 import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, Bolt, Check, ChevronDown, Circle, CircleCheck, CirclePlus, Clock, CopyX, EllipsisVertical, ExternalLink, FileWarning, FolderOpen, FolderPen, FolderTree, GitBranch, GitCompare, Grid2X2, Heart, Home, Info, ListTodo, MoreHorizontal, MousePointerClick, Pause, Pencil, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { GlobeCheck } from 'lucide-react';
@@ -131,11 +131,15 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
   const [sizesReady, setSizesReady] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(1280);
   const resizeRef = useRef<{ side: Side; startX: number; startWidth: number } | null>(null);
+  const resizeFrameRef = useRef<number | null>(null);
+  const pendingResizeRef = useRef<{ side: Side; width: number } | null>(null);
 
   const rightMaxWidth = Math.max(
     MIN_WIDTH,
     viewportWidth - (leftOpen ? leftWidth : 0) - MIN_CENTER_WIDTH - RESIZE_HANDLE_SPACE,
   );
+  const rightMaxWidthRef = useRef(rightMaxWidth);
+  rightMaxWidthRef.current = rightMaxWidth;
 
   useEffect(() => {
     const updateViewportWidth = () => setViewportWidth(window.innerWidth);
@@ -211,19 +215,46 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
 
   useEffect(() => {
     if (!resizing) return undefined;
+    const applyPendingResize = () => {
+      const pending = pendingResizeRef.current;
+      pendingResizeRef.current = null;
+      if (!pending) return;
+      if (pending.side === 'left') setLeftWidth(pending.width); else setRightWidth(pending.width);
+    };
     const handleMove = (event: PointerEvent) => {
       const drag = resizeRef.current;
       if (!drag) return;
       const delta = drag.side === 'left' ? event.clientX - drag.startX : drag.startX - event.clientX;
-      const maxWidth = drag.side === 'right' ? rightMaxWidth : MAX_WIDTH;
+      const maxWidth = drag.side === 'right' ? rightMaxWidthRef.current : MAX_WIDTH;
       const nextWidth = Math.min(maxWidth, Math.max(MIN_WIDTH, drag.startWidth + delta));
-      if (drag.side === 'left') setLeftWidth(nextWidth); else setRightWidth(nextWidth);
+      pendingResizeRef.current = { side: drag.side, width: nextWidth };
+      if (resizeFrameRef.current === null) {
+        resizeFrameRef.current = window.requestAnimationFrame(() => {
+          resizeFrameRef.current = null;
+          applyPendingResize();
+        });
+      }
     };
-    const handleEnd = () => { resizeRef.current = null; setResizing(null); };
+    const handleEnd = () => {
+      if (resizeFrameRef.current !== null) {
+        window.cancelAnimationFrame(resizeFrameRef.current);
+        resizeFrameRef.current = null;
+      }
+      applyPendingResize();
+      resizeRef.current = null;
+      setResizing(null);
+    };
     window.addEventListener('pointermove', handleMove);
     window.addEventListener('pointerup', handleEnd, { once: true });
-    return () => { window.removeEventListener('pointermove', handleMove); window.removeEventListener('pointerup', handleEnd); };
-  }, [resizing, rightMaxWidth]);
+    return () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleEnd);
+      if (resizeFrameRef.current !== null) {
+        window.cancelAnimationFrame(resizeFrameRef.current);
+        resizeFrameRef.current = null;
+      }
+    };
+  }, [resizing]);
 
   useEffect(() => {
     const handleProjectSwitch = (event: Event) => {
@@ -726,7 +757,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
   </section>;
 }
 
-function PanelManager({ activeSection, projectPath }: { activeSection: SidebarSection; projectPath?: string }) {
+const PanelManager = memo(function PanelManager({ activeSection, projectPath }: { activeSection: SidebarSection; projectPath?: string }) {
   const language = useAppLanguage();
   const chatVisible = activeSection === 'new-chat' || activeSection === 'extensions';
   const synapseVisible = activeSection === 'projects';
@@ -739,7 +770,7 @@ function PanelManager({ activeSection, projectPath }: { activeSection: SidebarSe
       {!chatVisible && <div className="grid h-full min-h-0 place-items-center bg-(--codeclub-center) px-6 text-center"><div><p className="text-sm font-medium text-(--codeclub-text-strong)">{language === 'en' ? 'Panel without content' : 'Panel sin contenido'}</p><p className="mt-1 text-xs text-(--codeclub-text-muted)">{language === 'en' ? 'This space will adapt when we add this section.' : 'Este espacio se adaptará cuando agreguemos esta sección.'}</p></div></div>}
     </div>
   </section>;
-}
+});
 
 function SynapsePanel() {
   const language = useAppLanguage();

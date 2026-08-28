@@ -1,5 +1,6 @@
 'use client';
 
+import { memo } from 'react';
 import WorkspaceManager from './WorkspaceManager';
 import { models, providers } from '../lib/ai-catalog';
 
@@ -12,6 +13,8 @@ const catalog = [
   ...models.map((model: any) => ({ ...model, type: 'model' })),
 ];
 
-export default function ChatPanel() {
+function ChatPanel() {
   return <section id="codeclub-chat-panel" className="relative h-full min-w-0 min-h-0 grid place-items-stretch overflow-hidden" aria-label="Chat"><WorkspaceManager catalog={catalog} defaultProvider={defaultProvider} defaultModel={defaultModel} /></section>;
 }
+
+export default memo(ChatPanel);

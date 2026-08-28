@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { Folder } from 'lucide-react';
 import { activeChatStore } from '../lib/store';
 import ChatInterface from './ChatInterface.tsx';
@@ -7,7 +7,7 @@ import { readProjectIndex, type ProjectEntry } from '../lib/projectManager';
 
 type SelectedProject = { projectPath: string; projectName?: string };
 
-export default function WorkspaceManager({ catalog, defaultProvider, defaultModel }: { catalog: any; defaultProvider: any; defaultModel: any }) {
+function WorkspaceManager({ catalog, defaultProvider, defaultModel }: { catalog: any; defaultProvider: any; defaultModel: any }) {
   const [selectedProject, setSelectedProject] = useState<SelectedProject | null>(null);
   const [showExtensions, setShowExtensions] = useState(false);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
@@ -194,3 +194,5 @@ export default function WorkspaceManager({ catalog, defaultProvider, defaultMode
     </div>
   );
 }
+
+export default memo(WorkspaceManager);
