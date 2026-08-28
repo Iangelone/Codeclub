@@ -561,7 +561,22 @@ section[aria-label="Espacio de trabajo"] > [role="menu"][aria-label="Menú del c
 
 #codeclub-terminal-panel,
 #codeclub-terminal-panel > div {
-  background-color: #191919 !important;
+  background-color: #111111 !important;
+}
+
+#codeclub-terminal-panel .xterm {
+  cursor: default;
+}
+
+#codeclub-terminal-panel .xterm .xterm-viewport {
+  background-color: #111111 !important;
+  scrollbar-width: none;
+}
+
+#codeclub-terminal-panel .xterm .xterm-viewport::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 #codeclub-terminal-panel form:has(#codeclub-terminal-input) {

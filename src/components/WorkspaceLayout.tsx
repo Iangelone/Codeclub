@@ -749,7 +749,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen }: { leftOpen: boo
             {rightPanels.find((panel) => panel.instanceId === activeRightPanelId)?.tab === 'review' && <button type="button" onClick={() => setReviewChangesVisible((visible) => !visible)} className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-transparent transition-colors hover:bg-white/[0.08] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${reviewChangesVisible ? 'text-(--codeclub-text-strong)' : 'text-(--codeclub-text-muted)'}`} aria-label={reviewChangesVisible ? 'Ocultar árbol de cambios' : 'Mostrar árbol de cambios'} aria-pressed={reviewChangesVisible} title={reviewChangesVisible ? 'Ocultar cambios' : 'Mostrar cambios'}><FolderOpen size={16} strokeWidth={1.8} aria-hidden="true" /></button>}
           </div>
           <div className="absolute inset-x-0 top-11 bottom-0 flex min-h-0 flex-col overflow-hidden">
-            {rightPanels.length === 0 ? <RightPanelEmptyState onSelect={openRightPanel} /> : rightPanels.map((panel) => <div key={panel.instanceId} className={`flex min-h-0 min-w-0 flex-1 flex-col ${activeRightPanelId === panel.instanceId ? 'flex' : 'hidden'}`}><RightSidebarContent panel={panel} projectName={activeProjectName} projectPath={activeProjectPath} selectedFilePath={selectedRightFilePath} filesTreeVisible={filesTreeVisible} onToggleFilesTree={() => setFilesTreeVisible((visible) => !visible)} reviewChangesVisible={reviewChangesVisible} /></div>)}
+            {rightPanels.length === 0 ? <RightPanelEmptyState onSelect={openRightPanel} /> : rightPanels.map((panel) => <div key={panel.instanceId} className={`flex min-h-0 min-w-0 flex-1 flex-col ${activeRightPanelId === panel.instanceId ? 'flex' : 'hidden'}`}><RightSidebarContent panel={panel} projectName={activeProjectName} projectPath={activeProjectPath} selectedFilePath={selectedRightFilePath} filesTreeVisible={filesTreeVisible} onToggleFilesTree={() => setFilesTreeVisible((visible) => !visible)} reviewChangesVisible={reviewChangesVisible} visible={activeRightPanelId === panel.instanceId} /></div>)}
           </div>
         </div>
       </motion.aside>
@@ -1368,15 +1368,23 @@ function buildTerminalRunCommand({ code, language = 'text', cwd }: TerminalRunRe
   return `& ([scriptblock]::Create(@'\r\n${payload}\r\n'@))\r\n`;
 }
 
-function TerminalPanel({ projectPath, terminalId }: { projectPath?: string; terminalId?: string }) {
+function TerminalPanel({ projectPath, terminalId, visible = true }: { projectPath?: string; terminalId?: string; visible?: boolean }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<XtermTerminal | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const outputRef = useRef('');
   const pendingRunRef = useRef<TerminalRunRequest | null>(null);
+  const syncSizeRef = useRef<(() => void) | null>(null);
+  const visibleRef = useRef(visible);
+
+  useEffect(() => {
+    visibleRef.current = visible;
+    if (visible) window.requestAnimationFrame(() => syncSizeRef.current?.());
+  }, [visible]);
 
   useEffect(() => {
     const runCode = (event: Event) => {
+      if (!visibleRef.current) return;
       const detail = (event as CustomEvent<TerminalRunRequest>).detail;
       if (!detail?.code?.trim()) return;
       const id = sessionIdRef.current;
@@ -1384,7 +1392,7 @@ function TerminalPanel({ projectPath, terminalId }: { projectPath?: string; term
         pendingRunRef.current = detail;
         return;
       }
-      void nativeInvoke('codeclub_terminal_write', { id, data: buildTerminalRunCommand(detail, projectPath) });
+      void nativeInvoke('codeclub_terminal_write', { id, data: buildTerminalRunCommand(detail, projectPath) }).catch(() => undefined);
     };
     window.addEventListener('codeclub:terminal-run-code', runCode);
     return () => window.removeEventListener('codeclub:terminal-run-code', runCode);
@@ -1399,22 +1407,26 @@ function TerminalPanel({ projectPath, terminalId }: { projectPath?: string; term
       fontSize: 14,
       lineHeight: 1.25,
       scrollback: 5000,
-      theme: { background: '#191919', foreground: '#f2f2f2', cursor: '#f2f2f2', selectionBackground: '#3d9bff66' },
+      theme: { background: '#111111', foreground: '#f2f2f2', cursor: '#f2f2f2', selectionBackground: '#3d9bff66' },
     });
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.open(containerRef.current);
     terminalRef.current = terminal;
-    const resize = () => { try { fit.fit(); } catch { /* El contenedor puede estar oculto durante el montaje. */ } };
+    const resize = () => {
+      try {
+        const container = containerRef.current;
+        if (!container || container.clientWidth < 2 || container.clientHeight < 2) return;
+        fit.fit();
+        const id = sessionIdRef.current;
+        if (id) void nativeInvoke('codeclub_terminal_resize', { id, cols: terminal.cols, rows: terminal.rows }).catch(() => undefined);
+      } catch { /* El contenedor puede estar oculto durante el montaje. */ }
+    };
+    syncSizeRef.current = resize;
     resize();
     const observer = new ResizeObserver(resize);
     observer.observe(containerRef.current);
     const input = terminal.onData((data) => {
-      if (data === '\u000c') {
-        terminal.reset();
-        return;
-      }
-      if (data === '\u0003') terminal.write('^C\r\n');
       const id = sessionIdRef.current;
       if (id) void nativeInvoke('codeclub_terminal_write', { id, data });
     });
@@ -1423,6 +1435,7 @@ function TerminalPanel({ projectPath, terminalId }: { projectPath?: string; term
       input.dispose();
       terminal.dispose();
       terminalRef.current = null;
+      syncSizeRef.current = null;
     };
   }, []);
 
@@ -1440,6 +1453,8 @@ function TerminalPanel({ projectPath, terminalId }: { projectPath?: string; term
           return;
         }
         sessionIdRef.current = created.id;
+        syncSizeRef.current?.();
+        if (visibleRef.current) terminalRef.current?.focus();
         if (existing?.output) {
           outputRef.current = String(existing.output);
           terminalRef.current?.write(outputRef.current);
@@ -1450,6 +1465,7 @@ function TerminalPanel({ projectPath, terminalId }: { projectPath?: string; term
           void nativeInvoke('codeclub_terminal_write', { id: created.id, data: buildTerminalRunCommand(pending, projectPath) });
         }
         const poll = async () => {
+          if (!visibleRef.current) return;
           if (pollInFlight) return;
           pollInFlight = true;
           try {
@@ -1458,15 +1474,16 @@ function TerminalPanel({ projectPath, terminalId }: { projectPath?: string; term
             const nextOutput = String(snapshot.output || '');
             const terminal = terminalRef.current;
             if (!terminal || nextOutput === outputRef.current) return;
+            const followOutput = terminal.buffer.active.viewportY >= terminal.buffer.active.baseY;
             if (nextOutput.startsWith(outputRef.current)) terminal.write(nextOutput.slice(outputRef.current.length));
             else { terminal.reset(); terminal.write(nextOutput); }
-            terminal.scrollToBottom();
+            if (followOutput) terminal.scrollToBottom();
             outputRef.current = nextOutput;
           } catch { /* La sesión se limpia al desmontar el panel. */ }
           finally { pollInFlight = false; }
         };
         void poll();
-        timer = window.setInterval(() => void poll(), 60);
+        timer = window.setInterval(() => void poll(), 120);
       } catch (reason) {
         terminalRef.current?.writeln(`\r\n${String(reason)}`);
       }
@@ -1481,7 +1498,7 @@ function TerminalPanel({ projectPath, terminalId }: { projectPath?: string; term
     };
   }, [projectPath, terminalId]);
 
-  return <div ref={containerRef} id="codeclub-terminal-panel" className="h-full min-h-0 w-full bg-[#191919] p-3" onClick={() => terminalRef.current?.focus()} aria-label="Terminal PowerShell" />;
+  return <div ref={containerRef} id="codeclub-terminal-panel" className="h-full min-h-0 w-full bg-[#111111] p-3" onClick={() => terminalRef.current?.focus()} aria-label="Terminal PowerShell" />;
 }
 
 function LegacyTerminalPanel({ projectPath }: { projectPath?: string }) {
@@ -1692,7 +1709,7 @@ function RightPanelEmptyState({ onSelect }: { onSelect: (tab: RightPanelTab) => 
   </section>;
 }
 
-function RightSidebarContent({ panel, projectName, projectPath, selectedFilePath, filesTreeVisible, onToggleFilesTree, reviewChangesVisible }: { panel: RightPanelInstance; projectName: string; projectPath?: string; selectedFilePath?: string; filesTreeVisible: boolean; onToggleFilesTree: () => void; reviewChangesVisible: boolean }) {
+function RightSidebarContent({ panel, projectName, projectPath, selectedFilePath, filesTreeVisible, onToggleFilesTree, reviewChangesVisible, visible }: { panel: RightPanelInstance; projectName: string; projectPath?: string; selectedFilePath?: string; filesTreeVisible: boolean; onToggleFilesTree: () => void; reviewChangesVisible: boolean; visible: boolean }) {
   const { tab } = panel;
   const language = useAppLanguage();
   const text = rightSidebarTranslations[language];
@@ -1707,7 +1724,7 @@ function RightSidebarContent({ panel, projectName, projectPath, selectedFilePath
   if (tab === 'review') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-hidden"><ReviewPanel projectPath={projectPath} visible={reviewChangesVisible} /></motion.section>;
   if (tab === 'browser') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="h-full min-h-0 flex-1 overflow-hidden"><BrowserPanel /></motion.section>;
   if (tab === 'artifacts') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-hidden"><ArtifactsPanel projectPath={projectPath} projectName={projectName} /></motion.section>;
-  if (tab === 'terminals') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-hidden"><TerminalPanel projectPath={projectPath} terminalId={panel.terminalId} /></motion.section>;
+  if (tab === 'terminals') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-hidden"><TerminalPanel projectPath={projectPath} terminalId={panel.terminalId} visible={visible} /></motion.section>;
   return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-auto px-3 py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
     <div className="mt-5 grid min-h-[180px] place-items-center rounded-xl bg-transparent px-5 text-center"><div><Icon size={28} strokeWidth={1.3} className="mx-auto text-(--codeclub-text-muted)" aria-hidden="true" /><p className="mt-3 mb-0 text-[12px] text-(--codeclub-text-strong)">{projectPath ? projectName : 'Sin proyecto activo'}</p><p className="mt-1 mb-0 text-[11px] leading-5 text-(--codeclub-text-muted)">{descriptions[tab]}</p></div></div>
   </motion.section>;

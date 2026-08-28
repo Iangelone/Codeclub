@@ -544,6 +544,15 @@ async function invokeNativeCommand(command: string, args: any = {}) {
       session.child.write(String(args.data || ''));
       return null;
     }
+    case 'codeclub_terminal_resize': {
+      const session = nativeTerminals.get(String(args.id));
+      if (!session) throw new Error('Terminal no encontrada.');
+      const cols = Math.max(2, Math.floor(Number(args.cols) || 0));
+      const rows = Math.max(2, Math.floor(Number(args.rows) || 0));
+      if (!Number.isFinite(cols) || !Number.isFinite(rows)) throw new Error('Tamaño de terminal inválido.');
+      session.child.resize(cols, rows);
+      return null;
+    }
     case 'codeclub_terminal_rename': {
       const session = nativeTerminals.get(String(args.id));
       if (!session) throw new Error('Terminal no encontrada.');
