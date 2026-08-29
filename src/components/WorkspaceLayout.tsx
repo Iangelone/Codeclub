@@ -1,7 +1,7 @@
 'use client';
 
 import { createElement, memo, useEffect, useRef, useState, type FormEvent } from 'react';
-import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, Bolt, Check, ChevronDown, Circle, CircleCheck, CirclePlus, Clock, CopyX, EllipsisVertical, ExternalLink, FileWarning, FolderOpen, FolderPen, FolderTree, GitBranch, GitCompare, Grid2X2, Heart, Home, Info, ListTodo, MoreHorizontal, MousePointerClick, Pause, Pencil, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
+import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, Bolt, Check, ChevronDown, Circle, CircleCheck, CirclePlus, Clock, Copy, CopyX, EllipsisVertical, ExternalLink, FileWarning, FolderOpen, FolderPen, FolderTree, GitBranch, GitCompare, Grid2X2, Heart, Home, Info, ListTodo, MessageSquare, MoreHorizontal, MousePointerClick, Pause, Pencil, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { GlobeCheck } from 'lucide-react';
 import { Terminal as XtermTerminal } from '@xterm/xterm';
@@ -1607,12 +1607,23 @@ const artifactStatusLabels: Record<TaskStatus, string> = {
 };
 
 const artifactStatusClasses: Record<TaskStatus, string> = {
-  pending: 'bg-white/[0.08] text-(--codeclub-text-muted)',
-  in_progress: 'bg-[#8BC7FF]/10 text-[#8BC7FF]',
-  completed: 'bg-emerald-300/10 text-emerald-200',
-  cancelled: 'bg-white/[0.05] text-[#777777]',
-  blocked: 'bg-red-300/10 text-red-200',
+  pending: 'bg-[#3A3A3A] text-[#D0D0D0]',
+  in_progress: 'bg-[#1687FF] text-white',
+  completed: 'bg-[#16A34A] text-white',
+  cancelled: 'bg-[#555555] text-[#E5E5E5]',
+  blocked: 'bg-[#DC2626] text-white',
 };
+
+type PlanFilter = 'all' | TaskStatus;
+const planFilterLabels: Record<PlanFilter, { es: string; en: string }> = {
+  all: { es: 'Todos', en: 'All' },
+  pending: { es: 'Pendientes', en: 'Pending' },
+  in_progress: { es: 'En curso', en: 'In progress' },
+  completed: { es: 'Completados', en: 'Completed' },
+  cancelled: { es: 'Cancelados', en: 'Cancelled' },
+  blocked: { es: 'Bloqueados', en: 'Blocked' },
+};
+const planFilterStatuses: TaskStatus[] = ['pending', 'in_progress', 'completed', 'cancelled', 'blocked'];
 
 function ArtifactStatusPill({ status }: { status: TaskStatus }) {
   return <span className={`inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[10px] leading-4 ${artifactStatusClasses[status] || artifactStatusClasses.pending}`}>{artifactStatusLabels[status] || artifactStatusLabels.pending}</span>;
@@ -1629,8 +1640,10 @@ function ArtifactsPanelContent({ projectPath, projectName }: { projectPath?: str
   const [state, setState] = useState<AgentState>({ plan: null, plans: [], todos: [] });
   const [loading, setLoading] = useState(Boolean(projectPath));
   const [query, setQuery] = useState('');
+  const [planFilter, setPlanFilter] = useState<PlanFilter>('pending');
 
   useEffect(() => {
+    setPlanFilter('pending');
     let cancelled = false;
     const load = async () => {
       if (!projectPath) {
@@ -1658,21 +1671,30 @@ function ArtifactsPanelContent({ projectPath, projectName }: { projectPath?: str
   }, [projectPath]);
 
   const normalizedQuery = query.trim().toLowerCase();
-  const plans = (state.plans?.length ? state.plans : state.plan ? [state.plan] : []).filter((plan) => !normalizedQuery || plan.title.toLowerCase().includes(normalizedQuery) || plan.steps.some((step) => step.title.toLowerCase().includes(normalizedQuery)));
-  const todos = state.todos.filter((todo) => !normalizedQuery || todo.title.toLowerCase().includes(normalizedQuery) || todo.description?.toLowerCase().includes(normalizedQuery));
+  const allPlans = state.plans?.length ? state.plans : state.plan ? [state.plan] : [];
+  const plans = allPlans.filter((plan) => (planFilter === 'all' || plan.status === planFilter) && (!normalizedQuery || plan.title.toLowerCase().includes(normalizedQuery) || plan.steps.some((step) => step.title.toLowerCase().includes(normalizedQuery))));
+  const todos = state.todos.filter((todo) => (planFilter === 'all' || todo.status === planFilter) && (!normalizedQuery || todo.title.toLowerCase().includes(normalizedQuery) || todo.description?.toLowerCase().includes(normalizedQuery)));
   const reference = (kind: 'plan' | 'todo', id: string, title: string) => {
     if (!projectPath) return;
     window.dispatchEvent(new CustomEvent('codeclub:artifact-reference', { detail: { projectPath, kind, id, title } }));
   };
+  const copyPlan = async (plan: NonNullable<AgentState['plans']>[number]) => {
+    const content = [`# ${plan.title}`, `Estado: ${artifactStatusLabels[plan.status]}`, '', ...plan.steps.map((step, index) => `${index + 1}. [${artifactStatusLabels[step.status]}] ${step.title}`)].join('\n');
+    try { await navigator.clipboard.writeText(content); } catch { /* Clipboard may be unavailable in a restricted webview. */ }
+  };
+  const copyTodo = async (todo: AgentState['todos'][number]) => {
+    const content = [todo.title, todo.description?.trim(), `Estado: ${artifactStatusLabels[todo.status]}`].filter(Boolean).join('\n');
+    try { await navigator.clipboard.writeText(content); } catch { /* Clipboard may be unavailable in a restricted webview. */ }
+  };
   const removePlan = async (id: string) => {
-    if (!projectPath || !window.confirm('Eliminar este plan?')) return;
+    if (!projectPath) return;
     const current = await readAgentState(projectPath);
     const plans = (current.plans || (current.plan ? [current.plan] : [])).filter((plan) => plan.id !== id);
     await writeAgentState(projectPath, { ...current, plans, plan: plans[plans.length - 1] || null });
     window.dispatchEvent(new CustomEvent('codeclub:artifacts-changed', { detail: { projectPath } }));
   };
   const removeTodo = async (id: string) => {
-    if (!projectPath || !window.confirm('Eliminar este TODO?')) return;
+    if (!projectPath) return;
     const current = await readAgentState(projectPath);
     await writeAgentState(projectPath, { ...current, todos: current.todos.filter((todo) => todo.id !== id) });
     window.dispatchEvent(new CustomEvent('codeclub:artifacts-changed', { detail: { projectPath } }));
@@ -1687,9 +1709,10 @@ function ArtifactsPanelContent({ projectPath, projectName }: { projectPath?: str
     </div>
     <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {loading && <div className="grid min-h-[160px] place-items-center text-[11px] text-(--codeclub-text-muted)">Cargando artifacts...</div>}
+      {!loading && (allPlans.length > 0 || state.todos.length > 0) && <div className="mb-3 flex min-w-0 gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="group" aria-label={language === 'en' ? 'Filter artifacts by status' : 'Filtrar artifacts por estado'}>{planFilterStatuses.map((status) => { const active = planFilter === status; const count = allPlans.filter((plan) => plan.status === status).length + state.todos.filter((todo) => todo.status === status).length; const label = planFilterLabels[status][language === 'en' ? 'en' : 'es']; return <button key={status} type="button" onClick={() => setPlanFilter(status)} aria-pressed={active} className={`inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-[10px] transition-colors focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${active ? `${artifactStatusClasses[status]} border-transparent` : 'border-(--codeclub-border-soft) bg-transparent text-(--codeclub-text-muted) hover:bg-white/[0.06] hover:text-(--codeclub-text-strong)'}`}><span>{label}</span><span className="tabular-nums opacity-70">{count}</span></button>; })}</div>}
       {!loading && plans.length === 0 && todos.length === 0 && <div className="grid min-h-[220px] place-items-center text-center"><div><ListTodo size={26} strokeWidth={1.3} className="mx-auto text-(--codeclub-text-muted)" aria-hidden="true" /><p className="mt-3 mb-0 text-[12px] text-(--codeclub-text-strong)">{normalizedQuery ? 'Sin resultados' : 'Todavia no hay artifacts'}</p><p className="mt-1 mb-0 text-[11px] leading-5 text-(--codeclub-text-muted)">{normalizedQuery ? 'Proba con otro termino.' : 'Los planes y TODOs creados por la IA apareceran aca.'}</p></div></div>}
-      {!loading && plans.length > 0 && <section aria-labelledby="artifacts-plans"><div className="mb-2 flex items-center justify-between"><h3 id="artifacts-plans" className="m-0 text-[10px] font-medium uppercase tracking-[0.08em] text-(--codeclub-text-muted)">Planes</h3><span className="text-[10px] text-(--codeclub-text-muted)">{plans.length}</span></div><div className="grid gap-2">{plans.map((plan) => { const completed = plan.steps.filter((step) => step.status === 'completed').length; const progress = plan.steps.length ? Math.round((completed / plan.steps.length) * 100) : 0; return <article key={plan.id} className="rounded-lg border border-(--codeclub-border-soft) bg-[#1E1E1E] p-2.5"><div className="flex min-w-0 items-start gap-2"><button type="button" onClick={() => reference('plan', plan.id, plan.title)} className="min-w-0 flex-1 truncate text-left text-[12px] font-medium text-(--codeclub-text-strong) hover:text-[#8BC7FF] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)">{plan.title}</button><ArtifactStatusPill status={plan.status} /><button type="button" onClick={() => void removePlan(plan.id)} className="grid h-5 w-5 shrink-0 place-items-center rounded text-(--codeclub-text-muted) hover:bg-white/[0.08] hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={`Eliminar plan ${plan.title}`} title="Eliminar plan"><X size={12} /></button></div><div className="mt-2 flex items-center gap-2"><div className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-white/[0.08]" role="progressbar" aria-label={`Progreso de ${plan.title}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><span className="block h-full rounded-full bg-[#8BC7FF]" style={{ width: `${progress}%` }} /></div><span className="shrink-0 text-[10px] tabular-nums text-(--codeclub-text-muted)">{completed}/{plan.steps.length}</span></div><div className="mt-2 grid gap-1">{plan.steps.map((step) => <button key={step.id} type="button" onClick={() => reference('plan', plan.id, `${plan.title}: ${step.title}`)} className="flex min-w-0 items-center gap-2 rounded px-1 py-1 text-left hover:bg-white/[0.05] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)"><span className={`h-1.5 w-1.5 shrink-0 rounded-full ${step.status === 'completed' ? 'bg-emerald-200' : step.status === 'in_progress' ? 'bg-[#8BC7FF]' : 'bg-[#666666]'}`} aria-hidden="true" /><span className="min-w-0 flex-1 truncate text-[10px] text-(--codeclub-text-muted)" title={step.title}>{step.title}</span><ArtifactStatusPill status={step.status} /></button>)}</div></article>; })}</div></section>}
-      {!loading && todos.length > 0 && <section aria-labelledby="artifacts-todos" className={`${plans.length ? 'mt-4 border-t border-(--codeclub-border-soft) pt-3' : ''}`}><div className="mb-2 flex items-center justify-between"><h3 id="artifacts-todos" className="m-0 text-[10px] font-medium uppercase tracking-[0.08em] text-(--codeclub-text-muted)">TODO</h3><span className="text-[10px] text-(--codeclub-text-muted)">{todos.length}</span></div><div className="grid gap-1">{todos.map((todo) => <div key={todo.id} className="flex min-w-0 items-center gap-2 rounded-lg px-1.5 py-2 hover:bg-white/[0.04]"><button type="button" onClick={() => reference('todo', todo.id, todo.title)} className="flex min-w-0 flex-1 items-center gap-2 text-left focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)"><span className={`h-1.5 w-1.5 shrink-0 rounded-full ${todo.status === 'completed' ? 'bg-emerald-200' : todo.status === 'in_progress' ? 'bg-[#8BC7FF]' : 'bg-[#666666]'}`} aria-hidden="true" /><span className="min-w-0 flex-1 truncate text-[11px] text-(--codeclub-text)" title={todo.description || todo.title}>{todo.title}</span><ArtifactStatusPill status={todo.status} /></button><button type="button" onClick={() => void removeTodo(todo.id)} className="grid h-5 w-5 shrink-0 place-items-center rounded text-(--codeclub-text-muted) hover:bg-white/[0.08] hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={`Eliminar TODO ${todo.title}`} title="Eliminar TODO"><X size={12} /></button></div>)}</div></section>}
+      {!loading && plans.length > 0 && <section aria-labelledby="artifacts-plans"><div className="mb-2 flex items-center justify-between"><h3 id="artifacts-plans" className="m-0 text-[10px] font-medium uppercase tracking-[0.08em] text-(--codeclub-text-muted)">Planes</h3><span className="text-[10px] text-(--codeclub-text-muted)">{plans.length}</span></div><div className="grid gap-2">{plans.map((plan) => { const completed = plan.steps.filter((step) => step.status === 'completed').length; const progress = plan.steps.length ? Math.round((completed / plan.steps.length) * 100) : 0; return <article key={plan.id} className="rounded-lg border border-(--codeclub-border-soft) bg-[#1E1E1E] p-2.5"><div className="flex min-w-0 items-start gap-2"><button type="button" onClick={() => reference('plan', plan.id, plan.title)} className="min-w-0 flex-1 truncate text-left text-[12px] font-medium text-(--codeclub-text-strong) hover:text-[#8BC7FF] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)">{plan.title}</button><button type="button" onClick={() => reference('plan', plan.id, plan.title)} className="grid h-5 w-5 shrink-0 place-items-center rounded text-(--codeclub-text-muted) hover:bg-[#1687FF]/15 hover:text-[#8BC7FF] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={`Enviar plan ${plan.title} al chat`} title="Enviar al chat"><MessageSquare size={12} /></button><button type="button" onClick={() => void copyPlan(plan)} className="grid h-5 w-5 shrink-0 place-items-center rounded text-(--codeclub-text-muted) hover:bg-white/[0.08] hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={`Copiar plan ${plan.title}`} title="Copiar plan"><Copy size={12} /></button><button type="button" onClick={() => void removePlan(plan.id)} className="grid h-5 w-5 shrink-0 place-items-center rounded text-(--codeclub-text-muted) hover:bg-red-500/15 hover:text-red-400 focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={`Borrar plan ${plan.title}`} title="Borrar plan"><Trash2 size={12} /></button></div><div className="mt-2 flex items-center gap-2"><div className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-white/[0.08]" role="progressbar" aria-label={`Progreso de ${plan.title}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><span className="block h-full rounded-full bg-[#1687FF]" style={{ width: `${progress}%` }} /></div><span className="shrink-0 text-[10px] tabular-nums text-(--codeclub-text-muted)">{completed}/{plan.steps.length}</span></div><div className="mt-2 grid gap-1">{plan.steps.map((step, index) => <button key={step.id} type="button" onClick={() => reference('plan', plan.id, `${plan.title}: ${step.title}`)} className="flex min-w-0 items-center gap-2 rounded px-1 py-1 text-left hover:bg-white/[0.05] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)"><span className={`grid h-4 w-4 shrink-0 place-items-center rounded text-[9px] font-semibold tabular-nums ${step.status === 'completed' ? 'bg-[#16A34A] text-white' : step.status === 'in_progress' ? 'bg-[#1687FF] text-white' : 'bg-[#3A3A3A] text-[#D0D0D0]'}`} aria-hidden="true">{index + 1}</span><span className="min-w-0 flex-1 truncate text-[10px] text-(--codeclub-text-muted)" title={step.title}>{step.title}</span><ArtifactStatusPill status={step.status} /></button>)}</div></article>; })}</div></section>}
+      {!loading && todos.length > 0 && <section aria-labelledby="artifacts-todos" className={`${plans.length ? 'mt-4 border-t border-(--codeclub-border-soft) pt-3' : ''}`}><div className="mb-2 flex items-center justify-between"><h3 id="artifacts-todos" className="m-0 text-[10px] font-medium uppercase tracking-[0.08em] text-(--codeclub-text-muted)">TODO</h3><span className="text-[10px] text-(--codeclub-text-muted)">{todos.length}</span></div><div className="grid gap-1">{todos.map((todo) => <div key={todo.id} className="flex min-w-0 items-center gap-2 rounded-lg px-1.5 py-2 hover:bg-white/[0.04]"><button type="button" onClick={() => reference('todo', todo.id, todo.title)} className="flex min-w-0 flex-1 items-center gap-2 text-left focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)"><span className={`h-1.5 w-1.5 shrink-0 rounded-full ${todo.status === 'completed' ? 'bg-[#16A34A]' : todo.status === 'in_progress' ? 'bg-[#1687FF]' : 'bg-[#666666]'}`} aria-hidden="true" /><span className="min-w-0 flex-1 truncate text-[11px] text-(--codeclub-text)" title={todo.description || todo.title}>{todo.title}</span><ArtifactStatusPill status={todo.status} /></button><button type="button" onClick={() => reference('todo', todo.id, todo.title)} className="grid h-5 w-5 shrink-0 place-items-center rounded text-(--codeclub-text-muted) hover:bg-[#1687FF]/15 hover:text-[#8BC7FF] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={`Enviar TODO ${todo.title} al chat`} title="Enviar al chat"><MessageSquare size={12} /></button><button type="button" onClick={() => void copyTodo(todo)} className="grid h-5 w-5 shrink-0 place-items-center rounded text-(--codeclub-text-muted) hover:bg-white/[0.08] hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={`Copiar TODO ${todo.title}`} title="Copiar TODO"><Copy size={12} /></button><button type="button" onClick={() => void removeTodo(todo.id)} className="grid h-5 w-5 shrink-0 place-items-center rounded text-(--codeclub-text-muted) hover:bg-red-500/15 hover:text-red-400 focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={`Borrar TODO ${todo.title}`} title="Borrar TODO"><Trash2 size={12} /></button></div>)}</div></section>}
     </div>
   </div>;
 }

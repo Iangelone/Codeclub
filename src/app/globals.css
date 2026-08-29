@@ -1064,6 +1064,17 @@ button:disabled,
   visibility: visible;
 }
 
+.attachment-artifact-remove {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 160ms ease-out, visibility 160ms ease-out, background-color 160ms ease-out;
+}
+
+.attachment-artifact-preview:hover .attachment-artifact-remove {
+  opacity: 1;
+  visibility: visible;
+}
+
 .chat-browser-references {
   display: flex;
   flex-wrap: wrap;
@@ -1094,6 +1105,115 @@ button:disabled,
   color: #fff;
   font-size: 9px;
   font-weight: 600;
+}
+
+.chat-reference-row {
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 1px;
+  scrollbar-width: thin;
+  scrollbar-color: #4a4a4a transparent;
+}
+
+.chat-reference-row::-webkit-scrollbar {
+  height: 5px;
+}
+
+.chat-reference-row::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-reference-row::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #4a4a4a;
+}
+
+.chat-reference-row::-webkit-scrollbar-thumb:hover {
+  background: #686868;
+}
+
+.chat-reference-card {
+  position: relative;
+  display: grid;
+  width: 64px;
+  height: 64px;
+  min-width: 64px;
+  flex: 0 0 64px;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #161616;
+}
+
+.chat-artifact-reference-card {
+  align-content: space-between;
+  justify-items: stretch;
+  padding: 5px 4px;
+  color: #cfcfcf;
+}
+
+.chat-reference-kind {
+  overflow: hidden;
+  color: #858585;
+  font-size: 8px;
+  line-height: 10px;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.chat-reference-title {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #d6d6d6;
+  font-size: 8px;
+  line-height: 10px;
+  text-align: center;
+  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+
+.chat-browser-reference-card {
+  padding: 4px;
+}
+
+.chat-browser-reference-card .chat-reference-title {
+  align-self: end;
+  width: 100%;
+}
+
+.chat-reference-favicon {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+}
+
+.chat-reference-fallback-icon {
+  color: #a7a7a7;
+}
+
+.chat-attachment-card > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.chat-attachment-file {
+  padding: 6px;
+  color: #cfcfcf;
+  font-size: 9px;
+  font-weight: 600;
+  text-align: center;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
 }
 
 .attachment-image-preview-close,
