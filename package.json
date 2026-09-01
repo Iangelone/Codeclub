@@ -1,6 +1,6 @@
 {
   "name": "codeclub-desktop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Local-first desktop IDE for building software with AI agents.",
   "author": "Iangelone",
   "private": true,
