@@ -1202,14 +1202,20 @@ function BrowserPanel() {
           const style = window.getComputedStyle(element);
           return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
         };
-        const elements = Array.from(document.querySelectorAll('a,button,input,textarea,select,[role="button"]')).filter(visible).slice(0, 120).map((element, index) => ({
+        const snapshotId = crypto.randomUUID();
+        document.querySelectorAll('[data-codeclub-tool-ref]').forEach(element => element.removeAttribute('data-codeclub-tool-ref'));
+        const elements = Array.from(document.querySelectorAll('a,button,input,textarea,select,[role="button"]')).filter(visible).slice(0, 120).map((element, index) => {
+          const ref = snapshotId + '-' + index;
+          element.setAttribute('data-codeclub-tool-ref', ref);
+          return {
           ref: String(index + 1), tag: element.tagName.toLowerCase(), role: element.getAttribute('role') || element.tagName.toLowerCase(),
           text: (element.innerText || element.getAttribute('aria-label') || element.getAttribute('placeholder') || '').trim().slice(0, 180),
-          selector: element.id ? '#' + CSS.escape(element.id) : null,
+          selector: '[data-codeclub-tool-ref="' + ref + '"]',
+          value: element.type === 'password' ? undefined : typeof element.value === 'string' ? element.value.slice(0, 2000) : undefined,
           disabled: Boolean(element.disabled),
           rect: (() => { const value = element.getBoundingClientRect(); return { x: Math.round(value.x), y: Math.round(value.y), width: Math.round(value.width), height: Math.round(value.height) }; })()
-        }));
-        return { title: document.title, text: document.body?.innerText?.slice(0, 12000) || '', elements };
+        }; });
+        return { snapshotId, title: document.title, text: document.body?.innerText?.slice(0, 12000) || '', elements };
       })()`);
       window.dispatchEvent(new CustomEvent('codeclub:browser-state', { detail: { ok: true, url: view.getURL?.() || currentUrl, title: view.getTitle?.() || page.title, ...page } }));
     } catch (error) {
@@ -1269,6 +1275,7 @@ function BrowserPanel() {
         else if (detail.type === 'click') result = await view.executeJavaScript(`(() => { const element = document.querySelector(${selector}); if (!element) return { ok: false, error: 'Elemento no encontrado' }; element.click(); return { ok: true }; })()`);
         else if (detail.type === 'type') result = await view.executeJavaScript(`(() => { const element = document.querySelector(${selector}); if (!element) return { ok: false, error: 'Elemento no encontrado' }; element.focus(); const value = ${JSON.stringify(detail.text || '')}; if ('value' in element) element.value = value; else element.textContent = value; element.dispatchEvent(new Event('input', { bubbles: true })); element.dispatchEvent(new Event('change', { bubbles: true })); return { ok: true }; })()`);
         else if (detail.type === 'key') result = await view.executeJavaScript(`(() => { const key = ${JSON.stringify(detail.key || 'Enter')}; const element = document.activeElement || document.body; element.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })); element.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true })); return { ok: true }; })()`);
+        else result = { ok: false, error: 'Acción no implementada en el navegador.' };
         await new Promise((resolve) => setTimeout(resolve, 100));
         await publishState();
       } catch (error) {
@@ -1498,7 +1505,7 @@ function TerminalPanel({ projectPath, terminalId, visible = true }: { projectPat
     };
   }, [projectPath, terminalId]);
 
-  return <div ref={containerRef} id="codeclub-terminal-panel" className="h-full min-h-0 w-full bg-[#111111] p-3" onClick={() => terminalRef.current?.focus()} aria-label="Terminal PowerShell" />;
+  return <div ref={containerRef} id="codeclub-terminal-panel" className="h-full min-h-0 w-full bg-(--nexo-paper) p-3" onClick={() => terminalRef.current?.focus()} aria-label="Terminal PowerShell" />;
 }
 
 function LegacyTerminalPanel({ projectPath }: { projectPath?: string }) {

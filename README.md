@@ -147,3 +147,5 @@ Codeclub is in early beta. The app is useful for local development, while mobile
 Codeclub uses a dual license: free for personal, educational, open-source, and nonprofit use; paid for companies and for-profit use.
 
 Read the full terms in [LICENSE.md](LICENSE.md).
+
+Fluid Orb is adapted from [Rare UI](https://www.rareui.com/components/fluidorb).

@@ -1,10 +1,18 @@
 @import 'tailwindcss';
 
 :root {
+  --paper: #1E1E1E;
+  --card: #272727;
+  --soft: #2B2B2B;
+  --ink: #F5F5EF;
+  --muted: #AAA9A1;
+  --line: #303030;
+  --electric-blue: #2F6BFF;
+
   --codeclub-bg: #111111;
   --codeclub-center: #111111;
   --codeclub-surface: #161616;
-    --codeclub-surface-raised: #1e1e1e;
+  --codeclub-surface-raised: #1e1e1e;
   --codeclub-panel: rgba(27, 32, 41, 1);
   --codeclub-graphite: linear-gradient(115deg, #1c2028 0%, #1b202a 52%, #1d2535 100%);
   --codeclub-border: #2b2b2b;
@@ -25,11 +33,56 @@
   --codeclub-shadow-soft: 0 1px 3px rgba(0, 0, 0, 0.18);
   --codeclub-accent: #3d9bff;
   --codeclub-accent-bright: #8bc7ff;
+
+  /* Tokens semánticos compartidos por la interfaz Nexo y Codeclub. */
+  --nexo-paper: var(--paper);
+  --nexo-card: var(--card);
+  --nexo-soft: var(--soft);
+  --nexo-line: var(--line);
+  --nexo-line-soft: var(--line);
+  --nexo-ink: var(--ink);
+  --nexo-muted: var(--muted);
+  --nexo-electric-blue: var(--electric-blue);
+  --nexo-orb-blue: #2d5fd6;
+  --nexo-overlay: rgba(0, 0, 0, 0.38);
+
+  /* Alias para superficies heredadas que todavía usan nombres genéricos. */
+  --color-bg: var(--nexo-paper);
+  --color-surface-1: var(--nexo-paper);
+  --color-surface-2: var(--nexo-soft);
+  --color-surface-3: var(--nexo-card);
+  --color-surface-4: color-mix(in srgb, var(--nexo-card) 82%, var(--nexo-ink));
+  --color-surface-5: var(--codeclub-hover);
+  --color-surface-7: color-mix(in srgb, var(--nexo-card) 72%, var(--nexo-ink));
+  --color-surface-8: var(--nexo-line);
+  --color-surface-10: var(--nexo-line-soft);
+}
+
+:root.theme-light,
+:root[data-theme='light'],
+body.theme-light,
+body[data-theme='light'] {
+  --paper: #F7F7F4;
+  --card: #F7F7F7;
+  --soft: #E9DFCF;
+  --ink: #171717;
+  --muted: #6B6B6B;
+  --line: #E2E2E2;
+  --electric-blue: #2F6BFF;
 }
 
 html,
 body {
   background: transparent;
+  color: var(--ink);
+  color-scheme: dark;
+}
+
+html.theme-light,
+html[data-theme='light'],
+body.theme-light,
+body[data-theme='light'] {
+  color-scheme: light;
 }
 
 .codeclub-graphite {
@@ -41,14 +94,94 @@ body {
 }
 
 .codeclub-panel-shell {
+  background: transparent !important;
   border-top: 1px solid var(--codeclub-border-faint);
   border-left: 1px solid var(--codeclub-border-faint);
   border-top-left-radius: 16px;
 }
 
+section[aria-label='Gestor de paneles'] {
+  background: transparent !important;
+}
+
 .codeclub-panel-edge {
   border-top: 1px solid var(--codeclub-border-faint);
   border-left: 1px solid var(--codeclub-border-faint);
+}
+
+/* Base visual del input: las futuras piezas de Nexo consumen estos tokens. */
+.chat-composer {
+  color: var(--nexo-ink);
+}
+
+.chat-composer .composer-box {
+  border-color: var(--nexo-line-soft);
+  background: var(--nexo-card);
+}
+
+.chat-composer .composer-box-inner {
+  color: var(--nexo-ink);
+}
+
+.chat-composer .composer-box-inner textarea,
+.chat-composer .composer-box-inner input {
+  color: var(--nexo-ink);
+  caret-color: var(--nexo-electric-blue);
+}
+
+.chat-composer .composer-box-inner textarea::placeholder,
+.chat-composer .composer-box-inner input::placeholder {
+  color: var(--nexo-muted);
+  opacity: 1;
+}
+
+.chat-input-orb [data-slot='fluid-orb'] {
+  flex: 0 0 22px;
+}
+
+.chat-composer .send-button:not(:disabled) {
+  color: #FFFFFF;
+}
+
+.nexo-primary,
+.floating-assistant-status {
+  border-color: var(--electric-blue);
+  background: var(--electric-blue);
+  color: #FFFFFF;
+}
+
+.chat-composer [class*='border-b'] {
+  border-color: var(--nexo-line);
+}
+
+/* Superficies principales: un único lenguaje de fondos para toda la app. */
+#codeclub-chat-panel {
+  background-color: var(--nexo-paper) !important;
+  border-top-left-radius: 16px;
+  overflow: hidden;
+  color: var(--nexo-ink);
+}
+
+#codeclub-right-sidebar,
+#codeclub-terminal-panel,
+#codeclub-terminal-panel > div {
+  background-color: var(--nexo-paper) !important;
+  color: var(--nexo-ink);
+}
+
+#codeclub-right-sidebar input,
+#codeclub-right-sidebar textarea,
+#codeclub-right-sidebar select {
+  border-color: var(--nexo-line-soft);
+  background-color: var(--nexo-card);
+  color: var(--nexo-ink);
+  caret-color: var(--nexo-electric-blue);
+}
+
+#codeclub-right-sidebar input::placeholder,
+#codeclub-right-sidebar textarea::placeholder {
+  color: var(--nexo-muted);
+  opacity: 1;
 }
 
 .chat-turn {

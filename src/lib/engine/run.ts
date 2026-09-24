@@ -12,7 +12,7 @@ type RunStreamArgs = {
   signal?: AbortSignal;
 };
 
-async function runStreamInternal({ model, system, messages, tools, structuredOutput, callbacks, signal }: RunStreamArgs): Promise<string> {
+async function runStreamInternal({ model, system, messages, tools, structuredOutput, maxOutputTokens, callbacks, signal }: RunStreamArgs): Promise<string> {
   let content = '';
   let reasoning = '';
   const startedAt = Date.now();

@@ -80,6 +80,10 @@
       "public/**/*",
       "package.json"
     ],
+    "extraResources": [
+      { "from": "electron/computer-use.ps1", "to": "computer-use.ps1" },
+      { "from": "public/tesseract", "to": "tesseract", "filter": ["*.traineddata.gz"] }
+    ],
     "win": {
       "target": [
         {

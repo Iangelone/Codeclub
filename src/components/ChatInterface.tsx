@@ -32,6 +32,7 @@ import { appendGlobalChatTranscript, getProjectChatPath, getProjectTranscriptPat
 import { codeclubExtensions, type CodeclubExtension } from '../lib/extensions';
 import { LANGUAGE_STORAGE_KEY, rightSidebarTranslations, type AppLanguage, useAppLanguage } from '../lib/i18n';
 import { connectAllAgentPluginMcp, loadAgentPlugins } from '../lib/agent-plugins';
+import FluidOrb from './ui/fluid-orb';
 
 const formatProcessingDuration = (durationMs: number) => durationMs >= 60000 ? `${(durationMs / 60000).toFixed(1)}min` : `${Math.max(0, Math.round(durationMs / 1000))}s`;
 const limitResponseLength = (content: string, maxLength = 500) => content.length > maxLength ? `${content.slice(0, maxLength - 1).trimEnd()}…` : content;
@@ -2656,6 +2657,9 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             </button>
           )}
           <span id="chat-input-help" className="sr-only">Escribí un mensaje. Usa Shift+Enter para una nueva línea y / para abrir comandos.</span>
+          <span className="chat-input-orb absolute left-3 top-3 z-10 grid h-[22px] w-[22px] place-items-center overflow-hidden rounded-full" aria-hidden="true">
+            <FluidOrb size={22} color="#2D5FD6" animateOnHover={false} />
+          </span>
           <textarea
             ref={chatInputRef}
             disabled={isAgentBusy}
@@ -2697,7 +2701,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             }}
             onFocus={() => { if (commandKind !== 'credential') setMenuOpen(false); }}
             aria-label={chatText.message}
-            className={`order-1 min-h-[22px] h-auto max-h-[240px] w-full min-w-0 flex-none resize-none self-stretch overflow-y-hidden box-border border-0 bg-transparent px-0 py-0.5 pr-10 text-xs leading-[1.4] text-(--codeclub-text-strong) outline-none placeholder:text-(--codeclub-text-muted) [scrollbar-width:none] ${isAgentBusy ? 'opacity-[0.55]' : 'opacity-100'}`}
+            className={`order-1 min-h-[22px] h-auto max-h-[240px] w-full min-w-0 flex-none resize-none self-stretch overflow-y-hidden box-border border-0 bg-transparent py-0.5 pl-8 pr-10 text-xs leading-[1.4] text-(--codeclub-text-strong) outline-none placeholder:text-(--codeclub-text-muted) [scrollbar-width:none] ${isAgentBusy ? 'opacity-[0.55]' : 'opacity-100'}`}
             placeholder={agentStatusText}
           />
           <div className="absolute right-3 top-2 z-20 flex min-h-[30px] min-w-0 items-center justify-end gap-3 @max-[520px]:gap-1.5">
