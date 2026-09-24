@@ -671,12 +671,22 @@ section[aria-label='Gestor de paneles'] {
   height: 30px;
   border: 1px solid transparent;
   border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
 }
 
 #codeclub-right-sidebar [role="tablist"] > div:has(> button[aria-selected="true"]) {
-  border-color: transparent;
-  background: #252525;
+  border-color: var(--line);
+  background: var(--card);
   box-shadow: none;
+  color: var(--ink);
+}
+
+#codeclub-right-sidebar [role="tablist"] > div:not(:has(> button[aria-selected="true"])):hover {
+  border-color: var(--line);
+  background: var(--soft);
+  color: var(--ink);
 }
 
 #codeclub-right-sidebar [role="tablist"] > div > button[role="tab"] {
@@ -684,6 +694,11 @@ section[aria-label='Gestor de paneles'] {
   border-radius: 8px;
   padding-right: 6px;
   padding-left: 8px;
+  color: var(--muted);
+}
+
+#codeclub-right-sidebar [role="tablist"] > div:has(> button[aria-selected="true"]) > button[role="tab"] {
+  color: var(--ink);
 }
 
 #codeclub-right-sidebar [role="tablist"] > div > button[aria-label^="Cerrar"] {
@@ -774,7 +789,7 @@ section[aria-label="Espacio de trabajo"] > [role="menu"][aria-label="Menú del c
 
 #codeclub-terminal-panel,
 #codeclub-terminal-panel > div {
-  background-color: #111111 !important;
+  background-color: var(--paper) !important;
 }
 
 #codeclub-terminal-panel .xterm {
@@ -782,7 +797,7 @@ section[aria-label="Espacio de trabajo"] > [role="menu"][aria-label="Menú del c
 }
 
 #codeclub-terminal-panel .xterm .xterm-viewport {
-  background-color: #111111 !important;
+  background-color: var(--paper) !important;
   scrollbar-width: none;
 }
 
@@ -817,11 +832,11 @@ section[aria-label="Espacio de trabajo"] > [role="menu"][aria-label="Menú del c
 }
 
 [id^="right-panel-files"] main {
-  background: var(--codeclub-center);
+  background: var(--paper);
 }
 
 [id^="right-panel-files"] aside {
-  background: var(--codeclub-center);
+  background: var(--paper);
 }
 
 [id^="right-panel-files"],
@@ -910,7 +925,7 @@ section[aria-label="Espacio de trabajo"] > [role="menu"][aria-label="Menú del c
   min-height: 40px;
   gap: 8px;
   padding-inline: 8px;
-  background: #111111;
+  background: var(--paper);
   position: relative;
   z-index: 20;
 }
@@ -1059,7 +1074,13 @@ section[aria-label="Espacio de trabajo"] > [role="menu"][aria-label="Menú del c
 #right-panel-files > div:first-child > div > main,
 #right-panel-review,
 #right-panel-review > section {
-  background: #191919;
+  background: var(--paper);
+}
+
+#right-panel-artifacts,
+#right-panel-terminals {
+  background: var(--paper);
+  color: var(--ink);
 }
 
 /* Revisar ocupa todo el contenedor cuando se oculta la lista de cambios. */
