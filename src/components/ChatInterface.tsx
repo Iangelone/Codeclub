@@ -547,12 +547,15 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     requestAnimationFrame(() => {
       const target = chatInputRef.current;
       if (!target) return;
-      target.style.height = 'auto';
-      const maxHeight = 240;
+      target.style.height = '22px';
+      const maxHeight = 144;
       target.style.height = `${Math.min(target.scrollHeight, maxHeight)}px`;
       target.style.overflowY = target.scrollHeight > maxHeight ? 'auto' : 'hidden';
     });
   };
+  useEffect(() => {
+    resizeChatInput();
+  }, [input]);
   const messagesAreaRef = useRef<HTMLDivElement | null>(null);
   const shouldAutoScrollMessagesRef = useRef(true);
   const handleMessagesScroll = () => {

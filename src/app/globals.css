@@ -115,12 +115,41 @@ section[aria-label='Gestor de paneles'] {
 }
 
 .chat-composer .composer-box {
-  border-color: var(--nexo-line-soft);
-  background: var(--nexo-card);
+  border: 1px solid #303030;
+  border-radius: 24px;
+  padding: 6px 10px;
+  background: #272727;
+  color: #F5F5EF;
 }
 
 .chat-composer .composer-box-inner {
-  color: var(--nexo-ink);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px !important;
+  padding: 0 !important;
+  color: #F5F5EF;
+}
+
+.chat-composer .composer-box-inner .chat-input-orb {
+  position: static;
+  flex: 0 0 22px;
+}
+
+.chat-composer .composer-box-inner textarea {
+  order: 0 !important;
+  align-self: center !important;
+  flex: 1 1 auto;
+  width: auto;
+  min-height: 22px;
+  line-height: 22px !important;
+  padding: 0 !important;
+}
+
+.chat-composer .composer-box-inner > div.absolute {
+  position: static;
+  min-height: 30px;
 }
 
 .chat-composer .composer-box-inner textarea,
@@ -131,7 +160,7 @@ section[aria-label='Gestor de paneles'] {
 
 .chat-composer .composer-box-inner textarea::placeholder,
 .chat-composer .composer-box-inner input::placeholder {
-  color: var(--nexo-muted);
+  color: #AAA9A1;
   opacity: 1;
 }
 
@@ -139,8 +168,17 @@ section[aria-label='Gestor de paneles'] {
   flex: 0 0 22px;
 }
 
+.chat-composer .send-button {
+  background: transparent;
+  border-color: transparent;
+}
+
 .chat-composer .send-button:not(:disabled) {
-  color: #FFFFFF;
+  color: var(--nexo-ink);
+}
+
+.chat-composer .send-button.send-button-shine::after {
+  display: none;
 }
 
 .nexo-primary,
@@ -172,15 +210,17 @@ section[aria-label='Gestor de paneles'] {
 #codeclub-right-sidebar input,
 #codeclub-right-sidebar textarea,
 #codeclub-right-sidebar select {
-  border-color: var(--nexo-line-soft);
-  background-color: var(--nexo-card);
-  color: var(--nexo-ink);
+  border: 1px solid #303030;
+  border-radius: 9px;
+  padding: 11px 12px;
+  background-color: #272727;
+  color: #F5F5EF;
   caret-color: var(--nexo-electric-blue);
 }
 
 #codeclub-right-sidebar input::placeholder,
 #codeclub-right-sidebar textarea::placeholder {
-  color: var(--nexo-muted);
+  color: #AAA9A1;
   opacity: 1;
 }
 
