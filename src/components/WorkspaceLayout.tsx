@@ -9,6 +9,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import ChatPanel from './ChatPanel';
 import { ProjectPanelView } from './ChatInterface';
+import FluidOrb from './ui/fluid-orb';
 import { readGlobalChats, readProjectMeta, writeGlobalChats, writeProjectMeta } from '../lib/projectManager';
 import { readAgentState, writeAgentState, type AgentState, type TaskStatus } from '../lib/engine/planning';
 import { nativeInvoke } from '../lib/runtime';
@@ -1734,6 +1735,7 @@ function RightPanelEmptyState({ onSelect }: { onSelect: (tab: RightPanelTab) => 
   const panelLabels = rightSidebarTranslations[language];
   return <section className="flex min-h-0 flex-1 flex-col items-center justify-center px-5 text-center" aria-label={text.choose}>
     <div className="max-w-[250px]">
+      <FluidOrb size={64} color="#2D5FD6" animateOnHover={false} className="mx-auto mb-5" aria-hidden="true" />
       <p className="mt-3 mb-0 text-[13px] text-(--codeclub-text-strong)">{text.choose}</p>
       <p className="mt-1 mb-4 text-[11px] leading-5 text-(--codeclub-text-muted)">{text.open}</p>
       <div className="grid gap-1.5">
