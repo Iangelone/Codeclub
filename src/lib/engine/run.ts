@@ -1,4 +1,4 @@
-import { smoothStream, stepCountIs, streamText, type ModelMessage } from 'ai';
+import { smoothStream, stepCountIs, ToolLoopAgent, type ModelMessage } from 'ai';
 import type { EngineCallbacks } from './types';
 
 type RunStreamArgs = {
@@ -16,21 +16,19 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
   let content = '';
   let reasoning = '';
   const startedAt = Date.now();
-  const result = streamText({
+  const agent = new ToolLoopAgent({
     model,
-    system,
-    messages,
+    instructions: system,
     tools,
-    ...(maxOutputTokens ? { maxOutputTokens } : {}),
-    experimental_transform: smoothStream(),
-    // Sin límite fijo: después de una tool el modelo puede continuar hasta
-    // responder. La cancelación sigue bajo control del usuario/watchdog.
+    // Mantiene el loop de tools dentro de AI SDK y limita ejecuciones encadenadas.
     stopWhen: stepCountIs(8),
+    ...(maxOutputTokens ? { maxOutputTokens } : {}),
     ...(structuredOutput ? { output: structuredOutput } : {}),
+  });
+  const result = await agent.stream({
+    messages,
     abortSignal: signal,
-    onAbort: async ({ steps }: any) => {
-      await callbacks.onAbort?.({ steps });
-    },
+    experimental_transform: smoothStream(),
     onEnd: async ({ steps, totalUsage }: any) => {
       await callbacks.onEnd?.({ steps, totalUsage });
     },
@@ -43,8 +41,14 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
     onToolExecutionEnd: async (info: any) => {
       await callbacks.onToolExecutionEnd?.(info);
     },
-    onChunk: ({ chunk }: any) => {
-      if (chunk.type === 'reasoning-delta') {
+  });
+
+  // fullStream conserva texto, razonamiento y eventos de tools en un único flujo.
+  for await (const chunk of result.fullStream as AsyncIterable<any>) {
+      if (chunk.type === 'text-delta') {
+        content += chunk.text ?? '';
+        if (!structuredOutput) callbacks.onTextDelta(content);
+      } else if (chunk.type === 'reasoning-delta') {
         reasoning += chunk.text ?? '';
         callbacks.onReasoningDelta?.(reasoning);
       } else if (chunk.type === 'tool-call' || chunk.type === 'tool-input-start') {
@@ -54,20 +58,10 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
       } else if (chunk.type === 'error') {
         callbacks.onError?.(chunk.error);
       }
-    },
-  });
-
-  // textStream es la ruta simple del AI SDK para una UI incremental.
-  // También consume internamente los pasos de tools hasta cerrar el stream.
-  for await (const delta of result.textStream) {
     if (signal?.aborted) {
       const error = new Error('Generación cancelada por el usuario.');
       error.name = 'AbortError';
       throw error;
-    }
-    if (delta) {
-      content += delta;
-      if (!structuredOutput) callbacks.onTextDelta(content);
     }
   }
 

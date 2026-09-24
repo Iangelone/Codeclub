@@ -15,7 +15,7 @@ import { xml } from '@codemirror/lang-xml';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { copyText, safeListen, desktopFileUrl as convertFileSrc, nativeInvoke as invoke, fileExists as exists, makeDirectory as mkdir, readDesktopBytes as readFile, readDesktopText as readTextFile, removeDesktopFile as remove, writeDesktopText as writeTextFile, selectDesktopFiles as open } from '../lib/runtime';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { jsonSchema, Output } from 'ai';
+import { createGateway, jsonSchema, Output } from 'ai';
 import ReactMarkdown from 'react-markdown';
 import { AnimatePresence, motion } from 'motion/react';
 import { generateManifest } from 'material-icon-theme';
@@ -28,7 +28,7 @@ import { runStream } from '../lib/engine/run';
 import { getProjectFilePath, getSetting, logPersistence, setSetting } from '../lib/persistence';
 import { appendGenerationUsage, type GenerationUsageRecord } from '../lib/usage';
 import { appendExecutionLog } from '../lib/execution-log';
-import { appendGlobalChatTranscript, getProjectChatPath, getProjectTranscriptPath, readGlobalChatHistory, readGlobalChats, readProjectIndex, readProjectMeta, writeGlobalChatHistory, writeGlobalChats, writeProjectMeta } from '../lib/projectManager';
+import { appendGlobalChatTranscript, getProjectChatPath, getProjectTranscriptPath, readGlobalChatHistory, readGlobalChats, readProjectIndex, readProjectMeta, writeGlobalChatHistory, writeGlobalChats, writeProjectMeta, type ProjectMeta } from '../lib/projectManager';
 import { codeclubExtensions, type CodeclubExtension } from '../lib/extensions';
 import { LANGUAGE_STORAGE_KEY, rightSidebarTranslations, type AppLanguage, useAppLanguage } from '../lib/i18n';
 import { connectAllAgentPluginMcp, loadAgentPlugins } from '../lib/agent-plugins';
@@ -55,7 +55,11 @@ const getMarkdownLinkFavicon = (href?: string) => {
     return '';
   }
 };
-const getMarkdownNodeText = (node: React.ReactNode): string => React.Children.toArray(node).map((child) => React.isValidElement(child) ? getMarkdownNodeText(child.props.children) : String(child)).join('');
+const getMarkdownNodeText = (node: React.ReactNode): string => React.Children.toArray(node).map((child) => {
+  if (!React.isValidElement(child)) return String(child);
+  const props = child.props as { children?: React.ReactNode };
+  return getMarkdownNodeText(props.children);
+}).join('');
 const getMarkdownCodeDetails = (children: React.ReactNode) => {
   const codeElement = React.Children.toArray(children).find((child) => React.isValidElement(child)) as React.ReactElement<{ className?: string; children?: React.ReactNode }> | undefined;
   const className = codeElement?.props.className || '';
@@ -491,7 +495,8 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       const detail = (event as CustomEvent<{ projectPath?: string; kind?: 'plan' | 'todo'; id?: string; title?: string }>).detail;
       if (!detail?.kind || !detail.id || !detail.title) return;
       if (detail.projectPath && detail.projectPath !== activeProject?.projectPath) return;
-      setArtifactReferences((current) => current.some((item) => item.kind === detail.kind && item.id === detail.id) ? current : [...current, { kind: detail.kind, id: detail.id, title: detail.title }]);
+      const reference = { kind: detail.kind, id: detail.id, title: detail.title } as const;
+      setArtifactReferences((current) => current.some((item) => item.kind === reference.kind && item.id === reference.id) ? current : [...current, reference]);
       requestAnimationFrame(() => chatInputRef.current?.focus());
     };
     window.addEventListener('codeclub:artifact-reference', handleArtifactReference);
@@ -836,9 +841,11 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       getSetting('codeclub_last_model_id', ''),
     ]).then(([savedProviderId, savedModelId]) => {
       const savedProvider = savedProviderId ? catalog.find((item) => item.type === 'provider' && item.id === savedProviderId) : null;
-      const savedModel = savedModelId ? catalog.find((item) => item.type === 'model' && item.id === savedModelId) : null;
-      setCurrentProvider(savedProvider || defaultProvider);
-      setCurrentModel(savedModel || defaultModel);
+      const activeProvider = savedProvider || defaultProvider;
+      const savedModel = savedModelId ? catalog.find((item) => item.type === 'model' && (item.gatewayId === savedModelId || item.id === savedModelId) && (activeProvider?.id === 'ai-gateway' || item.providerId === activeProvider?.id)) : null;
+      const providerModel = catalog.find((item) => item.type === 'model' && (activeProvider?.id === 'ai-gateway' || item.providerId === activeProvider?.id));
+      setCurrentProvider(activeProvider);
+      setCurrentModel(savedModel || providerModel || defaultModel);
       setSettingsReady(true);
     });
   }, [catalog, defaultProvider, defaultModel]);
@@ -848,8 +855,16 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   }, [currentProvider, settingsReady]);
 
   useEffect(() => {
-    if (settingsReady && currentModel) void setSetting('codeclub_last_model_id', currentModel.id);
+    if (settingsReady && currentModel) void setSetting('codeclub_last_model_id', currentModel.gatewayId || currentModel.id);
   }, [currentModel, settingsReady]);
+
+  useEffect(() => {
+    if (!currentProvider) return;
+    const modelBelongsToProvider = currentProvider.id === 'ai-gateway' || currentModel?.providerId === currentProvider.id;
+    if (modelBelongsToProvider) return;
+    const providerModel = catalog.find((item) => item.type === 'model' && item.providerId === currentProvider.id);
+    if (providerModel) setCurrentModel(providerModel);
+  }, [catalog, currentModel, currentProvider]);
 
   const openCommandMenu = (kind: string) => {
     setCommandKind(kind);
@@ -925,16 +940,21 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const commandOptions: CatalogItem[] = commandKind === 'project' ? projectOptions : commandKind === 'skill' ? skillOptions.map((skill) => ({ ...skill, type: 'skill', label: skill.name })) : commandKind === 'language' ? languageOptions : commandKind === 'development' ? developmentOptions : catalog;
   const filteredCatalog = commandOptions.filter((item) => {
     const matchesKind = item.type === commandKind;
-    const itemLabel = item.label || item.id || '';
-    const matchesQuery = itemLabel.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesProvider = commandKind !== 'model' || item.providerId === currentProvider?.id;
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+    const searchableText = [item.id, item.label, item.name, item.providerId, item.providerName, item.description]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    const matchesQuery = searchableText.includes(normalizedQuery);
+    const matchesProvider = commandKind !== 'model' || currentProvider?.id === 'ai-gateway' || item.providerId === currentProvider?.id;
     return matchesKind && matchesQuery && matchesProvider;
   });
-  const activeSelection = commandKind === 'provider' ? currentProvider : commandKind === 'model' ? currentModel : commandKind === 'project' && activeProject ? { id: activeProject.projectPath, label: activeProject.name } : commandKind === 'language' ? { id: language, label: language === 'en' ? 'English' : 'Español' } : null;
+  const activeSelection: CatalogItem | null = commandKind === 'provider' ? currentProvider : commandKind === 'model' ? currentModel : commandKind === 'project' && activeProject ? { id: activeProject.projectPath, label: activeProject.name } : commandKind === 'language' ? { id: language, label: language === 'en' ? 'English' : 'Español' } : null;
   const slashCommands: CatalogItem[] = [
     { id: 'adjuntar', label: chatText.attach, description: language === 'en' ? 'Attach files to the message' : 'Adjuntar archivos al mensaje', aliases: ['adjuntar', 'attach'], type: 'command', icon: Paperclip },
     { id: 'proveedor', label: chatText.slash.provider, description: chatText.slash.providerDescription, aliases: ['proveedor', 'provider'], type: 'command', icon: Radar },
     { id: 'modelo', label: chatText.slash.model, description: chatText.slash.modelDescription, aliases: ['modelo', 'model'], type: 'command', icon: Box },
+    { id: 'credencial', label: language === 'en' ? 'Credential' : 'Credencial', description: language === 'en' ? 'Replace the active provider credential' : 'Reemplazar la credencial del proveedor activo', aliases: ['credencial', 'credential', 'api', 'key', 'token'], type: 'command', icon: KeyRound },
     { id: 'proyecto', label: projectsSlashLabel, description: chatText.slash.projectDescription, aliases: ['proyecto', 'proyectos', 'project', 'projects'], type: 'command', icon: Folder },
     { id: 'habilidad', label: chatText.slash.skill, description: chatText.slash.skillDescription, aliases: ['habilidad', 'skill'], type: 'command', icon: WandSparkles },
     { id: 'idioma', label: language === 'en' ? 'Language' : 'Idioma', description: language === 'en' ? 'Change language' : 'Cambiar idioma', aliases: ['idioma', 'language', 'lang'], type: 'command', icon: Languages },
@@ -948,7 +968,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     ? slashCommands
     : filteredCatalog.filter((item) => {
       if (!activeSelection) return true;
-      if (item.id === activeSelection.id) return false;
+      if ((item.gatewayId || item.id) === (activeSelection.gatewayId || activeSelection.id)) return false;
       if (commandKind === 'project' && item.projectPath === activeProject?.projectPath) return false;
       return true;
     });
@@ -1012,6 +1032,18 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
         setInput('');
         setSearchQuery('');
         openCommandMenu(item.id === 'proveedor' ? 'provider' : 'model');
+        return;
+      }
+      if (item.id === 'credencial') {
+        const provider = currentProvider || defaultProvider;
+        if (!provider || provider.id === 'custom') return;
+        setCredentialProvider(provider);
+        setCredentialInput('');
+        setInput('');
+        setSearchQuery('');
+        setCommandKind('credential');
+        setMenuOpen(true);
+        window.setTimeout(() => credentialInputRef.current?.focus(), 0);
         return;
       }
       if (item.id === 'proyecto') {
@@ -1138,10 +1170,14 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     if (item.type === 'provider') {
       setCurrentProvider(item);
       const isCustomProvider = item.id === 'custom';
-      setCredentialProvider(isCustomProvider ? null : item);
+      const providerModels = catalog.filter((candidate) => candidate.type === 'model' && (item.id === 'ai-gateway' || candidate.providerId === item.id));
+      const nextModel = providerModels[0] || defaultModel;
+      const needsCredential = !isCustomProvider && (item.gatewayOnly === true || item.requiresApiKey !== false);
+      setCurrentModel(nextModel);
+      setCredentialProvider(needsCredential ? item : null);
       setCredentialInput('');
       setInput('');
-      setCommandKind(isCustomProvider ? 'custom-config' : 'credential');
+      setCommandKind(isCustomProvider ? 'custom-config' : needsCredential ? 'credential' : '');
       setSearchQuery('');
       if (isCustomProvider) {
         void Promise.all([
@@ -1153,7 +1189,6 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
           setCurrentProvider((current) => current ? { ...current, api: url } : current);
         });
       }
-      setCurrentModel(defaultModel);
     } else if (item.type === 'model') {
       setCurrentModel(item);
       setCredentialProvider(null);
@@ -1161,13 +1196,13 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     if (item.type !== 'provider') {
       setInput((prev) => prev.replace(/\/(proveedor|modelo)$/i, '').trimStart());
     }
-    if (item.type === 'provider') {
+    if (item.type === 'provider' && (item.id === 'custom' || item.requiresApiKey !== false)) {
       setMenuOpen(true);
     } else {
       setMenuOpen(false);
       setCommandKind('');
     }
-    if (item.type === 'provider') {
+    if (item.type === 'provider' && (item.id === 'custom' || item.requiresApiKey !== false)) {
       setTimeout(() => (item.id === 'custom' ? customUrlRef.current : credentialInputRef.current)?.focus(), 0);
     } else {
       chatInputRef.current?.focus();
@@ -1219,7 +1254,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
 
   const saveCredential = () => {
     if (!credentialProvider || !credentialInput.trim()) return;
-    void setSetting(`${credentialProvider.id}_api_key`, credentialInput.trim());
+    void setSetting(credentialProvider.id === 'ai-gateway' || credentialProvider.gatewayOnly ? 'ai_gateway_api_key' : `${credentialProvider.id}_api_key`, credentialInput.trim());
     setCredentialProvider(null);
     setCredentialInput('');
     setMenuOpen(false);
@@ -1362,7 +1397,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     let providerMessage = '';
     if (fetch?.responseBody) {
       try {
-        const payload = JSON.parse(fetch.responseBody);
+        const payload = JSON.parse(String(fetch.responseBody)) as { error?: { message?: string }; message?: string };
         providerMessage = payload?.error?.message || payload?.message || '';
       } catch {
         providerMessage = '';
@@ -1575,7 +1610,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       activeChatRef.current = chat;
       setActiveChat(chat);
       if (projectPath) {
-        const projectMeta = await readProjectMeta(projectPath) || { name: projectName, path: projectPath, created_at: new Date().toISOString(), chats: [] };
+        const projectMeta: ProjectMeta = await readProjectMeta(projectPath) || { name: projectName, path: projectPath, created_at: new Date().toISOString(), chats: [] };
         if (!projectMeta.chats.some((item) => item.id === chat?.chatId)) projectMeta.chats.push({ id: chat.chatId, name: 'Nuevo chat', customName: false });
         await writeProjectMeta(projectPath, projectMeta);
         window.dispatchEvent(new CustomEvent('codeclub:project-meta-changed', { detail: { projectPath } }));
@@ -1650,18 +1685,22 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         throw new Error('Elegí un proveedor y un modelo antes de enviar.');
       }
 
-      let apiKey = await getSetting(`${currentProvider.id}_api_key`, '');
+      const useGateway = currentProvider.id === 'ai-gateway' || currentProvider.gatewayOnly === true;
+      const credentialKey = useGateway ? 'ai_gateway_api_key' : `${currentProvider.id}_api_key`;
+      let apiKey = await getSetting(credentialKey, '');
       
-      if ((!apiKey || apiKey === 'dummy-key') && currentProvider.id !== 'custom') {
+      const requiresCredential = currentProvider.id === 'ai-gateway' || currentProvider.gatewayOnly === true || currentProvider.requiresApiKey !== false;
+      if ((!apiKey || apiKey === 'dummy-key') && currentProvider.id !== 'custom' && requiresCredential) {
         setCredentialProvider(currentProvider);
         setCredentialInput('');
         setCommandKind('credential');
         setMenuOpen(true);
         window.setTimeout(() => credentialInputRef.current?.focus(), 0);
-        throw new Error(`API Key no configurada para ${currentProvider.label || currentProvider.id}. Por favor agregala en la configuración.`);
+        throw new Error(`API Key no configurada para ${useGateway ? 'AI Gateway' : currentProvider.label || currentProvider.id}. Por favor agregala en la configuración.`);
       }
       
-      const provider = createOpenAICompatible({
+      const selectedModelReference = currentModel.gatewayId || `${currentProvider.id}/${currentModel.id}`;
+      const provider = useGateway ? createGateway({ apiKey: apiKey || undefined }) : createOpenAICompatible({
         name: currentProvider.id,
         baseURL: currentProvider.api || 'https://api.openai.com/v1',
         apiKey,
@@ -1760,7 +1799,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       window.dispatchEvent(new CustomEvent('codeclub:agent-route', { detail: { mode: runMode, specialist: routeSpecialist, confidence: 1, reason: 'Una única IA ejecuta directamente las tools necesarias.' } }));
       try {
         const routing = await resolveToolsWithAI({
-          model: provider(currentModel.id),
+          model: provider(currentProvider.id === 'ai-gateway' ? selectedModelReference : currentModel.id),
           mode: runMode,
           prompt: content,
           toolset: routedToolset,
@@ -1822,7 +1861,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         const contextualMessages = newMessages.map((message, index) => index === newMessages.length - 1 && message.role === 'user' ? { ...message, content } : message);
         const executionMessages = retryInstruction ? [...contextualMessages, { role: 'user', content: `${retryInstruction}\n\nUse a different strategy or tool sequence; do not repeat the same failed call.` }] : contextualMessages;
         return runStream({
-          model: provider(currentModel.id),
+          model: provider(currentProvider.id === 'ai-gateway' ? selectedModelReference : currentModel.id),
           system,
           messages: executionMessages.map((message, index) => ({
             role: message.role,
@@ -2725,7 +2764,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           initial={false}
           animate={{ opacity: menuOpen ? 1 : 0, y: menuOpen ? 0 : -6, scale: menuOpen ? 1 : 0.985 }}
           transition={{ type: 'spring', stiffness: 420, damping: 32, mass: 0.7 }}
-          style={{ position: 'static', width: 'calc(100% - 16px)', margin: '0 8px', display: menuOpen ? 'grid' : 'none', gap: '8px', padding: '8px', border: 0, borderRadius: '10px', background: 'transparent', boxShadow: 'none', zIndex: 10, outline: 'none' }}
+          style={{ position: 'static', width: 'calc(100% - 12px)', margin: '0 6px', display: menuOpen ? 'grid' : 'none', gap: '4px', padding: '4px', border: 0, borderRadius: '10px', background: 'transparent', boxShadow: 'none', zIndex: 10, outline: 'none' }}
         >
           {commandKind !== 'credential' && commandKind !== 'custom-config' && <div style={{ position: 'relative' }}>
             <input
@@ -2735,7 +2774,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={handleSearchKeyDown}
               placeholder={commandKind === 'provider' ? chatText.searchProvider : commandKind === 'model' ? chatText.searchModel : commandKind === 'project' ? chatText.searchProject : commandKind === 'skill' ? chatText.searchSkill : chatText.searchCommand}
-              style={{ boxSizing: 'border-box', width: '100%', height: '30px', padding: '0 32px 0 9px', borderRadius: '7px', background: 'transparent', fontSize: '11px', color: '#eeeeee', border: 0, outline: 'none' }}
+              style={{ boxSizing: 'border-box', width: '100%', height: '28px', padding: '0 28px 0 8px', borderRadius: '7px', background: 'transparent', fontSize: '11px', color: '#eeeeee', border: 0, outline: 'none' }}
             />
             <Search size={14} strokeWidth={1.8} aria-hidden="true" style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: 'rgba(238, 238, 238, 0.48)', pointerEvents: 'none' }} />
           </div>}
@@ -2747,8 +2786,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 type="password"
                 value={credentialInput}
                 onChange={(event) => setCredentialInput(event.target.value)}
-                onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); saveCredential(); } }}
-                placeholder={`Escribí tu credencial de ${credentialProvider?.label || credentialProvider?.id}`}
+                onKeyDown={(event) => { if (event.key !== 'Enter') return; event.preventDefault(); event.stopPropagation(); if (credentialInput.trim()) { saveCredential(); return; } setCredentialProvider(null); setCredentialInput(''); setMenuOpen(false); setCommandKind(''); chatInputRef.current?.focus(); }}
+                placeholder={`Escribí tu credencial de ${credentialProvider?.gatewayOnly ? 'AI Gateway' : credentialProvider?.label || credentialProvider?.id}`}
                 className="credential-menu-input"
                 style={{ boxSizing: 'border-box', width: '100%', height: '34px', padding: '0 32px 0 10px', border: 0, borderRadius: '8px', background: 'transparent', color: '#eeeeee', fontSize: '12px', outline: 'none' }}
               />
@@ -2767,7 +2806,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               </div>
               {customConfigError && <span style={{ color: '#f28b82', fontSize: '11px' }}>{customConfigError}</span>}
             </div>
-          ) : <div className="command-list" style={{ display: 'grid', gap: '4px', maxHeight: '300px', overflow: 'auto', scrollbarWidth: 'none', paddingBottom: '12px' }}>
+          ) : <div className="command-list" style={{ display: 'grid', gap: '2px', maxHeight: '280px', overflow: 'auto', scrollbarWidth: 'none', paddingBottom: '6px' }}>
             {activeSelection && (
               <div aria-current="true" style={{ minHeight: '30px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', borderRadius: '7px', background: '#1E1E1E', color: 'var(--codeclub-accent)', fontSize: '11px', padding: '0 9px' }}>
                 <span className="flex items-center gap-2">{activeSelection.label || activeSelection.id}</span>
@@ -2777,7 +2816,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             {!hasCommandMenuResults && <div role="status" style={{ minHeight: '32px', display: 'grid', placeItems: 'center', padding: '8px 9px', color: 'rgba(216, 216, 216, 0.48)', fontSize: '11px' }}>{language === 'en' ? 'No results found' : 'No se encontraron resultados'}</div>}
             {commandMenuItems.map((item, index) => (
               <motion.button
-                key={item.id}
+                key={item.gatewayId || item.id}
                 id={`command-option-${index}`}
                 role="option"
                 aria-selected={index === activeCommandIndex}
@@ -2790,7 +2829,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 onMouseLeave={() => setActiveCommandIndex(-1)}
                 animate={{ color: index === activeCommandIndex ? '#ffffff' : 'rgba(238, 238, 238, 0.78)' }}
                 transition={{ duration: 0.16, ease: 'easeOut' }}
-                style={{ position: 'relative', minHeight: '32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', border: 0, borderRadius: '7px', background: 'transparent', fontSize: '12px', padding: '0 9px', textAlign: 'left', cursor: 'pointer', overflow: 'hidden' }}
+                style={{ position: 'relative', minHeight: '28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', border: 0, borderRadius: '7px', background: 'transparent', fontSize: '12px', padding: '0 7px', textAlign: 'left', cursor: 'pointer', overflow: 'hidden' }}
               >
                 <motion.span aria-hidden="true" animate={{ opacity: index === activeCommandIndex ? 1 : 0 }} transition={{ duration: 0.12, ease: 'easeOut' }} style={{ position: 'absolute', inset: 0, borderRadius: '7px', background: '#2F2F2F', zIndex: 0, pointerEvents: 'none' }} />
                 <span className="relative z-[1] flex min-w-0 items-center gap-2">{item.icon && React.createElement(item.icon, { size: 14, strokeWidth: 1.8 })}<span className="truncate">{item.label}</span></span>

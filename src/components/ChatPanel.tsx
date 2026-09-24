@@ -5,7 +5,7 @@ import WorkspaceManager from './WorkspaceManager';
 import { models, providers } from '../lib/ai-catalog';
 
 const defaultProvider = providers[0] ?? null;
-const defaultModel = defaultProvider ? (models.find((model: any) => model.providerId === defaultProvider.id) ?? models[0] ?? null) : null;
+const defaultModel = defaultProvider ? (models.find((model: any) => model.providerId === defaultProvider.id) ?? null) : null;
 // ChatInterface filtra este catálogo por `type` para mostrar cada segundo nivel
 // del command menu. Mantenerlo plano evita que proveedor/modelo queden invisibles.
 const catalog = [

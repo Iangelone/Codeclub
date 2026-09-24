@@ -50,6 +50,6 @@ export default function HomePage() {
   return <main className="relative isolate grid h-screen max-h-screen grid-rows-[34px_auto_minmax(0,1fr)] min-w-[320px] min-h-0 overflow-hidden bg-transparent text-(--codeclub-text) font-sans">
       <Topbar leftOpen={leftOpen} rightOpen={rightOpen} topbarOpen={topbarOpen} onToggleLeft={toggleLeft} onToggleRight={toggleRight} onToggleTopbar={toggleTopbar} />
       <motion.div initial={false} animate={{ height: topbarOpen ? 44 : 0, opacity: topbarOpen ? 1 : 0 }} transition={{ type: 'spring', stiffness: 420, damping: 34 }} className="relative z-50 min-h-0 overflow-visible"><SubTopbar activeProject={activeProject} /></motion.div>
-      <WorkspaceLayout leftOpen={leftOpen} rightOpen={rightOpen} />
+      <WorkspaceLayout leftOpen={leftOpen} rightOpen={rightOpen} onToggleLeft={toggleLeft} />
   </main>;
 }
