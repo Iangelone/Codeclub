@@ -2,7 +2,7 @@ import { nativeInvoke as invoke } from '../runtime';
 import { jsonSchema as aiJsonSchema, tool } from 'ai';
 import type { ToolContext } from './types';
 import { runStream } from './run';
-import { createId, readAgentState, updateAgentState, waitForAgentStateMutations, type AgentPlan, type AgentState, type TaskStatus } from './planning';
+import { createId, readAgentState, updateAgentState, waitForAgentStateMutations, type AgentPlan, type TaskStatus } from './planning';
 import { appendGenerationUsage } from '../usage';
 import { readExecutionLog } from '../execution-log';
 import { readProjectIndex } from '../projectManager';

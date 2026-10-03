@@ -4,6 +4,21 @@ export type AppLanguage = 'es' | 'en';
 
 export const LANGUAGE_STORAGE_KEY = 'codeclub-language';
 
+export const chatHistoryTranslations = {
+  es: { conflict:'El historial cambió en otra ventana. Reabrí este chat antes de reintentar.', loading:'Cargando mensajes…', failed:'No se pudo cargar el historial.', retry:'Reintentar', latest:'Ir a los últimos mensajes', tooLarge:'El mensaje o los archivos superan el contexto disponible. Reducí su tamaño o usá referencias a archivos.' },
+  en: { conflict:'History changed elsewhere. Reopen this chat before retrying.', loading:'Loading messages…', failed:'Could not load history.', retry:'Retry', latest:'Go to latest messages', tooLarge:'The message or files exceed the available context. Reduce their size or use file references.' },
+};
+
+export const aiCredentialTranslations = {
+  es: { enter: 'Escribí tu credencial de' },
+  en: { enter: 'Enter your credential for' },
+};
+
+export const floatingChatTranslations = {
+  es: { chat: 'Chat flotante', controls: 'Controles del chat', open: 'Abrir Codeclub', newChat: 'Nuevo chat', collapse: 'Contraer chat', drag: 'Arrastrar arriba o abajo de la pantalla' },
+  en: { chat: 'Floating chat', controls: 'Chat controls', open: 'Open Codeclub', newChat: 'New chat', collapse: 'Collapse chat', drag: 'Drag to the top or bottom of the screen' },
+};
+
 export function useAppLanguage(): AppLanguage {
   const [language, setLanguage] = useState<AppLanguage>('es');
   useEffect(() => {

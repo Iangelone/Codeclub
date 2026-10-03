@@ -1,14 +1,54 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import Topbar from '../components/Topbar';
 import SubTopbar from '../components/SubTopbar';
 import WorkspaceLayout from '../components/WorkspaceLayout';
-import { motion } from 'motion/react';
+import FloatingChat from '../components/FloatingChat';
+import { invalidateSettingsCache } from '../lib/persistence';
+import { MotionConfig, motion } from 'motion/react';
 
 const LAYOUT_VISIBILITY_KEY = 'codeclub:layout-visibility';
 
 export default function HomePage() {
+  const [floating, setFloating] = useState<boolean | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [fullscreenMotion, setFullscreenMotion] = useState<'enter' | 'exit' | null>(null);
+  const fullscreenStateLoaded = useRef(false);
+  const fullscreenEventVersion = useRef(0);
+  useEffect(() => { setFloating(new URLSearchParams(window.location.search).get('floating') === '1'); }, []);
+  useEffect(() => {
+    const api = (window as any).codeclub;
+    const unsubscribe = api?.onFullscreenChange?.((next: boolean) => {
+      fullscreenEventVersion.current += 1;
+      setIsFullscreen(next);
+      if (fullscreenStateLoaded.current) setFullscreenMotion(next ? 'enter' : 'exit');
+    });
+    let active = true;
+    const initialVersion = fullscreenEventVersion.current;
+    void api?.windowIsFullScreen?.().then((value: boolean) => {
+      if (!active || initialVersion !== fullscreenEventVersion.current) return;
+      setIsFullscreen(Boolean(value));
+      fullscreenStateLoaded.current = true;
+    });
+    return () => { active = false; unsubscribe?.(); };
+  }, []);
+  useEffect(() => {
+    const refresh = () => {
+      invalidateSettingsCache();
+      window.dispatchEvent(new CustomEvent('codeclub:settings-changed'));
+      window.dispatchEvent(new CustomEvent('codeclub:global-chat-changed'));
+    };
+    const unsubscribe = (window as any).codeclub?.onMainShow(refresh);
+    const sync = (event: StorageEvent) => {
+      if (event.key === 'codeclub:settings') invalidateSettingsCache();
+      if (event.key === 'codeclub-language' && (event.newValue === 'en' || event.newValue === 'es')) {
+        window.dispatchEvent(new CustomEvent('codeclub:language-change', { detail: { language: event.newValue } }));
+      }
+    };
+    window.addEventListener('storage', sync);
+    return () => { unsubscribe?.(); window.removeEventListener('storage', sync); };
+  }, []);
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(false);
   const [topbarOpen, setTopbarOpen] = useState(true);
@@ -45,11 +85,21 @@ export default function HomePage() {
     };
   }, []);
   const toggleLeft = () => setLeftOpen((open) => { const next = !open; try { window.localStorage.setItem(LAYOUT_VISIBILITY_KEY, JSON.stringify({ ...JSON.parse(window.localStorage.getItem(LAYOUT_VISIBILITY_KEY) || '{}'), leftOpen: next })); } catch { /* La persistencia de preferencias es opcional. */ } return next; });
+  if (floating === null) return null;
+  if (floating) return <MotionConfig reducedMotion="user"><FloatingChat /></MotionConfig>;
   const toggleRight = () => setRightOpen((open) => { const next = !open; try { window.localStorage.setItem(LAYOUT_VISIBILITY_KEY, JSON.stringify({ ...JSON.parse(window.localStorage.getItem(LAYOUT_VISIBILITY_KEY) || '{}'), rightOpen: next })); } catch { /* La persistencia de preferencias es opcional. */ } return next; });
   const toggleTopbar = () => setTopbarOpen((open) => { const next = !open; try { window.localStorage.setItem(LAYOUT_VISIBILITY_KEY, JSON.stringify({ ...JSON.parse(window.localStorage.getItem(LAYOUT_VISIBILITY_KEY) || '{}'), topbarOpen: next })); } catch { /* La persistencia de preferencias es opcional. */ } return next; });
-  return <main className="relative isolate grid h-screen max-h-screen grid-rows-[34px_auto_minmax(0,1fr)] min-w-[320px] min-h-0 overflow-hidden bg-transparent text-(--codeclub-text) font-sans">
+  const fullscreenAnimation = useMemo(() => fullscreenMotion === 'enter'
+    ? { scale: [0.985, 1], opacity: [0.92, 1] }
+    : fullscreenMotion === 'exit'
+      ? { scale: [1.015, 1], opacity: [0.92, 1] }
+      : { scale: 1, opacity: 1 }, [fullscreenMotion]);
+  const fullscreenTransition = useMemo(() => fullscreenMotion
+    ? { duration: 0.3, ease: [0.22, 1, 0.36, 1] as const }
+    : { duration: 0 }, [fullscreenMotion]);
+  return <MotionConfig reducedMotion="user"><motion.main animate={fullscreenAnimation} transition={fullscreenTransition} className="relative isolate grid h-screen max-h-screen grid-rows-[34px_auto_minmax(0,1fr)] min-w-[320px] min-h-0 overflow-hidden bg-transparent text-(--codeclub-text) font-sans" data-fullscreen={isFullscreen}>
       <Topbar leftOpen={leftOpen} rightOpen={rightOpen} topbarOpen={topbarOpen} onToggleLeft={toggleLeft} onToggleRight={toggleRight} onToggleTopbar={toggleTopbar} />
       <motion.div initial={false} animate={{ height: topbarOpen ? 44 : 0, opacity: topbarOpen ? 1 : 0 }} transition={{ type: 'spring', stiffness: 420, damping: 34 }} className="relative z-50 min-h-0 overflow-visible"><SubTopbar activeProject={activeProject} /></motion.div>
       <WorkspaceLayout leftOpen={leftOpen} rightOpen={rightOpen} onToggleLeft={toggleLeft} />
-  </main>;
+  </motion.main></MotionConfig>;
 }

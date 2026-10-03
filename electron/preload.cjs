@@ -15,12 +15,41 @@ contextBridge.exposeInMainWorld('codeclub', {
   appConfigDir: () => ipcRenderer.invoke('path:app-config'),
   appCacheDir: () => ipcRenderer.invoke('path:app-cache'),
   readProjectChat: (projectPath, chatId) => ipcRenderer.invoke('chats:read-project', projectPath, chatId),
+  chatPage: (project, id, before, limit) => ipcRenderer.invoke('chats:page', project, id, before, limit),
+  chatTurns: (project, id, before, limit, direction) => ipcRenderer.invoke('chats:turn-page', project, id, before, limit, direction),
+  chatContext: (project, id) => ipcRenderer.invoke('chats:context', project, id),
+  chatSaveTail: (project, id, start, messages, expectedTotal) => ipcRenderer.invoke('chats:tail', project, id, start, messages,expectedTotal),
+  chatAppend: (project, id, message) => ipcRenderer.invoke('chats:append', project, id, message),
+  chatAll: (project, id) => ipcRenderer.invoke('chats:all', project, id),
+  chatSearch: (project, id, query) => ipcRenderer.invoke('chats:search', project, id, query),
+  chatCopy: (from, to, id) => ipcRenderer.invoke('chats:copy', from, to, id),
+  chatDelete: (project, id) => ipcRenderer.invoke('chats:delete', project, id),
+  chatTranscript: (project, id, markdown) => ipcRenderer.invoke('chats:transcript', project, id, markdown),
   writeProjectChat: (projectPath, chatId, content) => ipcRenderer.invoke('chats:write-project', projectPath, chatId, content),
   switchProject: (projectId) => ipcRenderer.invoke('projects:switch', projectId),
   renameProject: (projectId, name) => ipcRenderer.invoke('projects:rename', projectId, name),
   windowMinimize: () => ipcRenderer.invoke('window:minimize'),
   windowMaximize: () => ipcRenderer.invoke('window:maximize'),
   windowClose: () => ipcRenderer.invoke('window:close'),
+  windowIsFullScreen: () => ipcRenderer.invoke('window:is-full-screen'),
+  onFullscreenChange: (handler) => {
+    const listener = (_event, isFullscreen) => handler(Boolean(isFullscreen));
+    ipcRenderer.on('window:fullscreen-change', listener);
+    return () => ipcRenderer.removeListener('window:fullscreen-change', listener);
+  },
+  floatingResize: (expanded) => ipcRenderer.invoke('codeclub:floating-resize', expanded),
+  floatingDrag: (phase, point) => ipcRenderer.invoke('codeclub:floating-drag', phase, point),
+  floatingOpenMain: () => ipcRenderer.invoke('codeclub:floating-open-main'),
+  onMainShow: (handler) => {
+    const listener = () => handler();
+    ipcRenderer.on('codeclub:main-show', listener);
+    return () => ipcRenderer.removeListener('codeclub:main-show', listener);
+  },
+  onFloatingShow: (handler) => {
+    const listener = () => handler();
+    ipcRenderer.on('codeclub:floating-show', listener);
+    return () => ipcRenderer.removeListener('codeclub:floating-show', listener);
+  },
   reloadApp: () => ipcRenderer.invoke('app:reload'),
   getAutoUpdateStatus: () => ipcRenderer.invoke('app:update-status'),
   checkForUpdates: () => ipcRenderer.invoke('app:check-for-updates'),

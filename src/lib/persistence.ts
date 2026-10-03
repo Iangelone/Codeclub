@@ -43,18 +43,43 @@ export const logPersistence = async (action: string, status: string, detail: Rec
 };
 
 let settingsCache: Record<string, unknown> | null = null;
+let settingsLoadPromise: Promise<Record<string, unknown>> | null = null;
+let settingsRevision = 0;
+export const invalidateSettingsCache = () => { settingsRevision++; settingsCache = null; settingsLoadPromise = null; };
 let settingsWriteQueue = Promise.resolve();
+
+const parseSettings = (value: string | null | undefined): Record<string, unknown> => {
+  try {
+    const parsed: unknown = JSON.parse(value || '{}');
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
+};
 
 const loadSettings = async (): Promise<Record<string, unknown>> => {
   if (settingsCache) return settingsCache;
-  try { settingsCache = JSON.parse(window.localStorage.getItem(browserSettingsKey) ?? '{}'); } catch { settingsCache = {}; }
-  const path = await getAppConfigFilePath(SETTINGS_FILE);
-  try {
-    settingsCache = (await exists(path)) ? JSON.parse(await readTextFile(path)) : {};
-  } catch {
-    settingsCache = {};
+  if (!settingsLoadPromise) {
+    const revision = settingsRevision;
+    const pending = (async () => {
+      let settings: Record<string, unknown> = {};
+      try { settings = parseSettings(window.localStorage.getItem(browserSettingsKey)); } catch { /* localStorage puede estar deshabilitado. */ }
+      const path = await getAppConfigFilePath(SETTINGS_FILE);
+      if (path) {
+        try {
+          if (await exists(path)) settings = parseSettings(await readTextFile(path));
+        } catch {
+          // Si el archivo de escritorio no está disponible, se conserva la copia del navegador.
+        }
+      }
+      if (revision !== settingsRevision) return loadSettings();
+      settingsCache = settings;
+      return settings;
+    })();
+    const tracked = pending.finally(() => { if (settingsLoadPromise === tracked) settingsLoadPromise = null; });
+    settingsLoadPromise = tracked;
   }
-  return settingsCache ?? {};
+  return settingsLoadPromise;
 };
 
 export const getSetting = async <T>(key: string, fallback: T): Promise<T> => {
@@ -64,14 +89,17 @@ export const getSetting = async <T>(key: string, fallback: T): Promise<T> => {
 
 export const setSetting = async (key: string, value: unknown) => {
   const operation = settingsWriteQueue.then(async () => {
-    const settings = await loadSettings();
+    const settings = { ...await loadSettings() };
     settings[key] = value;
-    window.localStorage.setItem(browserSettingsKey, JSON.stringify(settings));
     const configPath = await appConfigDir();
     if (configPath) {
+      try { window.localStorage.setItem(browserSettingsKey, JSON.stringify(settings)); } catch { /* El archivo de escritorio conserva los ajustes si localStorage está lleno. */ }
       await mkdir(configPath);
       await writeTextFile(await getAppConfigFilePath(SETTINGS_FILE), JSON.stringify(settings));
+    } else {
+      window.localStorage.setItem(browserSettingsKey, JSON.stringify(settings));
     }
+    settingsCache = settings;
   });
   settingsWriteQueue = operation.catch(() => undefined);
   return operation;

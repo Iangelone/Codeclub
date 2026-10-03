@@ -1,4 +1,5 @@
-import { smoothStream, stepCountIs, ToolLoopAgent, type ModelMessage } from 'ai';
+import { pruneMessages, smoothStream, stepCountIs, ToolLoopAgent, type ModelMessage } from 'ai';
+import { contextBytes, messageContextCost } from '../chat-context';
 import type { EngineCallbacks } from './types';
 
 type RunStreamArgs = {
@@ -8,11 +9,12 @@ type RunStreamArgs = {
   tools: Record<string, any>;
   structuredOutput?: any;
   maxOutputTokens?: number;
+  contextWindow?: number;
   callbacks: EngineCallbacks;
   signal?: AbortSignal;
 };
 
-async function runStreamInternal({ model, system, messages, tools, structuredOutput, maxOutputTokens, callbacks, signal }: RunStreamArgs): Promise<string> {
+async function runStreamInternal({ model, system, messages, tools, structuredOutput, maxOutputTokens, contextWindow, callbacks, signal }: RunStreamArgs): Promise<string> {
   let content = '';
   let reasoning = '';
   const startedAt = Date.now();
@@ -22,6 +24,15 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
     tools,
     // Mantiene el loop de tools dentro de AI SDK y limita ejecuciones encadenadas.
     stopWhen: stepCountIs(8),
+    prepareStep: ({messages:stepMessages}) => {
+      const budget=Math.max(1024,Math.floor((contextWindow||32768)*0.75));
+      const overhead=contextBytes(system)+contextBytes(JSON.stringify(Object.entries(tools).map(([name,tool]:[string,any])=>({name,description:tool.description,schema:tool.inputSchema}))))+Math.min(maxOutputTokens||4096,Math.floor(budget/4));
+      const cost=(items:ModelMessage[])=>overhead+items.reduce((sum,message)=>sum+messageContextCost(message),0);
+      if(cost(stepMessages)<=budget)return;
+      const compacted=pruneMessages({messages:stepMessages,reasoning:'all',toolCalls:'before-last-3-messages',emptyMessages:'remove'});
+      if(cost(compacted)>budget)throw new Error('CHAT_MESSAGE_TOO_LARGE');
+      return {messages:compacted};
+    },
     ...(maxOutputTokens ? { maxOutputTokens } : {}),
     ...(structuredOutput ? { output: structuredOutput } : {}),
   });

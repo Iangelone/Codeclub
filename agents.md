@@ -45,7 +45,8 @@ The renderer never uses Node.js directly. Native work goes through nativeInvoke 
 
 - Global chats and project-specific chats.
 - Left sidebar with Home, Tasks, Extensions, and visually disabled Devices.
-- Resizable right sidebar with Files, Review, Browser, Artifacts, and Terminals.
+- Resizable right sidebar with Files, Review, Browser, and Terminals.
+- Plans and TODOs remain available through the AI tools and project storage.
 - Project-scoped scheduled tasks with provider, model, prompt, frequency, and manual execution.
 - Browser WebView with DOM selection, numbered comments, and chat references.
 - Interactive PowerShell terminals backed by PTY.

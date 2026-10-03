@@ -24,7 +24,6 @@ Home mode has no project path and must continue to work with global data.
 | codeclub:open-chat | Open an existing chat. |
 | codeclub:open-empty-chat | Create or show an empty chat. |
 | codeclub:open-extensions | Show Extensions. |
-| codeclub:open-artifacts | Open Artifacts in the right sidebar. |
 | codeclub:open-right-panel | Open the browser or another right panel. |
 
 Tasks use codeclub:scheduled-tasks-changed; artifacts use codeclub:artifacts-changed and codeclub:artifact-reference; usage uses codeclub:usage-updated.

@@ -1,5 +1,16 @@
 @import 'tailwindcss';
 
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 :root {
   --paper: #1E1E1E;
   --card: #272727;
@@ -12,6 +23,7 @@
   --codeclub-bg: #111111;
   --codeclub-center: #111111;
   --codeclub-surface: #161616;
+  --codeclub-chat-background: radial-gradient(ellipse at 30% 110%, #2d5fd633, transparent 55%), #111315;
   --codeclub-surface-raised: #1e1e1e;
   --codeclub-panel: rgba(27, 32, 41, 1);
   --codeclub-graphite: linear-gradient(115deg, #1c2028 0%, #1b202a 52%, #1d2535 100%);
@@ -87,6 +99,19 @@ body[data-theme='light'] {
 
 .codeclub-graphite {
   background: var(--codeclub-graphite);
+}
+
+/* Paleta del marco del widget, limitada a las barras y la navegación lateral. */
+.codeclub-widget-chrome {
+  --codeclub-acrylic-active: #252525;
+  --codeclub-hover: #252525;
+  --codeclub-border-soft: #202020;
+  --codeclub-text: #dedede;
+  --codeclub-text-strong: #eeeeee;
+  --codeclub-text-muted: #999999;
+  --codeclub-icon: #999999;
+  background: #080808;
+  color: var(--codeclub-text);
 }
 
 .codeclub-resize-indicator {
@@ -193,8 +218,8 @@ section[aria-label='Gestor de paneles'] {
 }
 
 .right-panel-launch-card {
-  border-color: #303030;
-  background: #272727;
+  border-color: var(--codeclub-border);
+  background: var(--codeclub-surface);
   color: #F5F5EF;
   transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, color 150ms ease, transform 150ms ease;
 }
@@ -202,7 +227,7 @@ section[aria-label='Gestor de paneles'] {
 .right-panel-launch-card:hover,
 .right-panel-launch-card:focus-visible {
   border-color: var(--codeclub-accent-bright);
-  background: #2B2B2B;
+  background: var(--codeclub-surface-raised);
   color: #FFFFFF;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
   transform: translateY(-1px);
@@ -214,14 +239,41 @@ section[aria-label='Gestor de paneles'] {
 }
 
 /* Superficies principales: un único lenguaje de fondos para toda la app. */
+.codeclub-conversation-surface {
+  background: var(--codeclub-chat-background);
+  border-top-left-radius: 16px;
+}
+
 #codeclub-chat-panel {
-  background-color: var(--nexo-paper) !important;
+  background: transparent;
   border-top-left-radius: 16px;
   overflow: hidden;
   color: var(--nexo-ink);
 }
 
+#codeclub-chat-panel .chat-composer .composer-box {
+  background: var(--codeclub-surface);
+  border-color: var(--codeclub-border);
+}
+
 #codeclub-right-sidebar,
+#codeclub-right-sidebar [role='tabpanel'] {
+  background: transparent;
+  color: var(--nexo-ink);
+}
+
+#codeclub-right-sidebar .codeclub-widget-chrome {
+  background: transparent;
+}
+
+#codeclub-right-sidebar .codeclub-project-files,
+#codeclub-right-sidebar .codeclub-project-files > div.flex,
+#codeclub-right-sidebar .codeclub-project-files > div.flex > main,
+#codeclub-right-sidebar .codeclub-project-files > div.flex > main > div:first-child,
+#codeclub-right-sidebar .codeclub-project-files > div.flex > aside {
+  background: transparent;
+}
+
 #codeclub-terminal-panel,
 #codeclub-terminal-panel > div {
   background-color: var(--nexo-paper) !important;
@@ -263,14 +315,14 @@ section[aria-label='Gestor de paneles'] {
 
 .chat-turn {
   position: relative;
-  padding-top: 40px;
+  padding-top: 30px;
   padding-left: 52px;
 }
 
 .chat-turn::before {
   position: absolute;
-  top: 34px;
-  bottom: -28px;
+  top: 26px;
+  bottom: -18px;
   left: 31px;
   width: 1px;
   background: #2b2b2b;
@@ -283,7 +335,7 @@ section[aria-label='Gestor de paneles'] {
 }
 
 .chat-turn > .chat-user-message + .chat-assistant-message {
-  margin-top: 14px;
+  margin-top: 8px;
 }
 
 .timeline-hidden .chat-turn::before {
@@ -296,25 +348,25 @@ section[aria-label='Gestor de paneles'] {
 
 .chat-turn-time {
   position: absolute;
-  top: 0;
+  top: 2px;
   left: 0;
   z-index: 1;
   display: inline-flex;
   width: max-content;
-  max-width: calc(100% - 8px);
+  max-width: 100%;
   box-sizing: border-box;
   min-width: 0;
-  height: 25px;
+  height: 16px;
   align-items: center;
   justify-content: flex-start;
-  gap: 6px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--soft);
-  color: var(--muted);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.16);
-  font-size: 11px;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--codeclub-text-muted) 68%, transparent);
+  box-shadow: none;
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
   line-height: 1;
@@ -662,8 +714,13 @@ section[aria-label='Gestor de paneles'] {
 }
 
 .chat-turn-advice {
+  color: color-mix(in srgb, var(--codeclub-text-muted) 82%, transparent);
+  font-size: 10px;
+}
+
+.chat-error-message .chat-markdown {
   color: var(--codeclub-text-muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 /* Tabs de la sidebar derecha: compactas, suaves y tipo pill. */
@@ -1208,12 +1265,20 @@ button:disabled,
 
 .message-actions {
   pointer-events: auto;
+  opacity: 0;
+  transition: opacity 140ms ease;
 }
 
 .group\/message:hover .message-actions,
 .group\/message:focus-within .message-actions {
   pointer-events: auto;
   opacity: 1;
+}
+
+@media (hover: none) {
+  .message-actions {
+    opacity: 1;
+  }
 }
 
 .send-button-shine::after {

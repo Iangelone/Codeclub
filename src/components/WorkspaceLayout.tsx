@@ -1,7 +1,7 @@
 'use client';
 
 import { createElement, memo, useEffect, useRef, useState, type FormEvent } from 'react';
-import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, Bolt, Check, ChevronDown, Circle, CircleCheck, CirclePlus, Clock, Copy, CopyX, EllipsisVertical, ExternalLink, FileWarning, FolderOpen, FolderPen, FolderTree, GitBranch, GitCompare, Grid2X2, Heart, Home, Info, ListTodo, MessageSquare, MoreHorizontal, MousePointerClick, PanelLeft, PanelRight, Pause, Pencil, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
+import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, Bolt, Check, ChevronDown, Circle, CircleCheck, CirclePlus, Clock, CopyX, EllipsisVertical, ExternalLink, FileWarning, FolderOpen, FolderPen, FolderTree, GitBranch, GitCompare, Grid2X2, Heart, Home, Info, MoreHorizontal, MousePointerClick, PanelLeft, Pause, Pencil, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { GlobeCheck } from 'lucide-react';
 import { Terminal as XtermTerminal } from '@xterm/xterm';
@@ -11,11 +11,11 @@ import ChatPanel from './ChatPanel';
 import { ProjectPanelView } from './ChatInterface';
 import FluidOrb from './ui/fluid-orb';
 import { readGlobalChats, readProjectMeta, writeGlobalChats, writeProjectMeta } from '../lib/projectManager';
-import { readAgentState, writeAgentState, type AgentState, type TaskStatus } from '../lib/engine/planning';
 import { nativeInvoke } from '../lib/runtime';
 import { getProjectSetting, getSetting, setProjectSetting } from '../lib/persistence';
 import { models, providers } from '../lib/ai-catalog';
-import { browserUiTranslations, rightSidebarTranslations, sidebarTranslations, useAppLanguage } from '../lib/i18n';
+import { credentialKeyFor, modelMatchesProvider } from '../lib/ai-routing';
+import { rightSidebarTranslations, sidebarTranslations, useAppLanguage } from '../lib/i18n';
 
 const MIN_WIDTH = 220;
 const MAX_WIDTH = 420;
@@ -28,7 +28,7 @@ type Side = 'left' | 'right';
 type RecentChat = { id: string; title: string; customName?: boolean; projectPath?: string; projectName?: string };
 type SidebarSection = 'new-chat' | 'projects' | 'scheduled' | 'extensions';
 type ChatContextMenu = { chat: RecentChat; x: number; y: number };
-type RightPanelTab = 'files' | 'review' | 'browser' | 'artifacts' | 'terminals';
+type RightPanelTab = 'files' | 'review' | 'browser' | 'terminals';
 type RightPanelInstance = { instanceId: string; tab: RightPanelTab; label: string; iconUrl?: string; terminalId?: string };
 type RightPanelContextMenu = { panel: RightPanelInstance; x: number; y: number };
 type ScheduledTask = { id: string; name: string; prompt: string; schedule: string; repeat: string; interval: string; every: string; time: string; status: 'active' | 'paused'; executionTarget: string; provider: string; model: string; apiKey: string; project: string; reasoning: string; notifications: string; lastRun?: string };
@@ -37,7 +37,7 @@ const SCHEDULED_STORAGE_KEY = 'codeclub:scheduled-tasks';
 const defaultScheduledProvider = providers[0]?.label || 'Proveedor actual';
 const defaultScheduledModel = models.find((model: any) => model.providerId === providers[0]?.id)?.label || models[0]?.label || 'Modelo actual';
 const findProvider = (value: string) => providers.find((provider: any) => provider.id === value || provider.label === value);
-const findModel = (value: string, providerId?: string) => models.find((model: any) => (model.id === value || model.gatewayId === value || model.label === value) && (!providerId || providerId === 'ai-gateway' || model.providerId === providerId));
+const findModel = (value: string, providerId?: string) => models.find((model: any) => (model.id === value || model.gatewayId === value || model.label === value) && (!providerId || modelMatchesProvider(model, { id: providerId })));
 const normalizeTaskModel = (value: string, providerValue: string) => findModel(value, findProvider(providerValue)?.id)?.label || value;
 const scheduledTimeOptions = Array.from({ length: 48 }, (_, index) => { const hour = Math.floor(index / 2); const minute = index % 2 ? '30' : '00'; const suffix = hour < 12 ? 'a. m.' : 'p. m.'; const displayHour = hour % 12 || 12; return { value: `${String(hour).padStart(2, '0')}:${minute}`, label: `${displayHour}:${minute} ${suffix}` }; });
 
@@ -70,7 +70,6 @@ const rightPanelTabs: Array<{ id: RightPanelTab; label: string; icon: typeof Fol
   { id: 'files', label: 'Archivos', icon: FolderPen },
   { id: 'review', label: 'Revisar', icon: GitCompare },
   { id: 'browser', label: 'Navegador', icon: AppWindowMac },
-  { id: 'artifacts', label: 'Artifacts', icon: ListTodo },
   { id: 'terminals', label: 'Terminales', icon: SquareTerminal },
 ];
 
@@ -481,6 +480,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
     const chat = chatContextMenu?.chat;
     if (!chat) return;
     setChatContextMenu(null);
+    await (window as any).codeclub?.chatDelete?.(chat.projectPath||'',chat.id);
     if (chat.projectPath) {
       const meta = await readProjectMeta(chat.projectPath);
       if (!meta) return;
@@ -505,10 +505,12 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
     if (activeProjectPath) {
       const meta = await readProjectMeta(activeProjectPath);
       if (!meta) return;
+      for(const chat of meta.chats)await (window as any).codeclub?.chatDelete?.(activeProjectPath,chat.id);
       meta.chats = [];
       await writeProjectMeta(activeProjectPath, meta);
       window.dispatchEvent(new CustomEvent('codeclub:project-meta-changed', { detail: { projectPath: activeProjectPath } }));
     } else {
+      for(const chat of await readGlobalChats())await (window as any).codeclub?.chatDelete?.('',chat.id);
       await writeGlobalChats([]);
       window.dispatchEvent(new CustomEvent('codeclub:global-chat-changed'));
     }
@@ -539,19 +541,6 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
   };
 
   useEffect(() => {
-    const openArtifacts = (event: Event) => {
-      const detail = (event as CustomEvent<{ projectPath?: string }>).detail;
-      if (detail?.projectPath && detail.projectPath !== activeProjectPath) return;
-      const existing = rightPanels.find((panel) => panel.tab === 'artifacts');
-      if (existing) {
-        setActiveRightPanelId(existing.instanceId);
-        return;
-      }
-      rightPanelSequence.current += 1;
-      const panel = { instanceId: `artifacts-${rightPanelSequence.current}`, tab: 'artifacts' as const, label: panelText.artifacts };
-      setRightPanels((current) => [...current, panel]);
-      setActiveRightPanelId(panel.instanceId);
-    };
     const openBrowser = () => {
       const existing = rightPanels.find((panel) => panel.tab === 'browser');
       if (existing) {
@@ -563,10 +552,8 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
       setRightPanels((current) => [...current, panel]);
       setActiveRightPanelId(panel.instanceId);
     };
-    window.addEventListener('codeclub:open-artifacts', openArtifacts);
     window.addEventListener('codeclub:open-right-panel', openBrowser);
     return () => {
-      window.removeEventListener('codeclub:open-artifacts', openArtifacts);
       window.removeEventListener('codeclub:open-right-panel', openBrowser);
     };
   }, [activeProjectPath, rightPanels]);
@@ -713,9 +700,9 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
     setEditingProjectName(false);
   };
 
-  return <section className="codeclub-graphite grid h-full min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] overflow-hidden" aria-label="Espacio de trabajo">
+  return <section className="bg-[#080808] grid h-full min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] overflow-hidden" aria-label="Espacio de trabajo">
     <div className="flex h-full min-h-0 min-w-0 overflow-hidden">
-      <motion.aside id="codeclub-left-sidebar" animate={{ width: leftOpen ? leftWidth : 0, opacity: leftOpen ? 1 : 0 }} transition={resizing ? { type: 'spring', stiffness: 900, damping: 58, mass: 0.22 } : { type: 'spring', stiffness: 340, damping: 30 }} className="codeclub-graphite flex h-full min-h-0 shrink-0 flex-col overflow-hidden" aria-label="Sidebar izquierda" aria-hidden={!leftOpen}>
+      <motion.aside id="codeclub-left-sidebar" animate={{ width: leftOpen ? leftWidth : 0, opacity: leftOpen ? 1 : 0 }} transition={resizing ? { type: 'spring', stiffness: 900, damping: 58, mass: 0.22 } : { type: 'spring', stiffness: 340, damping: 30 }} className="codeclub-widget-chrome flex h-full min-h-0 shrink-0 flex-col overflow-hidden" aria-label="Sidebar izquierda" aria-hidden={!leftOpen}>
         <div className="flex min-h-0 flex-1 flex-col px-2.5 py-2.5 text-(--codeclub-text)">
           <div className="flex items-center gap-1 px-1.5">{editingProjectName ? <input autoFocus value={projectNameDraft} onChange={(event) => setProjectNameDraft(event.target.value)} onBlur={() => void commitProjectName()} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void commitProjectName(); } if (event.key === 'Escape') { setProjectNameDraft(activeProjectName); setEditingProjectName(false); } }} className="min-w-0 flex-1 rounded-md border border-(--codeclub-border-soft) bg-(--codeclub-surface-raised) px-1.5 py-0.5 text-[15px] font-semibold tracking-tight text-(--codeclub-text-strong) outline-none" aria-label="Nombre del proyecto" /> : <span className="min-w-0 truncate text-[15px] font-semibold tracking-tight text-(--codeclub-text-strong)">{activeProjectName}</span>}{activeProjectId !== 'home' && !editingProjectName && <button type="button" onClick={() => setEditingProjectName(true)} className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-(--codeclub-text-muted) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Cambiar nombre del proyecto" title="Cambiar nombre"><Pencil size={13} aria-hidden="true" /></button>}<button type="button" onClick={onToggleLeft} className={`ml-auto grid h-7 w-7 shrink-0 place-items-center rounded-lg border transition-colors focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${leftOpen ? 'border-(--codeclub-border-soft) bg-(--codeclub-acrylic-active) text-(--codeclub-text-strong)' : 'border-transparent bg-transparent text-(--codeclub-text-muted) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)'}`} aria-label={leftOpen ? (language === 'en' ? 'Hide left sidebar' : 'Ocultar sidebar izquierda') : (language === 'en' ? 'Show left sidebar' : 'Mostrar sidebar izquierda')} aria-pressed={leftOpen} title={leftOpen ? (language === 'en' ? 'Hide left sidebar' : 'Ocultar sidebar izquierda') : (language === 'en' ? 'Show left sidebar' : 'Mostrar sidebar izquierda')}><PanelLeft size={15} aria-hidden="true" /></button></div>
           <nav className="mt-4 space-y-0.5" aria-label="Navegación principal">
@@ -734,14 +721,15 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
       {rightContextMenu && <div ref={rightContextMenuRef} className="fixed z-[100] grid w-52 gap-0.5 rounded-xl border border-white/[0.08] bg-[#2C2C2C]/90 p-1 shadow-2xl backdrop-blur-xl" style={{ left: rightContextMenu.x, top: rightContextMenu.y }} role="menu" aria-label={`Menú de ${rightContextMenu.panel.label}`}><button type="button" onClick={() => closeRightPanel(rightContextMenu.panel.instanceId)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><X size={14} aria-hidden="true" />Cerrar</button><button type="button" onClick={() => closeOtherRightPanels(rightContextMenu.panel.instanceId)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><CopyX size={14} aria-hidden="true" />Cerrar otras pestañas</button><button type="button" onClick={() => closeRightPanelsToRight(rightContextMenu.panel.instanceId)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><ArrowRightToLine size={14} aria-hidden="true" />Cerrar a la derecha</button></div>}
       {leftOpen && <ResizeHandle side="left" value={leftWidth} maxValue={MAX_WIDTH} onStart={startResize('left')} onKeyboardResize={setLeftWidth} />}
 
+      <div className="codeclub-conversation-surface flex min-h-0 min-w-0 flex-1 overflow-hidden">
       <PanelManager activeSection={activeSection} projectPath={activeProjectPath} />
 
       {rightOpen && <ResizeHandle side="right" value={rightWidth} maxValue={rightMaxWidth} onStart={startResize('right')} onKeyboardResize={setRightWidth} />}
-      <motion.aside id="codeclub-right-sidebar" animate={{ width: rightOpen ? rightWidth : 0, opacity: rightOpen ? 1 : 0 }} transition={resizing ? { type: 'spring', stiffness: 900, damping: 58, mass: 0.22 } : { type: 'spring', stiffness: 340, damping: 30 }} className={`codeclub-panel-edge flex h-full min-h-0 shrink-0 flex-col bg-(--codeclub-center) ${rightOpen ? 'pointer-events-auto overflow-visible' : 'pointer-events-none overflow-hidden'}`} aria-label="Sidebar derecha" aria-hidden={!rightOpen}>
+      <motion.aside id="codeclub-right-sidebar" animate={{ width: rightOpen ? rightWidth : 0, opacity: rightOpen ? 1 : 0 }} transition={resizing ? { type: 'spring', stiffness: 900, damping: 58, mass: 0.22 } : { type: 'spring', stiffness: 340, damping: 30 }} className={`codeclub-panel-edge flex h-full min-h-0 shrink-0 flex-col bg-transparent ${rightOpen ? 'pointer-events-auto overflow-visible' : 'pointer-events-none overflow-hidden'}`} aria-label="Sidebar derecha" aria-hidden={!rightOpen}>
         <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-          <div ref={rightMenuRef} className="relative z-[2147483647] isolate flex h-11 min-w-0 shrink-0 items-center gap-2 px-2 [transform:translateZ(0)] [pointer-events:auto]">
+          <div ref={rightMenuRef} className="codeclub-widget-chrome relative z-[2147483647] isolate flex h-11 min-w-0 shrink-0 items-center gap-2 px-2 [transform:translateZ(0)] [pointer-events:auto]">
             <div role="tablist" aria-label="Paneles abiertos" className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {rightPanels.map((panel) => { const item = rightPanelTabs.find((candidate) => candidate.id === panel.tab) ?? rightPanelTabs[0]; const Icon = item.icon; const label = panelText[panel.tab]; const displayLabel = panel.tab === 'browser' ? panel.label : panel.tab === 'terminals' ? `${label} ${panel.label.split(' ').pop()}` : label; const active = activeRightPanelId === panel.instanceId; return <div key={panel.instanceId} className={`group flex h-8 min-w-0 shrink-0 items-center rounded-lg transition-colors ${active ? 'bg-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-md hover:bg-white/[0.12]' : 'hover:bg-white/[0.06]'}`}><button type="button" role="tab" aria-selected={active} aria-controls={`right-panel-${panel.instanceId}`} onClick={() => setActiveRightPanelId(panel.instanceId)} onContextMenu={(event) => { event.preventDefault(); setRightMenuOpen(false); setRightContextMenu({ panel, x: event.clientX, y: event.clientY }); }} className={`flex h-full min-w-0 items-center gap-2 rounded-lg px-2.5 text-[12px] font-medium focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${active ? 'text-(--codeclub-text-strong)' : 'text-(--codeclub-text-muted)'}`}>{panel.iconUrl ? <img src={panel.iconUrl} alt="" onError={(event) => { event.currentTarget.style.display = 'none'; window.dispatchEvent(new CustomEvent('codeclub:browser-tab-meta', { detail: { clearFavicon: true } })); }} className="h-[15px] w-[15px] shrink-0 rounded-sm object-contain" /> : <Icon size={15} strokeWidth={1.8} aria-hidden="true" />}<span className="max-w-[150px] truncate">{displayLabel}</span></button><button type="button" onClick={() => closeRightPanel(panel.instanceId)} className={`mr-1 grid h-5 w-5 shrink-0 place-items-center rounded-md transition-opacity hover:bg-white/[0.1] hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${active ? 'text-(--codeclub-text-strong) opacity-100' : 'text-(--codeclub-text-muted) opacity-0 group-hover:opacity-100'}`} aria-label={`${sidebarText.close} ${displayLabel}`}><X size={12} strokeWidth={2} aria-hidden="true" /></button></div>; })}
+              {rightPanels.map((panel) => { const item = rightPanelTabs.find((candidate) => candidate.id === panel.tab) ?? rightPanelTabs[0]; const Icon = item.icon; const label = panelText[panel.tab]; const displayLabel = panel.tab === 'browser' ? panel.label : panel.tab === 'terminals' ? `${label} ${panel.label.split(' ').pop()}` : label; const active = activeRightPanelId === panel.instanceId; return <div key={panel.instanceId} className={`group flex h-8 min-w-0 shrink-0 items-center rounded-lg transition-colors ${active ? 'bg-(--codeclub-acrylic-active) hover:bg-(--codeclub-hover)' : 'hover:bg-white/[0.06]'}`}><button type="button" role="tab" aria-selected={active} aria-controls={`right-panel-${panel.instanceId}`} onClick={() => setActiveRightPanelId(panel.instanceId)} onContextMenu={(event) => { event.preventDefault(); setRightMenuOpen(false); setRightContextMenu({ panel, x: event.clientX, y: event.clientY }); }} className={`flex h-full min-w-0 items-center gap-2 rounded-lg px-2.5 text-[12px] font-medium focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${active ? 'text-(--codeclub-text-strong)' : 'text-(--codeclub-text-muted)'}`}>{panel.iconUrl ? <img src={panel.iconUrl} alt="" onError={(event) => { event.currentTarget.style.display = 'none'; window.dispatchEvent(new CustomEvent('codeclub:browser-tab-meta', { detail: { clearFavicon: true } })); }} className="h-[15px] w-[15px] shrink-0 rounded-sm object-contain" /> : <Icon size={15} strokeWidth={1.8} aria-hidden="true" />}<span className="max-w-[150px] truncate">{displayLabel}</span></button><button type="button" onClick={() => closeRightPanel(panel.instanceId)} className={`mr-1 grid h-5 w-5 shrink-0 place-items-center rounded-md transition-opacity hover:bg-white/[0.1] hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${active ? 'text-(--codeclub-text-strong) opacity-100' : 'text-(--codeclub-text-muted) opacity-0 group-hover:opacity-100'}`} aria-label={`${sidebarText.close} ${displayLabel}`}><X size={12} strokeWidth={2} aria-hidden="true" /></button></div>; })}
               <button type="button" onClick={() => setRightMenuOpen((open) => !open)} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-transparent text-(--codeclub-text-muted) transition-colors hover:bg-white/[0.08] hover:text-(--codeclub-text) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Abrir paneles de la sidebar derecha" aria-haspopup="menu" aria-expanded={rightMenuOpen}><Plus size={16} strokeWidth={1.7} aria-hidden="true" /></button>
             </div>
             <AnimatePresence>
@@ -757,6 +745,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
           </div>
         </div>
       </motion.aside>
+      </div>
     </div>
   </section>;
 }
@@ -766,7 +755,7 @@ const PanelManager = memo(function PanelManager({ activeSection, projectPath }: 
   const chatVisible = activeSection === 'new-chat' || activeSection === 'extensions';
   const synapseVisible = activeSection === 'projects';
   const scheduledVisible = activeSection === 'scheduled';
-  return <section role="region" className="codeclub-graphite relative min-h-0 min-w-0 flex-1 overflow-hidden backdrop-blur-xl" aria-label="Gestor de paneles" aria-live="polite">
+  return <section role="region" className="relative min-h-0 min-w-0 flex-1 overflow-hidden" aria-label="Gestor de paneles" aria-live="polite">
     <div className={`codeclub-panel-shell h-full w-full ${chatVisible ? 'overflow-visible' : 'overflow-hidden'} bg-(--codeclub-center)`}>
       <div className={`h-full min-h-0 min-w-0 ${chatVisible ? 'block' : 'hidden'}`} aria-hidden={!chatVisible}><ChatPanel /></div>
       {synapseVisible && <div className="relative z-10 h-full min-h-0 min-w-0"><SynapsePanel /></div>}
@@ -812,8 +801,8 @@ function ScheduledPanel({ projectPath }: { projectPath?: string }) {
       getSetting<string>('codeclub_last_model_id', models[0]?.id || ''),
     ]).then(async ([saved, providerId, modelId]) => {
       const provider = providers.find((item: any) => item.id === providerId) || providers[0];
-      const model = findModel(modelId, provider?.id) || models.find((item: any) => provider?.id === 'ai-gateway' || item.providerId === provider?.id);
-      const credentialKey = provider?.id === 'ai-gateway' || provider?.gatewayOnly ? 'ai_gateway_api_key' : provider?.id ? `${provider.id}_api_key` : '';
+      const model = findModel(modelId, provider?.id) || models.find((item: any) => provider && modelMatchesProvider(item, provider));
+      const credentialKey = provider?.id ? credentialKeyFor(provider, model) : '';
       const defaults = { provider: provider?.label || provider?.id || defaultScheduledProvider, model: model?.label || model?.id || defaultScheduledModel, apiKey: credentialKey ? await getSetting<string>(credentialKey, '') : '' };
       setScheduledDefaults(defaults);
       let source = saved;
@@ -873,7 +862,17 @@ function ScheduledTaskDetail({ task, onBack, onSave, onRun, onDelete }: { task: 
   const set = <K extends keyof ScheduledTask>(key: K, value: ScheduledTask[K]) => setDraft((current) => ({ ...current, [key]: value }));
   const providerOptions = Array.from(new Set(providers.map((provider: any) => provider.label || provider.id).filter(Boolean)));
   const selectedProvider = findProvider(draft.provider);
-  const modelOptions = Array.from(new Set(models.filter((model: any) => selectedProvider?.id === 'ai-gateway' || (selectedProvider?.id && model.providerId === selectedProvider.id)).map((model: any) => model.label || model.id).filter(Boolean)));
+  const modelOptions = Array.from(new Set(models.filter((model: any) => selectedProvider && modelMatchesProvider(model, selectedProvider)).map((model: any) => model.label || model.id).filter(Boolean)));
+  const updateModelSelection = (key: 'provider' | 'model', value: string) => {
+    const previousModel = findModel(draft.model, selectedProvider?.id);
+    const nextProvider = key === 'provider' ? findProvider(value) : selectedProvider;
+    const nextModel = key === 'provider' ? models.find(model => nextProvider && modelMatchesProvider(model, nextProvider)) : findModel(value, nextProvider?.id);
+    set(key, value);
+    if (key === 'provider') set('model', nextModel?.label || nextModel?.id || '');
+    if (nextProvider && (key === 'provider' || !selectedProvider || credentialKeyFor(nextProvider, nextModel) !== credentialKeyFor(selectedProvider, previousModel))) {
+      void getSetting<string>(credentialKeyFor(nextProvider, nextModel), '').then(apiKey => set('apiKey', apiKey));
+    }
+  };
   const intervalLabels: Record<string, string> = { Diario: text.daily, 'Días hábiles': text.weekdays, Semanal: text.weekly, Personalizado: text.custom };
   const notificationLabels: Record<string, string> = { 'Todas las ejecuciones': text.allRuns, 'Solo errores': text.errors, 'Sin notificaciones': text.none };
   const canonicalValue = (labels: Record<string, string>, value: string) => Object.entries(labels).find(([, label]) => label === value)?.[0] || value;
@@ -882,7 +881,7 @@ function ScheduledTaskDetail({ task, onBack, onSave, onRun, onDelete }: { task: 
       <div className="flex items-center justify-between"><button type="button" onClick={onBack} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] text-[#999999] hover:bg-white/[0.05] hover:text-[#eeeeee]"><ArrowLeft size={15} />{text.back}</button><div className="flex items-center gap-1"><button type="button" onClick={() => set('status', draft.status === 'active' ? 'paused' : 'active')} className="grid h-8 w-8 place-items-center rounded-lg text-[#999999] hover:bg-white/[0.06] hover:text-[#eeeeee]" title={draft.status === 'active' ? text.pause : text.activate}>{draft.status === 'active' ? <Pause size={16} /> : <Play size={16} />}</button><button type="button" onClick={onRun} className="grid h-8 w-8 place-items-center rounded-lg text-[#999999] hover:bg-white/[0.06] hover:text-[#eeeeee]" title={text.run} aria-label={text.run}><Play size={16} /></button><button type="button" onClick={() => onSave(draft)} className="grid h-8 w-8 place-items-center rounded-lg text-[#999999] hover:bg-[#1f3d57] hover:text-[#8bc7ff]" title={text.save} aria-label={text.save}><CircleCheck size={17} /></button><button type="button" onClick={onDelete} className="grid h-8 w-8 place-items-center rounded-lg text-[#999999] hover:bg-[#562b2b] hover:text-[#ffb4b4]" title={text.delete}><Trash2 size={16} /></button><button type="button" onClick={onBack} className="grid h-8 w-8 place-items-center rounded-lg text-[#999999] hover:bg-white/[0.06] hover:text-[#eeeeee]" title={text.close} aria-label={text.close}><X size={17} /></button></div></div>
       <div className="mt-7"><input value={draft.name} onChange={(event) => set('name', event.target.value)} className="w-full bg-transparent text-[28px] font-normal tracking-[-0.04em] text-[#eeeeee] outline-none" aria-label={language === 'en' ? 'Task name' : 'Nombre de la tarea'} /><p className="mt-2 text-[12px] text-[#777777]">ID: {draft.id} · {text.last}: {draft.lastRun || text.never}</p></div>
       <textarea value={draft.prompt} onChange={(event) => set('prompt', event.target.value)} rows={3} className="mt-8 w-full resize-none rounded-2xl border border-[#414141] bg-[#252525] px-5 py-4 text-[16px] leading-6 text-[#dddddd] outline-none focus:border-[#666666]" aria-label="Instrucción de la tarea" />
-      <div className="mt-8"><h2 className="mb-3 text-[16px] font-normal text-[#888888]">{text.details} <Info size={15} className="ml-1 inline-block align-[-2px]" /></h2><div className="overflow-visible rounded-2xl border border-white/[0.08] bg-[#242424]">{[[text.provider, 'provider', providerOptions, true], ['API key', 'apiKey', [], false], [text.model, 'model', modelOptions.length ? modelOptions : (draft.model ? [draft.model] : []), true]].map(([label, key, options, searchable]) => <label key={String(label)} className="flex min-h-[56px] items-center justify-between gap-4 border-b border-white/[0.08] px-5 last:border-b-0"><span className="text-[15px] text-[#dddddd]">{label}</span>{key === 'apiKey' ? <input type="password" value={draft.apiKey} onChange={(event) => set('apiKey', event.target.value)} placeholder="API key" className="min-w-0 max-w-[65%] bg-transparent text-right text-[15px] text-[#dddddd] outline-none placeholder:text-[#777777]" autoComplete="off" /> : <ScheduledSelect value={String(draft[key as keyof ScheduledTask])} options={options as string[]} label={String(label)} searchable={Boolean(searchable)} optionSearchText={(option) => { if (key === 'provider') return String(findProvider(option)?.id || ''); const model = findModel(option, selectedProvider?.id); return [model?.id, model?.providerName, model?.description].filter(Boolean).join(' '); }} onChange={(value) => { set(key as keyof ScheduledTask, value as never); if (key === 'provider') { const nextProvider = findProvider(value); const nextModel = models.find((model: any) => nextProvider?.id === 'ai-gateway' || model.providerId === nextProvider?.id); set('model', (nextModel?.label || nextModel?.id || '') as never); if (nextProvider?.id) { const credentialKey = nextProvider.id === 'ai-gateway' || nextProvider.gatewayOnly ? 'ai_gateway_api_key' : `${nextProvider.id}_api_key`; void getSetting<string>(credentialKey, '').then((apiKey) => set('apiKey', apiKey)); } } }} />}</label>)}</div></div>
+      <div className="mt-8"><h2 className="mb-3 text-[16px] font-normal text-[#888888]">{text.details} <Info size={15} className="ml-1 inline-block align-[-2px]" /></h2><div className="overflow-visible rounded-2xl border border-white/[0.08] bg-[#242424]">{[[text.provider, 'provider', providerOptions, true], ['API key', 'apiKey', [], false], [text.model, 'model', modelOptions.length ? modelOptions : (draft.model ? [draft.model] : []), true]].map(([label, key, options, searchable]) => <label key={String(label)} className="flex min-h-[56px] items-center justify-between gap-4 border-b border-white/[0.08] px-5 last:border-b-0"><span className="text-[15px] text-[#dddddd]">{label}</span>{key === 'apiKey' ? <input type="password" value={draft.apiKey} onChange={(event) => set('apiKey', event.target.value)} placeholder="API key" className="min-w-0 max-w-[65%] bg-transparent text-right text-[15px] text-[#dddddd] outline-none placeholder:text-[#777777]" autoComplete="off" /> : <ScheduledSelect value={String(draft[key as keyof ScheduledTask])} options={options as string[]} label={String(label)} searchable={Boolean(searchable)} optionSearchText={(option) => { if (key === 'provider') return String(findProvider(option)?.id || ''); const model = findModel(option, selectedProvider?.id); return [model?.id, model?.providerName, model?.description].filter(Boolean).join(' '); }} onChange={(value) => updateModelSelection(key as 'provider' | 'model', value)} />}</label>)}</div></div>
       <div className="mt-8"><h2 className="mb-3 text-[16px] font-normal text-[#888888]">{text.frequency}</h2><div className="overflow-visible rounded-2xl border border-white/[0.08] bg-[#242424]"><label className="flex min-h-[56px] items-center justify-between gap-4 border-b border-white/[0.08] px-5"><span className="text-[15px] text-[#dddddd]">{text.interval}</span><ScheduledSelect value={intervalLabels[draft.interval] || draft.interval} options={[text.daily, text.weekdays, text.weekly, text.custom]} label={text.interval} onChange={(value) => set('interval', canonicalValue(intervalLabels, value))} /></label>{draft.interval === 'Personalizado' && <label className="flex min-h-[56px] items-center justify-between gap-4 border-b border-white/[0.08] px-5"><span className="text-[15px] text-[#dddddd]">{text.every}</span><ScheduledSelect value={draft.every} options={['15 min', '30 min', language === 'en' ? '1 hour' : '1 hora', language === 'en' ? '2 hours' : '2 horas', language === 'en' ? '1 day' : '1 día']} label={text.every} onChange={(value) => set('every', value)} /></label>}<label className="flex min-h-[56px] items-center justify-between gap-4 border-b border-white/[0.08] px-5"><span className="text-[15px] text-[#dddddd]">{text.at}</span><ScheduledTimeSelect value={draft.time} onChange={(value) => set('time', value)} /></label><label className="flex min-h-[56px] items-center justify-between gap-4 px-5"><span className="text-[15px] text-[#dddddd]">{text.notifications}</span><ScheduledSelect value={notificationLabels[draft.notifications] || draft.notifications} options={[text.allRuns, text.errors, text.none]} label={text.notifications} onChange={(value) => set('notifications', canonicalValue(notificationLabels, value))} /></label></div></div>
       <div className="pb-8" />
     </div>
@@ -978,7 +977,6 @@ const normalizeBrowserAddress = (value: string) => {
 function BrowserPanel() {
   const language = useAppLanguage();
   const text = rightSidebarTranslations[language];
-  const browserText = browserUiTranslations[language];
   const webviewRef = useRef<any>(null);
   const [address, setAddress] = useState(DEFAULT_BROWSER_URL);
   const [currentUrl, setCurrentUrl] = useState(DEFAULT_BROWSER_URL);
@@ -1513,222 +1511,6 @@ function TerminalPanel({ projectPath, terminalId, visible = true }: { projectPat
   return <div ref={containerRef} id="codeclub-terminal-panel" className="h-full min-h-0 w-full bg-(--paper) p-0" onClick={() => terminalRef.current?.focus()} aria-label="Terminal PowerShell" />;
 }
 
-function LegacyTerminalPanel({ projectPath }: { projectPath?: string }) {
-  const [session, setSession] = useState<TerminalInfo | null>(null);
-  const [output, setOutput] = useState('');
-  const [error, setError] = useState('');
-  const [restartKey, setRestartKey] = useState(0);
-  const sessionIdRef = useRef<string | null>(null);
-  const terminalPanelRef = useRef<HTMLDivElement | null>(null);
-  const terminalInputRef = useRef<HTMLInputElement | null>(null);
-  const terminalOutputRef = useRef<HTMLDivElement | null>(null);
-  const outputRef = useRef('');
-
-  useEffect(() => {
-    let cancelled = false;
-    let timer: number | undefined;
-    const start = async () => {
-      setError('');
-      setOutput('');
-      outputRef.current = '';
-      setSession(null);
-      try {
-        const created = await nativeInvoke<TerminalInfo>('codeclub_terminal_create', { request: { projectPath, shell: 'powershell', name: 'PowerShell' } });
-        if (cancelled) {
-          await nativeInvoke('codeclub_terminal_delete', { id: created.id }).catch(() => undefined);
-          return;
-        }
-        sessionIdRef.current = created.id;
-        setSession(created);
-        const poll = async () => {
-          try {
-            const snapshot = await nativeInvoke<{ info?: TerminalInfo; output?: string }>('codeclub_terminal_snapshot', { id: created.id });
-            if (!cancelled) {
-              const nextOutput = String(snapshot.output || '');
-              if (nextOutput !== outputRef.current) {
-                outputRef.current = nextOutput;
-                setOutput(nextOutput);
-              }
-              if (snapshot.info) setSession(snapshot.info);
-            }
-          } catch (reason) {
-            if (!cancelled) setError(String(reason));
-          }
-        };
-        void poll();
-        timer = window.setInterval(() => void poll(), 500);
-      } catch (reason) {
-        if (!cancelled) setError(String(reason));
-      }
-    };
-    void start();
-    return () => {
-      cancelled = true;
-      if (timer) window.clearInterval(timer);
-      const id = sessionIdRef.current;
-      sessionIdRef.current = null;
-      if (id) void nativeInvoke('codeclub_terminal_delete', { id }).catch(() => undefined);
-    };
-  }, [projectPath, restartKey]);
-
-  useEffect(() => {
-    if (session?.id) terminalInputRef.current?.focus();
-  }, [session?.id]);
-
-  const writeTerminalInput = async (data: string) => {
-    if (!session?.id) return;
-    try {
-      await nativeInvoke('codeclub_terminal_write', { id: session.id, data });
-    } catch (reason) {
-      setError(String(reason));
-    }
-  };
-
-  const handleTerminalKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!session || error) return;
-    let data = '';
-    if (event.ctrlKey && event.key.toLowerCase() === 'c') data = '\u0003';
-    else if (event.ctrlKey && event.key.toLowerCase() === 'l') data = '\u000c';
-    else if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key.length === 1) data = event.key;
-    else if (event.key === 'Enter') data = '\r';
-    else if (event.key === 'Backspace') data = '\b';
-    else if (event.key === 'Tab') data = '\t';
-    else if (event.key === 'ArrowUp') data = '\u001b[A';
-    else if (event.key === 'ArrowDown') data = '\u001b[B';
-    else if (event.key === 'ArrowRight') data = '\u001b[C';
-    else if (event.key === 'ArrowLeft') data = '\u001b[D';
-    else if (event.key === 'Home') data = '\u001b[H';
-    else if (event.key === 'End') data = '\u001b[F';
-    if (!data) return;
-    event.preventDefault();
-    void writeTerminalInput(data);
-  };
-
-  return <div ref={terminalPanelRef} id="codeclub-terminal-panel" className="relative flex h-full min-h-0 flex-col bg-[#191919] text-[#eeeeee] outline-none" onPointerDownCapture={(event) => { event.preventDefault(); terminalInputRef.current?.focus(); }}>
-    <input ref={terminalInputRef} type="text" aria-label="Terminal PowerShell" className="absolute inset-y-0 left-0 right-3 z-10 h-full w-auto cursor-text opacity-0" onKeyDown={handleTerminalKeyDown} onWheel={(event) => terminalOutputRef.current?.scrollBy({ top: event.deltaY })} autoComplete="off" />
-    <div ref={terminalOutputRef} className="min-h-0 flex-1 overflow-auto bg-[#191919] px-4 py-3"><pre className="m-0 whitespace-pre-wrap break-words font-mono text-[14px] leading-6 text-[#f2f2f2]">{output || (error ? '' : 'Iniciando PowerShell...')}</pre>{error && <p className="m-0 mt-2 whitespace-pre-wrap font-mono text-[14px] leading-6 text-red-200">{error}</p>}</div>
-  </div>;
-}
-
-const artifactStatusLabels: Record<TaskStatus, string> = {
-  pending: 'Pendiente',
-  in_progress: 'En curso',
-  completed: 'Completado',
-  cancelled: 'Cancelado',
-  blocked: 'Bloqueado',
-};
-
-const artifactStatusClasses: Record<TaskStatus, string> = {
-  pending: 'bg-[#3A3A3A] text-[#D0D0D0]',
-  in_progress: 'bg-[#1687FF] text-white',
-  completed: 'bg-[#16A34A] text-white',
-  cancelled: 'bg-[#555555] text-[#E5E5E5]',
-  blocked: 'bg-[#DC2626] text-white',
-};
-
-type PlanFilter = 'all' | TaskStatus;
-const planFilterLabels: Record<PlanFilter, { es: string; en: string }> = {
-  all: { es: 'Todos', en: 'All' },
-  pending: { es: 'Pendientes', en: 'Pending' },
-  in_progress: { es: 'En curso', en: 'In progress' },
-  completed: { es: 'Completados', en: 'Completed' },
-  cancelled: { es: 'Cancelados', en: 'Cancelled' },
-  blocked: { es: 'Bloqueados', en: 'Blocked' },
-};
-const planFilterStatuses: TaskStatus[] = ['pending', 'in_progress', 'completed', 'cancelled', 'blocked'];
-
-function ArtifactStatusPill({ status }: { status: TaskStatus }) {
-  return <span className={`inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[10px] leading-4 ${artifactStatusClasses[status] || artifactStatusClasses.pending}`}>{artifactStatusLabels[status] || artifactStatusLabels.pending}</span>;
-}
-
-function ArtifactsPanel({ projectPath, projectName }: { projectPath?: string; projectName: string }) {
-  const language = useAppLanguage();
-  if (!projectPath) return <div className="flex h-full min-h-0 flex-col bg-(--paper)"><div className="grid min-h-0 flex-1 place-items-center px-5 text-center"><div><ListTodo size={30} strokeWidth={1.3} className="mx-auto text-(--codeclub-text-muted)" aria-hidden="true" /><p className="mt-3 mb-0 text-[12px] text-(--codeclub-text-strong)">{language === 'en' ? 'No artifacts yet' : 'Todavía no hay artifacts'}</p><p className="mt-1 mb-0 text-[11px] leading-5 text-(--codeclub-text-muted)">{language === 'en' ? 'Plans and TODOs created by AI will appear here.' : 'Los planes y TODOs creados por la IA aparecerán acá.'}</p></div></div></div>;
-  return <ArtifactsPanelContent projectPath={projectPath} projectName={projectName} />;
-}
-
-function ArtifactsPanelContent({ projectPath, projectName }: { projectPath?: string; projectName: string }) {
-  const language = useAppLanguage();
-  const [state, setState] = useState<AgentState>({ plan: null, plans: [], todos: [] });
-  const [loading, setLoading] = useState(Boolean(projectPath));
-  const [query, setQuery] = useState('');
-  const [planFilter, setPlanFilter] = useState<PlanFilter>('pending');
-
-  useEffect(() => {
-    setPlanFilter('pending');
-    let cancelled = false;
-    const load = async () => {
-      if (!projectPath) {
-        setState({ plan: null, plans: [], todos: [] });
-        setLoading(false);
-        return;
-      }
-      setLoading(true);
-      const next = await readAgentState(projectPath);
-      if (!cancelled) {
-        setState(next);
-        setLoading(false);
-      }
-    };
-    void load();
-    const refresh = (event: Event) => {
-      const detail = (event as CustomEvent<{ projectPath?: string }>).detail;
-      if (!detail?.projectPath || detail.projectPath === projectPath) void load();
-    };
-    window.addEventListener('codeclub:artifacts-changed', refresh);
-    return () => {
-      cancelled = true;
-      window.removeEventListener('codeclub:artifacts-changed', refresh);
-    };
-  }, [projectPath]);
-
-  const normalizedQuery = query.trim().toLowerCase();
-  const allPlans = state.plans?.length ? state.plans : state.plan ? [state.plan] : [];
-  const plans = allPlans.filter((plan) => (planFilter === 'all' || plan.status === planFilter) && (!normalizedQuery || plan.title.toLowerCase().includes(normalizedQuery) || plan.steps.some((step) => step.title.toLowerCase().includes(normalizedQuery))));
-  const todos = state.todos.filter((todo) => (planFilter === 'all' || todo.status === planFilter) && (!normalizedQuery || todo.title.toLowerCase().includes(normalizedQuery) || todo.description?.toLowerCase().includes(normalizedQuery)));
-  const reference = (kind: 'plan' | 'todo', id: string, title: string) => {
-    if (!projectPath) return;
-    window.dispatchEvent(new CustomEvent('codeclub:artifact-reference', { detail: { projectPath, kind, id, title } }));
-  };
-  const copyPlan = async (plan: NonNullable<AgentState['plans']>[number]) => {
-    const content = [`# ${plan.title}`, `Estado: ${artifactStatusLabels[plan.status]}`, '', ...plan.steps.map((step, index) => `${index + 1}. [${artifactStatusLabels[step.status]}] ${step.title}`)].join('\n');
-    try { await navigator.clipboard.writeText(content); } catch { /* Clipboard may be unavailable in a restricted webview. */ }
-  };
-  const copyTodo = async (todo: AgentState['todos'][number]) => {
-    const content = [todo.title, todo.description?.trim(), `Estado: ${artifactStatusLabels[todo.status]}`].filter(Boolean).join('\n');
-    try { await navigator.clipboard.writeText(content); } catch { /* Clipboard may be unavailable in a restricted webview. */ }
-  };
-  const removePlan = async (id: string) => {
-    if (!projectPath) return;
-    const current = await readAgentState(projectPath);
-    const plans = (current.plans || (current.plan ? [current.plan] : [])).filter((plan) => plan.id !== id);
-    await writeAgentState(projectPath, { ...current, plans, plan: plans[plans.length - 1] || null });
-    window.dispatchEvent(new CustomEvent('codeclub:artifacts-changed', { detail: { projectPath } }));
-  };
-  const removeTodo = async (id: string) => {
-    if (!projectPath) return;
-    const current = await readAgentState(projectPath);
-    await writeAgentState(projectPath, { ...current, todos: current.todos.filter((todo) => todo.id !== id) });
-    window.dispatchEvent(new CustomEvent('codeclub:artifacts-changed', { detail: { projectPath } }));
-  };
-
-  if (!projectPath) return <div className="grid h-full place-items-center px-5 text-center"><div><ListTodo size={30} strokeWidth={1.3} className="mx-auto text-(--codeclub-text-muted)" aria-hidden="true" /><p className="mt-3 mb-0 text-[12px] text-(--codeclub-text-strong)">{language === 'en' ? 'No active project' : 'Sin proyecto activo'}</p><p className="mt-1 mb-0 text-[11px] leading-5 text-(--codeclub-text-muted)">{language === 'en' ? 'Link a folder to view its artifacts.' : 'Vinculá una carpeta para ver sus artifacts.'}</p></div></div>;
-
-  return <div className="flex h-full min-h-0 flex-col bg-(--paper)">
-    <div className="shrink-0 border-b border-(--codeclub-border-soft) px-3 py-3">
-      <div className="flex min-w-0 items-center gap-2"><ListTodo size={17} strokeWidth={1.7} className="shrink-0 text-(--codeclub-text-muted)" aria-hidden="true" /><div className="min-w-0 flex-1"><h2 className="m-0 truncate text-[13px] font-medium text-(--codeclub-text-strong)">Artifacts</h2><p className="m-0 mt-0.5 truncate text-[10px] text-(--codeclub-text-muted)" title={projectName}>{projectName}</p></div><span className="text-[10px] tabular-nums text-(--codeclub-text-muted)">{state.plans.length + state.todos.length}</span></div>
-      <label className="mt-3 flex h-8 items-center rounded-lg border border-(--line) bg-(--card) px-2.5 focus-within:border-(--codeclub-accent-bright)"><span className="sr-only">Buscar artifacts</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar artifacts" className="min-w-0 flex-1 bg-transparent text-[11px] text-(--ink) outline-none placeholder:text-(--muted)" /></label>
-    </div>
-    <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      {loading && <div className="grid min-h-[160px] place-items-center text-[11px] text-(--codeclub-text-muted)">Cargando artifacts...</div>}
-      {!loading && (allPlans.length > 0 || state.todos.length > 0) && <div className="mb-3 flex min-w-0 gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="group" aria-label={language === 'en' ? 'Filter artifacts by status' : 'Filtrar artifacts por estado'}>{planFilterStatuses.map((status) => { const active = planFilter === status; const count = allPlans.filter((plan) => plan.status === status).length + state.todos.filter((todo) => todo.status === status).length; const label = planFilterLabels[status][language === 'en' ? 'en' : 'es']; return <button key={status} type="button" onClick={() => setPlanFilter(status)} aria-pressed={active} className={`inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-[10px] transition-colors focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${active ? `${artifactStatusClasses[status]} border-transparent` : 'border-(--codeclub-border-soft) bg-transparent text-(--codeclub-text-muted) hover:bg-white/[0.06] hover:text-(--codeclub-text-strong)'}`}><span>{label}</span><span className="tabular-nums opacity-70">{count}</span></button>; })}</div>}
-      {!loading && plans.length === 0 && todos.length === 0 && <div className="grid min-h-[220px] place-items-center text-center"><div><ListTodo size={26} strokeWidth={1.3} className="mx-auto text-(--codeclub-text-muted)" aria-hidden="true" /><p className="mt-3 mb-0 text-[12px] text-(--codeclub-text-strong)">{normalizedQuery ? 'Sin resultados' : 'Todavia no hay artifacts'}</p><p className="mt-1 mb-0 text-[11px] leading-5 text-(--codeclub-text-muted)">{normalizedQuery ? 'Proba con otro termino.' : 'Los planes y TODOs creados por la IA apareceran aca.'}</p></div></div>}
-       {!loading && plans.length > 0 && <section aria-labelledby="artifacts-plans"><div className="mb-2 flex items-center justify-between"><h3 id="artifacts-plans" className="m-0 text-[10px] font-medium uppercase tracking-[0.08em] text-(--muted)">Planes</h3><span className="text-[10px] text-(--muted)">{plans.length}</span></div><div className="grid gap-2">{plans.map((plan) => { const completed = plan.steps.filter((step) => step.status === 'completed').length; const progress = plan.steps.length ? Math.round((completed / plan.steps.length) * 100) : 0; return <article key={plan.id} className="rounded-lg border border-(--line) bg-(--card) p-2.5"><div className="flex min-w-0 items-start gap-2"><button type="button" onClick={() => reference('plan', plan.id, plan.title)} className="min-w-0 flex-1 truncate text-left text-[12px] font-medium text-(--ink) hover:text-(--codeclub-accent-bright) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)">{plan.title}</button><button type="button" onClick={() => reference('plan', plan.id, plan.title)} className="grid h-5 w-5 shrink-0 place-items-center rounded text-(--muted) hover:bg-(--soft) hover:text-(--codeclub-accent-bright) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={`Enviar plan ${plan.title} al chat`} title="Enviar al chat"><MessageSquare size={12} /></button><button type="button" onClick={() => void copyPlan(plan)} className="grid h-5 w-5 shrink-0 place-items-center rounded text-(--muted) hover:bg-(--soft) hover:text-(--ink) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={`Copiar plan ${plan.title}`} title="Copiar plan"><Copy size={12} /></button><button type="button" onClick={() => void removePlan(plan.id)} className="grid h-5 w-5 shrink-0 place-items-center rounded text-(--muted) hover:bg-(--soft) hover:text-red-400 focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={`Borrar plan ${plan.title}`} title="Borrar plan"><Trash2 size={12} /></button></div><div className="mt-2 flex items-center gap-2"><div className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-(--line)" role="progressbar" aria-label={`Progreso de ${plan.title}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><span className="block h-full rounded-full bg-(--electric-blue)" style={{ width: `${progress}%` }} /></div><span className="shrink-0 text-[10px] tabular-nums text-(--muted)">{completed}/{plan.steps.length}</span></div><div className="mt-2 grid gap-1">{plan.steps.map((step, index) => <button key={step.id} type="button" onClick={() => reference('plan', plan.id, `${plan.title}: ${step.title}`)} className="flex min-w-0 items-center gap-2 rounded px-1 py-1 text-left text-(--muted) hover:bg-(--soft) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)"><span className={`grid h-4 w-4 shrink-0 place-items-center rounded text-[9px] font-semibold tabular-nums ${step.status === 'completed' ? 'bg-[#16A34A] text-white' : step.status === 'in_progress' ? 'bg-(--electric-blue) text-white' : 'bg-(--soft) text-(--ink)'}`} aria-hidden="true">{index + 1}</span><span className="min-w-0 flex-1 truncate text-[10px]" title={step.title}>{step.title}</span><ArtifactStatusPill status={step.status} /></button>)}</div></article>; })}</div></section>}
-      {!loading && todos.length > 0 && <section aria-labelledby="artifacts-todos" className={`${plans.length ? 'mt-4 border-t border-(--codeclub-border-soft) pt-3' : ''}`}><div className="mb-2 flex items-center justify-between"><h3 id="artifacts-todos" className="m-0 text-[10px] font-medium uppercase tracking-[0.08em] text-(--codeclub-text-muted)">TODO</h3><span className="text-[10px] text-(--codeclub-text-muted)">{todos.length}</span></div><div className="grid gap-1">{todos.map((todo) => <div key={todo.id} className="flex min-w-0 items-center gap-2 rounded-lg px-1.5 py-2 hover:bg-white/[0.04]"><button type="button" onClick={() => reference('todo', todo.id, todo.title)} className="flex min-w-0 flex-1 items-center gap-2 text-left focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)"><span className={`h-1.5 w-1.5 shrink-0 rounded-full ${todo.status === 'completed' ? 'bg-[#16A34A]' : todo.status === 'in_progress' ? 'bg-[#1687FF]' : 'bg-[#666666]'}`} aria-hidden="true" /><span className="min-w-0 flex-1 truncate text-[11px] text-(--codeclub-text)" title={todo.description || todo.title}>{todo.title}</span><ArtifactStatusPill status={todo.status} /></button><button type="button" onClick={() => reference('todo', todo.id, todo.title)} className="grid h-5 w-5 shrink-0 place-items-center rounded text-(--codeclub-text-muted) hover:bg-[#1687FF]/15 hover:text-[#8BC7FF] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={`Enviar TODO ${todo.title} al chat`} title="Enviar al chat"><MessageSquare size={12} /></button><button type="button" onClick={() => void copyTodo(todo)} className="grid h-5 w-5 shrink-0 place-items-center rounded text-(--codeclub-text-muted) hover:bg-white/[0.08] hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={`Copiar TODO ${todo.title}`} title="Copiar TODO"><Copy size={12} /></button><button type="button" onClick={() => void removeTodo(todo.id)} className="grid h-5 w-5 shrink-0 place-items-center rounded text-(--codeclub-text-muted) hover:bg-red-500/15 hover:text-red-400 focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={`Borrar TODO ${todo.title}`} title="Borrar TODO"><Trash2 size={12} /></button></div>)}</div></section>}
-    </div>
-  </div>;
-}
-
 function RightPanelEmptyState({ onSelect }: { onSelect: (tab: RightPanelTab) => void }) {
   const language = useAppLanguage();
   const text = language === 'en' ? { choose: 'Choose a panel', open: 'Open a tool to view it in this sidebar.' } : { choose: 'Elegí un panel', open: 'Abrí una herramienta para verla en esta sidebar.' };
@@ -1752,14 +1534,13 @@ function RightSidebarContent({ panel, projectName, projectPath, selectedFilePath
   const current = rightPanelTabs.find((item) => item.id === tab) ?? rightPanelTabs[0];
   const Icon = current.icon;
   const descriptions: Record<RightPanelTab, string> = language === 'en' ? {
-    files: 'Explore files from the active project.', review: 'Review workspace changes and activity.', browser: 'Open and control pages inside Electron.', artifacts: 'View plans, TODOs and AI results.', terminals: 'Manage persistent session terminals.',
+    files: 'Explore files from the active project.', review: 'Review workspace changes and activity.', browser: 'Open and control pages inside Electron.', terminals: 'Manage persistent session terminals.',
   } : {
-    files: 'Explorá los archivos del proyecto activo.', review: 'Revisá cambios y actividad del workspace.', browser: 'Abrí y controlá páginas dentro de Electron.', artifacts: 'Consultá planes, TODOs y resultados de la IA.', terminals: 'Gestioná terminales persistentes de la sesión.',
+    files: 'Explorá los archivos del proyecto activo.', review: 'Revisá cambios y actividad del workspace.', browser: 'Abrí y controlá páginas dentro de Electron.', terminals: 'Gestioná terminales persistentes de la sesión.',
   };
   if (tab === 'files') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={text.files} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="h-full min-h-0 flex-1 overflow-hidden bg-(--paper) text-(--ink)">{projectPath ? <ProjectPanelView projectPath={projectPath} selectedPath={selectedFilePath} showFileTree={filesTreeVisible} onToggleFileTree={onToggleFilesTree} /> : <div className="flex h-full flex-col items-center justify-center px-5 text-center"><div><FolderPen size={28} strokeWidth={1.3} className="mx-auto text-(--codeclub-text-muted)" aria-hidden="true" /><p className="mt-3 mb-0 text-[12px] text-(--codeclub-text-strong)">{language === 'en' ? 'No active project' : 'Sin proyecto activo'}</p><p className="mt-1 mb-0 text-[11px] leading-5 text-(--codeclub-text-muted)">{language === 'en' ? 'Link a folder to explore its files.' : 'Vinculá una carpeta para explorar sus archivos.'}</p></div></div>}</motion.section>;
   if (tab === 'review') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-hidden bg-(--paper) text-(--ink)"><ReviewPanel projectPath={projectPath} visible={reviewChangesVisible} /></motion.section>;
   if (tab === 'browser') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="h-full min-h-0 flex-1 overflow-hidden bg-(--paper) text-(--ink)"><BrowserPanel /></motion.section>;
-  if (tab === 'artifacts') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-hidden bg-(--paper) text-(--ink)"><ArtifactsPanel projectPath={projectPath} projectName={projectName} /></motion.section>;
   if (tab === 'terminals') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-hidden bg-(--paper) text-(--ink)"><TerminalPanel projectPath={projectPath} terminalId={panel.terminalId} visible={visible} /></motion.section>;
   return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-auto bg-(--paper) px-3 py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
     <div className="mt-5 grid min-h-[180px] place-items-center rounded-xl bg-transparent px-5 text-center"><div><Icon size={28} strokeWidth={1.3} className="mx-auto text-(--codeclub-text-muted)" aria-hidden="true" /><p className="mt-3 mb-0 text-[12px] text-(--codeclub-text-strong)">{projectPath ? projectName : 'Sin proyecto activo'}</p><p className="mt-1 mb-0 text-[11px] leading-5 text-(--codeclub-text-muted)">{descriptions[tab]}</p></div></div>

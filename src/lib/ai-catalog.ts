@@ -7,6 +7,7 @@ let fetchedModels: any[] = [];
 
 try {
   const providersRes = await fetch("https://models.dev/catalog.json?type=all");
+  if (!providersRes.ok) throw new Error(`models.dev catalog: HTTP ${providersRes.status}`);
   const apiData = await providersRes.json() as { providers?: Record<string, any> };
   const providerEntries = Object.entries(apiData.providers || {});
 
@@ -37,6 +38,7 @@ try {
       reasoning: Boolean(m.reasoning),
       toolCall: Boolean(m.tool_call),
       structuredOutput: Boolean(m.structured_output),
+      contextWindow: Number(m.limit?.context) || undefined,
       cost: m.cost || null,
     }));
   });
@@ -63,20 +65,30 @@ try {
 
 try {
   const gatewayResponse = await fetch('https://ai-gateway.vercel.sh/v1/models');
-  if (gatewayResponse.ok) {
-    const gatewayData = await gatewayResponse.json() as { data?: Array<{ id?: string; owned_by?: string }> };
+  if (!gatewayResponse.ok) throw new Error(`AI Gateway catalog: HTTP ${gatewayResponse.status}`);
+  {
+    const gatewayData = await gatewayResponse.json() as { data?: Array<{ id?: string; owned_by?: string; name?: string; description?: string; type?: string; tags?: string[] }> };
     for (const entry of gatewayData.data || []) {
+      // The chat engine accepts language models; embedding/image/audio models
+      // require other SDK APIs and must not become selectable chat models.
+      if (entry.type && entry.type !== 'language') continue;
       const gatewayId = String(entry.id || '').trim();
       const separator = gatewayId.indexOf('/');
       if (separator <= 0 || separator === gatewayId.length - 1) continue;
       const providerId = gatewayId.slice(0, separator);
       const modelId = gatewayId.slice(separator + 1);
-      const providerName = String(entry.owned_by || providerId);
+      const existingProvider = fetchedProviders.find((provider) => provider.id === providerId);
+      const providerName = existingProvider?.label || String(entry.owned_by || providerId);
       if (!fetchedProviders.some((provider) => provider.id === providerId)) {
         fetchedProviders.push({ id: providerId, label: providerName, shortLabel: providerName.charAt(0), doc: '', api: '', env: [], requiresApiKey: true, gatewayOnly: true });
       }
-      if (!fetchedModels.some((model) => model.gatewayId === gatewayId)) {
-        fetchedModels.push({ id: modelId, gatewayId, label: modelId, providerId, providerName, description: '', cost: null });
+      const existingModel = fetchedModels.find((model) => model.gatewayId === gatewayId);
+      if (existingModel) {
+        // Preserve the direct route and its metadata; the existing AI Gateway
+        // provider can also select this model through its gateway ID.
+        existingModel.gatewayAvailable = true;
+      } else {
+        fetchedModels.push({ id: modelId, gatewayId, label: entry.name || modelId, providerId, providerName, description: entry.description || '', cost: null, gatewayOnly: true, gatewayAvailable: true, reasoning: entry.tags?.includes('reasoning') || false, toolCall: entry.tags?.includes('tool-use') || false, structuredOutput: entry.tags?.includes('structured-output') || false });
       }
     }
   }

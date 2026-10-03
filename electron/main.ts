@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, screen, shell, Tray } from 'electron';
 import { promises as fs } from 'node:fs';
+import { ChatStore } from './chat-store.js';
 import { execFile as execFileCallback, spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { promisify } from 'node:util';
@@ -9,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import * as pty from 'node-pty';
 import electronUpdater from 'electron-updater';
 import { createComputerUse } from './computer-use.js';
+import { createFloatingChat } from './floating-chat.js';
 const { autoUpdater } = electronUpdater;
 
 type Project = { id: string; name: string; path: string; createdAt: string; lastOpenedAt?: string };
@@ -17,6 +19,10 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 const desktopControl = createComputerUse(app.getAppPath(), app.isPackaged ? process.resourcesPath : undefined);
 let projects: Project[] = [];
 let mainWindow: BrowserWindow | null = null;
+type FullscreenRestore = { bounds: Electron.Rectangle; displayId: number; maximized: boolean };
+let fullscreenRestore: FullscreenRestore | null = null;
+let fullscreenTransition: 'entering' | 'leaving' | null = null;
+let floatingChat: ReturnType<typeof createFloatingChat> | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
 const computerOverlayWindows = new Set<BrowserWindow>();
@@ -173,7 +179,6 @@ function setComputerOverlay(active: boolean, language = 'es') {
 }
 
 const projectsFile = () => path.join(app.getPath('userData'), 'projects.json');
-const projectChatFile = (projectPath: string, chatId: string) => path.join(app.getPath('userData'), 'chat-history', encodeURIComponent(projectPath), `${encodeURIComponent(chatId)}.jsonl`);
 const projectId = (value: string) => value.toLowerCase().replace(/[\\/:*?"<>|\s]+/g, '-');
 const projectStorageKey = (value: string) => encodeURIComponent(path.resolve(value));
 
@@ -189,38 +194,91 @@ const projectFile = (projectPath: string, relativePath: string) => {
   return targetPath;
 };
 
-async function listProjectFiles(projectPath: string, maxFiles: number) {
-  const result: Array<{ path: string; kind: string; size?: number; modifiedAt?: number }> = [];
-  async function visit(folder: string, relative = ''): Promise<void> {
-    if (result.length >= maxFiles) return;
-    for (const entry of await fs.readdir(folder, { withFileTypes: true })) {
-      if (entry.isDirectory() && ignoredDirectories.has(entry.name)) continue;
-      const entryRelative = relative ? path.join(relative, entry.name) : entry.name;
-      const entryPath = path.join(folder, entry.name);
-      if (entry.isDirectory()) {
-        result.push({ path: entryRelative.replaceAll(path.sep, '/'), kind: 'directory' });
-        await visit(entryPath, entryRelative);
-      } else {
-        const stat = await fs.stat(entryPath);
-        result.push({ path: entryRelative.replaceAll(path.sep, '/'), kind: 'file', size: stat.size, modifiedAt: stat.mtimeMs });
+const isInsidePath = (rootPath: string, targetPath: string) => {
+  const relative = path.relative(rootPath, targetPath);
+  return relative === '' || (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`));
+};
+
+async function resolveProjectFile(projectPath: string, relativePath: string, allowMissing = false) {
+  const rootPath = await fs.realpath(path.resolve(projectPath));
+  const targetPath = projectFile(rootPath, relativePath);
+  try {
+    const resolved = await fs.realpath(targetPath);
+    if (!isInsidePath(rootPath, resolved)) throw new Error('La ruta queda fuera del proyecto.');
+    return resolved;
+  } catch (error: any) {
+    if (!allowMissing || error?.code !== 'ENOENT') throw error;
+    let ancestor = path.dirname(targetPath);
+    const suffix = [path.basename(targetPath)];
+    while (isInsidePath(rootPath, ancestor)) {
+      try {
+        const resolvedAncestor = await fs.realpath(ancestor);
+        if (!isInsidePath(rootPath, resolvedAncestor)) throw new Error('La ruta queda fuera del proyecto.');
+        return path.join(resolvedAncestor, ...suffix.reverse());
+      } catch (ancestorError: any) {
+        if (ancestorError?.code !== 'ENOENT') throw ancestorError;
+        const parent = path.dirname(ancestor);
+        if (parent === ancestor) break;
+        suffix.push(path.basename(ancestor));
+        ancestor = parent;
       }
-      if (result.length >= maxFiles) return;
     }
+    throw new Error('La ruta queda fuera del proyecto.');
   }
-  await visit(path.resolve(projectPath));
-  return result.slice(0, maxFiles);
+}
+
+async function listProjectFiles(projectPath: string, maxFiles: number) {
+  const limit = Number.isFinite(maxFiles) ? Math.min(1200, Math.max(1, Math.floor(maxFiles))) : 400;
+  const rootPath = await fs.realpath(path.resolve(projectPath));
+  const result: Array<{ path: string; kind: string; size?: number; modifiedAt?: number }> = [];
+  const pending: Array<{ folder: string; relative: string }> = [{ folder: rootPath, relative: '' }];
+  while (pending.length && result.length < limit) {
+    const current = pending.pop()!;
+    const directories: Array<{ folder: string; relative: string }> = [];
+    try {
+      const directory = await fs.opendir(current.folder);
+      for await (const entry of directory) {
+        if (entry.isSymbolicLink() || (entry.isDirectory() && ignoredDirectories.has(entry.name))) continue;
+        const entryRelative = current.relative ? path.join(current.relative, entry.name) : entry.name;
+        const entryPath = path.join(current.folder, entry.name);
+        if (entry.isDirectory()) {
+          result.push({ path: entryRelative.replaceAll(path.sep, '/'), kind: 'directory' });
+          directories.push({ folder: entryPath, relative: entryRelative });
+        } else if (entry.isFile()) {
+          try {
+            const stat = await fs.stat(entryPath);
+            result.push({ path: entryRelative.replaceAll(path.sep, '/'), kind: 'file', size: stat.size, modifiedAt: stat.mtimeMs });
+          } catch { /* Un archivo puede desaparecer mientras se indexa el proyecto. */ }
+        }
+        if (result.length >= limit) break;
+      }
+    } catch (error) {
+      if (current.folder === rootPath) throw error;
+      continue;
+    }
+    for (let index = directories.length - 1; index >= 0; index--) pending.push(directories[index]);
+  }
+  return result;
 }
 
 async function searchProjectText(projectPath: string, query: string, maxMatches: number) {
+  const needle = String(query || '').toLocaleLowerCase();
+  if (!needle) return [];
+  const limit = Number.isFinite(maxMatches) ? Math.min(200, Math.max(1, Math.floor(maxMatches))) : 80;
   const files = await listProjectFiles(projectPath, 1200);
   const matches: Array<{ path: string; line: number; preview: string }> = [];
+  let scannedBytes = 0;
   for (const entry of files) {
-    if (entry.kind !== 'file' || matches.length >= maxMatches) continue;
+    if (entry.kind !== 'file' || matches.length >= limit || !entry.size || entry.size > 2 * 1024 * 1024) continue;
+    if (scannedBytes + entry.size > 32 * 1024 * 1024) break;
+    scannedBytes += entry.size;
     try {
-      const content = await fs.readFile(projectFile(projectPath, entry.path), 'utf8');
-      content.split(/\r?\n/).forEach((line, index) => {
-        if (matches.length < maxMatches && line.toLowerCase().includes(String(query).toLowerCase())) matches.push({ path: entry.path, line: index + 1, preview: line.trim().slice(0, 240) });
-      });
+      const content = await fs.readFile(await resolveProjectFile(projectPath, entry.path), 'utf8');
+      if (content.includes('\0')) continue;
+      const lines = content.split(/\r?\n/);
+      for (let index = 0; index < lines.length && matches.length < limit; index++) {
+        if (lines[index].toLocaleLowerCase().includes(needle)) matches.push({ path: entry.path, line: index + 1, preview: lines[index].trim().slice(0, 240) });
+      }
     } catch { /* Binarios o archivos ilegibles: se omiten. */ }
   }
   return matches;
@@ -329,9 +387,12 @@ function shellCommand(shell: string) {
   return { command: 'powershell.exe', args: ['-NoLogo'], label: 'PowerShell' };
 }
 
-function createNativeTerminal(request: any) {
+async function createNativeTerminal(request: any) {
   const shell = shellCommand(request.shell || 'powershell');
-  const cwd = path.resolve(request.cwd || request.projectPath || process.cwd());
+  let cwd = path.resolve(request.cwd || request.projectPath || process.cwd());
+  if (request.isAgent) cwd = await resolveProjectFile(String(request.projectPath || ''), String(request.cwd || '.'));
+  else cwd = await fs.realpath(cwd);
+  if (!(await fs.stat(cwd)).isDirectory()) throw new Error('La carpeta de inicio de la terminal no es válida.');
   const id = `terminal-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const child = pty.spawn(shell.command, shell.args, { name: 'xterm-color', cols: 120, rows: 40, cwd, env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' } as Record<string, string> });
   const info = { id, name: String(request.name || 'Terminal'), shell: shell.label, cwd, projectPath: request.projectPath, is_agent: Boolean(request.isAgent), created_at: String(Date.now()), status: 'running' };
@@ -355,9 +416,9 @@ async function invokeNativeCommand(command: string, args: any = {}) {
       return true;
     }
     case 'codeclub_get_app_version': return app.getVersion();
-    case 'codeclub_list_files': return listProjectFiles(args.projectPath, Math.min(Number(args.maxFiles) || 400, 1200));
+    case 'codeclub_list_files': return listProjectFiles(String(args.projectPath || ''), Number(args.maxFiles) || 400);
     case 'codeclub_path_kind': {
-      const target = projectFile(String(args.projectPath || ''), String(args.path || '.'));
+      const target = await resolveProjectFile(String(args.projectPath || ''), String(args.path || '.'));
       try {
         const stat = await fs.stat(target);
         return { kind: stat.isDirectory() ? 'directory' : stat.isFile() ? 'file' : 'other' };
@@ -365,17 +426,18 @@ async function invokeNativeCommand(command: string, args: any = {}) {
         return { kind: 'missing' };
       }
     }
-    case 'codeclub_read_file': return fs.readFile(projectFile(args.projectPath, args.path), 'utf8');
-    case 'codeclub_search_text': return searchProjectText(args.projectPath, args.query, Math.min(Number(args.maxMatches) || 80, 200));
+    case 'codeclub_read_file': return fs.readFile(await resolveProjectFile(String(args.projectPath || ''), String(args.path || '')), 'utf8');
+    case 'codeclub_search_text': return searchProjectText(String(args.projectPath || ''), String(args.query || ''), Number(args.maxMatches) || 80);
     case 'codeclub_write_file': {
-      const target = projectFile(args.projectPath, args.path);
+      let target = await resolveProjectFile(String(args.projectPath || ''), String(args.path || ''), true);
       await fs.mkdir(path.dirname(target), { recursive: true });
+      target = await resolveProjectFile(String(args.projectPath || ''), String(args.path || ''), true);
       await fs.writeFile(target, String(args.content ?? ''), 'utf8');
       return { ok: true, path: args.path };
     }
     case 'codeclub_run_command': {
       const request = args.request || {};
-      const cwd = request.cwd ? projectFile(args.projectPath, request.cwd) : path.resolve(args.projectPath);
+      const cwd = await resolveProjectFile(String(args.projectPath || ''), String(request.cwd || '.'));
       try {
         const output = await execFile(String(request.command), Array.isArray(request.args) ? request.args.map(String) : [], { cwd, windowsHide: true, maxBuffer: 8 * 1024 * 1024 });
         return { stdout: output.stdout, stderr: output.stderr, code: 0 };
@@ -492,9 +554,67 @@ async function invokeNativeCommand(command: string, args: any = {}) {
 
 function showMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  floatingChat?.hide();
   mainWindow.show();
   mainWindow.focus();
-  if (!mainWindow.isMaximized()) mainWindow.maximize();
+  if (!mainWindow.isMaximized() && !mainWindow.isFullScreen()) mainWindow.maximize();
+  mainWindow.webContents.send('codeclub:main-show');
+}
+
+function toggleMainFullscreen() {
+  if (!mainWindow || mainWindow.isDestroyed() || fullscreenTransition) return;
+  if (mainWindow.isFullScreen()) {
+    fullscreenTransition = 'leaving';
+    mainWindow.setFullScreen(false);
+    return;
+  }
+  const bounds = mainWindow.getNormalBounds();
+  fullscreenRestore = { bounds, displayId: screen.getDisplayMatching(bounds).id, maximized: mainWindow.isMaximized() };
+  fullscreenTransition = 'entering';
+  mainWindow.setFullScreen(true);
+}
+
+function restoreWindowAfterFullscreen() {
+  if (!mainWindow || mainWindow.isDestroyed() || !fullscreenRestore) return;
+  const restore = fullscreenRestore;
+  fullscreenRestore = null;
+  const displays = screen.getAllDisplays();
+  const savedDisplay = displays.find((display) => display.id === restore.displayId);
+  const display = savedDisplay || screen.getPrimaryDisplay();
+  const area = display.workArea;
+  const width = Math.min(restore.bounds.width, area.width);
+  const height = Math.min(restore.bounds.height, area.height);
+  const bounds = savedDisplay ? {
+    x: Math.min(Math.max(restore.bounds.x, area.x), area.x + area.width - width),
+    y: Math.min(Math.max(restore.bounds.y, area.y), area.y + area.height - height),
+    width,
+    height,
+  } : {
+    x: Math.round(area.x + (area.width - width) / 2),
+    y: Math.round(area.y + (area.height - height) / 2),
+    width,
+    height,
+  };
+
+  if (restore.maximized && savedDisplay) {
+    if (!mainWindow.isMaximized()) mainWindow.maximize();
+    return;
+  }
+  if (mainWindow.isMaximized()) mainWindow.unmaximize();
+  mainWindow.setBounds(bounds, false);
+  if (restore.maximized) mainWindow.maximize();
+}
+
+function updateTrayMenu() {
+  tray?.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Abrir', click: showMainWindow },
+    { label: 'Widget', click: () => {
+      if (!floatingChat?.isActive()) { mainWindow?.hide(); void floatingChat?.show().catch(() => showMainWindow()); }
+      else floatingChat?.hide();
+    } },
+    { type: 'separator' },
+    { label: 'Salir', click: () => { isQuitting = true; app.quit(); } },
+  ]));
 }
 
 function createTray() {
@@ -502,11 +622,7 @@ function createTray() {
   const icon = nativeImage.createFromPath(iconPath);
   tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
   tray.setToolTip('Codeclub');
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Abrir', click: showMainWindow },
-    { type: 'separator' },
-    { label: 'Salir', click: () => { isQuitting = true; app.quit(); } },
-  ]));
+  updateTrayMenu();
   tray.on('click', showMainWindow);
   tray.on('double-click', showMainWindow);
 }
@@ -531,8 +647,22 @@ function createWindow() {
       webviewTag: true,
     },
   });
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' || input.key !== 'F11') return;
+    event.preventDefault();
+    toggleMainFullscreen();
+  });
+  mainWindow.on('enter-full-screen', () => {
+    fullscreenTransition = null;
+    mainWindow?.webContents.send('window:fullscreen-change', true);
+  });
+  mainWindow.on('leave-full-screen', () => {
+    restoreWindowAfterFullscreen();
+    fullscreenTransition = null;
+    mainWindow?.webContents.send('window:fullscreen-change', false);
+  });
   if (process.platform === 'win32' && typeof mainWindow.setBackgroundMaterial === 'function') mainWindow.setBackgroundMaterial('acrylic');
-  mainWindow.on('close', (event) => { if (!isQuitting) { event.preventDefault(); mainWindow?.hide(); } });
+  mainWindow.on('close', (event) => { if (!isQuitting) { event.preventDefault(); mainWindow?.hide(); void floatingChat?.show().catch(() => showMainWindow()); } });
   mainWindow.once('ready-to-show', showMainWindow);
   const devUrl = process.env.CODECLUB_NEXT_DEV_URL;
   if (devUrl) void mainWindow.loadURL(devUrl); else void mainWindow.loadFile(path.join(root, '..', 'out', 'index.html'));
@@ -567,6 +697,19 @@ app.setAppUserModelId('com.codeclub.desktop');
 // Expone el árbol de accesibilidad de Chromium a UI Automation/Computer Use.
 app.commandLine.appendSwitch('force-renderer-accessibility');
 app.whenReady().then(async () => {
+  const chatStore = new ChatStore(app.getPath('userData'));
+  chatStore.migrateGlobalSettings();
+  ipcMain.handle('chats:page', (_event, project: string, id: string, before?: number, limit?: number) => chatStore.page(project, id, before, limit));
+  ipcMain.handle('chats:turn-page', (_event, project: string, id: string, before?: number, limit?: number, direction?: 'before'|'after') => chatStore.turnPage(project, id, before, limit, direction));
+  ipcMain.handle('chats:context', (_event, project: string, id: string) => chatStore.context(project,id));
+  ipcMain.handle('chats:tail', (_event, project: string, id: string, start: number, messages: any[], expectedTotal?:number) => chatStore.saveTail(project, id, start, messages,expectedTotal));
+  ipcMain.handle('chats:append', (_event, project: string, id: string, message: any) => chatStore.append(project, id, message));
+  ipcMain.handle('chats:all', (_event, project: string, id: string) => chatStore.all(project, id));
+  ipcMain.handle('chats:search', (_event, project: string, id: string, query: string) => chatStore.search(project, id, query));
+  ipcMain.handle('chats:copy', (_event, from: string, to: string, id: string) => chatStore.copy(from, to, id));
+  ipcMain.handle('chats:delete', (_event, project: string, id: string) => chatStore.delete(project, id));
+  ipcMain.handle('chats:transcript', (_event, project: string, id: string, markdown: string) => chatStore.transcript(project, id, markdown));
+  app.once('will-quit', () => chatStore.close());
   await loadProjects();
   ipcMain.handle('projects:list', () => projects);
   ipcMain.handle('projects:select-folder', async () => { const result = await dialog.showOpenDialog({ properties: ['openDirectory'] }); if (result.canceled || !result.filePaths[0]) return null; const project = registerProject(result.filePaths[0]); await saveProjects(); return project; });
@@ -582,12 +725,10 @@ app.whenReady().then(async () => {
   ipcMain.handle('path:app-cache', () => path.join(app.getPath('userData'), 'cache'));
   ipcMain.handle('native:invoke', async (_event, payload: { command: string; args?: Record<string, unknown> }) => invokeNativeCommand(payload.command, payload.args));
   ipcMain.handle('chats:read-project', async (_event, projectPath: string, chatId: string) => {
-    try { return await fs.readFile(projectChatFile(projectPath, chatId), 'utf8'); } catch { return ''; }
+    return (await chatStore.all(projectPath, chatId)).map(message => JSON.stringify(message)).join('\n');
   });
   ipcMain.handle('chats:write-project', async (_event, projectPath: string, chatId: string, content: string) => {
-    const filePath = projectChatFile(projectPath, chatId);
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.writeFile(filePath, content, 'utf8');
+    await chatStore.saveTail(projectPath, chatId, 0, content.split('\n').filter(line => line.trim()).map(line => JSON.parse(line)));
     return true;
   });
   ipcMain.handle('projects:switch', async (_event, id: string) => { const project = projects.find((item) => item.id === id); if (!project) throw new Error('Proyecto no encontrado.'); project.lastOpenedAt = new Date().toISOString(); await saveProjects(); return project; });
@@ -608,6 +749,7 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle('window:minimize', (event) => BrowserWindow.fromWebContents(event.sender)?.minimize());
   ipcMain.handle('window:maximize', (event) => { const window = BrowserWindow.fromWebContents(event.sender); if (window?.isMaximized()) window.unmaximize(); else window?.maximize(); });
+  ipcMain.handle('window:is-full-screen', (event) => BrowserWindow.fromWebContents(event.sender)?.isFullScreen() ?? false);
   ipcMain.handle('window:close', (event) => BrowserWindow.fromWebContents(event.sender)?.close());
   ipcMain.handle('app:reload', (event) => BrowserWindow.fromWebContents(event.sender)?.webContents.reload());
   ipcMain.handle('app:update-status', () => autoUpdateState);
@@ -623,11 +765,12 @@ app.whenReady().then(async () => {
     if (action === 'close') return;
     mainWindow?.webContents.send('computer:context-action', { action, ...(lastComputerContext || {}) });
   });
+  floatingChat = createFloatingChat(root, showMainWindow, updateTrayMenu);
   createWindow();
   createTray();
   setupAutoUpdater();
   app.on('activate', showMainWindow);
 });
 
-app.on('before-quit', () => { isQuitting = true; desktopControl.stop(); destroyComputerOverlay(); tray?.destroy(); });
+app.on('before-quit', () => { isQuitting = true; floatingChat?.destroy(); desktopControl.stop(); destroyComputerOverlay(); tray?.destroy(); });
 app.on('window-all-closed', () => { /* La app permanece disponible en la bandeja. */ });

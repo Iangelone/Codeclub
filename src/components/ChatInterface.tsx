@@ -1,5 +1,8 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { ArrowUp, Box, Braces, Camera, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Languages, LayoutTemplate, MessageSquare, Minimize2, Monitor, MoreHorizontal, MousePointer2, Orbit, Paperclip, Pencil, Play, Presentation, Radar, RotateCcw, Search, ScrollText, Square, Table2, Terminal, ThumbsDown, ThumbsUp, Folder, FolderTree, WandSparkles, X } from 'lucide-react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { useChatHistory } from './use-chat-history';
+import { buildChatContext } from '../lib/chat-context';
+import { ArrowUp, Box, Braces, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Languages, LayoutTemplate, MessageSquare, Minimize2, Monitor, MoreHorizontal, Paperclip, Play, Presentation, Radar, RotateCcw, Search, ScrollText, Square, Table2, Terminal, ThumbsDown, ThumbsUp, Folder, WandSparkles, X } from 'lucide-react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -30,9 +33,10 @@ import { appendGenerationUsage, type GenerationUsageRecord } from '../lib/usage'
 import { appendExecutionLog } from '../lib/execution-log';
 import { appendGlobalChatTranscript, getProjectChatPath, getProjectTranscriptPath, readGlobalChatHistory, readGlobalChats, readProjectIndex, readProjectMeta, writeGlobalChatHistory, writeGlobalChats, writeProjectMeta, type ProjectMeta } from '../lib/projectManager';
 import { codeclubExtensions, type CodeclubExtension } from '../lib/extensions';
-import { LANGUAGE_STORAGE_KEY, rightSidebarTranslations, type AppLanguage, useAppLanguage } from '../lib/i18n';
+import { aiCredentialTranslations, chatHistoryTranslations, LANGUAGE_STORAGE_KEY, rightSidebarTranslations, type AppLanguage, useAppLanguage } from '../lib/i18n';
 import { connectAllAgentPluginMcp, loadAgentPlugins } from '../lib/agent-plugins';
 import FluidOrb from './ui/fluid-orb';
+import { credentialKeyFor, credentialTargetFor, modelIdFor, modelMatchesProvider, usesGateway } from '../lib/ai-routing';
 
 const formatProcessingDuration = (durationMs: number) => durationMs >= 60000 ? `${(durationMs / 60000).toFixed(1)}min` : `${Math.max(0, Math.round(durationMs / 1000))}s`;
 const limitResponseLength = (content: string, maxLength = 500) => content.length > maxLength ? `${content.slice(0, maxLength - 1).trimEnd()}…` : content;
@@ -137,7 +141,6 @@ const MemoizedChatMarkdown = React.memo(function MemoizedChatMarkdown({ content 
 });
 
 type ChatAttachment = { path: string; name: string; mediaType: string; size?: number; previewUrl?: string; previewText?: string };
-type ChatMessage = { role: string; content: string; attachments: ChatAttachment[]; [key: string]: any };
 function formatChatTime(value: unknown, language: AppLanguage) {
   const date = value ? new Date(value as string | number) : new Date();
   if (Number.isNaN(date.getTime())) return '--:--';
@@ -146,9 +149,10 @@ function formatChatTime(value: unknown, language: AppLanguage) {
 type CatalogItem = { id: string; type?: string; label?: string; name?: string; description?: string; aliases?: string[]; source?: string; [key: string]: any };
 type ProjectOption = CatalogItem & { path?: string; projectPath?: string | null; projectId?: string; isNone?: boolean };
 type SessionSkill = CatalogItem & { name: string; source: string; content: string; pluginRoot?: string };
-type ChatInterfaceProps = { catalog: CatalogItem[]; defaultProvider: CatalogItem; defaultModel: CatalogItem; panelId?: string; eventPrefix?: string; selectedProject?: { projectPath: string; projectName?: string } | null; blockedPanelState?: string };
+type ChatInterfaceProps = { catalog: CatalogItem[]; defaultProvider: CatalogItem; defaultModel: CatalogItem; panelId?: string; eventPrefix?: string; selectedProject?: { projectPath: string; projectName?: string } | null; blockedPanelState?: string; floating?: boolean; onDraftChange?: () => void; composerLeading?: React.ReactNode };
 const extensionIcons: Record<string, any> = { documents: FileText, pdf: FileType2, spreadsheets: Table2, presentations: Presentation, 'template-creator': LayoutTemplate };
 type ChatRuntime = {
+  expectedTotal?: number;
   controller: AbortController;
   state: string;
   tool: string;
@@ -163,7 +167,6 @@ const readDesktopFile = async (path: string) => {
   const reader = (window as any).codeclub?.readFile;
   return reader ? new Uint8Array(await reader(path)) : readFile(path);
 };
-const getBrowserReferenceComment = (text: string) => text.match(/^Comentario:\s*([\s\S]*?)(?:\n\n|$)/)?.[1]?.trim() || text.replace(/^Componente seleccionado:\s*/, '').split('\n\nTexto visible:')[0].trim();
 const getVisibleUserContent = (message: any) => {
   if (typeof message?.displayContent === 'string') return message.displayContent;
   return String(message?.content || '').replace(/\n\nReferencia \d+: @[\s\S]*$/m, '').trim();
@@ -249,7 +252,7 @@ const getArtifactOutputConfig = (prompt: string) => {
   if (/todo|tareas?|pendientes?/.test(text)) {
     return Output.object({
       name: 'TodoArtifact',
-      description: 'A validated TODO summary for the project Artifacts panel.',
+      description: 'A validated TODO summary for the project agent state.',
       schema: jsonSchema({
         type: 'object',
         properties: {
@@ -263,7 +266,7 @@ const getArtifactOutputConfig = (prompt: string) => {
   if (/plan|planific|roadmap/.test(text)) {
     return Output.object({
       name: 'PlanArtifact',
-      description: 'A validated implementation plan summary for the project Artifacts panel.',
+      description: 'A validated implementation plan summary for the project agent state.',
       schema: jsonSchema({
         type: 'object',
         properties: {
@@ -296,7 +299,7 @@ const formatToolExecutionFallback = (mode: AgentMode, specialist: AgentSpecialis
   return `Ejecución completada con evidencia real.\n\nModo: ${mode}\nEspecialista: ${specialist}\nTools usadas: ${completed.map((event) => event.name).join(', ')}\n\nResultados:\n${details}`;
 };
 
-export default function ChatInterface({ catalog, defaultProvider, defaultModel, panelId = 'left', eventPrefix = 'codeclub', selectedProject, blockedPanelState = 'blank' }: ChatInterfaceProps) {
+export default function ChatInterface({ catalog, defaultProvider, defaultModel, panelId = 'left', eventPrefix = 'codeclub', selectedProject, blockedPanelState = 'blank', floating = false, onDraftChange, composerLeading }: ChatInterfaceProps) {
   const [language, setLanguage] = useState<AppLanguage>('es');
   const chatText = language === 'en' ? { greeting: 'What are we working on today', send: 'Send', cancel: 'Cancel generation', message: 'Message', attach: 'Attach', removeFiles: 'Remove added files', activeSkills: 'Active skills', activeExtensions: 'Active extensions', removeSkill: 'Remove skill from this session', removeExtension: 'Remove extension from this session', selected: 'Selected', provider: 'provider', model: 'model', project: 'project', skill: 'skill', extension: 'extension', command: 'command', searchProvider: 'Search provider', searchModel: 'Search active provider model', searchProject: 'Search project', searchSkill: 'Search skill', searchCommand: 'Search command', noProject: 'No project', slash: { provider: 'Provider', model: 'Model', project: 'Project', skill: 'Skill', providerDescription: 'Select provider', modelDescription: 'Select model', projectDescription: 'Select project', skillDescription: 'Load skill in this session' }, status: { idle: 'Ready when you are.', connecting: 'Connecting to provider...', streaming: 'Thinking...', tool_call: 'Using tool...', approval: 'Waiting for approval...', running: 'Running...', error: 'Something went wrong.' } } : { greeting: '¿Qué toca hoy', send: 'Enviar', cancel: 'Cancelar generación', message: 'Mensaje', attach: 'Adjuntar', removeFiles: 'Quitar archivos añadidos', activeSkills: 'Habilidades activas', activeExtensions: 'Extensiones activas', removeSkill: 'Quitar habilidad de esta sesión', removeExtension: 'Quitar extensión de esta sesión', selected: 'Seleccionado', provider: 'proveedor', model: 'modelo', project: 'proyecto', skill: 'habilidad', extension: 'extensión', command: 'comando', searchProvider: 'Buscar proveedor', searchModel: 'Buscar modelo del proveedor activo', searchProject: 'Buscar proyecto', searchSkill: 'Buscar habilidad', searchCommand: 'Buscar comando', noProject: 'Sin proyecto', slash: { provider: 'Proveedor', model: 'Modelo', project: 'Proyecto', skill: 'Habilidad', providerDescription: 'Seleccionar proveedor', modelDescription: 'Seleccionar modelo', projectDescription: 'Seleccionar proyecto', skillDescription: 'Cargar habilidad en esta sesión' }, status: { idle: 'Listo cuando tú lo estés.', connecting: 'Conectando con el proveedor...', streaming: 'Pensando...', tool_call: 'Usando herramienta...', approval: 'Esperando aprobación...', running: 'Ejecutando...', error: 'Algo salió mal.' } };
   if (language === 'es') {
@@ -304,7 +307,8 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     chatText.slash = { ...chatText.slash, skillDescription: 'Cargar habilidad en esta sesión' };
     chatText.status = { ...chatText.status, idle: 'Listo cuando tú lo estés.', approval: 'Esperando aprobación...', error: 'Algo salió mal.' };
   }
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const historyWindow = useChatHistory();
+  const { messages, setMessages } = historyWindow;
   const projectsSlashLabel = language === 'en' ? 'Projects' : 'Proyectos';
   const isDevelopmentBuild = process.env.NODE_ENV === 'development';
   const languageOptions = [
@@ -347,8 +351,13 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     { id: 'markdown-rendering', label: language === 'en' ? 'Test: Markdown rendering' : 'Test: renderizado Markdown', description: language === 'en' ? 'Render every supported Markdown element' : 'Renderizar todos los elementos Markdown compatibles', type: 'development', prompt: '[TESTING MARKDOWN] Respondé únicamente con una demostración completa en Markdown, sin tools: encabezados H1/H2/H3, texto en **negrita**, *cursiva*, ~~tachado~~, enlace, cita, listas numeradas y con viñetas, código inline, bloque de código con lenguaje, regla horizontal y una tabla con encabezados, tres filas y alineación. Incluí emojis y caracteres especiales. No describas la prueba: renderizá directamente todos los elementos.' },
   ];
   const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
-  const [copiedTraceIndex, setCopiedTraceIndex] = useState<number | null>(null);
   const [moreMenuIndex, setMoreMenuIndex] = useState<number | null>(null);
+  const visibleHistoryStart = historyWindow.range.current.start;
+  useEffect(() => {
+    setMoreMenuIndex(null);
+    setCopiedMessageIndex(null);
+    setMessageFeedback({});
+  }, [visibleHistoryStart]);
   const [messageFeedback, setMessageFeedback] = useState<Record<number, 'up' | 'down'>>({});
   useEffect(() => {
     if (moreMenuIndex === null) return;
@@ -368,10 +377,8 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const chatPanelRef = useRef<HTMLDivElement>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [agentState, setAgentState] = useState('idle');
-  const [connectionAttempt, setConnectionAttempt] = useState(1);
   const agentStartedAtRef = useRef(0);
   const [activeToolName, setActiveToolName] = useState('');
-  const [activeToolInput, setActiveToolInput] = useState<Record<string, any>>({});
   const [computerUseActive, setComputerUseActive] = useState(false);
   const [computerContext, setComputerContext] = useState<{ action: string; x: number; y: number; handle?: number; processId?: number; title?: string } | null>(null);
   const [pendingApprovals, setPendingApprovals] = useState<Array<{ id: string; toolName: string; input: unknown; summary: string }>>([]);
@@ -394,7 +401,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   }, []);
 
   const [currentProvider, setCurrentProvider] = useState(defaultProvider);
-  const [currentModel, setCurrentModel] = useState(defaultModel);
+  const [currentModel, setCurrentModel] = useState<CatalogItem | null>(defaultModel);
   const [settingsReady, setSettingsReady] = useState(false);
   const [username, setUsername] = useState('Usuario');
   const [showEmptyGreeting, setShowEmptyGreeting] = useState(true);
@@ -428,10 +435,11 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [terminalCount, setTerminalCount] = useState(0);
   const [activeChat, setActiveChat] = useState<{chatId: string, projectPath: string, name?: string} | null>(null);
   const activeChatRef = useRef<{chatId: string, projectPath: string, projectName?: string, name?: string, customName?: boolean} | null>(null);
+  const chatLoadSequenceRef = useRef(0);
   const automaticTitleRef = useRef<string>('');
   const chatRuntimesRef = useRef(new Map<string, ChatRuntime>());
   const lastSelectedProjectRef = useRef<{ projectPath: string; projectName: string } | null | undefined>(selectedProject ? { projectPath: selectedProject.projectPath, projectName: selectedProject.projectName || 'Proyecto' } : undefined);
-  const [workspaceMode, setWorkspaceMode] = useState('blank');
+  const [workspaceMode, setWorkspaceMode] = useState(floating ? 'chat' : 'blank');
   const [selectedStructurePath, setSelectedStructurePath] = useState('');
 
   useEffect(() => {
@@ -440,7 +448,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
         chatId: activeChatRef.current?.chatId,
         projectPath: activeChatRef.current?.projectPath || activeProject?.projectPath,
         projectName: activeChatRef.current?.projectName || activeProject?.name,
-        context: { provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id },
+        context: { provider: currentProvider.label || currentProvider.id, model: currentModel?.label || currentModel?.id || '' },
         messages: messages.map((message) => ({
           role: message.role,
           content: message.content || '',
@@ -452,7 +460,6 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
         })),
       } }));
     };
-    publishTrace();
     window.addEventListener('codeclub:trace-request', publishTrace);
     return () => window.removeEventListener('codeclub:trace-request', publishTrace);
   }, [activeProject, currentModel, currentProvider, messages]);
@@ -562,11 +569,34 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     resizeChatInput();
   }, [input]);
   const messagesAreaRef = useRef<HTMLDivElement | null>(null);
+  const pendingChatScrollRef = useRef<string | null>(null);
+  const turnIndexes = useMemo(() => messages.flatMap((message,index) => {
+    if(message.role!=='user')return [];
+    const assistant=messages[index+1];
+    return assistant?.role==='assistant'&&assistant.tools?.some((event:any)=>event.name==='askUser'&&event.answer)?[]:[index];
+  }),[messages]);
+  const turnVirtualizer = useVirtualizer<HTMLDivElement,HTMLDivElement>({
+    count:turnIndexes.length,
+    getScrollElement:()=>messagesAreaRef.current,
+    estimateSize:()=>240,
+    getItemKey:index=>`${activeChatRef.current?.projectPath||''}:${activeChatRef.current?.chatId||'new'}:${messages[turnIndexes[index]]?.historyIndex??turnIndexes[index]}`,
+    overscan:4,
+    anchorTo:'end',
+    followOnAppend:true,
+    scrollEndThreshold:80,
+    enabled:composerDocked,
+  });
+  const totalTurnHeight = turnVirtualizer.getTotalSize();
   const shouldAutoScrollMessagesRef = useRef(true);
   const handleMessagesScroll = () => {
     const area = messagesAreaRef.current;
     if (!area) return;
     shouldAutoScrollMessagesRef.current = area.scrollHeight - area.scrollTop - area.clientHeight < 80;
+    if (pendingChatScrollRef.current) return;
+    if (!isAgentBusy && !historyWindow.loading) {
+      if(area.scrollTop<120 && historyWindow.range.current.start>0) void historyWindow.adjacent('older');
+      else if(shouldAutoScrollMessagesRef.current) void historyWindow.adjacent('newer');
+    }
   };
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const rememberRecentArtifact = (kind: 'chat', detail: any) => {
@@ -608,7 +638,6 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   }, []);
 
   useEffect(() => {
-    const nextPath = selectedProject?.projectPath || null;
     lastSelectedProjectRef.current = selectedProject ? { projectPath: selectedProject.projectPath, projectName: selectedProject.projectName || 'Proyecto' } : null;
     setActiveProject((current: any) => {
       if (!selectedProject) return null;
@@ -629,8 +658,10 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   }, [activeProject]);
 
   useEffect(() => {
-    const handleOpenChat = async (e: any) => {
+  const handleOpenChat = async (e: any) => {
       const chat = e.detail;
+      const loadSequence = ++chatLoadSequenceRef.current;
+      pendingChatScrollRef.current = `${chat.projectPath || ''}:${chat.chatId}`;
       rememberRecentArtifact('chat', chat);
       setWorkspaceMode('chat');
       setActiveChat(chat);
@@ -645,7 +676,8 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
         detail: project ? { selected: true, projectPath: project.projectPath, projectName: project.projectName } : { selected: false, keepChat: true },
       }));
       window.dispatchEvent(new CustomEvent('codeclub:active-project', { detail: project }));
-      setMessages(runtime?.messages || []);
+      historyWindow.restore(chat,runtime?.messages || []);
+      shouldAutoScrollMessagesRef.current = true;
       setInput('');
       setAttachedFiles([]);
       setIsStreaming(Boolean(runtime && !runtime.controller.signal.aborted));
@@ -658,14 +690,14 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       if (runtime?.messages?.length) return;
       try {
         if (!chat.projectPath) {
-          const parsed = await readGlobalChatHistory(chat.chatId);
-          setMessages(parsed);
-          if (!wasDocked && parsed.length > 0) setComposerDocked(true);
+          const loaded = await historyWindow.open(chat, () => readGlobalChatHistory(chat.chatId));
+          if (loadSequence !== chatLoadSequenceRef.current) return;
+          if (!wasDocked && loaded) setComposerDocked(true);
           return;
         }
-        const parsed = await readProjectChatHistory(chat.projectPath, chat.chatId);
-        setMessages(parsed);
-        if (!wasDocked && parsed.length > 0) setComposerDocked(true);
+        const loaded = await historyWindow.open(chat, () => readProjectChatHistory(chat.projectPath,chat.chatId));
+        if (loadSequence !== chatLoadSequenceRef.current) return;
+        if (!wasDocked && loaded) setComposerDocked(true);
       } catch (err) {
         console.error("Error loading chat:", err);
       }
@@ -677,6 +709,11 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
 
   useEffect(() => {
     const handleOpenEmptyChat = () => {
+      pendingChatScrollRef.current = null;
+      historyWindow.reset();
+      chatLoadSequenceRef.current += 1;
+      setMenuOpen(false);
+      setCredentialProvider(null);
       setWorkspaceMode('chat');
       activeChatRef.current = null;
       setActiveChat(null);
@@ -689,6 +726,29 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     window.addEventListener('codeclub:open-empty-chat', handleOpenEmptyChat);
     return () => window.removeEventListener('codeclub:open-empty-chat', handleOpenEmptyChat);
   }, []);
+
+  useEffect(() => {
+    const chat = activeChat;
+    const target = pendingChatScrollRef.current;
+    if (!chat || target !== `${chat.projectPath || ''}:${chat.chatId}` || historyWindow.loading || !composerDocked || turnIndexes.length === 0) return;
+    let settleFrame = 0;
+    const scrollFrame = requestAnimationFrame(() => {
+      turnVirtualizer.scrollToIndex(turnIndexes.length - 1, { align: 'end', behavior: 'auto' });
+      settleFrame = requestAnimationFrame(() => {
+        const area = messagesAreaRef.current;
+        if (area) area.scrollTop = area.scrollHeight;
+        shouldAutoScrollMessagesRef.current = true;
+        pendingChatScrollRef.current = null;
+      });
+    });
+    return () => { cancelAnimationFrame(scrollFrame); if (settleFrame) cancelAnimationFrame(settleFrame); };
+  }, [activeChat?.chatId, activeChat?.projectPath, historyWindow.loading, messages.length, composerDocked, turnIndexes.length]);
+
+  useEffect(() => {
+    const area = messagesAreaRef.current;
+    if (!area || !activeChat || !composerDocked || historyWindow.loading || isAgentBusy || historyWindow.range.current.start === 0) return;
+    if (totalTurnHeight <= area.clientHeight + 1) void historyWindow.adjacent('older');
+  }, [activeChat?.chatId, activeChat?.projectPath, composerDocked, historyWindow.loading, messages.length, isAgentBusy, totalTurnHeight]);
 
   useEffect(() => {
     const handleManualChatRename = (event: Event) => {
@@ -707,12 +767,26 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       const detail = (event as CustomEvent).detail || {};
       const current = activeChatRef.current;
       if (!current || current.chatId !== detail.chatId || typeof detail.projectPath !== 'string' || current.projectPath === detail.projectPath) return;
+      if (chatRuntimesRef.current.has(current.chatId)) return;
       const oldPath = current.projectPath;
       const newPath = detail.projectPath;
       const chatName = (current as any).name || 'Chat';
       activeChatRef.current = { ...current, projectPath: newPath, projectName: detail.projectName, name: chatName };
       setActiveChat(activeChatRef.current);
       try {
+        if ((window as any).codeclub?.chatCopy) {
+          await (window as any).codeclub.chatCopy(oldPath,newPath,current.chatId);
+          if(oldPath){const meta=await readProjectMeta(oldPath);if(meta){meta.chats=meta.chats.filter(item=>item.id!==current.chatId);await writeProjectMeta(oldPath,meta);}}
+          else {await writeGlobalChats((await readGlobalChats()).filter(item=>item.id!==current.chatId));}
+          if(newPath){const meta: ProjectMeta=await readProjectMeta(newPath)||{name:detail.projectName||'Proyecto',path:newPath,created_at:new Date().toISOString(),chats:[]};if(!meta.chats.some(item=>item.id===current.chatId))meta.chats.push({id:current.chatId,name:chatName,customName:current.customName});await writeProjectMeta(newPath,meta);}
+          else {const chats=await readGlobalChats();if(!chats.some(item=>item.id===current.chatId))chats.push({id:current.chatId,name:chatName,customName:current.customName,projectPath:'',projectName:'Sin proyecto'});await writeGlobalChats(chats);}
+          await (window as any).codeclub.chatDelete(oldPath,current.chatId);
+          window.dispatchEvent(new CustomEvent('codeclub:project-meta-changed',{detail:{projectPath:oldPath}}));
+          window.dispatchEvent(new CustomEvent('codeclub:project-meta-changed',{detail:{projectPath:newPath}}));
+          window.dispatchEvent(new CustomEvent('codeclub:global-chat-changed'));
+          if(activeChatRef.current?.chatId===current.chatId&&activeChatRef.current?.projectPath===newPath)await historyWindow.open(activeChatRef.current);
+          return;
+        }
         const oldMessages = oldPath ? await (async () => {
           const oldFile = await getProjectChatPath(oldPath, current.chatId);
           return (await exists(oldFile)) ? await readTextFile(oldFile) : '';
@@ -836,18 +910,21 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   }, [eventPrefix]);
 
   useEffect(() => {
-    Promise.all([
+    const restore = () => { void Promise.all([
       getSetting('codeclub_last_provider_id', ''),
       getSetting('codeclub_last_model_id', ''),
     ]).then(([savedProviderId, savedModelId]) => {
       const savedProvider = savedProviderId ? catalog.find((item) => item.type === 'provider' && item.id === savedProviderId) : null;
       const activeProvider = savedProvider || defaultProvider;
-      const savedModel = savedModelId ? catalog.find((item) => item.type === 'model' && (item.gatewayId === savedModelId || item.id === savedModelId) && (activeProvider?.id === 'ai-gateway' || item.providerId === activeProvider?.id)) : null;
-      const providerModel = catalog.find((item) => item.type === 'model' && (activeProvider?.id === 'ai-gateway' || item.providerId === activeProvider?.id));
+      const savedModel = savedModelId ? catalog.find((item) => item.type === 'model' && (item.gatewayId === savedModelId || item.id === savedModelId) && modelMatchesProvider(item, activeProvider)) : null;
+      const providerModel = catalog.find((item) => item.type === 'model' && modelMatchesProvider(item, activeProvider));
       setCurrentProvider(activeProvider);
-      setCurrentModel(savedModel || providerModel || defaultModel);
+      setCurrentModel(savedModel || providerModel || (activeProvider.id === 'custom' ? defaultModel : null));
       setSettingsReady(true);
-    });
+    }); };
+    restore();
+    window.addEventListener('codeclub:settings-changed', restore);
+    return () => window.removeEventListener('codeclub:settings-changed', restore);
   }, [catalog, defaultProvider, defaultModel]);
 
   useEffect(() => {
@@ -860,9 +937,9 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
 
   useEffect(() => {
     if (!currentProvider) return;
-    const modelBelongsToProvider = currentProvider.id === 'ai-gateway' || currentModel?.providerId === currentProvider.id;
+    const modelBelongsToProvider = currentModel && modelMatchesProvider(currentModel, currentProvider);
     if (modelBelongsToProvider) return;
-    const providerModel = catalog.find((item) => item.type === 'model' && item.providerId === currentProvider.id);
+    const providerModel = catalog.find((item) => item.type === 'model' && modelMatchesProvider(item, currentProvider));
     if (providerModel) setCurrentModel(providerModel);
   }, [catalog, currentModel, currentProvider]);
 
@@ -946,7 +1023,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       .join(' ')
       .toLowerCase();
     const matchesQuery = searchableText.includes(normalizedQuery);
-    const matchesProvider = commandKind !== 'model' || currentProvider?.id === 'ai-gateway' || item.providerId === currentProvider?.id;
+    const matchesProvider = commandKind !== 'model' || Boolean(currentProvider && modelMatchesProvider(item, currentProvider));
     return matchesKind && matchesQuery && matchesProvider;
   });
   const activeSelection: CatalogItem | null = commandKind === 'provider' ? currentProvider : commandKind === 'model' ? currentModel : commandKind === 'project' && activeProject ? { id: activeProject.projectPath, label: activeProject.name } : commandKind === 'language' ? { id: language, label: language === 'en' ? 'English' : 'Español' } : null;
@@ -986,7 +1063,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
 
   useEffect(() => {
     if (!composerDocked || !shouldAutoScrollMessagesRef.current) return;
-    messagesEndRef.current?.scrollIntoView({ block: 'end', behavior: 'auto' });
+    turnVirtualizer.scrollToEnd({behavior:'auto'});
   }, [messages, isStreaming, pendingApprovals, composerDocked]);
 
   useEffect(() => {
@@ -1017,7 +1094,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     return () => window.removeEventListener('pointerdown', handlePointerDown);
   }, [menuOpen]);
 
-  const handleItemClick = (item: CatalogItem) => {
+  const handleItemClick = async (item: CatalogItem) => {
     if (item.type === 'command') {
       if (item.id === 'adjuntar') {
         setInput('');
@@ -1037,7 +1114,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       if (item.id === 'credencial') {
         const provider = currentProvider || defaultProvider;
         if (!provider || provider.id === 'custom') return;
-        setCredentialProvider(provider);
+        setCredentialProvider(credentialTargetFor(provider, currentModel));
         setCredentialInput('');
         setInput('');
         setSearchQuery('');
@@ -1167,14 +1244,16 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       setCommandKind('');
       return;
     }
+    let needsProviderCredential = false;
     if (item.type === 'provider') {
       setCurrentProvider(item);
       const isCustomProvider = item.id === 'custom';
-      const providerModels = catalog.filter((candidate) => candidate.type === 'model' && (item.id === 'ai-gateway' || candidate.providerId === item.id));
-      const nextModel = providerModels[0] || defaultModel;
-      const needsCredential = !isCustomProvider && (item.gatewayOnly === true || item.requiresApiKey !== false);
+      const providerModels = catalog.filter((candidate) => candidate.type === 'model' && modelMatchesProvider(candidate, item));
+      const nextModel = providerModels[0] || (isCustomProvider ? defaultModel : null);
+      const needsCredential = !isCustomProvider && (usesGateway(item, nextModel) || item.requiresApiKey !== false);
+      needsProviderCredential = needsCredential;
       setCurrentModel(nextModel);
-      setCredentialProvider(needsCredential ? item : null);
+      setCredentialProvider(needsCredential ? credentialTargetFor(item, nextModel) : null);
       setCredentialInput('');
       setInput('');
       setCommandKind(isCustomProvider ? 'custom-config' : needsCredential ? 'credential' : '');
@@ -1192,17 +1271,30 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     } else if (item.type === 'model') {
       setCurrentModel(item);
       setCredentialProvider(null);
+      const selectedProvider = currentProvider || defaultProvider;
+      const gatewaySelection = usesGateway(selectedProvider, item);
+      const gatewayKey = gatewaySelection ? await getSetting(credentialKeyFor(selectedProvider, item), '') : '';
+      if (gatewaySelection && (!gatewayKey || gatewayKey === 'dummy-key')) {
+        setCredentialProvider(credentialTargetFor(selectedProvider, item));
+        setCredentialInput('');
+        setInput('');
+        setSearchQuery('');
+        setCommandKind('credential');
+        setMenuOpen(true);
+        window.setTimeout(() => credentialInputRef.current?.focus(), 0);
+        return;
+      }
     }
     if (item.type !== 'provider') {
       setInput((prev) => prev.replace(/\/(proveedor|modelo)$/i, '').trimStart());
     }
-    if (item.type === 'provider' && (item.id === 'custom' || item.requiresApiKey !== false)) {
+    if (item.type === 'provider' && (item.id === 'custom' || needsProviderCredential)) {
       setMenuOpen(true);
     } else {
       setMenuOpen(false);
       setCommandKind('');
     }
-    if (item.type === 'provider' && (item.id === 'custom' || item.requiresApiKey !== false)) {
+    if (item.type === 'provider' && (item.id === 'custom' || needsProviderCredential)) {
       setTimeout(() => (item.id === 'custom' ? customUrlRef.current : credentialInputRef.current)?.focus(), 0);
     } else {
       chatInputRef.current?.focus();
@@ -1254,7 +1346,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
 
   const saveCredential = () => {
     if (!credentialProvider || !credentialInput.trim()) return;
-    void setSetting(credentialProvider.id === 'ai-gateway' || credentialProvider.gatewayOnly ? 'ai_gateway_api_key' : `${credentialProvider.id}_api_key`, credentialInput.trim());
+    void setSetting(credentialKeyFor(credentialProvider), credentialInput.trim());
     setCredentialProvider(null);
     setCredentialInput('');
     setMenuOpen(false);
@@ -1393,6 +1485,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
 
   const userFacingProviderError = (error: unknown, language: AppLanguage) => {
     const rawMessage = error instanceof Error ? error.message : String(error);
+    if (rawMessage.includes('CHAT_MESSAGE_TOO_LARGE')) return chatHistoryTranslations[language].tooLarge;
+    if (rawMessage.includes('CHAT_HISTORY_CONFLICT')) return chatHistoryTranslations[language].conflict;
     const fetch = lastModelFetchRef.current;
     let providerMessage = '';
     if (fetch?.responseBody) {
@@ -1494,6 +1588,12 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
   const appendToJsonl = async (msg: any, chatOverride = activeChatRef.current) => {
     const chat = chatOverride;
     if (!chat) return;
+    if ((window as any).codeclub?.chatAppend) {
+      const total = await (window as any).codeclub.chatAppend(chat.projectPath,chat.chatId,msg);
+      const runtime=chatRuntimesRef.current.get(chat.chatId);if(runtime)runtime.expectedTotal=total;
+      await appendToTranscript(msg,chat);
+      return;
+    }
     if (!chat.projectPath) {
       const messages = await readGlobalChatHistory(chat.chatId);
       await writeGlobalChatHistory(chat.chatId, [...messages, msg]);
@@ -1540,6 +1640,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     if (!chat || !['user', 'assistant'].includes(msg?.role) || typeof msg?.content !== 'string' || !msg.content.trim()) return;
     const heading = msg.role === 'user' ? 'Usuario' : 'Codeclub';
     const markdown = `\n## ${heading} · ${new Date().toLocaleString()}\n\n${msg.content.trim()}\n`;
+    if ((window as any).codeclub?.chatTranscript) { await (window as any).codeclub.chatTranscript(chat.projectPath,chat.chatId,markdown); return; }
     if (!chat.projectPath) {
       await appendGlobalChatTranscript(chat.chatId, markdown);
       return;
@@ -1554,6 +1655,12 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
   const writeChatJsonl = async (nextMessages: any[], chatOverride = activeChatRef.current) => {
     const chat = chatOverride;
     if (!chat) return;
+    if ((window as any).codeclub?.chatSaveTail) {
+      const runtime=chatRuntimesRef.current.get(chat.chatId);
+      const total=await (window as any).codeclub.chatSaveTail(chat.projectPath,chat.chatId,nextMessages[0]?.historyIndex??0,nextMessages,runtime?.expectedTotal);
+      if(runtime)runtime.expectedTotal=total;
+      return;
+    }
     if (!chat.projectPath) {
       await writeGlobalChatHistory(chat.chatId, nextMessages);
       return;
@@ -1622,8 +1729,14 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       }
     }
     const chatId = chat.chatId;
+    if (!replaceHistory && (window as any).codeclub?.chatPage) {
+      const latest = await (window as any).codeclub.chatPage(chat.projectPath,chatId,undefined,80);
+      baseMessages=latest.messages;
+      if(activeChatRef.current?.chatId===chatId&&activeChatRef.current?.projectPath===chat.projectPath) historyWindow.restore(chat,baseMessages);
+    }
     const runtime: ChatRuntime = { controller: abortController, state: 'connecting', tool: '', startedAt: generationStartedAt, messages: [], pendingApprovals: [], approvalResolvers: new Map() };
     chatRuntimesRef.current.set(chatId, runtime);
+    runtime.expectedTotal=historyWindow.range.current.total;
     abortControllerRef.current = abortController;
     approvalResolversRef.current = runtime.approvalResolvers;
     const isCurrentGeneration = () => !abortController.signal.aborted && chatRuntimesRef.current.get(chatId)?.controller === abortController;
@@ -1659,7 +1772,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         ? { ...message, tools: message.tools.map((event: any) => event.id === resolvedAskUserId ? { ...event, answer: visibleContent } : event) }
         : message)
       : baseMessages;
-    const userMessage = { role: 'user', content, displayContent: resumeAskUserId ? '' : visibleContent, createdAt: Date.now(), hidden: Boolean(resumeAskUserId), artifactReferences: messageArtifactReferences, browserReferences: messageBrowserReferences, computerContext: messageComputerContext, attachments: attachments.map(({ path, name, mediaType, size, previewUrl }) => ({ path, name, mediaType, size, previewUrl })) };
+    const userMessage = { historyIndex: (baseMessages[0]?.historyIndex??historyWindow.range.current.start)+baseMessages.length, role: 'user', content, displayContent: resumeAskUserId ? '' : visibleContent, createdAt: Date.now(), hidden: Boolean(resumeAskUserId), artifactReferences: messageArtifactReferences, browserReferences: messageBrowserReferences, computerContext: messageComputerContext, attachments: attachments.map(({ path, name, mediaType, size, previewUrl }) => ({ path, name, mediaType, size, previewUrl })) };
     const newMessages = [...contextualBaseMessages, userMessage];
     const pendingAssistant = { role: 'assistant', content: '', timeline: [], tools: [], agentName: 'Desarrollo' };
     runtime.messages = [...newMessages, pendingAssistant];
@@ -1669,29 +1782,28 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     setInput('');
     if (chatInputRef.current) chatInputRef.current.style.height = '22px';
     setIsStreaming(true);
-    setConnectionAttempt(1);
     agentStartedAtRef.current = Date.now();
     setAgentState('connecting');
     publishRuntime();
     
+    try {
     if (replaceHistory) {
       await writeChatJsonl(newMessages, chat);
     } else {
       await appendToJsonl(userMessage, chat);
     }
 
-    try {
       if (!currentProvider || !currentModel) {
         throw new Error('Elegí un proveedor y un modelo antes de enviar.');
       }
 
-      const useGateway = currentProvider.id === 'ai-gateway' || currentProvider.gatewayOnly === true;
-      const credentialKey = useGateway ? 'ai_gateway_api_key' : `${currentProvider.id}_api_key`;
+      const useGateway = usesGateway(currentProvider, currentModel);
+      const credentialKey = credentialKeyFor(currentProvider, currentModel);
       let apiKey = await getSetting(credentialKey, '');
       
-      const requiresCredential = currentProvider.id === 'ai-gateway' || currentProvider.gatewayOnly === true || currentProvider.requiresApiKey !== false;
+      const requiresCredential = useGateway || currentProvider.requiresApiKey !== false;
       if ((!apiKey || apiKey === 'dummy-key') && currentProvider.id !== 'custom' && requiresCredential) {
-        setCredentialProvider(currentProvider);
+        setCredentialProvider(credentialTargetFor(currentProvider, currentModel));
         setCredentialInput('');
         setCommandKind('credential');
         setMenuOpen(true);
@@ -1699,7 +1811,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         throw new Error(`API Key no configurada para ${useGateway ? 'AI Gateway' : currentProvider.label || currentProvider.id}. Por favor agregala en la configuración.`);
       }
       
-      const selectedModelReference = currentModel.gatewayId || `${currentProvider.id}/${currentModel.id}`;
+      const selectedModelReference = modelIdFor(currentProvider, currentModel);
       const provider = useGateway ? createGateway({ apiKey: apiKey || undefined }) : createOpenAICompatible({
         name: currentProvider.id,
         baseURL: currentProvider.api || 'https://api.openai.com/v1',
@@ -1742,9 +1854,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         if (['writeFile', 'runCommand', 'terminal'].includes(name)) window.dispatchEvent(new CustomEvent('codeclub:workspace-changed', { detail: { projectPath: contextProjectPath, tool: name } }));
         if (['todo', 'createPlan', 'updatePlan'].includes(name)) {
           window.dispatchEvent(new CustomEvent('codeclub:artifacts-changed', { detail: { projectPath: contextProjectPath } }));
-          if (['createPlan', 'updatePlan'].includes(name)) {
-            window.dispatchEvent(new CustomEvent('codeclub:open-artifacts', { detail: { projectPath: contextProjectPath } }));
-          }
         }
       };
       const toolProjectPath = contextProjectPath || await invoke<string>('codeclub_get_system_root');
@@ -1755,7 +1864,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         setAgentState: guardedSetAgentState,
         requestToolApproval: guardedRequestToolApproval,
         provider,
-        modelId: currentModel.id,
+        modelId: selectedModelReference,
       });
       const externalMcpTools: Record<string, any> = {};
       let loadedPlugins: Awaited<ReturnType<typeof loadAgentPlugins>> = [];
@@ -1783,10 +1892,10 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         }
         const matches = [];
         for (const source of sources) {
-          const messages = source.projectPath ? await readProjectChatHistory(source.projectPath, source.chatId) : await readGlobalChatHistory(source.chatId);
-          const excerpts = messages.map((message: any) => String(message?.displayContent || message?.content || '')).filter((text) => !normalized || text.toLowerCase().includes(normalized));
+          const messages = (window as any).codeclub?.chatSearch ? (await (window as any).codeclub.chatSearch(source.projectPath||'',source.chatId,normalized)).map((content:string)=>({content})) : source.projectPath ? await readProjectChatHistory(source.projectPath, source.chatId) : await readGlobalChatHistory(source.chatId);
+          const excerpts = messages.map((message: any) => String(message?.displayContent || message?.content || '')).filter((text: string) => !normalized || text.toLowerCase().includes(normalized));
           if (normalized && !source.title.toLowerCase().includes(normalized) && excerpts.length === 0) continue;
-          matches.push({ id: source.id, title: source.title, project: source.project, excerpts: excerpts.slice(-2).map((text) => text.slice(0, 500)) });
+          matches.push({ id: source.id, title: source.title, project: source.project, excerpts: excerpts.slice(-2).map((text: string) => text.slice(0, 500)) });
         }
         const start = (Math.max(page, 1) - 1) * pageSize;
         return { query, page: Math.max(page, 1), pageSize, total: matches.length, hasMore: start + pageSize < matches.length, results: matches.slice(start, start + pageSize) };
@@ -1799,7 +1908,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       window.dispatchEvent(new CustomEvent('codeclub:agent-route', { detail: { mode: runMode, specialist: routeSpecialist, confidence: 1, reason: 'Una única IA ejecuta directamente las tools necesarias.' } }));
       try {
         const routing = await resolveToolsWithAI({
-          model: provider(currentProvider.id === 'ai-gateway' ? selectedModelReference : currentModel.id),
+          model: provider(selectedModelReference),
           mode: runMode,
           prompt: content,
           toolset: routedToolset,
@@ -1858,10 +1967,12 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         executionStartedAt = Date.now();
         guardedSetAgentState('streaming');
         updateAssistantMessage();
-        const contextualMessages = newMessages.map((message, index) => index === newMessages.length - 1 && message.role === 'user' ? { ...message, content } : message);
-        const executionMessages = retryInstruction ? [...contextualMessages, { role: 'user', content: `${retryInstruction}\n\nUse a different strategy or tool sequence; do not repeat the same failed call.` }] : contextualMessages;
+        const storedContext = (window as any).codeclub?.chatContext ? await (window as any).codeclub.chatContext(chat.projectPath,chatId) : null;
+        const contextualMessages = buildChatContext(storedContext?.messages || newMessages,storedContext?.summary||'',currentModel.contextWindow);
+        const executionMessages: any[] = retryInstruction ? [...contextualMessages, { role: 'user', content: `${retryInstruction}\n\nUse a different strategy or tool sequence; do not repeat the same failed call.` }] : contextualMessages;
         return runStream({
-          model: provider(currentProvider.id === 'ai-gateway' ? selectedModelReference : currentModel.id),
+          model: provider(selectedModelReference),
+          contextWindow:currentModel.contextWindow,
           system,
           messages: executionMessages.map((message, index) => ({
             role: message.role,
@@ -1903,7 +2014,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               if (!isCurrentGeneration()) return;
               runtime.tool = '';
               publishRuntime();
-              if (isVisibleGeneration()) { setActiveToolName(''); setActiveToolInput({}); }
+              if (isVisibleGeneration()) setActiveToolName('');
             },
             onStepEnd: ({ stepNumber, finishReason, toolCalls, usage, performance }) => {
               if (!isCurrentGeneration()) return;
@@ -1919,7 +2030,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               if (!isCurrentGeneration()) return;
               const name = toolCall?.toolName || 'tool';
               const innerToolName = name === 'executeTool' ? toolCall?.input?.name : name;
-              const innerToolInput = name === 'executeTool' ? toolCall?.input?.input || {} : toolCall?.input || {};
               if (String(innerToolName || '').startsWith('computer')) setComputerUseActive(true);
               const sourceCallId = callId || toolCall?.toolCallId || '';
               const eventKey = `${sourceCallId || 'tool'}:${++executionSequence}`;
@@ -1930,7 +2040,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               assistantTimeline = [...assistantTimeline, { type: 'tool', id: nextEvent.id, name, input: nextEvent.input, status: 'running' }];
               runtime.tool = name;
               publishRuntime();
-              if (isVisibleGeneration()) { setActiveToolName(String(innerToolName || name)); setActiveToolInput(innerToolInput); }
+              if (isVisibleGeneration()) setActiveToolName(String(innerToolName || name));
               updateAssistantMessage();
               void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'tool.execution.start', input: { callId: eventKey, sourceCallId, toolCallId: toolCall?.toolCallId, toolName: toolCall?.toolName, input: toolCall?.input }, output: { status: 'started' } });
             },
@@ -1964,7 +2074,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 toolStateTimerRef.current = null;
                 if (!isCurrentGeneration() || abortController.signal.aborted) return;
                 guardedSetAgentState('streaming');
-                if (isVisibleGeneration()) { setActiveToolName(''); setActiveToolInput({}); }
+                if (isVisibleGeneration()) setActiveToolName('');
               }, 2000);
             },
             onUsage: async (usage) => {
@@ -1998,7 +2108,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         for (let attempt = 0; attempt < 5; attempt += 1) {
           try {
             if (attempt > 0) {
-              setConnectionAttempt(attempt + 1);
               guardedSetAgentState('connecting');
             }
             return await runAssistant(instruction);
@@ -2049,7 +2158,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       if (responseSaverEnabled) assistantContent = limitResponseLength(assistantContent);
       if (!isCurrentGeneration() || abortController.signal.aborted) return;
       const changes = contextProjectPath ? summarizeWorkspaceDelta(beforeWorkspaceSnapshot, await readWorkspaceSnapshot(toolProjectPath)) : null;
-      const assistantMessage = { role: 'assistant', content: assistantContent || 'La ejecución terminó sin texto final, pero las evidencias quedaron registradas.', timeline: assistantTimeline, tools: assistantTools, agentName: 'Desarrollo', meta: { provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt, status: 'completed', changes, usage: latestUsage ? { inputTokens: latestUsage.inputTokens, outputTokens: latestUsage.outputTokens, totalTokens: latestUsage.totalTokens, reasoningTokens: latestUsage.reasoningTokens } : null } };
+      const assistantMessage = { historyIndex: userMessage.historyIndex+1, role: 'assistant', content: assistantContent || 'La ejecución terminó sin texto final, pero las evidencias quedaron registradas.', timeline: assistantTimeline, tools: assistantTools, agentName: 'Desarrollo', meta: { provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt, status: 'completed', changes, usage: latestUsage ? { inputTokens: latestUsage.inputTokens, outputTokens: latestUsage.outputTokens, totalTokens: latestUsage.totalTokens, reasoningTokens: latestUsage.reasoningTokens } : null } };
       if (assistantUpdateFrame !== null) {
         window.cancelAnimationFrame(assistantUpdateFrame);
         assistantUpdateFrame = null;
@@ -2067,17 +2176,12 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       runtime.tool = '';
       publishRuntime();
       if (isVisibleGeneration()) {
-        setIsStreaming(false);
         setActiveToolName('');
-        setAgentState('idle');
       }
       const persistencePromise = replaceHistory
         ? writeChatJsonl([...newMessages, assistantMessage], chat)
         : appendToJsonl(assistantMessage, chat);
-      const persistenceTimeout = new Promise<void>((resolve) => window.setTimeout(resolve, 8_000));
-      void Promise.race([persistencePromise, persistenceTimeout]).catch((error) => {
-        console.error('No se pudo guardar el historial del chat:', error);
-      });
+      await persistencePromise;
     } catch (error) {
       if (chatRuntimesRef.current.get(chatId)?.controller !== abortController) return;
       const wasCancelled = abortController.signal.aborted;
@@ -2115,7 +2219,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       runtime.messages = updateErrorMessages(runtime.messages);
       if (activeChatRef.current?.chatId === chatId) setMessages(runtime.messages);
       try {
-        await writeChatJsonl(runtime.messages, chat);
+        if (!(error instanceof Error && error.message.includes('CHAT_HISTORY_CONFLICT'))) await writeChatJsonl(runtime.messages, chat);
       } catch (persistenceError) {
         console.error('No se pudo guardar el error del proveedor en el historial:', persistenceError);
       }
@@ -2173,6 +2277,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       activeChatRef.current = null;
       setActiveChat(null);
       setMessages([]);
+      historyWindow.reset();
       void sendMessage(prompt, [], true);
     };
     window.addEventListener('codeclub:run-scheduled-task', handleScheduledTask);
@@ -2371,8 +2476,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     };
     try {
       if (!await copyText(JSON.stringify(trace, null, 2))) return;
-      setCopiedTraceIndex(messageIndex);
-      window.setTimeout(() => setCopiedTraceIndex((current) => current === messageIndex ? null : current), 3000);
     } catch (error) {
       console.error('No se pudo copiar la trazabilidad:', error);
     }
@@ -2575,11 +2678,21 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
 
   return (
     <div ref={chatPanelRef} role="region" aria-label={`Chat${activeChat?.name ? `: ${activeChat.name}` : ''}`} className={`chat-interface-container @container mx-auto flex h-full w-full max-w-[680px] min-w-0 flex-col gap-0 overflow-visible px-3 pb-5 ${timelineVisible ? '' : 'timeline-hidden'}`} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleComposerDrop}>
+      {floating && <div className="floating-chat-options">
+        <button type="button" onClick={handleAttachFiles} aria-label={chatText.attach} title={chatText.attach}><Paperclip size={15} /></button>
+        <button type="button" className="floating-model" onClick={() => openCommandMenu('model')} aria-label={chatText.model} title={chatText.model}><span aria-hidden="true" className="floating-model-dot" />{currentModel?.label || currentModel?.id || chatText.model}<ChevronDown size={13} /></button>
+      </div>}
       {/* Zona de mensajes */}
-      <div ref={messagesAreaRef} onScroll={handleMessagesScroll} className={`messages-area relative min-h-0 min-w-0 flex-1 flex-col gap-1.5 overflow-y-auto overscroll-contain bg-transparent [scrollbar-width:none] ${composerDocked ? 'flex' : 'hidden'}`} role="log" aria-label="Mensajes del chat" aria-live="polite" aria-relevant="additions text">
+      {historyWindow.loading && <div role="status" className="text-center text-[11px] text-(--codeclub-text-muted)">{chatHistoryTranslations[language].loading}</div>}
+      {historyWindow.error && <div role="alert" className="flex items-center justify-center gap-2 text-[11px] text-(--codeclub-text-muted)">{chatHistoryTranslations[language].failed}<button type="button" onClick={()=>{const chat=activeChatRef.current;if(chat)void historyWindow.open(chat);}} className="text-(--codeclub-accent-bright)">{chatHistoryTranslations[language].retry}</button></div>}
+      {historyWindow.range.current.start+messages.length<historyWindow.range.current.total && <button type="button" title={chatHistoryTranslations[language].latest} aria-label={chatHistoryTranslations[language].latest} className="self-end rounded-full p-1 text-(--codeclub-text-muted) hover:bg-(--codeclub-hover)" onClick={()=>{const chat=activeChatRef.current;if(chat){shouldAutoScrollMessagesRef.current=true;void historyWindow.open(chat);}}}><ChevronDown size={16}/></button>}
+      <div ref={messagesAreaRef} onScroll={handleMessagesScroll} className={`messages-area relative min-h-0 min-w-0 flex-1 flex-col gap-1.5 overflow-y-auto overscroll-contain [overflow-anchor:none] bg-transparent [scrollbar-width:none] ${composerDocked ? 'flex' : 'hidden'}`} role="log" aria-label="Mensajes del chat" aria-live="polite" aria-relevant="additions text">
         <div aria-hidden="true" className="min-h-0 flex-1" />
         {showEmptyGreeting && <div aria-hidden={messages.length > 0} className={`pointer-events-none absolute inset-0 grid place-items-center whitespace-nowrap px-5 text-lg font-medium tracking-[-0.02em] text-(--codeclub-text-strong) transition-[opacity,transform] duration-300 ${messages.length === 0 ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0'}`}>{chatText.greeting}, {username}?</div>}
-        {messages.map((turnMessage, turnIndex) => {
+        <div className="relative w-full shrink-0" style={{height:turnVirtualizer.getTotalSize()}}>
+        {turnVirtualizer.getVirtualItems().map((virtualTurn) => {
+          const turnIndex=turnIndexes[virtualTurn.index];
+          const turnMessage=messages[turnIndex];
           if (turnMessage.role !== 'user') return null;
           const assistantMessage = messages[turnIndex + 1]?.role === 'assistant' ? messages[turnIndex + 1] : null;
           const resolvedAskUserTurn = assistantMessage?.tools?.some((event: any) => event.name === 'askUser' && event.answer);
@@ -2589,10 +2702,10 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           const isProcessingTurn = Boolean(turnMessage && !turnMessage.hidden && isStreaming && agentState !== 'error' && assistantMessage && turnIndex + 1 === messages.length - 1);
           const hasErrorTurn = assistantMessage?.meta?.status === 'error';
           const isLastTurn = turnIndex >= messages.length - 2;
-          return <div className={`chat-turn ${isLastTurn ? 'is-last' : ''}`} key={`turn-${turnIndex}`} role="article" aria-label={`Intercambio ${turnIndex + 1}`} style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: turnIndex > 0 ? '28px' : 0 }}>
+          return <div ref={turnVirtualizer.measureElement} data-index={virtualTurn.index} className={`chat-turn ${isLastTurn ? 'is-last' : ''}`} key={virtualTurn.key} role="article" aria-label={`Intercambio ${(turnMessage.historyIndex??turnIndex) + 1}`} style={{ position:'absolute',top:0,left:0,width:'100%',transform:`translateY(${virtualTurn.start}px)`,display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: turnIndex > 0 ? '18px' : 0 }}>
             <span className="chat-turn-time" aria-label={`Hora ${turnTime}`}>
               <span>{turnTime}</span>
-              {isProcessingTurn && <ProcessingStatusStateFixed startedAt={agentStartedAtRef.current || Date.now()} state={agentState} attempt={connectionAttempt} language={language} toolName={activeToolName} toolInput={activeToolInput} />}
+              {isProcessingTurn && <ProcessingStatusStateFixed startedAt={agentStartedAtRef.current || Date.now()} language={language} />}
               {hasErrorTurn && <span className="chat-turn-advice">{language === 'en' ? 'Check the selected provider and model.' : 'Revisá el proveedor y modelo seleccionados.'}</span>}
             </span>
             {turnMessages.map((turnItem, turnOffset) => {
@@ -2600,7 +2713,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               const i = turnIndex + turnOffset;
               const isLiveAssistant = m.role === 'assistant' && isStreaming && i === messages.length - 1;
               return <React.Fragment key={`${m.role}-${i}`}>
-            {<motion.div initial={isLiveAssistant ? { opacity: 0.58, y: 2 } : false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.24, ease: 'easeOut' }} className={`group/message ${m.role === 'assistant' ? 'chat-assistant-message' : 'chat-user-message'}`} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '5px', maxWidth: m.role === 'user' ? '70%' : '100%', minWidth: 0 }}>
+            {<motion.div initial={isLiveAssistant ? { opacity: 0.58 } : false} animate={{ opacity: 1 }} transition={{ duration: 0.2, ease: 'easeOut' }} className={`group/message ${m.role === 'assistant' ? 'chat-assistant-message' : 'chat-user-message'} ${m.meta?.status === 'error' ? 'chat-error-message' : ''}`} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '4px', maxWidth: m.role === 'user' ? '76%' : '100%', minWidth: 0 }}>
               {m.role === 'user' && (m.artifactReferences?.length > 0 || m.browserReferences?.length > 0 || m.attachments?.length > 0) && <div className="chat-reference-row" aria-label="Referencias y archivos">
                 {m.artifactReferences?.map((ref: { kind: 'plan' | 'todo'; id: string; title: string }) => <div key={`${ref.kind}-${ref.id}`} className="chat-reference-card chat-artifact-reference-card" title={`@${ref.kind} · ${ref.title}`}><span className="chat-reference-kind">@{ref.kind}</span><span className="chat-reference-title">{ref.title}</span></div>)}
                 {m.browserReferences?.map((ref: { id: string; title: string; text: string; url?: string }, referenceIndex: number) => <div key={ref.id || `${ref.title}-${referenceIndex}`} className="chat-reference-card chat-browser-reference-card" title={ref.title}><span className="chat-browser-reference-number">{referenceIndex + 1}</span>{getBrowserReferenceFavicon(ref) ? <img src={getBrowserReferenceFavicon(ref)} alt="" className="chat-reference-favicon" /> : <Globe size={16} className="chat-reference-favicon chat-reference-fallback-icon" aria-hidden="true" />}<span className="chat-reference-title">{ref.title}</span></div>)}
@@ -2609,9 +2722,9 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               <div className={`chat-markdown min-w-0 max-w-full break-words [overflow-wrap:anywhere] text-sm leading-6 text-(--codeclub-text-strong) ${m.role === 'user' ? 'chat-markdown-user' : 'chat-markdown-assistant'} ${m.role === 'user' && getVisibleUserContent(m).trim() ? 'w-fit overflow-hidden rounded-[22px] bg-(--codeclub-user-bubble) px-4 py-2.5 leading-6' : 'w-full'}`}>
                 <motion.div
                   key={m.role === 'assistant' && m.content?.trim() ? 'assistant-content' : 'message-content'}
-                  initial={m.role === 'assistant' && m.content?.trim() ? { opacity: 0, y: 4, filter: 'blur(1px)' } : false}
-                  animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-                  transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
+                  initial={m.role === 'assistant' && m.content?.trim() ? { opacity: 0 } : false}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.24, ease: 'easeOut' }}
                 >
                 <MemoizedChatMarkdown content={normalizeChatContent(m.role === 'user' ? getVisibleUserContent(m) : (m.meta?.status === 'error' ? (language === 'en' ? 'No response' : 'Sin respuesta') : (m.displayContent || m.content)))} />
                 </motion.div>
@@ -2627,7 +2740,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               }} disabled={isAgentBusy} />}
               {m.role === 'assistant' && i === messages.length - 1 && <ApprovalCards approvals={pendingApprovals} onResolve={resolveToolApproval} />}
               {m.role === 'assistant' && <ChangeSummaryCard changes={m.meta?.changes} />}
-              {m.role === 'assistant' && (!isStreaming || i !== messages.length - 1 || m.meta?.status === 'error') && <div data-message-actions={i} className="message-actions relative flex items-center gap-1 self-start opacity-100">
+              {m.role === 'assistant' && (!isStreaming || i !== messages.length - 1 || m.meta?.status === 'error') && <div data-message-actions={i} className="message-actions relative flex items-center gap-1 self-start">
                 <button type="button" aria-label={copiedMessageIndex === i ? 'Mensaje copiado' : 'Copiar mensaje'} title={copiedMessageIndex === i ? 'Copiado' : 'Copiar'} onClick={() => void handleCopyMessage(m.content, i)} className={`grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent transition-colors hover:bg-white/[0.08] ${copiedMessageIndex === i ? 'text-[#F8EAD8]' : 'text-[#e0e0e0]'}`}>{copiedMessageIndex === i ? <Check size={15} strokeWidth={2.2} /> : <Copy size={15} strokeWidth={2} />}</button>
                 <button type="button" aria-label="Marcar respuesta como útil" title="Útil" onClick={() => setMessageFeedback((current) => ({ ...current, [i]: current[i] === 'up' ? undefined as never : 'up' }))} className={`grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent transition-colors hover:bg-white/[0.08] ${messageFeedback[i] === 'up' ? 'text-[#8BC7FF]' : 'text-[#e0e0e0]'}`}><ThumbsUp size={15} strokeWidth={1.9} /></button>
                 <button type="button" aria-label="Marcar respuesta como no útil" title="No útil" onClick={() => setMessageFeedback((current) => ({ ...current, [i]: current[i] === 'down' ? undefined as never : 'down' }))} className={`grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent transition-colors hover:bg-white/[0.08] ${messageFeedback[i] === 'down' ? 'text-[#8BC7FF]' : 'text-[#e0e0e0]'}`}><ThumbsDown size={15} strokeWidth={1.9} /></button>
@@ -2642,7 +2755,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             })}
           </div>;
         })}
-        <div ref={messagesEndRef} className="scroll-mb-16" aria-hidden="true" />
+        </div>
+        <div ref={messagesEndRef} className="scroll-mb-16 shrink-0" aria-hidden="true" />
       </div>
 
       <div className="chat-composer composer-row flex w-full min-w-0 shrink-0 items-center gap-2 bg-transparent">
@@ -2699,8 +2813,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             </button>
           )}
           <span id="chat-input-help" className="sr-only">Escribí un mensaje. Usa Shift+Enter para una nueva línea y / para abrir comandos.</span>
-          <span className="chat-input-orb absolute left-3 top-3 z-10 grid h-[22px] w-[22px] place-items-center overflow-hidden rounded-full" aria-hidden="true">
-            <FluidOrb size={22} color="#2D5FD6" animateOnHover={false} />
+          <span className="chat-input-orb absolute left-3 top-3 z-10 grid h-[22px] w-[22px] place-items-center overflow-hidden rounded-full" aria-hidden={composerLeading ? undefined : true}>
+            {composerLeading || <FluidOrb size={22} color="#2D5FD6" animateOnHover={false} />}
           </span>
           <textarea
             ref={chatInputRef}
@@ -2712,6 +2826,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             onChange={(e) => {
               const value = e.target.value;
               setInput(value);
+              onDraftChange?.();
               if (!value.trim()) setArtifactReferences([]);
               if (value === '/' || (value.startsWith('/') && !value.includes(' '))) {
                 setCommandKind('command');
@@ -2721,7 +2836,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 setMenuOpen(false);
               }
             }}
-            onInput={(e) => {
+            onInput={() => {
               resizeChatInput();
             }}
             onKeyDown={(e) => {
@@ -2787,7 +2902,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 value={credentialInput}
                 onChange={(event) => setCredentialInput(event.target.value)}
                 onKeyDown={(event) => { if (event.key !== 'Enter') return; event.preventDefault(); event.stopPropagation(); if (credentialInput.trim()) { saveCredential(); return; } setCredentialProvider(null); setCredentialInput(''); setMenuOpen(false); setCommandKind(''); chatInputRef.current?.focus(); }}
-                placeholder={`Escribí tu credencial de ${credentialProvider?.gatewayOnly ? 'AI Gateway' : credentialProvider?.label || credentialProvider?.id}`}
+                placeholder={`${aiCredentialTranslations[language].enter} ${credentialProvider?.gatewayOnly ? 'Vercel AI Gateway' : credentialProvider?.label || credentialProvider?.id}`}
                 className="credential-menu-input"
                 style={{ boxSizing: 'border-box', width: '100%', height: '34px', padding: '0 32px 0 10px', border: 0, borderRadius: '8px', background: 'transparent', color: '#eeeeee', fontSize: '12px', outline: 'none' }}
               />
@@ -2976,7 +3091,7 @@ function toolActivityLabel(name: string, input: Record<string, any>, language: A
   return detail ? `${prefix} ${detail}` : prefix;
 }
 
-function ProcessingStatusStateFixed({ startedAt, state, attempt, language, toolName, toolInput }: { startedAt: number; state: string; attempt: number; language: AppLanguage; toolName?: string; toolInput?: Record<string, any> }) {
+function ProcessingStatusStateFixed({ startedAt, language }: { startedAt: number; language: AppLanguage }) {
   const [elapsed, setElapsed] = useState(() => Math.max(0, Date.now() - startedAt));
   useEffect(() => {
     const timer = window.setInterval(() => setElapsed(Math.max(0, Date.now() - startedAt)), 1000);
@@ -3229,7 +3344,7 @@ function TabbedProjectView({ projectPath, initialSelectedPath = '', showFileTree
     </React.Fragment>;
   });
 
-  return <div ref={panelRef} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleFileDrop} className="flex h-full w-full min-w-0 flex-col overflow-hidden rounded-tl-lg bg-[#111111] text-[#eeeeee] [&>div:first-child]:hidden">
+  return <div ref={panelRef} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleFileDrop} className="codeclub-project-files flex h-full w-full min-w-0 flex-col overflow-hidden rounded-tl-lg bg-[#111111] text-[#eeeeee] [&>div:first-child]:hidden">
     <div className="flex h-9 shrink-0 items-center justify-between border-b border-[#2b2b2b] px-4"><span className="text-[13px] leading-none">/</span><button type="button" onClick={() => setShowFileTree((visible) => !visible)} className="grid h-7 w-7 place-items-center rounded-[9px] bg-[#202020] text-[#eeeeee] hover:bg-[#2b2b2b]" title={text.toggleTree} aria-label={text.toggleTree}><FolderOpen size={16} /></button></div>
     {loading ? <div className="flex flex-1 items-center justify-center text-xs text-[#777777]">{text.loadingFiles}</div> : <div className="flex min-h-0 flex-1">
       <main className="flex min-w-0 flex-1 flex-col bg-[#111111]">{tabs.length ? <><div className="flex h-8 shrink-0 items-end gap-1 overflow-x-auto border-b border-[#2b2b2b] bg-[#111111] px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{tabs.map((path) => { const fileName = path.split(/[\\/]/).pop() || path; return <div key={path} onContextMenu={(event) => { event.preventDefault(); setFileContextMenu({ path, x: event.clientX, y: event.clientY }); }} className={`group flex h-7 max-w-[190px] min-w-[110px] shrink-0 items-center gap-2 rounded-md px-2.5 text-[11px] transition-colors ${selectedPath === path ? 'bg-[#2C2C2C] text-[#eeeeee]' : 'text-[#777777] hover:text-[#bdbdbd]'}`}><MaterialFileIcon name={fileName} kind="file" /><button type="button" onClick={() => setSelectedPath(path)} className="min-w-0 flex-1 truncate bg-transparent text-left">{fileName}</button><button type="button" onClick={() => closeFile(path)} className={`grid h-5 w-5 shrink-0 place-items-center rounded-md text-[#777777] transition-opacity hover:bg-white/10 hover:text-white ${selectedPath === path ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} title={text.closeTab} aria-label={`${text.closeTab}: ${path}` }><X size={12} /></button></div>; })}</div><div className="min-h-0 flex-1 overflow-hidden bg-transparent">{files[selectedPath] ? <FilePreview projectPath={projectPath || ''} file={files[selectedPath]} onChange={(content) => handleContentChange(selectedPath, content)} /> : <div className="p-4 text-xs text-[#777777]">{text.loadingFile}</div>}</div></> : <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center"><FolderOpen size={44} strokeWidth={1.4} className="text-[#a7a7a7]" /><div><p className="m-0 text-[18px] font-semibold text-[#eeeeee]">{text.openFile}</p><p className="m-0 mt-3 max-w-[360px] text-[16px] leading-6 text-[#a7a7a7]">{text.selectFile}</p></div></div>}</main>
