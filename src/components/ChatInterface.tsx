@@ -612,7 +612,6 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       else if(shouldAutoScrollMessagesRef.current) void historyWindow.adjacent('newer');
     }
   };
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const rememberRecentArtifact = (kind: 'chat', detail: any) => {
     if (!detail?.projectPath || !detail?.[`${kind}Id`]) return;
     const key = `${detail.projectPath}:${kind}`;
@@ -763,23 +762,45 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       return;
     }
     if (target !== `${chat.projectPath || ''}:${chat.chatId}`) return;
-    let settleFrame = 0;
-    const scrollFrame = requestAnimationFrame(() => {
-      turnVirtualizer.scrollToIndex(turnIndexes.length - 1, { align: 'end', behavior: 'auto' });
-      settleFrame = requestAnimationFrame(() => {
-        const area = messagesAreaRef.current;
-        if (area) area.scrollTop = area.scrollHeight;
+    let frame = 0;
+    let stableFrames = 0;
+    let previousHeight = -1;
+    let previousTop = -1;
+    let previousViewport = -1;
+    let previousLastTop = -1;
+    turnVirtualizer.scrollToEnd({ behavior: 'auto' });
+    const settle = () => {
+      if (sequence !== chatLoadSequenceRef.current) return;
+      const area = messagesAreaRef.current;
+      if (!area) return;
+      const lastTurn = area.querySelector<HTMLElement>('.chat-turn.is-last');
+      const lastTop = lastTurn?.getBoundingClientRect().top ?? -1;
+      const atEnd = Math.abs(area.scrollHeight - area.scrollTop - area.clientHeight) <= 1;
+      let ready = document.fonts.status !== 'loading';
+      const images = area.getElementsByTagName('img');
+      for (let index = 0; ready && index < images.length; index++) ready = images[index].complete;
+      const unchanged = area.scrollHeight === previousHeight && area.scrollTop === previousTop && area.clientHeight === previousViewport && Math.abs(lastTop - previousLastTop) < 0.5;
+      stableFrames = atEnd && ready && unchanged ? stableFrames + 1 : 0;
+      previousHeight = area.scrollHeight;
+      previousTop = area.scrollTop;
+      previousViewport = area.clientHeight;
+      previousLastTop = lastTop;
+      if (stableFrames >= (isAgentBusy ? 1 : 4)) {
         shouldAutoScrollMessagesRef.current = true;
         pendingChatScrollRef.current = null;
         reveal();
-      });
-    });
-    return () => { cancelAnimationFrame(scrollFrame); if (settleFrame) cancelAnimationFrame(settleFrame); };
+        return;
+      }
+      if (!atEnd) turnVirtualizer.scrollToEnd({ behavior: 'auto' });
+      frame = requestAnimationFrame(settle);
+    };
+    frame = requestAnimationFrame(settle);
+    return () => cancelAnimationFrame(frame);
   }, [activeChat?.chatId, activeChat?.projectPath, historyWindow.loading, messages.length, composerDocked, turnIndexes.length, chatTransitionPhase]);
 
   useEffect(() => {
     const area = messagesAreaRef.current;
-    if (!area || !activeChat || !composerDocked || historyWindow.loading || chatTransitionPhase !== 'idle' || moreMenuIndex !== null || isAgentBusy || historyWindow.range.current.start === 0) return;
+    if (!area || !activeChat || !composerDocked || historyWindow.loading || !['idle', 'loading'].includes(chatTransitionPhase) || moreMenuIndex !== null || isAgentBusy || historyWindow.range.current.start === 0) return;
     if (totalTurnHeight <= area.clientHeight + 1) void historyWindow.adjacent('older');
   }, [activeChat?.chatId, activeChat?.projectPath, composerDocked, historyWindow.loading, messages.length, isAgentBusy, totalTurnHeight, chatTransitionPhase, moreMenuIndex]);
 
@@ -2720,7 +2741,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       {historyWindow.loading && <div role="status" className="text-center text-[11px] text-(--codeclub-text-muted)">{chatHistoryTranslations[language].loading}</div>}
       {historyWindow.error && <div role="alert" className="flex items-center justify-center gap-2 text-[11px] text-(--codeclub-text-muted)">{chatHistoryTranslations[language].failed}<button type="button" onClick={()=>{const chat=activeChatRef.current;if(chat)void historyWindow.open(chat);}} className="text-(--codeclub-accent-bright)">{chatHistoryTranslations[language].retry}</button></div>}
       {historyWindow.range.current.start+messages.length<historyWindow.range.current.total && <button type="button" title={chatHistoryTranslations[language].latest} aria-label={chatHistoryTranslations[language].latest} className="self-end rounded-full p-1 text-(--codeclub-text-muted) hover:bg-(--codeclub-hover)" onClick={()=>{const chat=activeChatRef.current;if(chat){shouldAutoScrollMessagesRef.current=true;void historyWindow.open(chat);}}}><ChevronDown size={16}/></button>}
-      <motion.div ref={messagesAreaRef} initial={false} animate={chatAnimations} data-chat-transition={chatTransitionPhase} aria-busy={chatTransitionPhase !== 'idle' || historyWindow.loading} onScroll={handleMessagesScroll} className={`messages-area relative min-h-0 min-w-0 flex-1 flex-col gap-1.5 overflow-y-auto overscroll-contain [overflow-anchor:none] bg-transparent [scrollbar-width:none] ${composerDocked ? 'flex' : 'hidden'} ${chatTransitionPhase === 'idle' ? '' : 'pointer-events-none'}`} role="log" aria-label="Mensajes del chat" aria-live="polite" aria-relevant="additions text">
+      <motion.div ref={messagesAreaRef} initial={false} animate={chatAnimations} data-chat-transition={chatTransitionPhase} aria-busy={chatTransitionPhase !== 'idle' || historyWindow.loading} onScroll={handleMessagesScroll} className={`messages-area relative min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain [overflow-anchor:none] bg-transparent [scrollbar-width:none] ${composerDocked ? 'flex' : 'hidden'} ${chatTransitionPhase === 'idle' ? '' : 'pointer-events-none'}`} role="log" aria-label="Mensajes del chat" aria-live="polite" aria-relevant="additions text">
         <div aria-hidden="true" className="min-h-0 flex-1" />
         {showEmptyGreeting && <div aria-hidden={messages.length > 0} className={`pointer-events-none absolute inset-0 grid place-items-center whitespace-nowrap px-5 text-lg font-medium tracking-[-0.02em] text-(--codeclub-text-strong) transition-[opacity,transform] duration-300 ${messages.length === 0 ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0'}`}>{chatText.greeting}, {username}?</div>}
         <div className="relative w-full shrink-0" style={{height:turnVirtualizer.getTotalSize()}}>
@@ -2790,7 +2811,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           </div>;
         })}
         </div>
-        <div ref={messagesEndRef} className="scroll-mb-16 shrink-0" aria-hidden="true" />
       </motion.div>
 
       <div className="chat-composer composer-row flex w-full min-w-0 shrink-0 items-center gap-2 bg-transparent">

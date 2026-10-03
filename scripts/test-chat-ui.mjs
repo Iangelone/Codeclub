@@ -21,6 +21,7 @@ try {
   await store.saveTail('','retry',0,rows.map((row,index)=>index===9998?{...row,content:'QA tall retry '+ 'paragraph '.repeat(400)}:row));
   await store.saveTail('','slow',0,[{role:'user',content:'SLOW user'},{role:'assistant',content:'SLOW response'}]);
   await store.saveTail('','fast',0,[{role:'user',content:'FAST user'},{role:'assistant',content:'FAST response'}]);
+  await store.saveTail('','varied',0,rows.map((row,index)=>({...row,content:index===9999?'QA varied last':index%2===1?`QA varied ${index}\n\n${'Paragraph with different wrapping and line height. '.repeat(index%7*12+1)}`:row.content})));
   const entry=path.join(directory,'entry.tsx'),bundle=path.join(directory,'app.js');
   await writeFile(entry,`import React from 'react';import {createRoot} from 'react-dom/client';import ChatInterface from ${JSON.stringify(path.join(repo,'src/components/ChatInterface.tsx'))};const provider={id:'qa',label:'QA',api:location.origin+'/v1',type:'provider',requiresApiKey:false};const model={id:'qa-model',label:'QA model',providerId:'qa',type:'model',contextWindow:32768};createRoot(document.getElementById('root')!).render(<div style={{height:'100vh',background:'var(--codeclub-chat-background)'}}><ChatInterface catalog={[provider,model]} defaultProvider={provider} defaultModel={model} eventPrefix="codeclub:qa"/></div>);`);
   await build({entryPoints:[entry],outfile:bundle,bundle:true,format:'esm',platform:'browser',target:'es2022',nodePaths:[path.join(repo,'node_modules')],define:{'process.env.NODE_ENV':'"production"'},logLevel:'silent'});
@@ -108,6 +109,20 @@ try {
   assert.ok(!transitionFrames.some(frame=>frame.text.includes('FAST response')&&frame.text.includes('QA message')),'Chats never overlap');
   assert.ok(!transitionFrames.some(frame=>frame.text.includes('FAST response')&&frame.opacity>0.1&&frame.bottom>10),'New chat is positioned before appearing');
   assert.equal(await page.getByText('SLOW response',{exact:true}).count(),0,'Late history cannot replace the active chat');
+  await page.evaluate(()=>{
+    window.qaLayoutFrames=[];window.qaRecordingLayout=true;
+    const sample=()=>{
+      const area=document.querySelector('.messages-area'),last=area?.querySelector('.chat-turn.is-last');
+      if(last?.textContent.includes('QA varied last')&&Number(getComputedStyle(area).opacity)>0.1)window.qaLayoutFrames.push(last.getBoundingClientRect().top);
+      if(window.qaRecordingLayout)requestAnimationFrame(sample);
+    };requestAnimationFrame(sample);
+  });
+  await open('varied');await page.getByText('QA varied last',{exact:true}).waitFor();
+  await page.locator('.messages-area[data-chat-transition="idle"]').waitFor();
+  await page.waitForTimeout(200);
+  const layoutFrames=await page.evaluate(()=>{window.qaRecordingLayout=false;return window.qaLayoutFrames;});
+  assert.ok(layoutFrames.length>3,'Sampled visible variable-height history');
+  assert.ok(Math.max(...layoutFrames)-Math.min(...layoutFrames)<1,'Last turn stays in position throughout and after entry');
   await open('long');await page.getByText('QA message 9999',{exact:true}).waitFor();
   await page.locator('.messages-area[data-chat-transition="idle"]').waitFor();
   const input=page.locator('textarea').first();await input.fill('Hola QA');await input.press('Enter');
@@ -139,7 +154,7 @@ try {
   await page.locator('.messages-area[data-chat-transition="idle"]').waitFor();
   assert.equal(await page.locator('.chat-turn').count(),0,'New chat clears the previous turn after its exit');
   assert.deepEqual(pageErrors,[]);
-  console.log(JSON.stringify({passed:true,fixtureMessages:10000,mountedTurns:mounted,providerMessages:networkMessages.length,raceProtected:true,streamPersisted:true,sequentialTransitions:true}));
+  console.log(JSON.stringify({passed:true,fixtureMessages:10000,mountedTurns:mounted,providerMessages:networkMessages.length,raceProtected:true,streamPersisted:true,sequentialTransitions:true,stableEntry:true}));
 }finally{
   await browser?.close();await new Promise(resolve=>server?server.close(resolve):resolve());store.close();
   const resolved=path.resolve(directory);if(path.dirname(resolved)!==path.resolve(tmpdir())||!path.basename(resolved).startsWith('codeclub-chat-ui-'))throw new Error('Unexpected UI test directory');
