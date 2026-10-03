@@ -68,7 +68,7 @@ try {
   desktop=await _electron.launch({args:[launcher],cwd:repo,env:{...process.env,CODECLUB_NEXT_DEV_URL:''},timeout:30000});
   const main=await desktop.firstWindow();
   // Avoid dumping SDK errors: they can contain request bodies and headers.
-  await main.getByRole('button',{name:'Actividad',exact:true}).waitFor({timeout:30000});
+  await main.getByRole('button',{name:'Ocultar aplicación en la bandeja',exact:true}).waitFor({timeout:30000});
   if(gatewayKey)await main.evaluate(({key,value,origin})=>window.codeclub.credentialSet(key,value,origin),{key:credentialKeyFor(gatewayProvider),value:gatewayKey,origin:'https://ai-gateway.vercel.sh'});
   if(gatewayKey && (repairProfile||process.env.CODECLUB_QA_SAVE_GATEWAY==='1')){
     const original=JSON.parse(encryptedCredentials),updated=JSON.parse(await readFile(path.join(directory,'credentials.encrypted.json'),'utf8'));

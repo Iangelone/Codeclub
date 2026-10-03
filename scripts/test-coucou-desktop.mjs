@@ -36,7 +36,8 @@ try {
   await desktop.context().route('https://ai-gateway.vercel.sh/**',route=>route.fulfill({json:{data:[]}}));
   desktop.context().on('page',page=>page.on('pageerror',error=>{errors.push(error.message);console.error(error.stack);}));
   const main=await desktop.firstWindow();main.on('pageerror',error=>{errors.push(error.message);console.error(error.stack);});
-  await main.getByRole('button',{name:'Actividad',exact:true}).waitFor({timeout:30000});
+  await main.getByRole('button',{name:'Ocultar aplicación en la bandeja',exact:true}).waitFor({timeout:30000});
+  assert.equal(await main.getByRole('button',{name:'Actividad',exact:true}).count(),0);
   await desktop.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(window=>window.getTitle()==='Codeclub')?.setTitle('Codeclub · QA Coucou'));
   main.on('console',message=>{if(message.type()==='error')console.error(message.text().slice(0,500));});
   await main.evaluate(()=>window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat')));
@@ -48,6 +49,7 @@ try {
   const floatPromise=desktop.waitForEvent('window');await main.evaluate(()=>window.codeclub.windowClose());
   const floating=await floatPromise;floating.on('pageerror',error=>errors.push(error.message));
   await floating.locator('.floating-shell').waitFor();
+  assert.equal(await floating.getByRole('button',{name:'Actividad',exact:true}).count(),0);
   assert.equal(await floating.locator('.floating-activity').count(),0,'Widget has no status banner');
   assert.equal(await floating.getByRole('button',{name:'Adjuntar',exact:true}).count(),0,'Widget has no attachment icon');
   assert.equal(await floating.locator('.floating-model').count(),0,'Widget has no model selector');
@@ -87,10 +89,8 @@ try {
   assert.equal(history.filter(message=>message.role==='user').length,2,'Switching surfaces does not duplicate messages');
   assert.ok(!(await readFile(path.join(directory,'settings.json'),'utf8')).includes('fixture-secret'));
   assert.ok(!(await readFile(path.join(directory,'credentials.encrypted.json'),'utf8')).includes('fixture-secret'));
-  await main.getByRole('button',{name:'Actividad',exact:true}).click();await main.getByRole('button',{name:'Integraciones',exact:true}).click();
-  await main.getByText('Pausar consultas',{exact:true}).waitFor();
   await main.evaluate(()=>window.dispatchEvent(new CustomEvent('codeclub:language-change',{detail:{language:'en'}})));
-  await main.getByText('Pause polling',{exact:true}).waitFor();
+  assert.equal(await main.getByRole('button',{name:'Activity',exact:true}).count(),0);
   await main.evaluate(()=>window.dispatchEvent(new CustomEvent('codeclub:language-change',{detail:{language:'es'}})));
   const pendingChat={chatId:'qa-pending-attention',projectPath:'',name:'QA pendiente'};
   await main.evaluate(async chat=>{
