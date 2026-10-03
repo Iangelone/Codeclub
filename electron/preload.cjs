@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('codeclub', {
   invoke: (command, args) => ipcRenderer.invoke('native:invoke', { command, args }),
@@ -37,7 +37,33 @@ contextBridge.exposeInMainWorld('codeclub', {
     ipcRenderer.on('window:fullscreen-change', listener);
     return () => ipcRenderer.removeListener('window:fullscreen-change', listener);
   },
-  floatingResize: (expanded) => ipcRenderer.invoke('codeclub:floating-resize', expanded),
+  floatingResize: (expanded, animate = true) => ipcRenderer.invoke('codeclub:floating-resize', expanded, animate),
+  floatingClose: () => ipcRenderer.invoke('codeclub:floating-close'),
+  floatingHidden: (revision) => ipcRenderer.invoke('codeclub:floating-hidden', revision),
+  onFloatingHide: (handler) => {
+    const listener = (_event, revision) => handler(revision);
+    ipcRenderer.on('codeclub:floating-hide', listener);
+    return () => ipcRenderer.removeListener('codeclub:floating-hide', listener);
+  },
+  floatingPointer: (inside) => ipcRenderer.invoke('codeclub:floating-pointer',inside),
+  sessionList: () => ipcRenderer.invoke('codeclub:sessions-list'),
+  getPathForFile: (file) => webUtils.getPathForFile(file),
+  integrationConfig: () => ipcRenderer.invoke('codeclub:integration-config'),
+  integrationSave: (config) => ipcRenderer.invoke('codeclub:integration-save',config),
+  hooksPreview: () => ipcRenderer.invoke('codeclub:hooks-preview'),
+  hooksInstall: (id) => ipcRenderer.invoke('codeclub:hooks-install',id),
+  credentialPresent: (key) => ipcRenderer.invoke('codeclub:credential-present',key),
+  credentialSet: (key,value,origin) => ipcRenderer.invoke('codeclub:credential-set',key,value,origin),
+  openExternal: (url) => ipcRenderer.invoke('codeclub:external-open',url),
+  sessionSelect: (chat) => ipcRenderer.invoke('codeclub:session-select',chat),
+  sessionSelected: () => ipcRenderer.invoke('codeclub:session-selected'),
+  sessionClaim: (chat) => ipcRenderer.invoke('codeclub:session-claim',chat),
+  sessionPublish: (chat,runId,update) => ipcRenderer.invoke('codeclub:session-publish',chat,runId,update),
+  sessionCommand: (chat,action,approvalId) => ipcRenderer.invoke('codeclub:session-command',chat,action,approvalId),
+  sessionOpen: (chat) => ipcRenderer.invoke('codeclub:session-open',chat),
+  onSessions: (handler) => { const listener=(_event,items)=>handler(items);ipcRenderer.on('codeclub:sessions',listener);return ()=>ipcRenderer.removeListener('codeclub:sessions',listener); },
+  onSessionCommand: (handler) => { const listener=(_event,command)=>handler(command);ipcRenderer.on('codeclub:session-command',listener);return ()=>ipcRenderer.removeListener('codeclub:session-command',listener); },
+  onSessionOpen: (handler) => { const listener=(_event,chat)=>handler(chat);ipcRenderer.on('codeclub:session-open',listener);return ()=>ipcRenderer.removeListener('codeclub:session-open',listener); },
   floatingDrag: (phase, point) => ipcRenderer.invoke('codeclub:floating-drag', phase, point),
   floatingOpenMain: () => ipcRenderer.invoke('codeclub:floating-open-main'),
   onMainShow: (handler) => {

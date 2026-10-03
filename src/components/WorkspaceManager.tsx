@@ -18,6 +18,14 @@ function WorkspaceManager({ catalog, defaultProvider, defaultModel }: { catalog:
   const panelNavigation = useRef<{ entries: string[]; index: number; moving: boolean; chats: Record<string, any> }>({ entries: ['new-chat'], index: 0, moving: false, chats: {} });
 
   useEffect(() => {
+    const open = (chat: any) => { if (chat?.chatId) window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: chat })); };
+    const bridge = (window as any).codeclub;
+    const unsubscribe = bridge?.onSessionOpen?.(open);
+    const shown = bridge?.onMainShow?.(() => { void bridge.sessionSelected?.().then(open); });
+    return () => { unsubscribe?.(); shown?.(); };
+  }, []);
+
+  useEffect(() => {
     const handleProjectPanelSelection = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
       if (!detail.projectPath) {
@@ -179,8 +187,9 @@ function WorkspaceManager({ catalog, defaultProvider, defaultModel }: { catalog:
         </div>}
       </div>
       <div className={`workspace-pane acrylic-panel min-h-0 min-w-0 flex-1 ${showExtensions ? 'overflow-hidden bg-(--codeclub-center)' : 'overflow-visible bg-transparent'}`}>
-        <div key={showExtensions ? 'extensions' : 'chat'} className={`workspace-panel-content h-full min-h-0 min-w-0 ${showExtensions ? 'overflow-hidden bg-(--codeclub-center)' : 'overflow-visible bg-transparent'}`}>
-          {showExtensions ? <ExtensionsPanel selectedProject={selectedProject} /> : <ChatInterface
+        <div className="workspace-panel-content h-full min-h-0 min-w-0 overflow-visible bg-transparent">
+          {showExtensions && <ExtensionsPanel selectedProject={selectedProject} />}
+          <div className="h-full min-h-0" style={{display:showExtensions?'none':undefined}}><ChatInterface
             catalog={catalog}
             defaultProvider={defaultProvider}
             defaultModel={defaultModel}
@@ -188,7 +197,7 @@ function WorkspaceManager({ catalog, defaultProvider, defaultModel }: { catalog:
             eventPrefix="codeclub:panel-left"
             selectedProject={selectedProject}
             blockedPanelState="blank"
-          />}
+          /></div>
         </div>
       </div>
     </div>

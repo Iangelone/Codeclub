@@ -5,7 +5,7 @@ const realFetch = globalThis.fetch;
 const directData = { providers: { original: { id: 'original', name: 'Original', api: 'https://direct.example/v1', env: ['DIRECT_API_KEY'], models: { shared: { id: 'shared', name: 'Shared direct' }, exclusive: { id: 'exclusive', name: 'Direct only' } } } } };
 const gatewayData = { data: [
   { id: 'original/shared', name: 'Shared gateway', type: 'language' },
-  { id: 'original/new', name: 'New model', type: 'language', tags: ['tool-use', 'reasoning'] },
+  { id: 'original/new', name: 'New model', type: 'language', tags: ['tool-use', 'reasoning'], pricing: { input: '0', output: '0' }, context_window: 32000 },
   { id: 'new-provider/first', name: 'First', type: 'language' },
   { id: 'embedding-provider/embed', type: 'embedding' },
   { id: 'invalid', type: 'language' },
@@ -34,6 +34,9 @@ try {
   assert.equal(added.label, 'New model');
   assert.equal(added.toolCall, true);
   assert.equal(added.reasoning, true);
+  assert.deepEqual(added.gatewayCost,{input:0,output:0},'Free pricing comes from Gateway metadata');
+  assert.equal(added.contextWindow,32000);
+  assert.equal(shared.gatewayCost,null,'Missing pricing must not imply a free model');
   assert.equal(modelMatchesProvider(added, original), true, 'New Gateway model remains in the existing provider selector');
   assert.equal(usesGateway(original, added), true);
   assert.equal(credentialKeyFor(original, added), 'ai_gateway_api_key');

@@ -83,11 +83,36 @@ const loadSettings = async (): Promise<Record<string, unknown>> => {
 };
 
 export const getSetting = async <T>(key: string, fallback: T): Promise<T> => {
+  if(/^[a-z0-9][a-z0-9_.-]*_api_key$/i.test(key)&&(window as any).codeclub?.credentialPresent) {
+    const bridge=(window as any).codeclub;
+    if(await bridge.credentialPresent(key)){await removeSetting(key);return 'codeclub-native-credential' as T;}
+    const legacy=(await loadSettings())[key];
+    if(typeof legacy==='string'&&legacy){await bridge.credentialSet(key,legacy);await removeSetting(key);return 'codeclub-native-credential' as T;}
+    return fallback;
+  }
   const settings = await loadSettings();
   return (settings[key] as T | undefined) ?? fallback;
 };
 
+const removeSetting = async (key: string) => {
+  const operation = settingsWriteQueue.then(async () => {
+    const settings = { ...await loadSettings() };
+    let browserSettings = {} as Record<string, unknown>;
+    try { browserSettings = parseSettings(window.localStorage.getItem(browserSettingsKey)); } catch { /* Desktop settings remain authoritative. */ }
+    if (!(key in settings) && !(key in browserSettings)) return;
+    delete settings[key];
+    try { window.localStorage.setItem(browserSettingsKey, JSON.stringify(settings)); } catch { /* Optional browser cache. */ }
+    if (key in (settingsCache || {})) await writeTextFile(await getAppConfigFilePath(SETTINGS_FILE), JSON.stringify(settings));
+    settingsCache = settings;
+  });
+  settingsWriteQueue = operation.catch(() => undefined);
+  return operation;
+};
+
 export const setSetting = async (key: string, value: unknown) => {
+  if(/^[a-z0-9][a-z0-9_.-]*_api_key$/i.test(key)&&(window as any).codeclub?.credentialSet) {
+    await (window as any).codeclub.credentialSet(key,String(value||''));await removeSetting(key);return;
+  }
   const operation = settingsWriteQueue.then(async () => {
     const settings = { ...await loadSettings() };
     settings[key] = value;

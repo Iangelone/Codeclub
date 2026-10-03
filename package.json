@@ -88,6 +88,10 @@
     ],
     "extraResources": [
       {
+        "from": "electron/agent-relay.ps1",
+        "to": "agent-relay.ps1"
+      },
+      {
         "from": "electron/computer-use.ps1",
         "to": "computer-use.ps1"
       },

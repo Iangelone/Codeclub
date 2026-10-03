@@ -17,11 +17,15 @@ type RunStreamArgs = {
 async function runStreamInternal({ model, system, messages, tools, structuredOutput, maxOutputTokens, contextWindow, callbacks, signal }: RunStreamArgs): Promise<string> {
   let content = '';
   let reasoning = '';
+  let streamError: unknown;
   const startedAt = Date.now();
   const agent = new ToolLoopAgent({
     model,
     instructions: system,
     tools,
+    // AI SDK 7.0.16 creates a rejected tracing completion in browsers on abort.
+    // Our usage/audit callbacks stay enabled; the optional SDK telemetry is off.
+    telemetry: { isEnabled: false },
     // Mantiene el loop de tools dentro de AI SDK y limita ejecuciones encadenadas.
     stopWhen: stepCountIs(8),
     prepareStep: ({messages:stepMessages}) => {
@@ -67,6 +71,7 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
       } else if (chunk.type === 'tool-result') {
         callbacks.onToolResult?.();
       } else if (chunk.type === 'error') {
+        streamError ??= chunk.error;
         callbacks.onError?.(chunk.error);
       }
     if (signal?.aborted) {
@@ -74,6 +79,11 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
       error.name = 'AbortError';
       throw error;
     }
+  }
+
+  if (streamError != null) {
+    await Promise.allSettled([result.usage, result.response]);
+    throw streamError;
   }
 
   if (structuredOutput) {
@@ -105,6 +115,7 @@ export async function runStream(args: RunStreamArgs): Promise<string> {
     if (!controller.signal.aborted) controller.abort(args.signal?.reason);
   };
   args.signal?.addEventListener('abort', forwardAbort, { once: true });
+  if(args.signal?.aborted)forwardAbort();
 
   const streamPromise = runStreamInternal({ ...args, signal: controller.signal });
   try {

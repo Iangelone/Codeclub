@@ -32,7 +32,7 @@
   --codeclub-border-faint: rgba(255, 255, 255, 0.06);
   --codeclub-acrylic: rgba(27, 32, 41, 1);
   --codeclub-acrylic-active: rgba(43, 48, 58, 1);
-  --codeclub-user-bubble: #363636;
+  --codeclub-user-bubble: #191919;
   --codeclub-acrylic-light: rgba(255, 255, 255, 0.14);
   --codeclub-acrylic-light-radial: radial-gradient(circle at center, transparent 0%, transparent 42%, rgba(255, 255, 255, 0.13) 100%);
   --codeclub-send-active-radial: radial-gradient(circle at center, transparent 0%, transparent 42%, rgba(255, 255, 255, 0.025) 72%, rgba(255, 255, 255, 0.06) 100%);
@@ -315,14 +315,13 @@ section[aria-label='Gestor de paneles'] {
 
 .chat-turn {
   position: relative;
-  padding-top: 30px;
   padding-left: 52px;
 }
 
 .chat-turn::before {
   position: absolute;
-  top: 26px;
-  bottom: -18px;
+  top: 24px;
+  bottom: 0;
   left: 31px;
   width: 1px;
   background: #2b2b2b;
@@ -347,9 +346,9 @@ section[aria-label='Gestor de paneles'] {
 }
 
 .chat-turn-time {
-  position: absolute;
-  top: 2px;
-  left: 0;
+  position: relative;
+  flex-shrink: 0;
+  align-self: flex-start;
   z-index: 1;
   display: inline-flex;
   width: max-content;

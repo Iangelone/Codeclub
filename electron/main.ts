@@ -1,6 +1,11 @@
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, screen, shell, Tray } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, safeStorage, screen, shell, Tray } from 'electron';
+import { CredentialVault } from './credential-vault.js';
+import { ActivityIntegrations } from './activity-integrations.js';
+import { AgentRelay } from './agent-relay.js';
 import { promises as fs } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { ChatStore } from './chat-store.js';
+import { SessionHub, type SessionChat } from './session-hub.js';
 import { execFile as execFileCallback, spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { promisify } from 'node:util';
@@ -25,6 +30,20 @@ let fullscreenTransition: 'entering' | 'leaving' | null = null;
 let floatingChat: ReturnType<typeof createFloatingChat> | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
+let selectedSessionChat: SessionChat | null = null;
+let credentialVault: CredentialVault;
+const modelRequests=new Map<string,AbortController>();
+const sessionHub = new SessionHub(() => {
+  if(isQuitting)return;
+  for (const win of BrowserWindow.getAllWindows()) {
+    if(win.isDestroyed() || win.webContents.isDestroyed())continue;
+    if (win !== mainWindow && !floatingChat?.owns(win.webContents)) continue;
+    win.webContents.send('codeclub:sessions', sessionHub.list().map(session => ({...session,localOwner:session.owner===win.webContents.id})));
+  }
+});
+function requireAppSender(event: Electron.IpcMainInvokeEvent) {
+  if (event.sender !== mainWindow?.webContents && !floatingChat?.owns(event.sender)) throw new Error('Unauthorized renderer');
+}
 const computerOverlayWindows = new Set<BrowserWindow>();
 let computerOverlayActive = false;
 let computerMouseHook: ReturnType<typeof spawn> | null = null;
@@ -538,14 +557,23 @@ async function invokeNativeCommand(command: string, args: any = {}) {
       const request = args.request || {};
       const url = String(request.url || '');
       if (!/^https?:\/\//i.test(url)) throw new Error('Solo se permiten URLs HTTP o HTTPS.');
+      const requestHeaders = new Headers(Object.fromEntries(Array.isArray(request.headers) ? request.headers.map((header: any) => [String(header.name), String(header.value)]) : []));
+      if(request.credentialKey){const secret=credentialVault.authorization(String(request.credentialKey),url);if(secret)requestHeaders.set('authorization',`Bearer ${secret}`);}
+      const controller=new AbortController();
+      const requestId=String(request.requestId||randomUUID());
+      modelRequests.set(requestId,controller);
+      try {
       const response = await fetch(url, {
         method: String(request.method || 'GET'),
-        headers: Object.fromEntries(Array.isArray(request.headers) ? request.headers.map((header: any) => [String(header.name), String(header.value)]) : []),
+        headers: requestHeaders,
+        redirect: request.credentialKey?'error':'follow',
         body: request.body == null ? undefined : String(request.body),
+        signal:controller.signal,
       });
       const headers: Array<{ name: string; value: string }> = [];
       response.headers.forEach((value, name) => headers.push({ name, value }));
       return { status: response.status, status_text: response.statusText, headers, body: await response.text() };
+      } finally {modelRequests.delete(requestId);}
     }
     case 'codeclub_get_system_root': return process.platform === 'win32' ? `${process.env.SystemDrive || 'C:'}\\` : '/';
     default: throw new Error(`El comando nativo ${command} todavía no está implementado en Electron.`);
@@ -645,6 +673,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
+      backgroundThrottling: false,
     },
   });
   mainWindow.webContents.on('before-input-event', (event, input) => {
@@ -663,6 +692,9 @@ function createWindow() {
   });
   if (process.platform === 'win32' && typeof mainWindow.setBackgroundMaterial === 'function') mainWindow.setBackgroundMaterial('acrylic');
   mainWindow.on('close', (event) => { if (!isQuitting) { event.preventDefault(); mainWindow?.hide(); void floatingChat?.show().catch(() => showMainWindow()); } });
+  const ownerId=mainWindow.webContents.id;
+  mainWindow.webContents.on('destroyed', () => sessionHub.disconnect(ownerId));
+  mainWindow.webContents.on('render-process-gone', () => sessionHub.disconnect(ownerId));
   mainWindow.once('ready-to-show', showMainWindow);
   const devUrl = process.env.CODECLUB_NEXT_DEV_URL;
   if (devUrl) void mainWindow.loadURL(devUrl); else void mainWindow.loadFile(path.join(root, '..', 'out', 'index.html'));
@@ -697,6 +729,33 @@ app.setAppUserModelId('com.codeclub.desktop');
 // Expone el árbol de accesibilidad de Chromium a UI Automation/Computer Use.
 app.commandLine.appendSwitch('force-renderer-accessibility');
 app.whenReady().then(async () => {
+  credentialVault=new CredentialVault(app.getPath('userData'),safeStorage);
+  credentialVault.migrate(path.join(app.getPath('userData'),'settings.json'));
+  const integrations=new ActivityIntegrations(path.join(app.getPath('userData'),'activity-integrations.json'),credentialVault,sessionHub);
+  const relayHelper=app.isPackaged?path.join(process.resourcesPath,'agent-relay.ps1'):path.join(root,'..','electron','agent-relay.ps1');
+  const relay=new AgentRelay(app.getPath('userData'),relayHelper,sessionHub);
+  const updateRelay=()=>{if(integrations.getConfig().externalAgents&&!integrations.getConfig().paused)void relay.start().catch(()=>sessionHub.external('relay-status','External agents','error'));else relay.stop();};
+  ipcMain.handle('codeclub:integration-config',event=>{requireAppSender(event);return integrations.getConfig();});
+  ipcMain.handle('codeclub:integration-save',(event,config)=>{requireAppSender(event);const saved=integrations.save(config);updateRelay();return saved;});
+  ipcMain.handle('codeclub:hooks-preview',async event=>{requireAppSender(event);const result=await dialog.showOpenDialog({properties:['openDirectory']});if(result.canceled||!result.filePaths[0])return null;return relay.preview(result.filePaths[0]);});
+  ipcMain.handle('codeclub:hooks-install',(event,id:string)=>{requireAppSender(event);return relay.install(id);});
+  updateRelay();app.once('will-quit',()=>relay.stop());
+  integrations.start();
+  app.once('will-quit',()=>integrations.stop());
+  ipcMain.handle('codeclub:credential-present',(event,key:string)=>{requireAppSender(event);return credentialVault.present(key);});
+  ipcMain.handle('codeclub:credential-set',(event,key:string,value:string,origin?:string)=>{requireAppSender(event);credentialVault.set(key,value,origin);});
+  ipcMain.handle('codeclub:external-open',(event,url:string)=>{requireAppSender(event);const target=new URL(url);if(target.protocol!=='https:')throw new Error('Invalid external URL');return shell.openExternal(target.href);});
+  ipcMain.handle('codeclub:sessions-list', event => { requireAppSender(event); return sessionHub.list().map(session=>({...session,localOwner:session.owner===event.sender.id})); });
+  ipcMain.handle('codeclub:session-select', (event, chat: SessionChat) => { requireAppSender(event); if(chat?.chatId&&typeof chat.projectPath==='string')selectedSessionChat={chatId:chat.chatId,projectPath:chat.projectPath,name:chat.name,projectName:chat.projectName}; });
+  ipcMain.handle('codeclub:session-selected', event => { requireAppSender(event);return selectedSessionChat; });
+  ipcMain.handle('codeclub:session-claim', (event, chat: SessionChat) => { requireAppSender(event); return sessionHub.claim(event.sender.id,chat); });
+  ipcMain.handle('codeclub:session-publish', (event, chat: SessionChat, runId: string, update: any) => { requireAppSender(event); return sessionHub.publish(event.sender.id,chat,runId,update); });
+  ipcMain.handle('codeclub:session-command', (event, chat: SessionChat, action: string, approvalId?: string) => {
+    requireAppSender(event);const command=sessionHub.command(chat,action,approvalId);if(!command)return false;
+    const owner=BrowserWindow.getAllWindows().find(win=>!win.isDestroyed()&&!win.webContents.isDestroyed()&&win.webContents.id===command.owner);
+    if(!owner){sessionHub.disconnect(command.owner);return false;}owner.webContents.send('codeclub:session-command',command);return true;
+  });
+  ipcMain.handle('codeclub:session-open', (event, chat: SessionChat) => { requireAppSender(event);if(!chat?.chatId||typeof chat.projectPath!=='string')return;selectedSessionChat={chatId:chat.chatId,projectPath:chat.projectPath,name:chat.name,projectName:chat.projectName};showMainWindow(); });
   const chatStore = new ChatStore(app.getPath('userData'));
   chatStore.migrateGlobalSettings();
   ipcMain.handle('chats:page', (_event, project: string, id: string, before?: number, limit?: number) => chatStore.page(project, id, before, limit));
@@ -723,7 +782,17 @@ app.whenReady().then(async () => {
   ipcMain.handle('path:join', (_event, parts: string[]) => path.join(...(Array.isArray(parts) ? parts : [])));
   ipcMain.handle('path:app-config', () => app.getPath('userData'));
   ipcMain.handle('path:app-cache', () => path.join(app.getPath('userData'), 'cache'));
-  ipcMain.handle('native:invoke', async (_event, payload: { command: string; args?: Record<string, unknown> }) => invokeNativeCommand(payload.command, payload.args));
+  ipcMain.handle('native:invoke', async (event, payload: { command: string; args?: Record<string, unknown> }) => {
+    if(payload.command==='codeclub_http_fetch'&&(payload.args?.request as any)?.credentialKey)requireAppSender(event);
+    if(payload.command==='codeclub_http_abort'){
+      requireAppSender(event);modelRequests.get(`${event.sender.id}:${String(payload.args?.requestId)}`)?.abort();return;
+    }
+    if(payload.command==='codeclub_http_fetch'){
+      const request=payload.args?.request as any;
+      if(request)request.requestId=`${event.sender.id}:${String(request.requestId||randomUUID())}`;
+    }
+    return invokeNativeCommand(payload.command, payload.args);
+  });
   ipcMain.handle('chats:read-project', async (_event, projectPath: string, chatId: string) => {
     return (await chatStore.all(projectPath, chatId)).map(message => JSON.stringify(message)).join('\n');
   });

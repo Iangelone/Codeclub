@@ -3,6 +3,10 @@ import { useEffect, useState } from 'react';
 export type AppLanguage = 'es' | 'en';
 
 export const LANGUAGE_STORAGE_KEY = 'codeclub-language';
+export const activityTranslations = {
+  es:{paymentRequired:'El proveedor requiere un método de pago registrado para habilitar las solicitudes, incluso con modelos gratuitos.',subscriptionRequired:'Este proveedor requiere una suscripción activa para usar el modelo.',clientRestricted:'El proveedor limita este modelo gratuito a su propia aplicación. Elegí otro proveedor o modelo.',attachmentFailed:'No se pudo preparar una vista previa. Verificá el archivo antes de enviar.',question:'Espera tu respuesta',externalAgents:'Agentes externos',externalNote:'Las aprobaciones externas siguen en el terminal.',previewHooks:'Ver cambios de hooks de Claude Code',installHooks:'Instalar con respaldo',title:'Actividad',approval:'Necesita tu permiso',thinking:'Pensando',working:'Trabajando',finished:'Terminado',cancelled:'Cancelado',error:'Requiere atención',idle:'Listo',integrations:'Integraciones',repository:'Repositorio',username:'Usuario para revisiones',project:'Proyecto',team:'Equipo opcional',keepCredential:'Conservar credencial actual',pause:'Pausar consultas',failed:'No se pudo guardar.',saving:'Guardando…',save:'Guardar',empty:'No hay actividad pendiente.',global:'Sin proyecto',open:'Abrir',allow:'Permitir',deny:'Rechazar',cancel:'Cancelar',autoHide:'Ocultar automáticamente',keepOpen:'Mantener visible',attached:'Archivo adjunto',attaching:'Preparando archivo…'},
+  en:{paymentRequired:'The provider requires a payment method on file to enable requests, including free models.',subscriptionRequired:'This provider requires an active subscription to use the model.',clientRestricted:'The provider restricts this free model to its own application. Choose another provider or model.',attachmentFailed:'A preview could not be prepared. Check the file before sending.',question:'Waiting for your reply',externalAgents:'External agents',externalNote:'External approvals stay in the terminal.',previewHooks:'Preview Claude Code hook changes',installHooks:'Install with backup',title:'Activity',approval:'Needs your permission',thinking:'Thinking',working:'Working',finished:'Finished',cancelled:'Cancelled',error:'Needs attention',idle:'Ready',integrations:'Integrations',repository:'Repository',username:'User for reviews',project:'Project',team:'Optional team',keepCredential:'Keep current credential',pause:'Pause polling',failed:'Could not save.',saving:'Saving…',save:'Save',empty:'No pending activity.',global:'No project',open:'Open',allow:'Allow',deny:'Deny',cancel:'Cancel',autoHide:'Auto hide',keepOpen:'Keep visible',attached:'File attached',attaching:'Preparing file…'},
+};
 
 export const chatHistoryTranslations = {
   es: { conflict:'El historial cambió en otra ventana. Reabrí este chat antes de reintentar.', loading:'Cargando mensajes…', failed:'No se pudo cargar el historial.', retry:'Reintentar', latest:'Ir a los últimos mensajes', tooLarge:'El mensaje o los archivos superan el contexto disponible. Reducí su tamaño o usá referencias a archivos.' },
@@ -15,8 +19,8 @@ export const aiCredentialTranslations = {
 };
 
 export const floatingChatTranslations = {
-  es: { chat: 'Chat flotante', controls: 'Controles del chat', open: 'Abrir Codeclub', newChat: 'Nuevo chat', collapse: 'Contraer chat', drag: 'Arrastrar arriba o abajo de la pantalla' },
-  en: { chat: 'Floating chat', controls: 'Chat controls', open: 'Open Codeclub', newChat: 'New chat', collapse: 'Collapse chat', drag: 'Drag to the top or bottom of the screen' },
+  es: { chat: 'Chat flotante', controls: 'Controles del chat', open: 'Abrir Codeclub', newChat: 'Nuevo chat', collapse: 'Contraer chat', close: 'Cerrar widget', openAttention: 'Abrir pendiente', noAttention: 'Sin pendientes', drag: 'Arrastrar arriba o abajo de la pantalla' },
+  en: { chat: 'Floating chat', controls: 'Chat controls', open: 'Open Codeclub', newChat: 'New chat', collapse: 'Collapse chat', close: 'Close widget', openAttention: 'Open pending item', noAttention: 'No pending items', drag: 'Drag to the top or bottom of the screen' },
 };
 
 export function useAppLanguage(): AppLanguage {
@@ -147,6 +151,11 @@ export const topbarTranslations = {
     projectTab: 'Project tabs',
     panels: 'Panels',
   },
+} as const;
+
+export const chatActionTranslations = {
+  es: { copy: 'Copiar mensaje', copied: 'Mensaje copiado', more: 'Más opciones de la respuesta', regenerate: 'Regenerar respuesta', trace: 'Copiar trazabilidad completa' },
+  en: { copy: 'Copy message', copied: 'Message copied', more: 'More response options', regenerate: 'Regenerate response', trace: 'Copy full chat trace' },
 } as const;
 
 export const sidebarTranslations = {

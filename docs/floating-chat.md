@@ -3,10 +3,30 @@
 La X oculta la ventana principal y muestra una ventana Electron transparente,
 sin marco, siempre visible por encima de otras ventanas y fuera de la barra de
 tareas. Comparte origen, preload y ChatInterface con la ventana principal.
-Su conversación es global; no hereda silenciosamente el proyecto activo.
+Al abrirse retoma el chat seleccionado en el ADE, con su proyecto explícito.
+La sesión comparte estado y controles entre ventanas.
+
+## Superficie de respuesta
+
+El widget muestra únicamente la última respuesta del agente, su actividad y
+las preguntas o permisos pendientes. Los mensajes del usuario y las respuestas
+anteriores siguen en el historial y en el contexto de la IA, pero no se dibujan
+en esta superficie. El ADE conserva la conversación completa.
+
+El widget no tiene botones de adjuntar ni selector de modelo. Usa el proveedor
+y modelo elegidos en el ADE; sigue admitiendo archivos arrastrados al input.
+Los iconos de navegación usan el mismo catálogo Lucide y tono que la aplicación.
+La campana reemplaza el botón de chat: abre directamente la sesión pendiente,
+priorizando permisos y preguntas, luego errores o ejecuciones interrumpidas.
+Si no hay pendientes permanece desactivada. Las sesiones externas abren su enlace
+o el ADE. No hay una etiqueta de estado sobre el contenido del widget.
+En el estado compacto se ocultan la campana, la X y los demás botones;
+solo quedan el asa de arrastre y el input. Los controles reaparecen al expandir.
+La línea vertical usa un margen compacto de 14 px; ocultarla elimina ese margen.
+Al pulsar el input se expande incluso si ese input conservaba el foco al ocultarse.
 
 El widget mide 460 px de ancho. El input expande la ventana a 300 px; Escape o
-el botón de contraer vuelven a 84 px, incluyendo el marco negro y el asa de
+el botón de contraer vuelven a 92 px, incluyendo el marco negro y el asa de
 arrastre siempre visible. El input tiene 40 px de alto en una línea (38 px
 interiores más borde), con 6 px de padding vertical. El orbe de 24 px está
 dentro del input negro #161616,
@@ -18,7 +38,8 @@ del botón de minimizar.
 El menú de bandeja incluye Widget como interruptor sin check, alineado con las
 opciones Abrir y Salir.
 Activarlo oculta la ventana principal; desactivarlo oculta el widget. Abrir
-Codeclub desactiva Widget. La X vuelve a activarlo automáticamente.
+Codeclub desactiva Widget. La X de la ventana principal vuelve a activarlo;
+la X del widget lo oculta y permite reabrirlo desde la bandeja.
 
 Se arrastra desde el orbe o el asa superior. Electron limita los bounds al área
 de trabajo del monitor, ancla al borde superior o inferior según el centro de
@@ -43,8 +64,8 @@ radio. Esa caída suave produce el aspecto difuminado de la captura.
 
 `#2D5FD6` es el mismo azul que recibe `FluidOrb` en `FloatingChat.tsx`.
 El sufijo hexadecimal `33` aplica un 20% de opacidad al halo, conservando
-el fondo negro y la legibilidad del chat. El indicador del modelo usa ese
-mismo azul y una sombra `0 0 8px #2d5fd640` (25% de opacidad).
+el fondo negro y la legibilidad del chat. El selector de modelo ya no se muestra
+en el widget.
 
 El borde `#202020`, el radio de 22 px y `overflow: hidden` recortan el halo
 dentro del panel. La sombra exterior `0 4px 12px #0006` pertenece al marco
@@ -91,3 +112,10 @@ selector de modelo; contraer; arrastrar desde el orbe a ambos bordes; reabrir
 desde Inicio y la bandeja; comprobar conversación global y borrador; alternar
 idioma; verificar proyecto principal y terminal sin cambios. Para una respuesta
 real se requiere una credencial válida del proveedor seleccionado.
+## Apertura y cierre coordinados
+
+La X oculta el widget sin destruir su ventana ni interrumpir la ejecución del agente. El menú Widget de la bandeja permite volver a mostrarlo. Abrir Codeclub también oculta el widget.
+
+Motion anima opacidad y escala durante 160 ms al abrir y 140 ms al cerrar, sin rebote. Electron interpola la altura durante 160 ms al expandir o contraer, manteniendo el borde superior o inferior anclado. Con movimiento reducido, las transiciones son inmediatas.
+
+Electron emite `codeclub:floating-hide` con una revisión numérica. FloatingChat completa la salida y confirma por IPC `codeclub:floating-hidden(revision)`; Electron oculta la ventana solo si esa revisión sigue vigente. Un temporizador de 250 ms permite cerrar aunque el renderer no responda. Mostrar otra vez invalida el cierre anterior y restaura la interacción del mouse. `codeclub:floating-close` parte de la X y lo consume el proceso principal, validando el emisor. `codeclub:floating-show` inicia la entrada. Los listeners del renderer se instalan y eliminan en el mismo efecto; Electron limpia handlers y temporizadores al destruir el widget.

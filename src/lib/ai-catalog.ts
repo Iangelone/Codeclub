@@ -67,7 +67,7 @@ try {
   const gatewayResponse = await fetch('https://ai-gateway.vercel.sh/v1/models');
   if (!gatewayResponse.ok) throw new Error(`AI Gateway catalog: HTTP ${gatewayResponse.status}`);
   {
-    const gatewayData = await gatewayResponse.json() as { data?: Array<{ id?: string; owned_by?: string; name?: string; description?: string; type?: string; tags?: string[] }> };
+    const gatewayData = await gatewayResponse.json() as { data?: Array<{ id?: string; owned_by?: string; name?: string; description?: string; type?: string; tags?: string[]; context_window?: number; pricing?: { input?: string; output?: string } }> };
     for (const entry of gatewayData.data || []) {
       // The chat engine accepts language models; embedding/image/audio models
       // require other SDK APIs and must not become selectable chat models.
@@ -83,12 +83,16 @@ try {
         fetchedProviders.push({ id: providerId, label: providerName, shortLabel: providerName.charAt(0), doc: '', api: '', env: [], requiresApiKey: true, gatewayOnly: true });
       }
       const existingModel = fetchedModels.find((model) => model.gatewayId === gatewayId);
+      const gatewayCost = entry.pricing?.input != null && entry.pricing?.output != null
+        ? { input: Number(entry.pricing.input) * 1_000_000, output: Number(entry.pricing.output) * 1_000_000 }
+        : null;
       if (existingModel) {
         // Preserve the direct route and its metadata; the existing AI Gateway
         // provider can also select this model through its gateway ID.
         existingModel.gatewayAvailable = true;
+        existingModel.gatewayCost = gatewayCost;
       } else {
-        fetchedModels.push({ id: modelId, gatewayId, label: entry.name || modelId, providerId, providerName, description: entry.description || '', cost: null, gatewayOnly: true, gatewayAvailable: true, reasoning: entry.tags?.includes('reasoning') || false, toolCall: entry.tags?.includes('tool-use') || false, structuredOutput: entry.tags?.includes('structured-output') || false });
+        fetchedModels.push({ id: modelId, gatewayId, label: entry.name || modelId, providerId, providerName, description: entry.description || '', cost: gatewayCost, gatewayCost, contextWindow: Number(entry.context_window) || undefined, gatewayOnly: true, gatewayAvailable: true, reasoning: entry.tags?.includes('reasoning') || false, toolCall: entry.tags?.includes('tool-use') || false, structuredOutput: entry.tags?.includes('structured-output') || false });
       }
     }
   }

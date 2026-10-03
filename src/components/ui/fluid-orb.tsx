@@ -7,6 +7,7 @@ export type FluidOrbProps = React.ComponentProps<'div'> & {
   color?: string;
   shape?: 'circle' | 'rect';
   animateOnHover?: boolean;
+  active?: boolean;
 };
 
 // Adaptado de Rare UI Fluid Orb: https://www.rareui.com/components/fluidorb
@@ -107,6 +108,7 @@ export default function FluidOrb({
   color = '#2D5FD6',
   shape = 'circle',
   animateOnHover = false,
+  active = true,
   className,
   style,
   ...props
@@ -169,24 +171,33 @@ export default function FluidOrb({
     gl.uniform1f(uniformShape, shape === 'rect' ? 1 : 0);
 
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const shouldAnimate = !reducedMotion && (!animateOnHover || hovered);
+    let visible = !document.hidden;
+    let intersecting = true;
+    const shouldAnimate = () => active && visible && intersecting && !reducedMotion && (!animateOnHover || hovered);
     const startedAt = performance.now();
     let animationFrame = 0;
     const render = (now: number) => {
-      gl.uniform1f(time, shouldAnimate ? (now - startedAt) / 1000 : 0);
+      gl.uniform1f(time, shouldAnimate() ? (now - startedAt) / 1000 : 0);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
-      if (shouldAnimate) animationFrame = requestAnimationFrame(render);
+      if (shouldAnimate()) animationFrame = requestAnimationFrame(render);
     };
+    const resume = () => { cancelAnimationFrame(animationFrame); render(performance.now()); };
+    const onVisibility = () => { visible = !document.hidden; resume(); };
+    const observer = new IntersectionObserver(([entry]) => { intersecting = entry.isIntersecting; resume(); });
+    observer.observe(canvas);
+    document.addEventListener('visibilitychange', onVisibility);
     render(startedAt);
 
     return () => {
       cancelAnimationFrame(animationFrame);
+      observer.disconnect();
+      document.removeEventListener('visibilitychange', onVisibility);
       gl.deleteBuffer(buffer);
       gl.deleteProgram(program);
       gl.deleteShader(vertex);
       gl.deleteShader(fragment);
     };
-  }, [animateOnHover, color, hovered, shape, size]);
+  }, [active, animateOnHover, color, hovered, shape, size]);
 
   return <div
     data-slot="fluid-orb"

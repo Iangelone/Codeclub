@@ -1,17 +1,31 @@
 .floating-shell { height: calc(100vh - 16px); margin: 8px; padding: 6px; display: flex; flex-direction: column; border: 1px solid #202020; border-radius: 24px; background: #080808; color: #dedede; overflow: hidden; font-family: 'Segoe UI', sans-serif; box-shadow: 0 4px 12px #0006; }
-.floating-toolbar { display: flex; align-items: center; gap: 6px; height: 26px; flex-shrink: 0; padding: 0 6px; }
+.floating-toolbar { display: flex; align-items: center; gap: 4px; height: 36px; flex-shrink: 0; padding: 0 4px 8px; }
 .floating-toolbar nav { display: flex; align-items: center; gap: 3px; }
 .floating-toolbar button, .floating-chat-options button { display: flex; align-items: center; justify-content: center; gap: 7px; border: 0; background: transparent; color: #999; height: 26px; min-width: 26px; border-radius: 16px; cursor: pointer; }
-.floating-toolbar button:hover, .floating-chat-options button:hover, .floating-toolbar .is-active { background: #252525; color: #eee; }
+.floating-toolbar button:hover, .floating-chat-options button:hover, .floating-toolbar .is-active { background: transparent; color: #eee; }
+.floating-toolbar button { padding: 0; flex-shrink: 0; }
+.floating-toolbar button:disabled { color: #666; cursor: default; }
+.floating-toolbar svg { width: 14px; height: 14px; stroke-width: 1.7; }
 .floating-toolbar button:focus-visible, .floating-chat-options button:focus-visible { outline: 2px solid #8bc7ff; outline-offset: 2px; }
-.floating-drag-handle { flex: 1; height: 30px; display: grid; place-items: center; color: #444; cursor: grab; touch-action: none; }
-.floating-surface { flex: 1; position: relative; min-height: 0; border: 1px solid #202020; border-radius: 22px; overflow: hidden; background: var(--codeclub-chat-background); }
+.floating-drag-handle { flex: 1; height: 26px; display: grid; place-items: center; color: #444; cursor: grab; touch-action: none; }
+.floating-surface { flex: 1; display: flex; flex-direction: column; position: relative; min-height: 0; border: 1px solid #202020; border-radius: 22px; overflow: hidden; background: var(--codeclub-chat-background); }
 .floating-orb { cursor: grab; touch-action: none; }
-.floating-surface .chat-interface-container { max-width: none; padding: 0 10px 10px; }
-.floating-chat-options { display: flex; align-items: center; justify-content: space-between; height: 32px; flex-shrink: 0; }
-.floating-chat-options .floating-model { max-width: 260px; min-width: 80px; padding: 0 10px; background: #25282b; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.floating-model-dot { width: 7px; height: 7px; flex-shrink: 0; border-radius: 50%; background: #2d5fd6; box-shadow: 0 0 8px #2d5fd640; }
-.floating-surface .messages-area { padding: 4px 0 18px; }
+.floating-orb.needs-answer { outline: 1px solid #8bc7ff; outline-offset: 3px; border-radius: 50%; }
+.floating-peek { display: none; }
+.floating-shell.is-retracted { width: 80px; height: 36px; margin: 8px auto; padding: 4px 8px; border-radius: 20px; }
+.floating-shell.is-retracted .floating-toolbar, .floating-shell.is-retracted .floating-surface { display: none; }
+.floating-shell.is-retracted .floating-peek { display: flex; align-items: center; justify-content: space-between; width: 100%; border: 0; padding: 0; background: transparent; color: #777; cursor: pointer; }
+.floating-shell.is-dropping { border-color: #8bc7ff; }
+@media (prefers-reduced-motion: no-preference) { .floating-orb.is-working { animation: codeclub-orb-pulse 2s ease-in-out infinite; } }
+@keyframes codeclub-orb-pulse { 50% { filter: drop-shadow(0 0 4px #3d9bff80); } }
+.floating-surface .chat-interface-container { flex: 1; height: auto; min-height: 0; max-width: none; padding: 0 10px 10px; }
+.floating-surface .messages-area { padding: 12px 6px 14px; }
+.floating-surface .chat-turn { padding-left: 14px; }
+.floating-surface .chat-turn::before { top: 2px; bottom: 2px; left: 0; background: #2b2b2b; }
+.floating-surface .timeline-hidden .chat-turn { padding-left: 0; }
+.floating-surface .chat-markdown { font-size: 13px; line-height: 1.65; }
+.floating-surface .chat-markdown > :first-child { margin-top: 0; }
+.floating-surface .chat-markdown pre { max-width: 100%; overflow-x: auto; }
 .floating-surface .command-menu { max-height: 140px; overflow-y: auto; }
 .floating-surface .messages-area > .pointer-events-none { font-size: 15px; opacity: .6; }
 .floating-surface .chat-composer .composer-box { padding: 0; background: #161616; border-color: #2b2b2b; border-radius: 20px; }
@@ -20,13 +34,14 @@
 .floating-surface textarea { font-size: 13px; }
 .floating-surface .chat-composer .composer-box-inner > div.absolute { min-height: 26px; }
 .floating-surface .send-button { width: 26px; height: 26px; background: transparent; border-color: transparent; color: #aaa; }
+.floating-surface .send-button svg { width: 14px; height: 14px; }
 .floating-surface .chat-turn-time, .floating-surface .message-actions { opacity: .65; }
-.floating-shell.is-compact .floating-toolbar { height: 14px; }
-.floating-shell.is-compact .floating-toolbar nav, .floating-shell.is-compact .floating-toolbar > button { display: none; }
+.floating-shell.is-compact .floating-toolbar { position: relative; height: 22px; padding: 0 4px 8px; }
+.floating-shell.is-compact .floating-toolbar > button, .floating-shell.is-compact .floating-toolbar nav { display: none; }
 .floating-shell.is-compact .floating-drag-handle { height: 14px; }
 .floating-shell.is-compact .floating-drag-handle svg { width: 14px; height: 14px; }
 .floating-shell.is-compact .floating-surface { border: 0; background: #080808; border-radius: 28px; }
-.floating-shell.is-compact .floating-chat-options, .floating-shell.is-compact .messages-area { display: none; }
+.floating-shell.is-compact .messages-area { display: none; }
 .floating-shell.is-compact .command-menu, .floating-shell.is-compact [aria-label="Referencias y archivos"] { display: none !important; }
 .floating-shell.is-compact .chat-interface-container { justify-content: center; padding: 0; }
 @media (prefers-reduced-motion: no-preference) { .floating-surface { transition: background-color 180ms ease; } }

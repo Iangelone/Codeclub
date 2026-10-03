@@ -90,6 +90,33 @@ try {
   await page.getByText('QA message 9999',{exact:true}).waitFor();
   await page.waitForTimeout(150);
   const mounted=await page.locator('.chat-turn').count();assert.ok(mounted<30,`Too many mounted turns: ${mounted}`);
+  await page.locator('.messages-area[data-chat-transition="idle"]').waitFor();
+  const spacing=await page.evaluate(()=>{
+    const area=document.querySelector('.messages-area').getBoundingClientRect();
+    const composer=document.querySelector('.chat-composer').getBoundingClientRect();
+    return composer.top-area.bottom;
+  });
+  assert.ok(spacing>=16,'Chat has breathing room above the input');
+  assert.equal(await page.getByRole('button',{name:/Marcar respuesta/}).count(),0);
+  await page.evaluate(()=>Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{window.qaCopiedTrace=text;}}}));
+  await page.getByRole('button',{name:'Más opciones de la respuesta'}).last().click();
+  assert.deepEqual(await page.getByRole('menuitem').allTextContents(),['Regenerar respuesta','Copiar trazabilidad completa']);
+  assert.equal(await page.getByRole('menu').locator('div[aria-hidden="true"]').count(),0,'Menu has no empty divider');
+  await page.getByRole('menuitem',{name:'Copiar trazabilidad completa'}).click();
+  await page.waitForFunction(()=>Boolean(window.qaCopiedTrace));
+  const trace=await page.evaluate(()=>JSON.parse(window.qaCopiedTrace));
+  assert.equal(trace.messages.length,10000,'Trace includes unloaded history');
+  assert.equal(trace.messages[0].content,'QA message 0');
+  assert.equal(trace.messages.at(-1).content,'QA message 9999');
+  const turnSpacing=await page.locator('.chat-turn').evaluateAll(turns=>turns.map((turn,index)=>{
+    const time=turn.querySelector('.chat-turn-time').getBoundingClientRect();
+    const bubble=turn.querySelector('.chat-user-message').getBoundingClientRect();
+    const actions=turn.querySelector('.message-actions')?.getBoundingClientRect();
+    const nextTime=turns[index+1]?.querySelector('.chat-turn-time').getBoundingClientRect();
+    return {headerGap:bubble.top-time.bottom,nextGap:actions&&nextTime?nextTime.top-actions.bottom:null};
+  }));
+  assert.ok(turnSpacing.every(turn=>turn.headerGap>=7.5),'Every timestamp sits above its bubble');
+  assert.ok(turnSpacing.every(turn=>turn.nextGap===null||turn.nextGap>=23.5),'Actions are separated from the next timestamp');
   const bottom=await page.locator('.messages-area').evaluate(area=>area.scrollHeight-area.scrollTop-area.clientHeight);assert.ok(bottom<10,'Opened chat is pinned to its latest turn');
   await page.locator('.messages-area').evaluate(area=>{area.scrollTop=0;});
   await page.waitForTimeout(250);
@@ -103,6 +130,10 @@ try {
     };requestAnimationFrame(sample);
   });
   await open('slow');await open('fast');await page.getByText('FAST response',{exact:true}).waitFor();await page.waitForTimeout(300);
+  const firstHeaderGap=await page.locator('.chat-turn').first().evaluate(turn=>turn.querySelector('.chat-user-message').getBoundingClientRect().top-turn.querySelector('.chat-turn-time').getBoundingClientRect().bottom);
+  assert.ok(firstHeaderGap>=7.5,'First message follows the same timestamp spacing');
+  const bubbleColor=await page.locator('.chat-markdown-user').first().evaluate(element=>getComputedStyle(element).backgroundColor);
+  assert.equal(bubbleColor,'rgb(25, 25, 25)','User bubble uses the dark surface');
   const transitionFrames=await page.evaluate(()=>{window.qaRecording=false;return window.qaTransitionFrames;});
   assert.ok(transitionFrames.some(frame=>frame.phase==='exiting'),'Old chat finishes its exit');
   assert.ok(transitionFrames.some(frame=>frame.phase==='entering'),'New chat enters after loading');
@@ -137,7 +168,7 @@ try {
   await open('retry');await page.getByText('QA message 9999',{exact:true}).waitFor();
   await page.locator('.messages-area[data-chat-transition="idle"]').waitFor();
   await page.getByRole('button',{name:'Más opciones de la respuesta'}).last().click();
-  await page.getByRole('button',{name:'Regenerar respuesta'}).click();
+  await page.getByRole('menuitem',{name:'Regenerar respuesta'}).click();
   await page.getByText(/Respuesta QA\./).waitFor();
   for(let attempt=0;attempt<100;attempt++){
     if((await store.page('','retry')).messages.at(-1)?.content.includes('Respuesta QA.'))break;
@@ -146,10 +177,11 @@ try {
   assert.equal((await store.page('','retry')).total,10000,'Retry of first visible user preserves absolute position');
   assert.equal((await store.page('','retry',1,1)).messages[0].content,'QA message 0','Retry preserves unloaded prefix');
   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('codeclub:language-change',{detail:{language:'en'}})));
-  await page.getByRole('button',{name:'Más opciones de la respuesta'}).last().click();
-  await page.getByRole('button',{name:'Regenerate response'}).waitFor();
+  await page.getByRole('button',{name:'More response options'}).last().click();
+  await page.getByRole('menuitem',{name:'Regenerate response'}).waitFor();
+  await page.getByRole('menuitem',{name:'Copy full chat trace'}).waitFor();
   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('codeclub:language-change',{detail:{language:'es'}})));
-  await page.getByRole('button',{name:'Regenerar respuesta'}).waitFor();
+  await page.getByRole('menuitem',{name:'Regenerar respuesta'}).waitFor();
   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat')));
   await page.locator('.messages-area[data-chat-transition="idle"]').waitFor();
   assert.equal(await page.locator('.chat-turn').count(),0,'New chat clears the previous turn after its exit');
