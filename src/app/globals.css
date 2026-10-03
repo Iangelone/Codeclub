@@ -220,22 +220,35 @@ section[aria-label='Gestor de paneles'] {
 .right-panel-launch-card {
   border-color: var(--codeclub-border);
   background: var(--codeclub-surface);
-  color: #F5F5EF;
-  transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, color 150ms ease, transform 150ms ease;
+  color: #D4D4D4;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
 }
 
 .right-panel-launch-card:hover,
 .right-panel-launch-card:focus-visible {
-  border-color: var(--codeclub-accent-bright);
-  background: var(--codeclub-surface-raised);
-  color: #FFFFFF;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
-  transform: translateY(-1px);
+  border-color: #505050;
+  background: #232323;
+  color: #F5F5F5;
+}
+
+.right-panel-launch-card:focus-visible {
+  outline: 2px solid #777777;
+  outline-offset: 3px;
+}
+
+.right-panel-launch-card svg {
+  color: #A3A3A3;
+  transition: color 160ms ease;
 }
 
 .right-panel-launch-card:hover svg,
 .right-panel-launch-card:focus-visible svg {
-  color: var(--codeclub-accent-bright);
+  color: #F5F5F5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .right-panel-launch-card,
+  .right-panel-launch-card svg { transition: none; }
 }
 
 /* Superficies principales: un único lenguaje de fondos para toda la app. */

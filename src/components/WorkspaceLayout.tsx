@@ -2,7 +2,7 @@
 
 import { createElement, memo, useEffect, useRef, useState, type FormEvent } from 'react';
 import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, Bolt, Check, ChevronDown, Circle, CircleCheck, CirclePlus, Clock, CopyX, EllipsisVertical, ExternalLink, FileWarning, FolderOpen, FolderPen, FolderTree, GitBranch, GitCompare, Grid2X2, Heart, Home, Info, MoreHorizontal, MousePointerClick, PanelLeft, Pause, Pencil, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { GlobeCheck } from 'lucide-react';
 import { Terminal as XtermTerminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -1513,6 +1513,7 @@ function TerminalPanel({ projectPath, terminalId, visible = true }: { projectPat
 
 function RightPanelEmptyState({ onSelect }: { onSelect: (tab: RightPanelTab) => void }) {
   const language = useAppLanguage();
+  const reducedMotion = useReducedMotion();
   const text = language === 'en' ? { choose: 'Choose a panel', open: 'Open a tool to view it in this sidebar.' } : { choose: 'Elegí un panel', open: 'Abrí una herramienta para verla en esta sidebar.' };
   const panelLabels = rightSidebarTranslations[language];
   return <section className="flex min-h-0 flex-1 flex-col items-center justify-center px-5 text-center" aria-label={text.choose}>
@@ -1521,7 +1522,7 @@ function RightPanelEmptyState({ onSelect }: { onSelect: (tab: RightPanelTab) => 
       <p className="mt-3 mb-0 text-[13px] text-(--codeclub-text-strong)">{text.choose}</p>
       <p className="mt-1 mb-4 text-[11px] leading-5 text-(--codeclub-text-muted)">{text.open}</p>
       <div className="grid gap-1.5">
-        {rightPanelTabs.map(({ id, icon: Icon }) => <button key={id} type="button" onClick={() => onSelect(id)} className="right-panel-launch-card flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-[11px] transition-colors hover:brightness-105 focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)"><Icon size={15} strokeWidth={1.8} aria-hidden="true" /><span>{panelLabels[id]}</span></button>)}
+        {rightPanelTabs.map(({ id, icon: Icon }) => <motion.button key={id} type="button" onClick={() => onSelect(id)} initial={false} animate={{ transform: 'translateY(0px) scale(1)' }} whileHover={reducedMotion ? undefined : { transform: 'translateY(-1px) scale(1)' }} whileTap={reducedMotion ? undefined : { transform: 'translateY(0px) scale(0.99)' }} transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }} className="right-panel-launch-card flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-[11px]"><Icon size={15} strokeWidth={1.8} aria-hidden="true" /><span>{panelLabels[id]}</span></motion.button>)}
       </div>
     </div>
   </section>;

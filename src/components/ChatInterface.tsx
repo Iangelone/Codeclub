@@ -3123,14 +3123,17 @@ type FileTreeNode = { name: string; path: string; kind: 'directory' | 'file'; ch
 const materialIconManifest = generateManifest({});
 
 function MaterialFileIcon({ name, kind }: { name: string; kind: FileTreeNode['kind'] }) {
+  const [failedSource, setFailedSource] = useState<string | null>(null);
   const associations = kind === 'directory' ? materialIconManifest.folderNames : materialIconManifest.fileNames;
   const extension = name.includes('.') ? name.split('.').pop()?.toLowerCase() : undefined;
   const iconName = associations?.[name.toLowerCase()] ?? (extension ? materialIconManifest.fileExtensions?.[extension] : undefined) ?? (kind === 'directory' ? materialIconManifest.folder : materialIconManifest.file);
   const iconPath = iconName ? materialIconManifest.iconDefinitions?.[iconName]?.iconPath : undefined;
   const iconFile = iconPath?.split('/').pop();
+  // Relative to the exported app document, also when Electron uses file://.
+  const source = iconFile ? `./material-icons/${iconFile}` : null;
   if (kind === 'file' && (extension === 'json' || extension === 'jsonl')) return <Braces size={15} strokeWidth={1.5} className="shrink-0 text-[#f9a825]" />;
-  if (!iconFile) return kind === 'directory' ? <Folder size={14} className="text-[#a89b72]" /> : <FileCode2 size={14} className="text-[#777777]" />;
-  return <img src={`/material-icons/${iconFile}`} alt="" aria-hidden="true" className="h-[17px] w-[17px] shrink-0" />;
+  if (!source || failedSource === source) return kind === 'directory' ? <Folder size={17} aria-hidden="true" className="shrink-0 text-[#a89b72]" /> : <FileCode2 size={17} aria-hidden="true" className="shrink-0 text-[#777777]" />;
+  return <img src={source} alt="" aria-hidden="true" onError={() => setFailedSource(source)} className="h-[17px] w-[17px] shrink-0" />;
 }
 
 function buildFileTree(entries: ProjectFileEntry[]): FileTreeNode[] {
