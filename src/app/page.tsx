@@ -85,8 +85,6 @@ export default function HomePage() {
     };
   }, []);
   const toggleLeft = () => setLeftOpen((open) => { const next = !open; try { window.localStorage.setItem(LAYOUT_VISIBILITY_KEY, JSON.stringify({ ...JSON.parse(window.localStorage.getItem(LAYOUT_VISIBILITY_KEY) || '{}'), leftOpen: next })); } catch { /* La persistencia de preferencias es opcional. */ } return next; });
-  if (floating === null) return null;
-  if (floating) return <MotionConfig reducedMotion="user"><FloatingChat /></MotionConfig>;
   const toggleRight = () => setRightOpen((open) => { const next = !open; try { window.localStorage.setItem(LAYOUT_VISIBILITY_KEY, JSON.stringify({ ...JSON.parse(window.localStorage.getItem(LAYOUT_VISIBILITY_KEY) || '{}'), rightOpen: next })); } catch { /* La persistencia de preferencias es opcional. */ } return next; });
   const toggleTopbar = () => setTopbarOpen((open) => { const next = !open; try { window.localStorage.setItem(LAYOUT_VISIBILITY_KEY, JSON.stringify({ ...JSON.parse(window.localStorage.getItem(LAYOUT_VISIBILITY_KEY) || '{}'), topbarOpen: next })); } catch { /* La persistencia de preferencias es opcional. */ } return next; });
   const fullscreenAnimation = useMemo(() => fullscreenMotion === 'enter'
@@ -97,6 +95,8 @@ export default function HomePage() {
   const fullscreenTransition = useMemo(() => fullscreenMotion
     ? { duration: 0.3, ease: [0.22, 1, 0.36, 1] as const }
     : { duration: 0 }, [fullscreenMotion]);
+  if (floating === null) return null;
+  if (floating) return <MotionConfig reducedMotion="user"><FloatingChat /></MotionConfig>;
   return <MotionConfig reducedMotion="user"><motion.main animate={fullscreenAnimation} transition={fullscreenTransition} className="relative isolate grid h-screen max-h-screen grid-rows-[34px_auto_minmax(0,1fr)] min-w-[320px] min-h-0 overflow-hidden bg-transparent text-(--codeclub-text) font-sans" data-fullscreen={isFullscreen}>
       <Topbar leftOpen={leftOpen} rightOpen={rightOpen} topbarOpen={topbarOpen} onToggleLeft={toggleLeft} onToggleRight={toggleRight} onToggleTopbar={toggleTopbar} />
       <motion.div initial={false} animate={{ height: topbarOpen ? 44 : 0, opacity: topbarOpen ? 1 : 0 }} transition={{ type: 'spring', stiffness: 420, damping: 34 }} className="relative z-50 min-h-0 overflow-visible"><SubTopbar activeProject={activeProject} /></motion.div>
