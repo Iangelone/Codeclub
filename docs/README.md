@@ -11,6 +11,11 @@
 | [Persistence](persistencia.md) | Where are chats, tasks, and settings stored? |
 | [Right sidebar](sidebar-derecha.md) | What do its panels do? |
 | [Terminal and browser](terminal-y-navegador.md) | How do the interactive tools work? |
+| [Floating chat](floating-chat.md) | How does the desktop widget share chats and controls with the main window? |
+| [Chat history](revision-chat-historiales.md) | How are long conversations stored, paginated, and used as context? |
+| [AI catalog and routing](ai-catalog.md) | How are providers, models, and Gateway routes selected? |
+| [AI transport verification](verificacion-ia.md) | How are credentials, transport, and provider errors verified? |
+| [Windows computer control](computer-use.md) | How do native actions, UI Automation, and OCR work? |
 | [Accessibility](accesibilidad.md) | How do we keep the UI usable and observable? |
 | [Development](desarrollo.md) | How do we run, verify, and publish? |
 | [Synapse](synapse.md) | What is the vision for Devices and traceability? |
