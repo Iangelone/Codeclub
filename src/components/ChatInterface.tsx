@@ -20,7 +20,7 @@ import { copyText, safeListen, desktopFileUrl as convertFileSrc, nativeInvoke as
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { createGateway, jsonSchema, Output } from 'ai';
 import ReactMarkdown from 'react-markdown';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion, useAnimationControls, useReducedMotion } from 'motion/react';
 import { generateManifest } from 'material-icon-theme';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -570,6 +570,20 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   }, [input]);
   const messagesAreaRef = useRef<HTMLDivElement | null>(null);
   const pendingChatScrollRef = useRef<string | null>(null);
+  const chatAnimations = useAnimationControls();
+  const reducedMotion = useReducedMotion();
+  const [chatTransitionPhase, setChatTransitionPhase] = useState<'idle' | 'exiting' | 'loading' | 'entering'>('idle');
+  const beginChatTransition = async () => {
+    const sequence = ++chatLoadSequenceRef.current;
+    pendingChatScrollRef.current = null;
+    setChatTransitionPhase('exiting');
+    chatAnimations.stop();
+    await chatAnimations.start({ opacity: 0, transition: { duration: reducedMotion ? 0 : 0.09, ease: 'easeOut' } });
+    if (sequence !== chatLoadSequenceRef.current) return null;
+    setChatTransitionPhase('loading');
+    return sequence;
+  };
+  useEffect(() => () => { chatLoadSequenceRef.current++; chatAnimations.stop(); }, [chatAnimations]);
   const turnIndexes = useMemo(() => messages.flatMap((message,index) => {
     if(message.role!=='user')return [];
     const assistant=messages[index+1];
@@ -592,7 +606,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     const area = messagesAreaRef.current;
     if (!area) return;
     shouldAutoScrollMessagesRef.current = area.scrollHeight - area.scrollTop - area.clientHeight < 80;
-    if (pendingChatScrollRef.current) return;
+    if (pendingChatScrollRef.current || chatTransitionPhase !== 'idle') return;
     if (!isAgentBusy && !historyWindow.loading) {
       if(area.scrollTop<120 && historyWindow.range.current.start>0) void historyWindow.adjacent('older');
       else if(shouldAutoScrollMessagesRef.current) void historyWindow.adjacent('newer');
@@ -660,7 +674,8 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   useEffect(() => {
   const handleOpenChat = async (e: any) => {
       const chat = e.detail;
-      const loadSequence = ++chatLoadSequenceRef.current;
+      const loadSequence = await beginChatTransition();
+      if (loadSequence === null) return;
       pendingChatScrollRef.current = `${chat.projectPath || ''}:${chat.chatId}`;
       rememberRecentArtifact('chat', chat);
       setWorkspaceMode('chat');
@@ -708,10 +723,10 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   }, [eventPrefix]);
 
   useEffect(() => {
-    const handleOpenEmptyChat = () => {
+    const handleOpenEmptyChat = async () => {
+      if (await beginChatTransition() === null) return;
       pendingChatScrollRef.current = null;
       historyWindow.reset();
-      chatLoadSequenceRef.current += 1;
       setMenuOpen(false);
       setCredentialProvider(null);
       setWorkspaceMode('chat');
@@ -721,6 +736,9 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       setInput('');
       setAttachedFiles([]);
       setPendingApprovals([]);
+      setIsStreaming(false);
+      setActiveToolName('');
+      abortControllerRef.current = null;
       setAgentState('idle');
     };
     window.addEventListener('codeclub:open-empty-chat', handleOpenEmptyChat);
@@ -730,7 +748,21 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   useEffect(() => {
     const chat = activeChat;
     const target = pendingChatScrollRef.current;
-    if (!chat || target !== `${chat.projectPath || ''}:${chat.chatId}` || historyWindow.loading || !composerDocked || turnIndexes.length === 0) return;
+    if (chatTransitionPhase === 'exiting' || historyWindow.loading || !composerDocked) return;
+    const sequence = chatLoadSequenceRef.current;
+    const reveal = () => {
+      if (sequence !== chatLoadSequenceRef.current || chatTransitionPhase !== 'loading') return;
+      setChatTransitionPhase('entering');
+      void chatAnimations.start({ opacity: 1, transition: { duration: reducedMotion ? 0 : 0.14, ease: 'easeOut' } }).then(() => {
+        if (sequence === chatLoadSequenceRef.current) setChatTransitionPhase('idle');
+      });
+    };
+    if (!chat || turnIndexes.length === 0) {
+      pendingChatScrollRef.current = null;
+      reveal();
+      return;
+    }
+    if (target !== `${chat.projectPath || ''}:${chat.chatId}`) return;
     let settleFrame = 0;
     const scrollFrame = requestAnimationFrame(() => {
       turnVirtualizer.scrollToIndex(turnIndexes.length - 1, { align: 'end', behavior: 'auto' });
@@ -739,16 +771,17 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
         if (area) area.scrollTop = area.scrollHeight;
         shouldAutoScrollMessagesRef.current = true;
         pendingChatScrollRef.current = null;
+        reveal();
       });
     });
     return () => { cancelAnimationFrame(scrollFrame); if (settleFrame) cancelAnimationFrame(settleFrame); };
-  }, [activeChat?.chatId, activeChat?.projectPath, historyWindow.loading, messages.length, composerDocked, turnIndexes.length]);
+  }, [activeChat?.chatId, activeChat?.projectPath, historyWindow.loading, messages.length, composerDocked, turnIndexes.length, chatTransitionPhase]);
 
   useEffect(() => {
     const area = messagesAreaRef.current;
-    if (!area || !activeChat || !composerDocked || historyWindow.loading || isAgentBusy || historyWindow.range.current.start === 0) return;
+    if (!area || !activeChat || !composerDocked || historyWindow.loading || chatTransitionPhase !== 'idle' || moreMenuIndex !== null || isAgentBusy || historyWindow.range.current.start === 0) return;
     if (totalTurnHeight <= area.clientHeight + 1) void historyWindow.adjacent('older');
-  }, [activeChat?.chatId, activeChat?.projectPath, composerDocked, historyWindow.loading, messages.length, isAgentBusy, totalTurnHeight]);
+  }, [activeChat?.chatId, activeChat?.projectPath, composerDocked, historyWindow.loading, messages.length, isAgentBusy, totalTurnHeight, chatTransitionPhase, moreMenuIndex]);
 
   useEffect(() => {
     const handleManualChatRename = (event: Event) => {
@@ -1062,7 +1095,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   }, [activeCommandIndex, menuOpen, commandMenuItems.length]);
 
   useEffect(() => {
-    if (!composerDocked || !shouldAutoScrollMessagesRef.current) return;
+    if (!composerDocked || chatTransitionPhase !== 'idle' || pendingChatScrollRef.current || !shouldAutoScrollMessagesRef.current) return;
     turnVirtualizer.scrollToEnd({behavior:'auto'});
   }, [messages, isStreaming, pendingApprovals, composerDocked]);
 
@@ -2328,6 +2361,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (chatTransitionPhase === 'exiting' || chatTransitionPhase === 'loading') return;
     if ((!input.trim() && attachedFiles.length === 0 && browserReferences.length === 0 && artifactReferences.length === 0 && !computerContext) || isAgentBusy) return;
 
     if (/^\/terminal$/i.test(input.trim())) {
@@ -2686,7 +2720,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       {historyWindow.loading && <div role="status" className="text-center text-[11px] text-(--codeclub-text-muted)">{chatHistoryTranslations[language].loading}</div>}
       {historyWindow.error && <div role="alert" className="flex items-center justify-center gap-2 text-[11px] text-(--codeclub-text-muted)">{chatHistoryTranslations[language].failed}<button type="button" onClick={()=>{const chat=activeChatRef.current;if(chat)void historyWindow.open(chat);}} className="text-(--codeclub-accent-bright)">{chatHistoryTranslations[language].retry}</button></div>}
       {historyWindow.range.current.start+messages.length<historyWindow.range.current.total && <button type="button" title={chatHistoryTranslations[language].latest} aria-label={chatHistoryTranslations[language].latest} className="self-end rounded-full p-1 text-(--codeclub-text-muted) hover:bg-(--codeclub-hover)" onClick={()=>{const chat=activeChatRef.current;if(chat){shouldAutoScrollMessagesRef.current=true;void historyWindow.open(chat);}}}><ChevronDown size={16}/></button>}
-      <div ref={messagesAreaRef} onScroll={handleMessagesScroll} className={`messages-area relative min-h-0 min-w-0 flex-1 flex-col gap-1.5 overflow-y-auto overscroll-contain [overflow-anchor:none] bg-transparent [scrollbar-width:none] ${composerDocked ? 'flex' : 'hidden'}`} role="log" aria-label="Mensajes del chat" aria-live="polite" aria-relevant="additions text">
+      <motion.div ref={messagesAreaRef} initial={false} animate={chatAnimations} data-chat-transition={chatTransitionPhase} aria-busy={chatTransitionPhase !== 'idle' || historyWindow.loading} onScroll={handleMessagesScroll} className={`messages-area relative min-h-0 min-w-0 flex-1 flex-col gap-1.5 overflow-y-auto overscroll-contain [overflow-anchor:none] bg-transparent [scrollbar-width:none] ${composerDocked ? 'flex' : 'hidden'} ${chatTransitionPhase === 'idle' ? '' : 'pointer-events-none'}`} role="log" aria-label="Mensajes del chat" aria-live="polite" aria-relevant="additions text">
         <div aria-hidden="true" className="min-h-0 flex-1" />
         {showEmptyGreeting && <div aria-hidden={messages.length > 0} className={`pointer-events-none absolute inset-0 grid place-items-center whitespace-nowrap px-5 text-lg font-medium tracking-[-0.02em] text-(--codeclub-text-strong) transition-[opacity,transform] duration-300 ${messages.length === 0 ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0'}`}>{chatText.greeting}, {username}?</div>}
         <div className="relative w-full shrink-0" style={{height:turnVirtualizer.getTotalSize()}}>
@@ -2722,7 +2756,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               <div className={`chat-markdown min-w-0 max-w-full break-words [overflow-wrap:anywhere] text-sm leading-6 text-(--codeclub-text-strong) ${m.role === 'user' ? 'chat-markdown-user' : 'chat-markdown-assistant'} ${m.role === 'user' && getVisibleUserContent(m).trim() ? 'w-fit overflow-hidden rounded-[22px] bg-(--codeclub-user-bubble) px-4 py-2.5 leading-6' : 'w-full'}`}>
                 <motion.div
                   key={m.role === 'assistant' && m.content?.trim() ? 'assistant-content' : 'message-content'}
-                  initial={m.role === 'assistant' && m.content?.trim() ? { opacity: 0 } : false}
+                  initial={isLiveAssistant && m.content?.trim() ? { opacity: 0 } : false}
                   animate={{ opacity: 1 }}
                   transition={{ duration: 0.24, ease: 'easeOut' }}
                 >
@@ -2757,7 +2791,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         })}
         </div>
         <div ref={messagesEndRef} className="scroll-mb-16 shrink-0" aria-hidden="true" />
-      </div>
+      </motion.div>
 
       <div className="chat-composer composer-row flex w-full min-w-0 shrink-0 items-center gap-2 bg-transparent">
           <div className="composer-box min-h-10 min-w-0 flex-1 overflow-visible rounded-[22px] border border-(--codeclub-border-soft) bg-(--codeclub-surface-raised) p-0 shadow-none">

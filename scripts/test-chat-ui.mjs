@@ -18,7 +18,7 @@ const pageErrors=[];
 try {
   const rows=Array.from({length:10000},(_,index)=>({role:index%2?'assistant':'user',content:`QA message ${index}`,createdAt:Date.now()+index}));
   await store.saveTail('','long',0,rows);
-  await store.saveTail('','retry',0,rows);
+  await store.saveTail('','retry',0,rows.map((row,index)=>index===9998?{...row,content:'QA tall retry '+ 'paragraph '.repeat(400)}:row));
   await store.saveTail('','slow',0,[{role:'user',content:'SLOW user'},{role:'assistant',content:'SLOW response'}]);
   await store.saveTail('','fast',0,[{role:'user',content:'FAST user'},{role:'assistant',content:'FAST response'}]);
   const entry=path.join(directory,'entry.tsx'),bundle=path.join(directory,'app.js');
@@ -93,9 +93,23 @@ try {
   await page.locator('.messages-area').evaluate(area=>{area.scrollTop=0;});
   await page.waitForTimeout(250);
   const firstIndex=await page.locator('.chat-turn').first().getAttribute('aria-label');assert.ok(Number(firstIndex.match(/\d+/)[0])<9971,'Older turns load when scrolling up');
+  await page.evaluate(()=>{
+    window.qaTransitionFrames=[];window.qaRecording=true;
+    const sample=()=>{
+      const area=document.querySelector('.messages-area');
+      if(area)window.qaTransitionFrames.push({text:area.textContent,opacity:Number(getComputedStyle(area).opacity),phase:area.dataset.chatTransition,bottom:area.scrollHeight-area.scrollTop-area.clientHeight});
+      if(window.qaRecording)requestAnimationFrame(sample);
+    };requestAnimationFrame(sample);
+  });
   await open('slow');await open('fast');await page.getByText('FAST response',{exact:true}).waitFor();await page.waitForTimeout(300);
+  const transitionFrames=await page.evaluate(()=>{window.qaRecording=false;return window.qaTransitionFrames;});
+  assert.ok(transitionFrames.some(frame=>frame.phase==='exiting'),'Old chat finishes its exit');
+  assert.ok(transitionFrames.some(frame=>frame.phase==='entering'),'New chat enters after loading');
+  assert.ok(!transitionFrames.some(frame=>frame.text.includes('FAST response')&&frame.text.includes('QA message')),'Chats never overlap');
+  assert.ok(!transitionFrames.some(frame=>frame.text.includes('FAST response')&&frame.opacity>0.1&&frame.bottom>10),'New chat is positioned before appearing');
   assert.equal(await page.getByText('SLOW response',{exact:true}).count(),0,'Late history cannot replace the active chat');
   await open('long');await page.getByText('QA message 9999',{exact:true}).waitFor();
+  await page.locator('.messages-area[data-chat-transition="idle"]').waitFor();
   const input=page.locator('textarea').first();await input.fill('Hola QA');await input.press('Enter');
   try{await page.getByText(/Respuesta QA\./).waitFor({timeout:10000});}catch(error){console.error('After send:',(await page.locator('body').innerText()).slice(-1800));console.error('Stored tail:',(await store.page('','long',undefined,2)).messages);throw error;}
   await page.waitForFunction(()=>document.querySelector('textarea')?.value==='');
@@ -106,6 +120,7 @@ try {
   assert.ok(networkMessages.some(message=>typeof message.content==='string'&&message.content.includes('Hola QA')),'Latest prompt remains in context');
   assert.ok((await store.page('','long')).messages.at(-1).content.includes('Respuesta QA.'),'Final stream was persisted');
   await open('retry');await page.getByText('QA message 9999',{exact:true}).waitFor();
+  await page.locator('.messages-area[data-chat-transition="idle"]').waitFor();
   await page.getByRole('button',{name:'Más opciones de la respuesta'}).last().click();
   await page.getByRole('button',{name:'Regenerar respuesta'}).click();
   await page.getByText(/Respuesta QA\./).waitFor();
@@ -120,8 +135,11 @@ try {
   await page.getByRole('button',{name:'Regenerate response'}).waitFor();
   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('codeclub:language-change',{detail:{language:'es'}})));
   await page.getByRole('button',{name:'Regenerar respuesta'}).waitFor();
+  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat')));
+  await page.locator('.messages-area[data-chat-transition="idle"]').waitFor();
+  assert.equal(await page.locator('.chat-turn').count(),0,'New chat clears the previous turn after its exit');
   assert.deepEqual(pageErrors,[]);
-  console.log(JSON.stringify({passed:true,fixtureMessages:10000,mountedTurns:mounted,providerMessages:networkMessages.length,raceProtected:true,streamPersisted:true}));
+  console.log(JSON.stringify({passed:true,fixtureMessages:10000,mountedTurns:mounted,providerMessages:networkMessages.length,raceProtected:true,streamPersisted:true,sequentialTransitions:true}));
 }finally{
   await browser?.close();await new Promise(resolve=>server?server.close(resolve):resolve());store.close();
   const resolved=path.resolve(directory);if(path.dirname(resolved)!==path.resolve(tmpdir())||!path.basename(resolved).startsWith('codeclub-chat-ui-'))throw new Error('Unexpected UI test directory');

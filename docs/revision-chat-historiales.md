@@ -14,6 +14,8 @@ El preload expone `chatTurns` (proyecto, chat, cursor, cantidad, dirección), `c
 
 La vista conserva hasta 400 mensajes y monta solo turnos cercanos al viewport con TanStack Virtual. Carga hacia arriba y abajo, mantiene el anclaje y abre en el último turno. Las ventanas ordinarias respetan límites de turnos; un turno excepcional que exceda el límite se recorta en la vista. El archivo persistido conserva todos sus mensajes.
 
+Los cambios de chat encadenan salida (90 ms), carga y ajuste del scroll ocultos, y entrada (140 ms). El contador de solicitud descarta selecciones reemplazadas incluso durante la salida. La preferencia de movimiento reducido elimina las duraciones; el cleanup detiene animaciones pendientes. La paginación espera a que termine la transición y los mensajes históricos no repiten animaciones al montarse. La prueba de interfaz muestrea fotogramas para comprobar ausencia de superposición y que el scroll esté ubicado antes de revelar el siguiente chat; también cubre volver a un chat vacío.
+
 Cada generación consulta hasta 80 mensajes recientes. El presupuesto usa bytes UTF-8 como estimación conservadora, limita los extractos históricos y reserva espacio para instrucciones, herramientas y salida. No es un tokenizer exacto. Los extractos son incompletos y se identifican como contenido no confiable; `searchChats` recupera fragmentos antiguos. En pasos de herramientas se podan resultados viejos antes de superar el presupuesto. Un mensaje demasiado grande produce un error claro en lugar de truncarse silenciosamente.
 
 ## Verificación
