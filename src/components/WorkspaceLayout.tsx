@@ -1,7 +1,7 @@
 'use client';
 
 import { createElement, memo, useEffect, useRef, useState, type FormEvent } from 'react';
-import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, Bolt, Check, ChevronDown, Circle, CircleCheck, CirclePlus, Clock, CopyX, EllipsisVertical, ExternalLink, FileWarning, FolderOpen, FolderPen, FolderTree, GitBranch, GitCompare, Grid2X2, Heart, Home, Info, MoreHorizontal, MousePointerClick, PanelLeft, Pause, Pencil, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
+import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, Bolt, Check, ChevronDown, Circle, CircleCheck, CirclePlus, Clock, CopyX, EllipsisVertical, ExternalLink, FileWarning, FolderOpen, FolderPen, FolderTree, GitBranch, GitCompare, Grid2X2, Heart, Home, Hourglass, Info, MessageSquare, MoreHorizontal, MousePointerClick, PanelLeft, Pause, Pencil, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { GlobeCheck } from 'lucide-react';
 import { Terminal as XtermTerminal } from '@xterm/xterm';
@@ -15,7 +15,8 @@ import { nativeInvoke } from '../lib/runtime';
 import { getProjectSetting, getSetting, setProjectSetting, setSetting } from '../lib/persistence';
 import { models, providers } from '../lib/ai-catalog';
 import { credentialKeyFor, modelMatchesProvider } from '../lib/ai-routing';
-import { rightSidebarTranslations, sidebarTranslations, useAppLanguage } from '../lib/i18n';
+import { activityTranslations, rightSidebarTranslations, sidebarTranslations, useAppLanguage, type AppLanguage } from '../lib/i18n';
+import { sameSession, useSharedSessions, type SharedSession } from '../lib/shared-sessions';
 
 const MIN_WIDTH = 220;
 const MAX_WIDTH = 420;
@@ -104,6 +105,7 @@ function ResizeHandle({ side, value, maxValue, onStart, onKeyboardResize }: { si
 
 export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: { leftOpen: boolean; rightOpen: boolean; onToggleLeft: () => void }) {
   const language = useAppLanguage();
+  const sessions = useSharedSessions();
   const sidebarText = sidebarTranslations[language];
   const panelText = rightSidebarTranslations[language];
   const [activeProjectId, setActiveProjectId] = useState('home');
@@ -111,6 +113,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
   const [activeProjectPath, setActiveProjectPath] = useState<string | undefined>();
   const [editingProjectName, setEditingProjectName] = useState(false);
   const [projectNameDraft, setProjectNameDraft] = useState('Codeclub');
+  const projectNameEdit = useRef({ token: 0, submitted: true });
   const [chatsByProject, setChatsByProject] = useState<Record<string, RecentChat[]>>({});
   const [activeSection, setActiveSection] = useState<SidebarSection>('new-chat');
   const [activeChatId, setActiveChatId] = useState<string | undefined>();
@@ -269,6 +272,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
       const nextName = project.name ?? (project.id === 'home' ? 'Codeclub' : activeProjectName);
       setActiveProjectName(nextName);
       setProjectNameDraft(nextName);
+      projectNameEdit.current = { token: projectNameEdit.current.token + 1, submitted: true };
       setEditingProjectName(false);
       setChatsByProject((current) => current[projectId] ? current : { ...current, [projectId]: [] });
       window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
@@ -687,24 +691,61 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
     setRightContextMenu(null);
   };
 
+  const startProjectNameEdit = () => {
+    projectNameEdit.current = { token: projectNameEdit.current.token + 1, submitted: false };
+    setProjectNameDraft(activeProjectName);
+    setEditingProjectName(true);
+  };
+
+  const cancelProjectNameEdit = () => {
+    projectNameEdit.current = { token: projectNameEdit.current.token + 1, submitted: true };
+    setProjectNameDraft(activeProjectName);
+    setEditingProjectName(false);
+  };
+
   const commitProjectName = async () => {
+    if (projectNameEdit.current.submitted) return;
+    projectNameEdit.current.submitted = true;
+    const token = projectNameEdit.current.token;
     const nextName = projectNameDraft.trim();
-    if (!nextName || activeProjectId === 'home') { setProjectNameDraft(activeProjectName); setEditingProjectName(false); return; }
+    setEditingProjectName(false);
+    if (!nextName || nextName === activeProjectName || activeProjectId === 'home') {
+      setProjectNameDraft(activeProjectName);
+      return;
+    }
     try {
       const project = await (window as any).codeclub?.renameProject?.(activeProjectId, nextName);
-      const savedName = project?.name ?? nextName;
-      setActiveProjectName(savedName);
-      setProjectNameDraft(savedName);
-      window.dispatchEvent(new CustomEvent('codeclub:project-renamed', { detail: { id: activeProjectId, name: savedName, path: project?.path } }));
-    } catch (error) { console.error('No se pudo renombrar el proyecto', error); setProjectNameDraft(activeProjectName); }
-    setEditingProjectName(false);
+      if (!project) throw new Error('Project rename returned no project');
+      window.dispatchEvent(new CustomEvent('codeclub:project-renamed', { detail: { id: activeProjectId, name: project.name, path: project.path } }));
+      if (projectNameEdit.current.token !== token) return;
+      setActiveProjectName(project.name);
+      setProjectNameDraft(project.name);
+      setActiveProjectPath(project.path ?? activeProjectPath);
+      const detail = { projectPath: project.path ?? activeProjectPath, projectName: project.name };
+      window.dispatchEvent(new CustomEvent('codeclub:project-selection-changed', { detail: { selected: true, ...detail } }));
+      window.dispatchEvent(new CustomEvent('codeclub:active-project', { detail }));
+      window.localStorage.setItem('codeclub:active-project', JSON.stringify({ id: activeProjectId, name: project.name, path: project.path ?? activeProjectPath }));
+    } catch (error) {
+      console.error('No se pudo renombrar el proyecto', error);
+      if (projectNameEdit.current.token === token) setProjectNameDraft(activeProjectName);
+    }
   };
 
   return <section className="bg-[#080808] grid h-full min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] overflow-hidden" aria-label="Espacio de trabajo">
     <div className="flex h-full min-h-0 min-w-0 overflow-hidden">
       <motion.aside id="codeclub-left-sidebar" animate={{ width: leftOpen ? leftWidth : 0, opacity: leftOpen ? 1 : 0 }} transition={resizing ? { type: 'spring', stiffness: 900, damping: 58, mass: 0.22 } : { type: 'spring', stiffness: 340, damping: 30 }} className="codeclub-widget-chrome flex h-full min-h-0 shrink-0 flex-col overflow-hidden" aria-label="Sidebar izquierda" aria-hidden={!leftOpen}>
         <div className="flex min-h-0 flex-1 flex-col px-2.5 py-2.5 text-(--codeclub-text)">
-          <div className="flex items-center gap-1 px-1.5">{editingProjectName ? <input autoFocus value={projectNameDraft} onChange={(event) => setProjectNameDraft(event.target.value)} onBlur={() => void commitProjectName()} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void commitProjectName(); } if (event.key === 'Escape') { setProjectNameDraft(activeProjectName); setEditingProjectName(false); } }} className="min-w-0 flex-1 rounded-md border border-(--codeclub-border-soft) bg-(--codeclub-surface-raised) px-1.5 py-0.5 text-[15px] font-semibold tracking-tight text-(--codeclub-text-strong) outline-none" aria-label="Nombre del proyecto" /> : <span className="min-w-0 truncate text-[15px] font-semibold tracking-tight text-(--codeclub-text-strong)">{activeProjectName}</span>}{activeProjectId !== 'home' && !editingProjectName && <button type="button" onClick={() => setEditingProjectName(true)} className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-(--codeclub-text-muted) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label="Cambiar nombre del proyecto" title="Cambiar nombre"><Pencil size={13} aria-hidden="true" /></button>}<button type="button" onClick={onToggleLeft} className={`ml-auto grid h-7 w-7 shrink-0 place-items-center rounded-lg border transition-colors focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${leftOpen ? 'border-(--codeclub-border-soft) bg-(--codeclub-acrylic-active) text-(--codeclub-text-strong)' : 'border-transparent bg-transparent text-(--codeclub-text-muted) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)'}`} aria-label={leftOpen ? (language === 'en' ? 'Hide left sidebar' : 'Ocultar sidebar izquierda') : (language === 'en' ? 'Show left sidebar' : 'Mostrar sidebar izquierda')} aria-pressed={leftOpen} title={leftOpen ? (language === 'en' ? 'Hide left sidebar' : 'Ocultar sidebar izquierda') : (language === 'en' ? 'Show left sidebar' : 'Mostrar sidebar izquierda')}><PanelLeft size={15} aria-hidden="true" /></button></div>
+          <div className="flex h-8 min-w-0 items-center gap-2 px-1.5">
+            {editingProjectName ? <input autoFocus value={projectNameDraft} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setProjectNameDraft(event.target.value)} onBlur={() => void commitProjectName()} onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing) return;
+              if (event.key === 'Enter') { event.preventDefault(); void commitProjectName(); }
+              if (event.key === 'Escape') { event.preventDefault(); cancelProjectNameEdit(); }
+            }} className="h-7 min-w-0 flex-1 rounded-md border border-(--codeclub-border-soft) bg-(--codeclub-surface-raised) px-1.5 text-[15px] font-semibold tracking-tight text-(--codeclub-text-strong) outline-none focus:border-(--codeclub-text-muted)" aria-label={sidebarText.projectName} /> : <span className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-tight text-(--codeclub-text-strong)" title={activeProjectName}>{activeProjectName}</span>}
+            <div className="flex shrink-0 items-center gap-1">
+              {activeProjectId !== 'home' && <button type="button" onMouseDown={(event) => { if (editingProjectName) event.preventDefault(); }} onClick={editingProjectName ? () => void commitProjectName() : startProjectNameEdit} className="grid h-7 w-7 place-items-center rounded-md text-(--codeclub-text-muted) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-text-muted)" aria-label={editingProjectName ? sidebarText.saveProjectName : sidebarText.renameProject} title={editingProjectName ? sidebarText.saveProjectName : sidebarText.renameProject}>{editingProjectName ? <Check size={13} aria-hidden="true" /> : <Pencil size={13} aria-hidden="true" />}</button>}
+              <button type="button" onClick={onToggleLeft} className="grid h-7 w-7 place-items-center rounded-md text-(--codeclub-text-muted) transition-colors hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-text-muted)" aria-label={language === 'en' ? 'Hide left sidebar' : 'Ocultar sidebar izquierda'} title={language === 'en' ? 'Hide left sidebar' : 'Ocultar sidebar izquierda'}><PanelLeft size={15} aria-hidden="true" /></button>
+            </div>
+          </div>
           <nav className="mt-4 space-y-0.5" aria-label="Navegación principal">
             <SidebarItem active={activeSection === 'new-chat' && !activeChatId} icon={<CirclePlus />} label={sidebarText.newChat} onClick={() => selectSidebarSection('new-chat')} />
             <SidebarItem active={activeSection === 'scheduled'} icon={<Clock />} label={sidebarText.tasks} onClick={() => selectSidebarSection('scheduled')} />
@@ -712,7 +753,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
             <SidebarItem active={activeSection === 'projects'} icon={<Bolt />} label={sidebarText.devices} disabled onClick={() => selectSidebarSection('projects')} />
           </nav>
           <div className="mt-5 min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {recentChats.length > 0 && <div className="pb-3"><p className="px-1.5 text-[13px] font-semibold text-(--codeclub-text-muted)">{sidebarText.recent}</p><div className="mt-2 space-y-1">{recentChats.slice().reverse().map((chat) => <button key={chat.id} type="button" onContextMenu={(event) => { event.preventDefault(); setChatContextMenu({ chat, x: event.clientX, y: event.clientY }); }} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: { chatId: chat.id, name: chat.title, customName: chat.customName, projectId: activeProjectId, projectPath: chat.projectPath ?? activeProjectPath, projectName: chat.projectName ?? activeProjectName } }))} className={`flex w-full min-w-0 items-center justify-between rounded-lg px-2.5 py-2 text-left text-[13px] text-(--codeclub-text-strong) ${activeChatId === chat.id ? 'bg-(--codeclub-acrylic-active)' : 'bg-transparent hover:bg-(--codeclub-hover)'}`}><span className="min-w-0 truncate">{chat.title}</span></button>)}</div></div>}
+            {recentChats.length > 0 && <div className="pb-3"><p className="px-1.5 text-[13px] font-semibold text-(--codeclub-text-muted)">{sidebarText.recent}</p><div className="mt-2 space-y-1">{recentChats.slice().reverse().map((chat) => <button key={chat.id} type="button" onContextMenu={(event) => { event.preventDefault(); setChatContextMenu({ chat, x: event.clientX, y: event.clientY }); }} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: { chatId: chat.id, name: chat.title, customName: chat.customName, projectId: activeProjectId, projectPath: chat.projectPath ?? activeProjectPath, projectName: chat.projectName ?? activeProjectName } }))} className={`flex w-full min-w-0 items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] text-(--codeclub-text-strong) ${activeChatId === chat.id ? 'bg-(--codeclub-acrylic-active)' : 'bg-transparent hover:bg-(--codeclub-hover)'}`}><span className="min-w-0 flex-1 truncate">{chat.title}</span><ChatSessionStatus session={sessions.find(session=>!session.external && sameSession({chatId:chat.id,projectPath:chat.projectPath ?? activeProjectPath ?? ''},session))} language={language} /></button>)}</div></div>}
           </div>
           <div className="mt-auto border-t border-(--codeclub-border-soft) px-1.5 pt-3"><button type="button" onClick={() => void nativeInvoke('codeclub_open_external', { url: 'https://ko-fi.com/iangeldev' })} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12px] text-(--codeclub-text-muted) transition-colors hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={sidebarText.support} title={language === 'en' ? 'Make a donation' : 'Hacer una donación'}><Heart size={15} strokeWidth={1.8} /><span>{sidebarText.support}</span></button></div>
         </div>
@@ -1509,6 +1550,18 @@ function TerminalPanel({ projectPath, terminalId, visible = true }: { projectPat
   }, [projectPath, terminalId]);
 
   return <div ref={containerRef} id="codeclub-terminal-panel" className="h-full min-h-0 w-full bg-(--paper) p-0" onClick={() => terminalRef.current?.focus()} aria-label="Terminal PowerShell" />;
+}
+
+function ChatSessionStatus({ session, language }: { session?: SharedSession; language: AppLanguage }) {
+  if (!session) return null;
+  const text = activityTranslations[language];
+  const pending = session.approvals.length > 0 || session.state === 'question';
+  const failed = session.state === 'error' || session.state === 'interrupted';
+  const state = pending ? 'attention' : failed ? 'error' : session.busy ? 'working' : session.state === 'finished' ? 'finished' : null;
+  if (!state) return null;
+  const Icon = state === 'attention' ? MessageSquare : state === 'error' ? X : state === 'working' ? Hourglass : Check;
+  const label = state === 'attention' ? (session.approvals.length ? text.approval : text.question) : state === 'error' ? text.error : state === 'working' ? text.working : text.finished;
+  return <span role="img" aria-label={label} title={label} data-chat-state={state} className={`inline-flex shrink-0 items-center ${state === 'attention' || state === 'error' ? 'text-(--codeclub-text-strong)' : 'text-(--codeclub-text-muted)'}`}><Icon size={13} strokeWidth={1.7} aria-hidden="true" /></span>;
 }
 
 function RightPanelEmptyState({ onSelect }: { onSelect: (tab: RightPanelTab) => void }) {
