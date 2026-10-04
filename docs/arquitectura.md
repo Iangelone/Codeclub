@@ -5,7 +5,7 @@
 
 ## Layers
 
-The renderer uses Next.js, React, and Tailwind. It owns the interface and asks the AI SDK for agent work. Electron and Node.js own IPC, the filesystem, processes, WebView, and PTYs.
+The renderer uses Next.js, React, and Tailwind. Its shared engine uses LangGraph for step orchestration, LangChain for local tool validation/execution, and AI SDK for model transport and streaming. Electron and Node.js own IPC, the filesystem, processes, WebView, and PTYs. See the [agent stack summary](agent-stack.md) for active integrations, verification and limits; graph checkpoints are not configured.
 
 | File | Responsibility |
 | --- | --- |
@@ -27,3 +27,18 @@ React does not import fs, child_process, or native APIs. Operations go through n
 ## Extensibility
 
 The agent discovers tools, skills, and MCP servers from the available catalog instead of receiving a fixed list in every prompt. Tool descriptions explain when an integration is useful; the model decides the flow.
+
+## Right sidebar
+
+The right sidebar is the IDE's tool shelf. It can open, close, and resize without squeezing the chat out of the workspace.
+
+| Tab | What it does |
+| --- | --- |
+| Files | Browse, search, open, and preview project files. |
+| Review | Show workspace and Git changes. |
+| Browser | Open pages inside Electron and reference them. |
+| Terminals | Open interactive terminals that persist during the session. |
+
+The main panel keeps a minimum width. Sidebar width is stored locally. Browser and Terminals can have multiple tabs; other tabs are reused. Panels should have clear empty states and accessible labels.
+
+Plans and TODOs are managed by the AI tools and remain project-scoped. They have no dedicated sidebar panel, and creating or updating them does not open a sidebar tab.

@@ -1,0 +1,61 @@
+import assert from 'node:assert/strict';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { TaskScheduler, nextTaskRun } from '../electron-dist/task-scheduler.js';
+const directory = await mkdtemp(path.join(tmpdir(), 'codeclub-scheduler-'));
+const base = { id: 'daily', name: 'Daily', prompt: 'Check files', provider: 'qa', model: 'qa-model', interval: 'Diario', every: '30 min', time: '08:00', timeZone: 'America/Argentina/Buenos_Aires', weekday: 1, status: 'active', notifications: 'Sin notificaciones' };
+const flush = () => new Promise(resolve => setImmediate(resolve));
+try {
+  assert.equal(nextTaskRun(base, Date.parse('2026-10-04T10:59:59Z')), '2026-10-04T11:00:00.000Z');
+  assert.equal(nextTaskRun({ ...base, interval: 'Días hábiles' }, Date.parse('2026-10-02T11:00:00Z')), '2026-10-05T11:00:00.000Z');
+  assert.equal(nextTaskRun({ ...base, interval: 'Semanal', weekday: 0 }, Date.parse('2026-10-04T11:00:00Z')), '2026-10-11T11:00:00.000Z');
+  assert.equal(nextTaskRun({ ...base, interval: 'Personalizado', every: '15 min' }, 0), '1970-01-01T00:15:00.000Z');
+  assert.equal(nextTaskRun({ ...base, timeZone: 'America/New_York', time: '02:30' }, Date.parse('2026-03-08T00:00:00Z')), '2026-03-09T06:30:00.000Z');
+  assert.equal(nextTaskRun({ ...base, timeZone: 'America/New_York', time: '01:30' }, Date.parse('2026-11-01T05:30:00Z')), '2026-11-02T06:30:00.000Z');
+  let now = Date.parse('2026-10-04T10:00:00Z');
+  const calls = [], releases = [];
+  const file = path.join(directory, 'tasks.json');
+  const scheduler = new TaskScheduler(file, (task, run) => new Promise((resolve, reject) => { calls.push({ task, run }); releases.push({ resolve, reject }); }), () => {}, () => {}, () => now);
+  scheduler.save('', { ...base, apiKey: 'fixture-secret-must-not-persist' });
+  scheduler.save('C:\\project', { ...base, name: 'Project' });
+  assert.equal(scheduler.list('').length, 1);
+  assert.equal(scheduler.list('c:\\PROJECT')[0].name, 'Project');
+  assert.throws(() => scheduler.save('', { ...base, time: '25:00' }));
+  assert.throws(() => scheduler.save('', { ...base, timeZone: 'Invalid/Zone' }));
+  assert.throws(() => scheduler.save('', { ...base, prompt: ' ' }));
+  assert.equal((await readFile(file, 'utf8')).includes('fixture-secret'), false);
+  now = Date.parse('2026-10-04T11:00:00Z'); scheduler.tick(); scheduler.tick();
+  assert.equal(calls.length, 1); // serialized across scopes
+  assert.equal(scheduler.list('C:\\project')[0].runs[0].status, 'queued');
+  assert.throws(() => scheduler.run('', 'daily'), /TASK_RUNNING/);
+  assert.throws(() => scheduler.remove('', 'daily'), /TASK_RUNNING/);
+  scheduler.save('', { ...base, status: 'paused' }); // edit during a run keeps its completion
+  releases[0].resolve(); await flush();
+  assert.equal(scheduler.list('')[0].runs[0].status, 'completed');
+  assert.equal(calls.length, 2);
+  releases[1].reject(new Error('TASK_CREDENTIAL_MISSING')); await flush();
+  assert.equal(scheduler.list('C:\\project')[0].runs[0].error, 'TASK_CREDENTIAL_MISSING');
+  now += 10 * 86400000; scheduler.tick();
+  assert.equal(calls.length, 3); // one missed run, no flood
+  releases[2].resolve(); await flush();
+  scheduler.run('', 'daily'); // manual runs work for paused tasks
+  scheduler.run('C:\\project', 'daily');
+  assert.equal(scheduler.cancelQueued('C:\\project', 'daily'), true);
+  assert.equal(scheduler.list('C:\\project')[0].runs.at(-1).status, 'cancelled');
+  const restart = new TaskScheduler(file, async () => {}, () => {}, () => {}, () => now);
+  assert.equal(restart.list('')[0].runs.at(-1).status, 'interrupted');
+  assert.equal(restart.list('')[0].status, 'paused');
+  releases[3].reject(new Error('TASK_CANCELLED')); await flush(); scheduler.stop(); restart.stop();
+  assert.equal(scheduler.list('')[0].runs.at(-1).status, 'cancelled');
+  scheduler.remove('', 'daily'); assert.equal(scheduler.list('').length, 0);
+  scheduler.save('', { ...base, id: 'once', interval: 'Una vez', runAt: new Date(now + 60000).toISOString() });
+  assert.throws(() => scheduler.save('', { ...base, id: 'past', interval: 'Una vez', runAt: new Date(now - 60000).toISOString() }));
+  now += 60000; scheduler.start(); scheduler.tick();
+  assert.equal(calls.length, 5);
+  releases[4].resolve(); await flush();
+  scheduler.tick(); assert.equal(calls.length, 5);
+  assert.equal(scheduler.list('')[0].status, 'paused'); assert.equal(scheduler.list('')[0].nextRun, undefined);
+  scheduler.stop();
+  console.log('Scheduler: calendar, DST, scopes, validation, credential exclusion, serialization, deduplication, edits, catch-up, cancellation and restart passed.');
+} finally { await rm(directory, { recursive: true, force: true }); }

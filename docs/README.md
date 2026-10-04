@@ -5,20 +5,18 @@
 
 | Document | Answers |
 | --- | --- |
-| [About Codeclub](about.md) | What is the project trying to be? |
 | [Architecture](arquitectura.md) | How is the app put together? |
 | [Flows and events](flujos.md) | How do its parts communicate? |
 | [Persistence](persistencia.md) | Where are chats, tasks, and settings stored? |
-| [Right sidebar](sidebar-derecha.md) | What do its panels do? |
 | [Terminal and browser](terminal-y-navegador.md) | How do the interactive tools work? |
 | [Floating chat](floating-chat.md) | How does the desktop widget share chats and controls with the main window? |
 | [Chat history](revision-chat-historiales.md) | How are long conversations stored, paginated, and used as context? |
-| [AI catalog and routing](ai-catalog.md) | How are providers, models, and Gateway routes selected? |
-| [AI transport verification](verificacion-ia.md) | How are credentials, transport, and provider errors verified? |
+| [AI catalog and routing](ai-catalog.md) | How are providers, models, Gateway routes, credentials and transport errors handled? |
+| [Motor del agente: resumen y límites](agent-stack.md) | ¿Qué usamos de AI SDK, Agent Plugins y LangChain, qué está probado y qué falta mejorar? |
+| [Scheduled tasks](scheduled-tasks.md) | How do automatic runs, persistence, cancellation, and verification work? |
+| [Prueba real de desarrollo](development-verification.md) | ¿Cómo verificar programación, tests, terminal y navegador con un modelo gratuito? |
 | [Windows computer control](computer-use.md) | How do native actions, UI Automation, and OCR work? |
-| [Accessibility](accesibilidad.md) | How do we keep the UI usable and observable? |
-| [Development](desarrollo.md) | How do we run, verify, and publish? |
-| [Synapse](synapse.md) | What is the vision for Devices and traceability? |
+| [Development](desarrollo.md) | How do we run, verify, keep accessibility and publish? |
 
 ## Mental model
 

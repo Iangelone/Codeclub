@@ -2020,6 +2020,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         requestToolApproval: guardedRequestToolApproval,
         provider,
         modelId: selectedModelReference,
+        providerId: currentProvider.id,
       });
       const externalMcpTools: Record<string, any> = {};
       let loadedPlugins: Awaited<ReturnType<typeof loadAgentPlugins>> = [];
@@ -2126,6 +2127,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         const contextualMessages = buildChatContext(storedContext?.messages || newMessages,storedContext?.summary||'',currentModel.contextWindow);
         const executionMessages: any[] = retryInstruction ? [...contextualMessages, { role: 'user', content: `${retryInstruction}\n\nUse a different strategy or tool sequence; do not repeat the same failed call.` }] : contextualMessages;
         return runStream({
+          maxSteps: 128,
           model: provider(selectedModelReference),
           contextWindow:currentModel.contextWindow,
           system,
@@ -2210,7 +2212,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               const eventKey = queuedKeys.shift() || '';
               if (queuedKeys.length) executionCallQueues.set(queueKey, queuedKeys); else executionCallQueues.delete(queueKey);
               if (eventKey) {
-                assistantTools = assistantTools.map((event) => event.callId === eventKey ? { ...event, durationMs: toolExecutionMs } : event);
+                const output = toolOutput?.type === 'tool-result' ? toolResult : { ok: false, error: 'TOOL_EXECUTION_FAILED', errorType: toolOutput?.error?.name || 'Error' };
+                assistantTools = assistantTools.map((event) => event.callId === eventKey ? { ...event, output, durationMs: toolExecutionMs } : event);
                 const toolEvent = assistantTools.find((event) => event.callId === eventKey);
                 if (toolEvent) assistantTimeline = assistantTimeline.map((event) => event.id === toolEvent.id ? { ...event, status: toolStatus, output: toolOutput, durationMs: toolExecutionMs } : event);
               }
@@ -2258,22 +2261,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           },
         });
       };
-      const runAssistantWithRetry = async (instruction = '') => {
-        let lastError: unknown;
-        for (let attempt = 0; attempt < 5; attempt += 1) {
-          try {
-            if (attempt > 0) {
-              guardedSetAgentState('connecting');
-            }
-            return await runAssistant(instruction);
-          } catch (error) {
-            lastError = error;
-            if (abortController.signal.aborted) throw error;
-          }
-        }
-        throw lastError;
-      };
-      assistantContent = await runAssistantWithRetry();
+      assistantContent = await runAssistant();
       const structuredSummary = formatArtifactOutput(structuredArtifactOutput);
       if (structuredSummary) assistantContent = structuredSummary;
       if (!abortController.signal.aborted && !assistantContent?.trim()) {
@@ -2281,7 +2269,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         if (toolFallback) assistantContent = toolFallback;
         else {
           guardedSetAgentState('streaming');
-          assistantContent = await runAssistantWithRetry();
+          assistantContent = await runAssistant();
           const retryStructuredSummary = formatArtifactOutput(structuredArtifactOutput);
           if (retryStructuredSummary) assistantContent = retryStructuredSummary;
         }
@@ -2303,7 +2291,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         if ((signature && signature === lastContinuationSignature) || actions.includes('spawn') || !hasProgressAction) break;
         const evidence = swarmEvents.slice(-8).map((event) => ({ input: event.input, output: event.output })).filter((event) => event.output?.status !== 'running');
         lastContinuationSignature = signature;
-        assistantContent = await runAssistantWithRetry(`Continuá el swarm ${activeSwarmName || 'activo'} existente con los hijos ${JSON.stringify(activeChildNames)}. No uses spawn: comunicá, esperá y luego ejecutá merge o stop. Evidencias: ${JSON.stringify(evidence).slice(0, 3000)}`);
+        assistantContent = await runAssistant(`Continuá el swarm ${activeSwarmName || 'activo'} existente con los hijos ${JSON.stringify(activeChildNames)}. No uses spawn: comunicá, esperá y luego ejecutá merge o stop. Evidencias: ${JSON.stringify(evidence).slice(0, 3000)}`);
         const retryStructuredSummary = formatArtifactOutput(structuredArtifactOutput);
         if (retryStructuredSummary) assistantContent = retryStructuredSummary;
         const continuationActions = assistantTools.filter((event) => event.name === 'swarm').map((event) => event.input?.action).filter(Boolean);
@@ -2351,13 +2339,13 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       const updateErrorMessages = (prev: any[]) => {
         const updated = [...prev];
         const last = updated[updated.length - 1];
-        if (last?.role === 'assistant' && last.content === '') {
+        if (last?.role === 'assistant') {
           const userFacingError = wasCancelled
             ? (language === 'en' ? 'Generation cancelled.' : 'Generación cancelada.')
             : userFacingProviderError(error, language);
           updated[updated.length - 1] = {
             ...last,
-            content: userFacingError,
+            content: last.content || userFacingError,
             meta: {
               provider: currentProvider?.label || currentProvider?.id || 'Proveedor',
               model: currentModel?.label || currentModel?.id || 'Modelo',
@@ -2427,21 +2415,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     setComputerUseActive(false);
     setAgentState('idle');
   };
-
-  useEffect(() => {
-    const handleScheduledTask = (event: Event) => {
-      const detail = (event as CustomEvent<{ task?: { prompt?: string } }>).detail;
-      const prompt = detail?.task?.prompt?.trim();
-      if (!prompt || isAgentBusy) return;
-      activeChatRef.current = null;
-      setActiveChat(null);
-      setMessages([]);
-      historyWindow.reset();
-      void sendMessage(prompt, [], true);
-    };
-    window.addEventListener('codeclub:run-scheduled-task', handleScheduledTask);
-    return () => window.removeEventListener('codeclub:run-scheduled-task', handleScheduledTask);
-  }, [isAgentBusy, sendMessage]);
 
   useEffect(() => {
     const handleComputerEscape = (event: KeyboardEvent) => {

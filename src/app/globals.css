@@ -312,7 +312,7 @@ section[aria-label='Gestor de paneles'] {
 
 #codeclub-scheduled-panel,
 #codeclub-extensions-panel {
-  background: #1E1E1E !important;
+  background: var(--codeclub-center);
   color: #F5F5EF;
 }
 

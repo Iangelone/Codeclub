@@ -14,6 +14,7 @@ export interface ToolContext {
   requestToolApproval: (opts: { toolName: string; input: any; summary: string }) => Promise<boolean>;
   provider?: any;
   modelId?: string;
+  providerId?: string;
 }
 
 export interface EngineCallbacks {

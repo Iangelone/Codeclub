@@ -1,4 +1,6 @@
-import { pruneMessages, smoothStream, stepCountIs, ToolLoopAgent, type ModelMessage } from 'ai';
+import { asSchema, pruneMessages, smoothStream, stepCountIs, ToolLoopAgent, type ModelMessage } from 'ai';
+import { Annotation, END, START, StateGraph } from '@langchain/langgraph';
+import { tool as langchainTool } from 'langchain';
 import { contextBytes, messageContextCost } from '../chat-context';
 import type { EngineCallbacks } from './types';
 
@@ -12,101 +14,180 @@ type RunStreamArgs = {
   contextWindow?: number;
   callbacks: EngineCallbacks;
   signal?: AbortSignal;
+  providerOptions?: Record<string, any>;
+  maxSteps?: number;
 };
 
-async function runStreamInternal({ model, system, messages, tools, structuredOutput, maxOutputTokens, contextWindow, callbacks, signal }: RunStreamArgs): Promise<string> {
+async function runStreamInternal({ model, system, messages, tools, structuredOutput, maxOutputTokens, contextWindow, callbacks, signal, providerOptions, maxSteps }: RunStreamArgs): Promise<string> {
   let content = '';
   let reasoning = '';
   let streamError: unknown;
   const startedAt = Date.now();
-  const agent = new ToolLoopAgent({
-    model,
-    instructions: system,
-    tools,
-    // AI SDK 7.0.16 creates a rejected tracing completion in browsers on abort.
-    // Our usage/audit callbacks stay enabled; the optional SDK telemetry is off.
-    telemetry: { isEnabled: false },
-    // Mantiene el loop de tools dentro de AI SDK y limita ejecuciones encadenadas.
-    stopWhen: stepCountIs(8),
-    prepareStep: ({messages:stepMessages}) => {
-      const budget=Math.max(1024,Math.floor((contextWindow||32768)*0.75));
-      const overhead=contextBytes(system)+contextBytes(JSON.stringify(Object.entries(tools).map(([name,tool]:[string,any])=>({name,description:tool.description,schema:tool.inputSchema}))))+Math.min(maxOutputTokens||4096,Math.floor(budget/4));
-      const cost=(items:ModelMessage[])=>overhead+items.reduce((sum,message)=>sum+messageContextCost(message),0);
-      if(cost(stepMessages)<=budget)return;
-      const compacted=pruneMessages({messages:stepMessages,reasoning:'all',toolCalls:'before-last-3-messages',emptyMessages:'remove'});
-      if(cost(compacted)>budget)throw new Error('CHAT_MESSAGE_TOO_LARGE');
-      return {messages:compacted};
-    },
-    ...(maxOutputTokens ? { maxOutputTokens } : {}),
-    ...(structuredOutput ? { output: structuredOutput } : {}),
+  const steps: any[] = [];
+  const totalUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0, reasoningTokens: 0 };
+  let responseModel: string | undefined;
+  const limit = Math.max(1, Math.min(128, Math.floor(maxSteps ?? 8)));
+  const adaptedTools = await adaptLangChainTools(tools);
+  const State = Annotation.Root({
+    messages: Annotation<ModelMessage[]>(),
+    stepCount: Annotation<number>(),
+    continueRun: Annotation<boolean>(),
+    retries: Annotation<number>(),
   });
-  const result = await agent.stream({
-    messages,
-    abortSignal: signal,
-    experimental_transform: smoothStream(),
-    onEnd: async ({ steps, totalUsage }: any) => {
-      await callbacks.onEnd?.({ steps, totalUsage });
-    },
-    onStepEnd: async (info: any) => {
-      await callbacks.onStepEnd?.(info);
-    },
-    onToolExecutionStart: async (info: any) => {
-      await callbacks.onToolExecutionStart?.(info);
-    },
-    onToolExecutionEnd: async (info: any) => {
-      await callbacks.onToolExecutionEnd?.(info);
-    },
-  });
-
-  // fullStream conserva texto, razonamiento y eventos de tools en un único flujo.
-  for await (const chunk of result.fullStream as AsyncIterable<any>) {
-      if (chunk.type === 'text-delta') {
-        content += chunk.text ?? '';
-        if (!structuredOutput) callbacks.onTextDelta(content);
-      } else if (chunk.type === 'reasoning-delta') {
-        reasoning += chunk.text ?? '';
-        callbacks.onReasoningDelta?.(reasoning);
-      } else if (chunk.type === 'tool-call' || chunk.type === 'tool-input-start') {
-        callbacks.onToolCall?.();
-      } else if (chunk.type === 'tool-result') {
-        callbacks.onToolResult?.();
-      } else if (chunk.type === 'error') {
-        streamError ??= chunk.error;
-        callbacks.onError?.(chunk.error);
-      }
+  const checkAbort = () => {
     if (signal?.aborted) {
       const error = new Error('Generación cancelada por el usuario.');
       error.name = 'AbortError';
       throw error;
     }
-  }
+  };
+  const graph = new StateGraph(State)
+    .addNode('prepare', (state) => {
+      checkAbort();
+      const budget = Math.max(1024, Math.floor((contextWindow || 32768) * 0.75));
+      const overhead = contextBytes(system) + contextBytes(JSON.stringify(Object.entries(tools).map(([name, tool]) => ({ name, description: tool.description, schema: tool.inputSchema })))) + Math.min(maxOutputTokens || 4096, Math.floor(budget / 4));
+      const cost = (items: ModelMessage[]) => overhead + items.reduce((sum, message) => sum + messageContextCost(message), 0);
+      if (cost(state.messages) <= budget) return {};
+      const compacted = pruneMessages({ messages: state.messages, reasoning: 'all', toolCalls: 'before-last-3-messages', emptyMessages: 'remove' });
+      if (cost(compacted) > budget) throw new Error('CHAT_MESSAGE_TOO_LARGE');
+      return { messages: compacted };
+    })
+    .addNode('model', async (state) => {
+      checkAbort();
+      const contentBefore = content;
+      const reasoningBefore = reasoning;
+      let requestedTool = false;
+      streamError = undefined;
+      // One SDK step per graph node. SDK still owns transport and tool events;
+      // conditional edges own continuation, without replaying earlier effects.
+      const agent = new ToolLoopAgent({
+        model, instructions: system, tools: adaptedTools,
+        ...(providerOptions ? { providerOptions } : {}),
+        telemetry: { isEnabled: false },
+        stopWhen: stepCountIs(1),
+        ...(maxOutputTokens ? { maxOutputTokens } : {}),
+        ...(structuredOutput ? { output: structuredOutput } : {}),
+      });
+      const result = await agent.stream({
+        messages: state.messages,
+        abortSignal: signal,
+        experimental_transform: smoothStream(),
+        onStepEnd: async (info: any) => {
+          await callbacks.onStepEnd?.({ ...info, stepNumber: state.stepCount, toolCalls: info.toolCalls, toolResults: info.toolResults });
+        },
+        onToolExecutionStart: async (info: any) => {
+          await callbacks.onToolExecutionStart?.(info);
+        },
+        onToolExecutionEnd: async (info: any) => {
+          await callbacks.onToolExecutionEnd?.(info);
+        },
+      });
 
-  if (streamError != null) {
-    await Promise.allSettled([result.usage, result.response]);
-    throw streamError;
-  }
+      // fullStream conserva texto, razonamiento y eventos de tools en un único flujo.
+      for await (const chunk of result.fullStream as AsyncIterable<any>) {
+        if (chunk.type === 'text-delta') {
+          content += chunk.text ?? '';
+          if (!structuredOutput) callbacks.onTextDelta(content);
+        } else if (chunk.type === 'reasoning-delta') {
+          reasoning += chunk.text ?? '';
+          callbacks.onReasoningDelta?.(reasoning);
+        } else if (chunk.type === 'tool-call' || chunk.type === 'tool-input-start') {
+          requestedTool = true;
+          callbacks.onToolCall?.();
+        } else if (chunk.type === 'tool-result') {
+          callbacks.onToolResult?.();
+        } else if (chunk.type === 'error') {
+          streamError ??= chunk.error;
+        }
+        checkAbort();
+      }
 
-  if (structuredOutput) {
-    callbacks.onStructuredOutput?.(await result.output);
-  }
+      if (streamError != null) {
+        await Promise.allSettled([result.usage, result.response]);
+        const error = streamError as { name?: string; statusCode?: number; responseHeaders?: Record<string, string> };
+        if (!requestedTool && state.retries < 2 && (error.statusCode === 429 || /RateLimitError$/.test(error.name || ''))) {
+          const retryAfter = Number(error.responseHeaders?.['retry-after']);
+          const delay = Number.isFinite(retryAfter) && retryAfter >= 0 ? retryAfter * 1000 : 30000 * (state.retries + 1);
+          content = contentBefore;
+          reasoning = reasoningBefore;
+          if (!structuredOutput) callbacks.onTextDelta(content);
+          callbacks.onReasoningDelta?.(reasoning);
+          await new Promise<void>((resolve, reject) => {
+            const abort = () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); reject(signal?.reason || new Error('Generation cancelled')); };
+            const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); }, Math.min(delay, 60000));
+            signal?.addEventListener('abort', abort, { once: true });
+            if (signal?.aborted) abort();
+          });
+          checkAbort();
+          return { continueRun: true, retries: state.retries + 1 };
+        }
+        callbacks.onError?.(streamError);
+        throw streamError;
+      }
 
-  if (signal?.aborted) {
-    const error = new Error('Generación cancelada por el usuario.');
-    error.name = 'AbortError';
+      if (structuredOutput) {
+        await callbacks.onStructuredOutput?.(await result.output);
+      }
+
+      checkAbort();
+
+      const [usage, response, responseMessages, stepResults] = await Promise.all([result.usage, result.response, result.responseMessages, result.steps]);
+      steps.push(...stepResults.map((step) => ({ ...step, stepNumber: state.stepCount, toolCalls: step.toolCalls, toolResults: step.toolResults })));
+      totalUsage.inputTokens += usage.inputTokens ?? 0;
+      totalUsage.outputTokens += usage.outputTokens ?? 0;
+      totalUsage.totalTokens += usage.totalTokens ?? 0;
+      totalUsage.reasoningTokens += usage.outputTokenDetails?.reasoningTokens ?? 0;
+      responseModel = response.modelId;
+      const last = stepResults.at(-1);
+      // Only continue when every requested tool actually produced a result.
+      // Provider-executed/deferred tools and approval requests cannot be replayed.
+      const calls = last?.toolCalls ?? [];
+      const results = last?.content.filter(part => part.type === 'tool-result' || part.type === 'tool-error') ?? [];
+      const continueRun = calls.length > 0 && calls.every((call) => results.some((result) => result.toolCallId === call.toolCallId));
+      return { messages: [...state.messages, ...responseMessages], stepCount: state.stepCount + 1, continueRun, retries: 0 };
+    })
+    .addNode('finish', async () => {
+      checkAbort();
+      await callbacks.onEnd?.({ steps, totalUsage });
+      await callbacks.onUsage?.({ ...totalUsage, model: responseModel, durationMs: Date.now() - startedAt });
+      return {};
+    })
+    .addEdge(START, 'prepare')
+    .addEdge('prepare', 'model')
+    .addConditionalEdges('model', (state) => state.continueRun && state.stepCount < limit ? 'prepare' : 'finish', ['prepare', 'finish'])
+    .addEdge('finish', END)
+    .compile();
+  try {
+    await graph.invoke({ messages, stepCount: 0, continueRun: false, retries: 0 }, { signal, recursionLimit: limit * 6 + 3 });
+  } catch (error) {
+    if (signal?.aborted) await callbacks.onAbort?.({ steps });
     throw error;
   }
-
-  const [usage, response] = await Promise.all([result.usage, result.response]);
-  await callbacks.onUsage?.({
-    inputTokens: usage.inputTokens,
-    outputTokens: usage.outputTokens,
-    totalTokens: usage.totalTokens,
-    reasoningTokens: usage.outputTokenDetails?.reasoningTokens,
-    model: response.modelId,
-    durationMs: Date.now() - startedAt,
-  });
-
   return content;
+}
+
+/** Preserve SDK metadata/options while executing local tools through LangChain. */
+export async function adaptLangChainTools(tools: Record<string, any>): Promise<Record<string, any>> {
+  const adapted: Record<string, any> = {};
+  for (const [name, definition] of Object.entries(tools)) {
+    if (typeof definition.execute !== 'function') {
+      adapted[name] = definition;
+      continue;
+    }
+    const schema = await asSchema(definition.inputSchema).jsonSchema;
+    adapted[name] = {
+      ...definition,
+      execute: (input: unknown, options: any) => {
+        options?.abortSignal?.throwIfAborted();
+        const executable = langchainTool((arguments_: any) => {
+          options?.abortSignal?.throwIfAborted();
+          return definition.execute(arguments_, options);
+        }, { name, description: definition.description || name, schema: schema as any });
+        return executable.invoke(input as any, { signal: options?.abortSignal });
+      },
+    };
+  }
+  return adapted;
 }
 
 export async function runStream(args: RunStreamArgs): Promise<string> {

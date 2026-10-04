@@ -5,6 +5,8 @@ import Topbar from '../components/Topbar';
 import SubTopbar from '../components/SubTopbar';
 import WorkspaceLayout from '../components/WorkspaceLayout';
 import FloatingChat from '../components/FloatingChat';
+import ScheduledTaskRunner from '../components/ScheduledTaskRunner';
+import { migrateScheduledTasks } from '../lib/scheduled-tasks';
 import { invalidateSettingsCache } from '../lib/persistence';
 import { MotionConfig, motion } from 'motion/react';
 
@@ -12,11 +14,17 @@ const LAYOUT_VISIBILITY_KEY = 'codeclub:layout-visibility';
 
 export default function HomePage() {
   const [floating, setFloating] = useState<boolean | null>(null);
+  const [scheduledRunner, setScheduledRunner] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [fullscreenMotion, setFullscreenMotion] = useState<'enter' | 'exit' | null>(null);
   const fullscreenStateLoaded = useRef(false);
   const fullscreenEventVersion = useRef(0);
-  useEffect(() => { setFloating(new URLSearchParams(window.location.search).get('floating') === '1'); }, []);
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    const runner = query.get('scheduledRunner') === '1';
+    setScheduledRunner(runner); setFloating(query.get('floating') === '1');
+    if (!runner) void migrateScheduledTasks().catch(() => undefined);
+  }, []);
   useEffect(() => {
     const api = (window as any).codeclub;
     const unsubscribe = api?.onFullscreenChange?.((next: boolean) => {
@@ -40,6 +48,12 @@ export default function HomePage() {
       window.dispatchEvent(new CustomEvent('codeclub:global-chat-changed'));
     };
     const unsubscribe = (window as any).codeclub?.onMainShow(refresh);
+    const tasksUnsubscribe = (window as any).codeclub?.onTasksChanged?.(() => {
+      invalidateSettingsCache();
+      window.dispatchEvent(new CustomEvent('codeclub:global-chat-changed'));
+      window.dispatchEvent(new CustomEvent('codeclub:project-meta-changed'));
+      window.dispatchEvent(new CustomEvent('codeclub:workspace-changed'));
+    });
     const sync = (event: StorageEvent) => {
       if (event.key === 'codeclub:settings') invalidateSettingsCache();
       if (event.key === 'codeclub-language' && (event.newValue === 'en' || event.newValue === 'es')) {
@@ -47,7 +61,7 @@ export default function HomePage() {
       }
     };
     window.addEventListener('storage', sync);
-    return () => { unsubscribe?.(); window.removeEventListener('storage', sync); };
+    return () => { unsubscribe?.(); tasksUnsubscribe?.(); window.removeEventListener('storage', sync); };
   }, []);
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(false);
@@ -96,6 +110,7 @@ export default function HomePage() {
     ? { duration: 0.3, ease: [0.22, 1, 0.36, 1] as const }
     : { duration: 0 }, [fullscreenMotion]);
   if (floating === null) return null;
+  if (scheduledRunner) return <ScheduledTaskRunner />;
   if (floating) return <MotionConfig reducedMotion="user"><FloatingChat /></MotionConfig>;
   return <MotionConfig reducedMotion="user"><motion.main animate={fullscreenAnimation} transition={fullscreenTransition} className="relative isolate grid h-screen max-h-screen grid-rows-[34px_auto_minmax(0,1fr)] min-w-[320px] min-h-0 overflow-hidden bg-transparent text-(--codeclub-text) font-sans" data-fullscreen={isFullscreen}>
       <Topbar leftOpen={leftOpen} rightOpen={rightOpen} topbarOpen={topbarOpen} onToggleLeft={toggleLeft} onToggleRight={toggleRight} onToggleTopbar={toggleTopbar} />

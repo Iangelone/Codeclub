@@ -15,7 +15,7 @@ Codeclub is a local-first Windows desktop app for AI-assisted development. The r
 | UI | Next.js 16.3, React 19, TypeScript |
 | Styling | Tailwind CSS 4 and project tokens |
 | Desktop | Electron 43, Node.js, TypeScript |
-| AI | AI SDK v7 and OpenAI-compatible providers |
+| AI | LangGraph step orchestration, LangChain tools, AI SDK v7 and OpenAI-compatible providers |
 | Terminal | @xterm/xterm, @xterm/addon-fit, node-pty |
 | Editor | CodeMirror 6 |
 | Data | Local filesystem, Electron storage, and localStorage for lightweight settings |
@@ -29,6 +29,7 @@ Codeclub is a local-first Windows desktop app for AI-assisted development. The r
 | Workspace | src/components/WorkspaceManager.tsx, ChatPanel.tsx, ChatInterface.tsx |
 | Extensions | src/components/ExtensionsPanel.tsx |
 | Engine | src/lib/engine/ |
+| Agent integration guide | docs/agent-stack.md |
 | Projects | src/lib/projectManager.ts |
 | Runtime | src/lib/runtime.ts and electron/preload.cjs |
 | Native process | electron/main.ts |

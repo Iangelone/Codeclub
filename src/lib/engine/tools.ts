@@ -1,7 +1,7 @@
 import { nativeInvoke as invoke } from '../runtime';
-import { jsonSchema as aiJsonSchema, tool } from 'ai';
+import { asSchema, jsonSchema as aiJsonSchema, tool } from 'ai';
 import type { ToolContext } from './types';
-import { runStream } from './run';
+import { adaptLangChainTools, runStream } from './run';
 import { createId, readAgentState, updateAgentState, waitForAgentStateMutations, type AgentPlan, type TaskStatus } from './planning';
 import { appendGenerationUsage } from '../usage';
 import { readExecutionLog } from '../execution-log';
@@ -29,11 +29,11 @@ const TOOL_GUIDANCE: Record<string, string> = {
   readFile: 'Basate únicamente en el contenido leído; no afirmes cambios sin una tool de escritura o verificación.',
   searchText: 'Si hay coincidencias, citá rutas y líneas; si está vacíoo, informá que no hubo resultados.',
   writeFile: 'Verificá el archivo escrito leyendo o inspeccionando el estado posterior antes de afirmar que quedó correcto.',
-  runCommand: 'Interpretá la salida real, incluyendo errores y código de salida; no conviertas un intento en éxito.',
   terminal: 'La terminal puede quedar ejecutándose; observá su estado o salida antes de declarar el proceso listo.',
   openBrowser: 'Después de abrir, consultá el estado del navegador para confirmar URL, título y contenido.',
   getBrowserState: 'Usá URL, título, texto y elementos observables como evidencia; no inventes contenido ausente.',
-  browserAction: 'Después de actuar, observá nuevamente el navegador para verificar el efecto real de la acción.',
+  browserAction: 'Usá state devuelto para verificar el efecto y obtener referencias frescas. Si state falta o falló, observá nuevamente con getBrowserState.',
+  runCommand: 'El código de salida confirma un comando finito. Su PTY temporal se cierra al terminar; no deja un servidor persistente. Usá terminal para servidores/watchers y verificá snapshot antes de abrir el navegador.',
   createPlan: 'Usá el plan creado para coordinar pasos y actualizalo cuando cambie el estado real.',
   updatePlan: 'Reportá el estado devuelto por la tool y no marques pasos como completados sin evidencia.',
   getTaskStatus: 'Compará el estado actual con el objetivo y señalá planes o pasos pendientes y desactualizados.',
@@ -301,16 +301,13 @@ export function createDynamicToolAccess(availableTools: Record<string, any>, rec
     askUser: ['preguntar', 'usuario', 'aclaracion'],
   };
   const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  const plainSchema = (schema: unknown) => {
-    try { return schema ? JSON.parse(JSON.stringify(schema)) : null; } catch { return { type: 'object', properties: {}, additionalProperties: true }; }
-  };
   const entries = Object.entries(availableTools)
     .filter(([name, definition]) => definition && !['swarm', 'subagent', 'listAvailableTools'].includes(name))
     .map(([name, definition]) => ({
       name,
       description: String(definition.description || 'Sin descripción'),
       keywords: keywordMap[name] || [],
-      schema: plainSchema(definition.inputSchema),
+      schema: definition.inputSchema,
     }));
   const definitions = new Map(entries.map((entry) => [entry.name, availableTools[entry.name]]));
   const skillEntries = (discovery?.plugins || []).flatMap((plugin) => (plugin.skills || []).map((skill) => ({ ...skill, pluginName: plugin.name, pluginId: plugin.id, scope: plugin.scope })));
@@ -346,7 +343,8 @@ export function createDynamicToolAccess(availableTools: Record<string, any>, rec
         const size = Math.min(Math.max(Number(pageSize) || 10, 1), 20);
         const currentPage = Math.max(Number(page) || 1, 1);
         const start = (currentPage - 1) * size;
-        return { query: normalizedQuery, page: currentPage, pageSize: size, total: matches.length, hasMore: start + size < matches.length, durationMs: Math.round(performance.now() - startedAt), tools: matches.slice(start, start + size) };
+        const tools = await Promise.all(matches.slice(start, start + size).map(async (entry) => ({ ...entry, schema: await asSchema(entry.schema).jsonSchema })));
+        return { query: normalizedQuery, page: currentPage, pageSize: size, total: matches.length, hasMore: start + size < matches.length, durationMs: Math.round(performance.now() - startedAt), tools };
       },
     }),
     executeTool: tool({
@@ -355,7 +353,7 @@ export function createDynamicToolAccess(availableTools: Record<string, any>, rec
         type: 'object',
         properties: {
           name: { type: 'string', description: 'Exact tool name returned by searchTools.' },
-          input: { type: 'object', description: 'Arguments matching the tool schema returned by searchTools.' },
+          input: { anyOf: [{ type: 'object' }, { type: 'string' }], description: 'Arguments matching the discovered schema. Prefer an object; a JSON-encoded object is also accepted.' },
         },
         required: ['name'],
         additionalProperties: false,
@@ -365,7 +363,10 @@ export function createDynamicToolAccess(availableTools: Record<string, any>, rec
         if (!definition?.execute) return { ok: false, error: `Tool no disponible: ${name}` };
         const startedAt = performance.now();
         try {
-          const result = await definition.execute(input || {}, options);
+          input = typeof input === 'string' ? JSON.parse(input) : input ?? {};
+          if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Tool input must be a JSON object matching its discovered schema.');
+          const validated = await adaptLangChainTools({ [name]: definition });
+          const result = await validated[name].execute(input, options);
           const nextStep = name === 'computerAction' && input?.action === 'focus'
             ? 'Inspeccioná state devuelto por computerAction. Usá snapshotId/ref; si falta el control, computerOcr. Una acción enviada no demuestra que se completó la tarea.'
             : undefined;
@@ -461,6 +462,28 @@ export function createTools(ctx: ToolContext) {
 
   return wrapToolSet({
     ...createSwarmTool({ projectPath, recordToolEvent, setAgentState, requestToolApproval, provider, modelId }),
+    scheduleTask: tool({
+      description: 'Create a one-shot or recurring scheduled task in this chat project (or globally), using the current provider and model. Runs while Codeclub is open, including the tray. Calendar schedules use an IANA time zone; custom intervals start after creation. Never claim it will run while the app is fully quit.',
+      inputSchema: jsonSchema({ type: 'object', properties: { name: { type: 'string' }, prompt: { type: 'string' }, interval: { type: 'string', enum: ['Diario', 'Días hábiles', 'Semanal', 'Personalizado', 'Una vez'] }, runAt: { type: 'string', description: 'Required for Una vez: ISO timestamp including UTC offset.' }, time: { type: 'string', description: 'HH:mm, default 08:00.' }, timeZone: { type: 'string', description: 'IANA time zone, defaults to device zone.' }, weekday: { type: 'number', description: '0 Sunday to 6 Saturday; default Monday.' }, every: { type: 'string', enum: ['15 min', '30 min', '1 hora', '2 horas', '1 día'] }, notifications: { type: 'string', enum: ['Todas las ejecuciones', 'Solo errores', 'Sin notificaciones'] } }, required: ['name', 'prompt', 'interval'], additionalProperties: false }),
+      execute: async (input) => {
+        if (!ctx.providerId || !modelId) return { ok: false, error: 'Missing current provider/model.' };
+        const output = await invoke('codeclub_scheduled_save', { projectPath: activeProject ? projectPath : '', task: { ...input, id: createId('task'), provider: ctx.providerId, model: modelId, language: window.localStorage.getItem('codeclub-language') === 'en' ? 'en' : 'es' } });
+        recordToolEvent('scheduleTask', input, output); return output;
+      },
+    }),
+    listScheduledTasks: tool({
+      description: 'List scheduled tasks, next run and execution history for the current project or global scope.',
+      inputSchema: jsonSchema({ type: 'object', properties: {}, additionalProperties: false }),
+      execute: async () => invoke('codeclub_scheduled_list', { projectPath: activeProject ? projectPath : '' }),
+    }),
+    manageScheduledTask: tool({
+      description: 'Pause, resume, run now or remove an existing scheduled task. Get its exact id from listScheduledTasks first.',
+      inputSchema: jsonSchema({ type: 'object', properties: { id: { type: 'string' }, action: { type: 'string', enum: ['pause', 'resume', 'run', 'remove'] } }, required: ['id', 'action'], additionalProperties: false }),
+      execute: async ({ id, action }) => {
+        const output = await invoke(action === 'run' ? 'codeclub_scheduled_run' : action === 'remove' ? 'codeclub_scheduled_remove' : 'codeclub_scheduled_status', { projectPath: activeProject ? projectPath : '', id, paused: action === 'pause' });
+        recordToolEvent('manageScheduledTask', { id, action }, output); return output;
+      },
+    }),
     listFiles: tool({
       description: 'List project files in the active Codeclub workspace. Skips heavy folders.',
       inputSchema: jsonSchema({
@@ -857,22 +880,23 @@ export function createTools(ctx: ToolContext) {
       },
     }),
     runCommand: tool({
-      description: 'Run any command in the active workspace without confirmation.',
+      description: 'Run a finite command in the active workspace and return its exit code and output. For dev servers, watchers, interactive commands or any long-lived process use terminal instead. A timeout stops this command and its child processes.',
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
           command: { type: 'string', description: 'Any executable command available on the system.' },
           args: { type: 'array', items: { type: 'string' }, description: 'Command arguments.' },
           cwd: { type: 'string', description: 'Optional working directory. Relative paths resolve inside the active workspace; omit to use the workspace root.' },
+          timeoutMs: { type: 'number', description: 'Maximum duration in milliseconds; defaults to 120000. Use terminal for persistent processes.' },
         },
         required: ['command', 'args'],
         additionalProperties: false,
       }),
-      execute: async ({ command, args, cwd }) => {
+      execute: async ({ command, args, cwd, timeoutMs }) => {
         setAgentState('running');
         const output = await invoke('codeclub_run_command', {
           projectPath,
-          request: { command, args: Array.isArray(args) ? args : [], cwd: cwd || null },
+          request: { command, args: Array.isArray(args) ? args : [], cwd: cwd || null, timeoutMs },
         });
         recordToolEvent('runCommand', { command, args, cwd: cwd || null }, output);
         return output;
@@ -914,7 +938,8 @@ export function createTools(ctx: ToolContext) {
             return output;
           }
           if (action === 'write') {
-            const text = String(data ?? command ?? '');
+            // PTY Enter is carriage return; LF only pasted text in Windows cmd.
+            const text = String(data ?? command ?? '').replace(/\r?\n/g, '\r');
             await invoke('codeclub_terminal_write', { id, data: text });
             const output = { ok: true, id, written: text.length };
             recordToolEvent('terminal', { action, id, data: text }, output);
@@ -936,7 +961,8 @@ export function createTools(ctx: ToolContext) {
         });
 
         if (command) {
-          const text = String(command).endsWith('\n') ? String(command) : `${command}\n`;
+          const normalized = String(command).replace(/\r?\n/g, '\r');
+          const text = normalized.endsWith('\r') ? normalized : `${normalized}\r`;
           await invoke('codeclub_terminal_write', { id: terminal.id, data: text });
         }
 
@@ -984,7 +1010,7 @@ export function createTools(ctx: ToolContext) {
         const output = await new Promise<any>((resolve) => {
           let timer: number | undefined;
           const cleanup = () => { if (timer) window.clearTimeout(timer); window.removeEventListener('codeclub:browser-state', handleState); };
-          const handleState = (event: Event) => { cleanup(); resolve({ ok: true, state: (event as CustomEvent).detail }); };
+          const handleState = (event: Event) => { cleanup(); const state = (event as CustomEvent).detail; resolve({ ok: state?.ok !== false, state }); };
           window.addEventListener('codeclub:browser-state', handleState, { once: true });
           timer = window.setTimeout(() => { cleanup(); resolve({ ok: false, error: 'No se recibió el estado del navegador.' }); }, 5000);
           window.dispatchEvent(new CustomEvent('codeclub:browser-state-request'));
@@ -994,7 +1020,7 @@ export function createTools(ctx: ToolContext) {
       },
     }),
     browserAction: tool({
-      description: 'Interact with the active browser using a selector from getBrowserState. Supports move, click, type, key and scroll; does not require model vision.',
+      description: 'Interact with the active browser using a fresh observed selector. Returns fresh state after acting: inspect it and reuse its selectors for the next sequential action; call getBrowserState again only if needed. Supports move, click, type, key and scroll without vision. For select controls, type an observed option value or label.',
       inputSchema: jsonSchema({
         type: 'object',
         properties: {

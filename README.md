@@ -29,6 +29,8 @@ Codeclub runs locally and stores chats, projects, settings, usage data, and logs
 - Visual references from the embedded browser.
 - Human confirmation for sensitive operations.
 
+Consulta el [resumen del motor del agente](docs/agent-stack.md): LangGraph coordina los pasos, LangChain valida y ejecuta tools, AI SDK mantiene transporte/streaming y Agent Plugins amplía capacidades. Incluye límites, pruebas y mejoras pendientes.
+
 ### Workspace
 
 | Area | Purpose |
@@ -51,7 +53,7 @@ Both sidebars can be resized. The main panel keeps a minimum width so the worksp
 
 ### Scheduled tasks
 
-Tasks are stored in the app, and each project can have its own. A task can define a provider, model, API key, prompt, frequency, interval, time, notifications, active or paused status, and manual execution. Saving is explicit.
+Tasks persist globally or per project and execute through Electron while the app remains open, including in the tray. Each task stores its selected provider/model, prompt, schedule, timezone, notifications and state; credentials are stored separately in the encrypted vault. Saving is explicit. See [scheduled tasks](docs/scheduled-tasks.md) for execution history, cancellation and limits.
 
 By default, each run is prepared as a new background chat so scheduled work does not quietly mix with an existing conversation.
 
@@ -122,19 +124,15 @@ package:win creates the Windows installer in release/. For the full beta workflo
 ## Documentation
 
 - [Documentation index](docs/README.md)
-- [About Codeclub](docs/about.md)
 - [Architecture](docs/arquitectura.md)
 - [Flows and events](docs/flujos.md)
 - [Persistence](docs/persistencia.md)
-- [Right sidebar](docs/sidebar-derecha.md)
 - [Terminal and browser](docs/terminal-y-navegador.md)
-- [Accessibility and Computer Use](docs/accesibilidad.md)
 - [Development and releases](docs/desarrollo.md)
-- [Synapse and Devices](docs/synapse.md)
 
 ## Status
 
-Codeclub is in early beta. The app is useful for local development, while mobile QR connectivity, fully automatic task execution, and stable distribution are still evolving.
+Codeclub is in early beta. The app is useful for local development, while mobile QR connectivity and stable distribution are still evolving. Scheduled tasks execute while the app is open.
 
 ## Community and support
 

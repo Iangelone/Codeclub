@@ -158,6 +158,27 @@ export const chatActionTranslations = {
   en: { copy: 'Copy message', copied: 'Message copied', more: 'More response options', regenerate: 'Regenerate response', trace: 'Copy full chat trace' },
 } as const;
 
+export const scheduledRuntimeTranslations = {
+  es: {
+    availability: 'Las tareas se ejecutan mientras Codeclub está abierto, incluso en la bandeja. Al volver de una suspensión se ejecuta una vez la tarea pendiente.',
+    once: 'Una vez', runAt: 'Fecha y hora del dispositivo', timeZone: 'Zona horaria', weekday: 'Día de la semana', days: ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'],
+    intervals: { Diario: 'Diario', 'Días hábiles': 'Días hábiles', Semanal: 'Semanal', Personalizado: 'Personalizado', 'Una vez': 'Una vez' },
+    history: 'Historial de ejecuciones', noRuns: 'Todavía no hubo ejecuciones.', result: 'Abrir resultado', cancel: 'Cancelar ejecución', next: 'Próxima ejecución', reasoning: 'Razonamiento', efforts: ['Bajo', 'Medio', 'Alto'], loading: 'Cargando tareas…',
+    loadError: 'No se pudieron cargar las tareas.', actionError: 'No se pudo completar la acción. Revisá los campos y si la tarea ya está ejecutándose.',
+    states: { queued: 'En cola', running: 'Ejecutándose', completed: 'Completada', failed: 'Falló', cancelled: 'Cancelada', interrupted: 'Interrumpida' },
+    errors: { TASK_CREDENTIAL_MISSING: 'Falta configurar la credencial.', TASK_MODEL_UNAVAILABLE: 'El proveedor o modelo ya no está disponible.', TASK_APPROVAL_REQUIRED: 'Una operación no recibió aprobación. Abrí el resultado para revisarla.', TASK_USER_INPUT_REQUIRED: 'La tarea necesita una respuesta tuya.', TASK_STEP_LIMIT: 'La tarea alcanzó el límite de pasos.', TASK_CANCELLED: 'La ejecución fue cancelada.', TASK_TIMEOUT: 'La ejecución excedió los 30 minutos.', TASK_INTERRUPTED: 'La ejecución fue interrumpida.', TASK_EXECUTION_FAILED: 'La ejecución falló. Abrí el resultado para revisarla.', TASK_RUNNER_UNAVAILABLE: 'No se pudo iniciar la ejecución.' },
+  },
+  en: {
+    availability: 'Tasks run while Codeclub is open, including in the system tray. After sleep, each overdue task runs once.',
+    once: 'Once', runAt: 'Date and time on this device', timeZone: 'Time zone', weekday: 'Day of the week', days: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+    intervals: { Diario: 'Daily', 'Días hábiles': 'Weekdays', Semanal: 'Weekly', Personalizado: 'Custom', 'Una vez': 'Once' },
+    history: 'Run history', noRuns: 'No runs yet.', result: 'Open result', cancel: 'Cancel run', next: 'Next run', reasoning: 'Reasoning', efforts: ['Low', 'Medium', 'High'], loading: 'Loading tasks…',
+    loadError: 'Could not load tasks.', actionError: 'Could not complete the action. Check the fields and whether the task is already running.',
+    states: { queued: 'Queued', running: 'Running', completed: 'Completed', failed: 'Failed', cancelled: 'Cancelled', interrupted: 'Interrupted' },
+    errors: { TASK_CREDENTIAL_MISSING: 'Configure the provider credential.', TASK_MODEL_UNAVAILABLE: 'The provider or model is no longer available.', TASK_APPROVAL_REQUIRED: 'An operation was not approved. Open the result to review it.', TASK_USER_INPUT_REQUIRED: 'The task needs your input.', TASK_STEP_LIMIT: 'The task reached its step limit.', TASK_CANCELLED: 'The run was cancelled.', TASK_TIMEOUT: 'The run exceeded 30 minutes.', TASK_INTERRUPTED: 'The run was interrupted.', TASK_EXECUTION_FAILED: 'The run failed. Open the result to review it.', TASK_RUNNER_UNAVAILABLE: 'Could not start the run.' },
+  },
+} as const;
+
 export const sidebarTranslations = {
   es: {
     chat: 'Chat', projects: 'Proyectos', agents: 'Agentes', extensions: 'Extensiones', chats: 'Chats', settings: 'Ajustes', tasks: 'Tareas', devices: 'Dispositivos', recent: 'Recientes', support: 'Apoyar Codeclub',

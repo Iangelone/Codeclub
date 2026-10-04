@@ -1,4 +1,6 @@
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, safeStorage, screen, shell, Tray } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, safeStorage, screen, shell, Tray } from 'electron';
+import { runProjectCommand } from './run-command.js';
+import { TaskScheduler, type ScheduledTask, type TaskRun } from './task-scheduler.js';
 import { CredentialVault } from './credential-vault.js';
 import { ActivityIntegrations } from './activity-integrations.js';
 import { AgentRelay } from './agent-relay.js';
@@ -6,9 +8,8 @@ import { promises as fs } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { ChatStore } from './chat-store.js';
 import { SessionHub, type SessionChat } from './session-hub.js';
-import { execFile as execFileCallback, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { promisify } from 'node:util';
 import { userInfo } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +22,9 @@ const { autoUpdater } = electronUpdater;
 type Project = { id: string; name: string; path: string; createdAt: string; lastOpenedAt?: string };
 
 const root = path.dirname(fileURLToPath(import.meta.url));
+const ownsAppInstance = app.requestSingleInstanceLock();
+if (!ownsAppInstance) app.quit();
+app.on('second-instance', () => showMainWindow());
 const desktopControl = createComputerUse(app.getAppPath(), app.isPackaged ? process.resourcesPath : undefined);
 let projects: Project[] = [];
 let mainWindow: BrowserWindow | null = null;
@@ -32,6 +36,8 @@ let tray: Tray | null = null;
 let isQuitting = false;
 let selectedSessionChat: SessionChat | null = null;
 let credentialVault: CredentialVault;
+let taskScheduler: TaskScheduler | undefined;
+const taskWorkers = new Map<number, { window: BrowserWindow; task: ScheduledTask; run: TaskRun; controller: AbortController; terminals: Set<string>; complete: (error?: string) => void }>();
 const modelRequests=new Map<string,AbortController>();
 const sessionHub = new SessionHub(() => {
   if(isQuitting)return;
@@ -42,7 +48,40 @@ const sessionHub = new SessionHub(() => {
   }
 });
 function requireAppSender(event: Electron.IpcMainInvokeEvent) {
-  if (event.sender !== mainWindow?.webContents && !floatingChat?.owns(event.sender)) throw new Error('Unauthorized renderer');
+  if (event.sender !== mainWindow?.webContents && !floatingChat?.owns(event.sender) && !taskWorkers.has(event.sender.id)) throw new Error('Unauthorized renderer');
+}
+function requireTaskUi(event: Electron.IpcMainInvokeEvent) {
+  requireAppSender(event);
+  if (taskWorkers.has(event.sender.id)) throw new Error('Unauthorized scheduler management');
+}
+function publishTaskChange() {
+  if (isQuitting) return;
+  for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed() && !win.webContents.isDestroyed() && !taskWorkers.has(win.webContents.id)) win.webContents.send('codeclub:scheduled-tasks-changed');
+}
+function executeScheduledTask(task: ScheduledTask, run: TaskRun): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const worker = new BrowserWindow({ show: false, webPreferences: { preload: path.join(root, '..', 'electron', 'preload.cjs'), contextIsolation: true, nodeIntegration: false, webviewTag: true, backgroundThrottling: false } });
+    const owner = worker.webContents.id;
+    const controller = new AbortController();
+    const terminals = new Set<string>();
+    let done = false;
+    const complete = (error?: string) => {
+      if (done) return; done = true; clearTimeout(timeout);
+      controller.abort();
+      if (error) for (const id of terminals) { const terminal = nativeTerminals.get(id); if (terminal) { try { terminal.child.kill(); } catch { /* PTY already exited. */ } } }
+      taskWorkers.delete(owner); sessionHub.disconnect(owner);
+      for (const [key, controller] of modelRequests) if (key.startsWith(`${owner}:`)) controller.abort();
+      if (!worker.isDestroyed()) worker.destroy();
+      if (error) reject(new Error(error)); else resolve();
+    };
+    const timeout = setTimeout(() => complete('TASK_TIMEOUT'), 30 * 60 * 1000);
+    taskWorkers.set(owner, { window: worker, task, run, controller, terminals, complete });
+    worker.webContents.on('render-process-gone', () => complete('TASK_INTERRUPTED'));
+    worker.on('closed', () => complete('TASK_INTERRUPTED'));
+    const devUrl = process.env.CODECLUB_NEXT_DEV_URL;
+    const loading = devUrl ? worker.loadURL(`${devUrl.replace(/\/$/, '')}/?scheduledRunner=1`) : worker.loadFile(path.join(root, '..', 'out', 'index.html'), { query: { scheduledRunner: '1' } });
+    void loading.catch(() => complete('TASK_RUNNER_UNAVAILABLE'));
+  });
 }
 const computerOverlayWindows = new Set<BrowserWindow>();
 let computerOverlayActive = false;
@@ -51,7 +90,7 @@ let computerMenuWindow: BrowserWindow | null = null;
 let lastComputerContext: Record<string, unknown> | null = null;
 type AutoUpdateState = { state: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'; version?: string; percent?: number; error?: string };
 let autoUpdateState: AutoUpdateState = { state: 'idle' };
-const execFile = promisify(execFileCallback);
+const activeCommands = new Set<() => void>();
 type NativeMcpSession = { child: ReturnType<typeof spawn>; nextId: number; pending: Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }> };
 const nativeMcpSessions = new Map<string, NativeMcpSession>();
 type NativeTerminal = { child: pty.IPty; info: any; buffer: string };
@@ -423,7 +462,7 @@ async function createNativeTerminal(request: any) {
   return info;
 }
 
-async function invokeNativeCommand(command: string, args: any = {}) {
+async function invokeNativeCommand(command: string, args: any = {}, signal?: AbortSignal) {
   switch (command) {
     case 'codeclub_get_username': {
       try { return process.env.CODECLUB_USERNAME || userInfo().username || process.env.USERNAME || 'Usuario'; } catch { return process.env.CODECLUB_USERNAME || process.env.USERNAME || 'Usuario'; }
@@ -457,12 +496,7 @@ async function invokeNativeCommand(command: string, args: any = {}) {
     case 'codeclub_run_command': {
       const request = args.request || {};
       const cwd = await resolveProjectFile(String(args.projectPath || ''), String(request.cwd || '.'));
-      try {
-        const output = await execFile(String(request.command), Array.isArray(request.args) ? request.args.map(String) : [], { cwd, windowsHide: true, maxBuffer: 8 * 1024 * 1024 });
-        return { stdout: output.stdout, stderr: output.stderr, code: 0 };
-      } catch (error: any) {
-        return { stdout: error.stdout || '', stderr: error.stderr || String(error.message || error), code: Number(error.code) || 1 };
-      }
+      return runProjectCommand(request, cwd, activeCommands, signal);
     }
     case 'codeclub_mcp_stdio_start': return startMcpSession(args.request || {});
     case 'codeclub_mcp_stdio_call': {
@@ -729,8 +763,38 @@ app.setAppUserModelId('com.codeclub.desktop');
 // Expone el árbol de accesibilidad de Chromium a UI Automation/Computer Use.
 app.commandLine.appendSwitch('force-renderer-accessibility');
 app.whenReady().then(async () => {
+  if (!ownsAppInstance) return;
   credentialVault=new CredentialVault(app.getPath('userData'),safeStorage);
   credentialVault.migrate(path.join(app.getPath('userData'),'settings.json'));
+  taskScheduler = new TaskScheduler(path.join(app.getPath('userData'), 'scheduled-tasks.json'), executeScheduledTask, publishTaskChange, (task, run) => {
+    if (task.notifications === 'Sin notificaciones' || (task.notifications === 'Solo errores' && run.status === 'completed')) return;
+    if (Notification.isSupported()) {
+      const notice = new Notification({ title: task.name, body: task.language === 'en' ? (run.status === 'completed' ? 'Task completed' : 'Task needs attention') : (run.status === 'completed' ? 'Tarea completada' : 'La tarea requiere atención') });
+      notice.on('click', () => { selectedSessionChat = { chatId: run.chatId, projectPath: task.projectPath, name: task.name }; showMainWindow(); }); notice.show();
+    }
+  });
+  ipcMain.handle('codeclub:tasks-list', (event, projectPath: string) => { requireTaskUi(event); return taskScheduler!.list(String(projectPath || '')); });
+  ipcMain.handle('codeclub:tasks-save', async (event, projectPath: string, task: ScheduledTask) => {
+    requireTaskUi(event);
+    if (projectPath && !(await fs.stat(path.resolve(projectPath))).isDirectory()) throw new Error('TASK_INVALID_PROJECT');
+    return taskScheduler!.save(String(projectPath || ''), task);
+  });
+  ipcMain.handle('codeclub:tasks-delete', (event, projectPath: string, id: string) => { requireTaskUi(event); return taskScheduler!.remove(String(projectPath || ''), id); });
+  ipcMain.handle('codeclub:tasks-run', (event, projectPath: string, id: string) => { requireTaskUi(event); return taskScheduler!.run(String(projectPath || ''), id); });
+  ipcMain.handle('codeclub:tasks-cancel', (event, projectPath: string, id: string) => {
+    requireTaskUi(event);
+    if (taskScheduler!.cancelQueued(projectPath, id)) return true;
+    const task = taskScheduler!.list(projectPath).find(task => task.id === id);
+    const run = task?.runs.find(run => run.status === 'running');
+    if (!run) return false;
+    const command = sessionHub.command({ chatId: run.chatId, projectPath }, 'cancel');
+    const worker = command && taskWorkers.get(command.owner);
+    if (worker) { worker.controller.abort(); worker.window.webContents.send('codeclub:session-command', command); }
+    else for (const worker of taskWorkers.values()) if (worker.run.id === run.id) worker.complete('TASK_CANCELLED');
+    return true;
+  });
+  ipcMain.handle('codeclub:task-assignment', event => { const worker = taskWorkers.get(event.sender.id); return worker ? { task: worker.task, run: worker.run } : null; });
+  ipcMain.handle('codeclub:task-finish', (event, error?: string) => { const worker = taskWorkers.get(event.sender.id); if (!worker) throw new Error('Unauthorized task runner'); worker.complete(error); });
   const integrations=new ActivityIntegrations(path.join(app.getPath('userData'),'activity-integrations.json'),credentialVault,sessionHub);
   const relayHelper=app.isPackaged?path.join(process.resourcesPath,'agent-relay.ps1'):path.join(root,'..','electron','agent-relay.ps1');
   const relay=new AgentRelay(app.getPath('userData'),relayHelper,sessionHub);
@@ -753,7 +817,9 @@ app.whenReady().then(async () => {
   ipcMain.handle('codeclub:session-command', (event, chat: SessionChat, action: string, approvalId?: string) => {
     requireAppSender(event);const command=sessionHub.command(chat,action,approvalId);if(!command)return false;
     const owner=BrowserWindow.getAllWindows().find(win=>!win.isDestroyed()&&!win.webContents.isDestroyed()&&win.webContents.id===command.owner);
-    if(!owner){sessionHub.disconnect(command.owner);return false;}owner.webContents.send('codeclub:session-command',command);return true;
+    if(!owner){sessionHub.disconnect(command.owner);return false;}
+    if (action === 'cancel') taskWorkers.get(command.owner)?.controller.abort();
+    owner.webContents.send('codeclub:session-command',command);return true;
   });
   ipcMain.handle('codeclub:session-open', (event, chat: SessionChat) => { requireAppSender(event);if(!chat?.chatId||typeof chat.projectPath!=='string')return;selectedSessionChat={chatId:chat.chatId,projectPath:chat.projectPath,name:chat.name,projectName:chat.projectName};showMainWindow(); });
   const chatStore = new ChatStore(app.getPath('userData'));
@@ -783,6 +849,35 @@ app.whenReady().then(async () => {
   ipcMain.handle('path:app-config', () => app.getPath('userData'));
   ipcMain.handle('path:app-cache', () => path.join(app.getPath('userData'), 'cache'));
   ipcMain.handle('native:invoke', async (event, payload: { command: string; args?: Record<string, unknown> }) => {
+    if (payload.command.startsWith('codeclub_scheduled_')) {
+      requireTaskUi(event);
+      const project = String(payload.args?.projectPath || '');
+      const id = String(payload.args?.id || '');
+      if (payload.command === 'codeclub_scheduled_list') return taskScheduler!.list(project);
+      if (payload.command === 'codeclub_scheduled_save') {
+        if (project && !(await fs.stat(path.resolve(project))).isDirectory()) throw new Error('TASK_INVALID_PROJECT');
+        return taskScheduler!.save(project, payload.args?.task as ScheduledTask);
+      }
+      if (payload.command === 'codeclub_scheduled_remove') return taskScheduler!.remove(project, id);
+      if (payload.command === 'codeclub_scheduled_run') return taskScheduler!.run(project, id);
+      if (payload.command === 'codeclub_scheduled_status') {
+        const task = taskScheduler!.list(project).find(task => task.id === id);
+        if (!task) throw new Error('TASK_NOT_FOUND');
+        return taskScheduler!.save(project, { ...task, status: payload.args?.paused ? 'paused' : 'active' });
+      }
+      throw new Error('TASK_UNKNOWN_ACTION');
+    }
+    const worker = taskWorkers.get(event.sender.id);
+    if (worker) {
+      if (worker.controller.signal.aborted && payload.command !== 'codeclub_http_abort') throw new Error('TASK_CANCELLED');
+      if (payload.command.startsWith('codeclub_terminal_') && !['codeclub_terminal_create', 'codeclub_terminal_list'].includes(payload.command) && !worker.terminals.has(String(payload.args?.id))) throw new Error('TASK_TERMINAL_MISMATCH');
+      const workspaceCommands = ['codeclub_list_files', 'codeclub_read_file', 'codeclub_search_text', 'codeclub_write_file', 'codeclub_run_command'];
+      const requestedProject = workspaceCommands.includes(payload.command) ? String(payload.args?.projectPath || '') : String((payload.args?.request as any)?.projectPath || payload.args?.projectPath || '');
+      if (requestedProject || workspaceCommands.includes(payload.command)) {
+        const expected = worker.task.projectPath || (process.platform === 'win32' ? `${process.env.SystemDrive || 'C:'}\\` : '/');
+        if (!requestedProject || path.resolve(requestedProject).toLowerCase() !== path.resolve(expected).toLowerCase()) throw new Error('TASK_PROJECT_MISMATCH');
+      }
+    }
     if(payload.command==='codeclub_http_fetch'&&(payload.args?.request as any)?.credentialKey)requireAppSender(event);
     if(payload.command==='codeclub_http_abort'){
       requireAppSender(event);modelRequests.get(`${event.sender.id}:${String(payload.args?.requestId)}`)?.abort();return;
@@ -791,7 +886,10 @@ app.whenReady().then(async () => {
       const request=payload.args?.request as any;
       if(request)request.requestId=`${event.sender.id}:${String(request.requestId||randomUUID())}`;
     }
-    return invokeNativeCommand(payload.command, payload.args);
+    const result = await invokeNativeCommand(payload.command, payload.args, worker?.controller.signal);
+    if (worker && payload.command === 'codeclub_terminal_create') worker.terminals.add(String(result.id));
+    if (worker && payload.command === 'codeclub_terminal_list') return (result as any[]).filter(terminal => worker.terminals.has(String(terminal.id)));
+    return result;
   });
   ipcMain.handle('chats:read-project', async (_event, projectPath: string, chatId: string) => {
     return (await chatStore.all(projectPath, chatId)).map(message => JSON.stringify(message)).join('\n');
@@ -837,9 +935,10 @@ app.whenReady().then(async () => {
   floatingChat = createFloatingChat(root, showMainWindow, updateTrayMenu);
   createWindow();
   createTray();
+  taskScheduler.start();
   setupAutoUpdater();
   app.on('activate', showMainWindow);
 });
 
-app.on('before-quit', () => { isQuitting = true; floatingChat?.destroy(); desktopControl.stop(); destroyComputerOverlay(); tray?.destroy(); });
+app.on('before-quit', () => { isQuitting = true; for (const stop of activeCommands) stop(); taskScheduler?.stop(); for (const worker of taskWorkers.values()) worker.complete('TASK_INTERRUPTED'); floatingChat?.destroy(); desktopControl.stop(); destroyComputerOverlay(); tray?.destroy(); });
 app.on('window-all-closed', () => { /* La app permanece disponible en la bandeja. */ });

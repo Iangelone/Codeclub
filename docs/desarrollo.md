@@ -42,8 +42,42 @@ After verification, push a `vX.Y.Z` tag. The release workflow builds on windows-
 - OneDrive can lock temporary files during local builds; use an output directory outside the project when needed.
 - GitHub Actions needs contents: write, already declared in the workflow. Never store tokens in the repository.
 
-> Android QR connectivity and automatic task execution remain future work until their backend/runtime is complete.
+> Devices remains disabled; Android QR connectivity has no active runtime. Scheduled tasks run while Codeclub is open; see [scheduled tasks](scheduled-tasks.md).
 
 ## Change style
 
 Use apply_patch, prefer small reversible changes, avoid unnecessary dependencies, and document events and persistence when adding a feature.
+
+## Accessibility conventions
+
+- Every icon-only button has aria-label and title.
+- Tabs use role=tab, aria-selected, and aria-controls.
+- Menus use role=menu and role=menuitem where appropriate.
+- Decorative icons use aria-hidden=true.
+- Inputs have a visible label or aria-label.
+- Resize handles expose orientation and ARIA values.
+- Empty states explain what to do next.
+- Visible focus uses the electric accent.
+
+## Stable IDs
+
+Do not change these without updating tools that inspect the DOM:
+
+| ID | Region |
+| --- | --- |
+| codeclub-left-sidebar | left sidebar |
+| codeclub-right-sidebar | right sidebar |
+| codeclub-terminal-panel | terminal |
+| codeclub-browser-address | browser address bar |
+
+## Checklist
+
+- [ ] Can it be reached with Tab?
+- [ ] Is focus visible?
+- [ ] Does the screen reader know its name, role, and state?
+- [ ] Can Computer Use find it by label, role, or ID?
+- [ ] Does the UI explain errors and empty states?
+- [ ] Does language switching translate accessible labels too?
+- [ ] Does the overlay avoid blocking scrolling or selection?
+
+Avoid clickable divs without keyboard support, unnamed inputs, selectors based only on classes or position, changing text or IDs without reviewing tools, aria-hidden on interactive elements, and animations that make the interface hard to use.
