@@ -55,6 +55,16 @@ La paleta cambia desde cualquiera de estos botones y se actualizan juntos los de
 
 Las variables se animan en el wrapper `motion.div` del provider. Para que un degradado interpolable responda al cambio, referenciar estas variables dentro de la regla del componente (no calcularlo una sola vez en `:root`). `@property` registra las variables de color animadas. Al introducir un nuevo fondo temático, conectarlo a la variable adecuada en lugar de hardcodear azul.
 
+### Degradado de fondo del orbe
+
+El fondo de referencia para la vista previa y la superficie del widget es:
+
+```css
+radial-gradient(ellipse at 30% 110%, var(--codeclub-chat-glow), transparent 55%), #111315
+```
+
+El resplandor parte desde abajo, ligeramente hacia la izquierda del centro (`30% 110%`), se desvanece hasta `55%` y queda sobre el fondo oscuro `#111315`. `--codeclub-chat-glow` toma el color de la paleta activa con alpha `0.2`; por eso el degradado cambia junto al orbe y conserva el tono sutil. La receta está aplicada en `src/app/orb-preview/page.tsx`, `src/app/globals.css` y `src/components/floating-chat.css`. Mantener la misma posición, parada de transparencia y base oscura para que la vista previa y el widget compartan el aspecto.
+
 ## Persistencia y eventos
 
 - La clave de `localStorage` es `codeclub:orb-palette-index`. Se guarda un entero de `0` a `8`; valores ausentes o inválidos vuelven al índice `0` (azul).
@@ -85,6 +95,6 @@ Al cambiar el rango o el nombre de un canal, actualizar conjuntamente la normali
 
 ## Vista previa y verificación
 
-Ejecutar `npm run next:dev` y abrir `http://127.0.0.1:3000/orb-preview` (usar el puerto que informe Next si el 3000 ya está ocupado). La página incluye un orbe interactivo y el glow de fondo. Probar los nueve pasos hasta volver a azul, la persistencia al recargar y la sincronización en otra pestaña; en Electron, comprobar además la sincronización con la ventana del widget.
+La dirección usada para la vista previa local es **http://127.0.0.1:3001/orb-preview/**. Si el servidor no está activo, ejecutar `npm run next:dev -- --port 3001`; si Next informa otro puerto por estar ocupado, abrir `/orb-preview/` en ese puerto. La página incluye un orbe interactivo de `180px` y el mismo degradado radial de fondo descrito arriba. Probar los nueve pasos hasta volver a azul, la persistencia al recargar y la sincronización en otra pestaña; en Electron, comprobar además la sincronización con la ventana del widget.
 
 Para cambios en el shader o en la paleta, ejecutar las verificaciones habituales del proyecto: `npm run next:build`, `npm run electron:compile` y `git diff --check`. Revisar visualmente el patrón, el fallback, los degradados y el comportamiento con movimiento reducido.
