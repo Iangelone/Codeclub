@@ -66,19 +66,37 @@ void main() {
   vec2 point = vec2(uv.x * 1.8, uv.y) + drift * 0.7;
   vec2 warp = vec2(fbm(point + drift), fbm(point + vec2(3.2, 1.5) - drift));
   float fluid = fbm(point + 1.2 * warp);
-  float gradient = clamp(1.0 - uv.y, 0.0, 1.0);
-  float anchor = smoothstep(0.0, 0.3, uv.y);
-  float shade = clamp(gradient + (fluid - 0.5) * 0.8 * anchor, 0.0, 1.0);
 
-  vec3 white = vec3(0.99, 1.0, 1.0);
-  vec3 light = mix(white, u_color, 0.5);
-  vec3 color = white;
-  color = mix(color, light, smoothstep(0.28, 0.52, shade));
-  color = mix(color, u_color, smoothstep(0.58, 0.88, shade));
+  vec3 color;
+  float edge = 1.0;
+  if (u_shape > 0.5) {
+    float shade = clamp(1.0 - uv.y + (fluid - 0.5) * 0.8, 0.0, 1.0);
+    color = mix(vec3(0.99, 1.0, 1.0), u_color, smoothstep(0.48, 0.82, shade));
+  } else {
+    vec2 pointOnSphere = (uv - 0.5) * 2.0;
+    float radiusSquared = dot(pointOnSphere, pointOnSphere);
+    if (radiusSquared > 1.0) discard;
 
-  float edge = u_shape > 0.5
-    ? 1.0
-    : smoothstep(0.5, 0.49, distance(uv, vec2(0.5)));
+    float depth = sqrt(1.0 - radiusSquared);
+    vec3 normal = normalize(vec3(pointOnSphere, depth));
+    vec3 lightDirection = normalize(vec3(-0.48, 0.72, 0.82));
+    vec3 viewDirection = vec3(0.0, 0.0, 1.0);
+    vec3 halfDirection = normalize(lightDirection + viewDirection);
+
+    float gradient = clamp(1.0 - uv.y, 0.0, 1.0);
+    float anchor = smoothstep(0.0, 0.3, uv.y);
+    float shade = clamp(gradient + (fluid - 0.5) * 0.8 * anchor, 0.0, 1.0);
+    vec3 white = vec3(0.99, 1.0, 1.0);
+    vec3 lightBlue = mix(white, u_color, 0.5);
+    color = mix(white, lightBlue, smoothstep(0.28, 0.52, shade));
+    color = mix(color, u_color, smoothstep(0.58, 0.88, shade));
+
+    float diffuse = 0.93 + 0.07 * max(dot(normal, lightDirection), 0.0);
+    float specular = pow(max(dot(normal, halfDirection), 0.0), 36.0) * 0.025;
+    float rim = pow(1.0 - max(dot(normal, viewDirection), 0.0), 2.0) * 0.025;
+    color = color * diffuse + vec3(specular + rim);
+    edge = smoothstep(0.0, 0.035, depth);
+  }
   gl_FragColor = vec4(color * edge, edge);
 }
 `;
@@ -202,7 +220,7 @@ export default function FluidOrb({
   return <div
     data-slot="fluid-orb"
     className={`relative overflow-hidden ${shape === 'circle' ? 'rounded-full' : ''} ${className || ''}`}
-    style={{ width: size, height: size, backgroundColor: fallback ? color : 'transparent', ...style }}
+    style={{ width: size, height: size, background: fallback ? `radial-gradient(circle at 32% 24%, #ffffff 0 24%, #a8c7ff 54%, ${color} 82%)` : 'transparent', ...style }}
     onPointerEnter={() => { if (animateOnHover) setHovered(true); }}
     onPointerLeave={() => { if (animateOnHover) setHovered(false); }}
     {...props}

@@ -10,6 +10,7 @@
 | [Persistence](persistencia.md) | Where are chats, tasks, and settings stored? |
 | [Terminal and browser](terminal-y-navegador.md) | How do the interactive tools work? |
 | [Floating chat](floating-chat.md) | How does the desktop widget share chats and controls with the main window? |
+| [Orbe fluido](orbe-fluid.md) | ¿Cómo se genera el orbe WebGL y cómo ajustar su patrón sin perder el aspecto original? |
 | [Chat history](revision-chat-historiales.md) | How are long conversations stored, paginated, and used as context? |
 | [AI catalog and routing](ai-catalog.md) | How are providers, models, Gateway routes, credentials and transport errors handled? |
 | [Motor del agente: resumen y límites](agent-stack.md) | ¿Qué usamos de AI SDK, Agent Plugins y LangChain, qué está probado y qué falta mejorar? |
