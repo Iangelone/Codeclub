@@ -56,6 +56,7 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
       checkAbort();
       const contentBefore = content;
       const reasoningBefore = reasoning;
+      let stepHasText = false;
       let requestedTool = false;
       streamError = undefined;
       // One SDK step per graph node. SDK still owns transport and tool events;
@@ -86,7 +87,12 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
       // fullStream conserva texto, razonamiento y eventos de tools en un único flujo.
       for await (const chunk of result.fullStream as AsyncIterable<any>) {
         if (chunk.type === 'text-delta') {
-          content += chunk.text ?? '';
+          const delta = chunk.text ?? '';
+          if (delta && !stepHasText) {
+            if (content && !structuredOutput) content += '\n\n';
+            stepHasText = true;
+          }
+          content += delta;
           if (!structuredOutput) callbacks.onTextDelta(content);
         } else if (chunk.type === 'reasoning-delta') {
           reasoning += chunk.text ?? '';
@@ -104,10 +110,12 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
 
       if (streamError != null) {
         await Promise.allSettled([result.usage, result.response]);
-        const error = streamError as { name?: string; statusCode?: number; responseHeaders?: Record<string, string> };
-        if (!requestedTool && state.retries < 2 && (error.statusCode === 429 || /RateLimitError$/.test(error.name || ''))) {
+        const error = streamError as { name?: string; message?: string; statusCode?: number; responseHeaders?: Record<string, string> };
+        const rateLimited = error.statusCode === 429 || /RateLimitError$/.test(error.name || '');
+        const temporarilyUnavailable = [500, 502, 503, 504].includes(error.statusCode ?? 0) || /service temporarily unavailable/i.test(error.message || '');
+        if (!requestedTool && state.retries < 2 && (rateLimited || temporarilyUnavailable)) {
           const retryAfter = Number(error.responseHeaders?.['retry-after']);
-          const delay = Number.isFinite(retryAfter) && retryAfter >= 0 ? retryAfter * 1000 : 30000 * (state.retries + 1);
+          const delay = Number.isFinite(retryAfter) && retryAfter >= 0 ? retryAfter * 1000 : (rateLimited ? 30000 : 1000) * (state.retries + 1);
           content = contentBefore;
           reasoning = reasoningBefore;
           if (!structuredOutput) callbacks.onTextDelta(content);

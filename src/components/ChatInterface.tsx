@@ -34,7 +34,7 @@ import { appendGenerationUsage, type GenerationUsageRecord } from '../lib/usage'
 import { appendExecutionLog } from '../lib/execution-log';
 import { appendGlobalChatTranscript, getProjectChatPath, getProjectTranscriptPath, readGlobalChatHistory, readGlobalChats, readProjectIndex, readProjectMeta, writeGlobalChatHistory, writeGlobalChats, writeProjectMeta, type ProjectMeta } from '../lib/projectManager';
 import { codeclubExtensions, type CodeclubExtension } from '../lib/extensions';
-import { activityTranslations, aiCredentialTranslations, chatHistoryTranslations, chatActionTranslations, LANGUAGE_STORAGE_KEY, rightSidebarTranslations, type AppLanguage, useAppLanguage } from '../lib/i18n';
+import { activityTranslations, aiCredentialTranslations, providerErrorTranslations, chatHistoryTranslations, chatActionTranslations, LANGUAGE_STORAGE_KEY, rightSidebarTranslations, type AppLanguage, useAppLanguage } from '../lib/i18n';
 import { connectAllAgentPluginMcp, loadAgentPlugins } from '../lib/agent-plugins';
 import OrbPaletteButton from './ui/OrbPaletteButton';
 import { credentialKeyFor, credentialTargetFor, modelIdFor, modelMatchesProvider, usesGateway } from '../lib/ai-routing';
@@ -1159,6 +1159,14 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   }, [commandKind, searchQuery]);
 
   useEffect(() => {
+    if (!menuOpen) {
+      setCredentialProvider(null);
+      setCredentialInput('');
+      setCommandKind((kind) => kind === 'credential' ? '' : kind);
+    }
+  }, [menuOpen]);
+
+  useEffect(() => {
     if (!menuOpen) return;
     const activeItem = commandMenuRef.current?.querySelector(`[data-command-index="${activeCommandIndex}"]`);
     activeItem?.scrollIntoView({ block: 'nearest' });
@@ -1353,7 +1361,9 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       const isCustomProvider = item.id === 'custom';
       const providerModels = catalog.filter((candidate) => candidate.type === 'model' && modelMatchesProvider(candidate, item));
       const nextModel = providerModels[0] || (isCustomProvider ? defaultModel : null);
-      const needsCredential = !isCustomProvider && (usesGateway(item, nextModel) || item.requiresApiKey !== false);
+      const requiresCredential = !isCustomProvider && (usesGateway(item, nextModel) || item.requiresApiKey !== false);
+      const savedCredential = requiresCredential ? await getSetting(credentialKeyFor(item, nextModel), '') : '';
+      const needsCredential = requiresCredential && (!savedCredential || savedCredential === 'dummy-key');
       needsProviderCredential = needsCredential;
       setCurrentModel(nextModel);
       setCredentialProvider(needsCredential ? credentialTargetFor(item, nextModel) : null);
@@ -1375,9 +1385,9 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       setCurrentModel(item);
       setCredentialProvider(null);
       const selectedProvider = currentProvider || defaultProvider;
-      const gatewaySelection = usesGateway(selectedProvider, item);
-      const gatewayKey = gatewaySelection ? await getSetting(credentialKeyFor(selectedProvider, item), '') : '';
-      if (gatewaySelection && (!gatewayKey || gatewayKey === 'dummy-key')) {
+      const requiresCredential = selectedProvider.id !== 'custom' && (usesGateway(selectedProvider, item) || selectedProvider.requiresApiKey !== false);
+      const savedCredential = requiresCredential ? await getSetting(credentialKeyFor(selectedProvider, item), '') : '';
+      if (requiresCredential && (!savedCredential || savedCredential === 'dummy-key')) {
         setCredentialProvider(credentialTargetFor(selectedProvider, item));
         setCredentialInput('');
         setInput('');
@@ -1625,6 +1635,9 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       return language === 'en'
         ? 'The provider reached its request limit. Wait a moment and try again.'
         : 'El proveedor alcanzó el límite de solicitudes. Esperá un momento y probá de nuevo.';
+    }
+    if ([500, 502, 503, 504].includes(fetch?.status ?? 0) || /service temporarily unavailable/.test(normalized)) {
+      return providerErrorTranslations[language].temporarilyUnavailable;
     }
     if (/network|fetch failed|enotfound|timeout|timed out|connection/i.test(normalized)) {
       return language === 'en'
@@ -3030,7 +3043,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 type="password"
                 value={credentialInput}
                 onChange={(event) => {setCredentialInput(event.target.value);setCustomConfigError('');}}
-                onKeyDown={(event) => { if (event.key !== 'Enter') return; event.preventDefault(); event.stopPropagation(); if (credentialInput.trim()) { saveCredential(); return; } setCredentialProvider(null); setCredentialInput(''); setMenuOpen(false); setCommandKind(''); chatInputRef.current?.focus(); }}
+                onKeyDown={(event) => { if (event.key !== 'Enter' && event.key !== 'Escape') return; event.preventDefault(); event.stopPropagation(); if (event.key === 'Enter' && credentialInput.trim()) { saveCredential(); return; } setCredentialProvider(null); setCredentialInput(''); setMenuOpen(false); setCommandKind(''); chatInputRef.current?.focus(); }}
                 placeholder={`${aiCredentialTranslations[language].enter} ${credentialProvider?.gatewayOnly ? 'Vercel AI Gateway' : credentialProvider?.label || credentialProvider?.id}`}
                 className="credential-menu-input"
                 style={{ boxSizing: 'border-box', width: '100%', height: '34px', padding: '0 32px 0 10px', border: 0, borderRadius: '8px', background: 'transparent', color: '#eeeeee', fontSize: '12px', outline: 'none' }}

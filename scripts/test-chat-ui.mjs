@@ -23,7 +23,7 @@ try {
   await store.saveTail('','fast',0,[{role:'user',content:'FAST user'},{role:'assistant',content:'FAST response'}]);
   await store.saveTail('','varied',0,rows.map((row,index)=>({...row,content:index===9999?'QA varied last':index%2===1?`QA varied ${index}\n\n${'Paragraph with different wrapping and line height. '.repeat(index%7*12+1)}`:row.content})));
   const entry=path.join(directory,'entry.tsx'),bundle=path.join(directory,'app.js');
-  await writeFile(entry,`import React from 'react';import {createRoot} from 'react-dom/client';import OrbPaletteProvider from ${JSON.stringify(path.join(repo,'src/components/OrbPaletteProvider.tsx'))};import ChatInterface from ${JSON.stringify(path.join(repo,'src/components/ChatInterface.tsx'))};const provider={id:'qa',label:'QA',api:location.origin+'/v1',type:'provider',requiresApiKey:false};const model={id:'qa-model',label:'QA model',providerId:'qa',type:'model',contextWindow:32768};createRoot(document.getElementById('root')!).render(<div style={{height:'100vh',background:'var(--codeclub-chat-background)'}}><OrbPaletteProvider><ChatInterface catalog={[provider,model]} defaultProvider={provider} defaultModel={model} eventPrefix="codeclub:qa"/></OrbPaletteProvider></div>);`);
+  await writeFile(entry,`import React from 'react';import {createRoot} from 'react-dom/client';import OrbPaletteProvider from ${JSON.stringify(path.join(repo,'src/components/OrbPaletteProvider.tsx'))};import ChatInterface from ${JSON.stringify(path.join(repo,'src/components/ChatInterface.tsx'))};const provider={id:'qa',label:'QA',api:location.origin+'/v1',type:'provider',requiresApiKey:false};const model={id:'qa-model',label:'QA model',providerId:'qa',type:'model',contextWindow:32768};const saved={...provider,id:'qa-saved',label:'QA saved',requiresApiKey:true};const missing={...saved,id:'qa-missing',label:'QA missing'};const gateway={id:'ai-gateway',label:'QA Gateway',type:'provider'};const extra=[saved,missing,gateway,{...model,id:'saved-model',label:'Saved model',providerId:saved.id},{...model,id:'missing-model',label:'Missing model',providerId:missing.id},{...model,id:'gateway-model',label:'Gateway model',gatewayId:'qa/gateway-model',providerId:'qa',gatewayAvailable:true,gatewayOnly:true}];createRoot(document.getElementById('root')!).render(<div style={{height:'100vh',background:'var(--codeclub-chat-background)'}}><OrbPaletteProvider><ChatInterface catalog={[provider,model,...extra]} defaultProvider={provider} defaultModel={model} eventPrefix="codeclub:qa"/></OrbPaletteProvider></div>);`);
   await build({entryPoints:[entry],outfile:bundle,bundle:true,format:'esm',platform:'browser',target:'es2022',nodePaths:[path.join(repo,'node_modules')],define:{'process.env.NODE_ENV':'"production"'},logLevel:'silent'});
   const cssDirectory=path.join(repo,'out/_next/static/chunks');
   const styles=(await readdir(cssDirectory)).filter(file=>file.endsWith('.css'));
@@ -185,6 +185,52 @@ try {
   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat')));
   await page.locator('.messages-area[data-chat-transition="idle"]').waitFor();
   assert.equal(await page.locator('.chat-turn').count(),0,'New chat clears the previous turn after its exit');
+
+  // Native credentials return presence, never the key itself.
+  await page.evaluate(()=>{
+    window.qaCredentialChecks=[];
+    window.qaAvailableCredentials=['qa-saved_api_key','ai_gateway_api_key'];
+    window.codeclub.credentialPresent=async key=>{window.qaCredentialChecks.push(key);return window.qaAvailableCredentials.includes(key);};
+  });
+  const selectProvider=async label=>{
+    await page.getByRole('textbox',{name:'Mensaje',exact:true}).fill('/proveedor');
+    await page.getByRole('option',{name:'Proveedor Seleccionar proveedor'}).click();
+    await page.getByRole('textbox',{name:'Buscar proveedor',exact:true}).fill(label);
+    await page.getByRole('option',{name:label+' proveedor',exact:true}).click();
+  };
+  await selectProvider('QA saved');
+  await page.waitForFunction(()=>window.qaCredentialChecks.includes('qa-saved_api_key'));
+  await page.getByRole('textbox',{name:'Buscar proveedor',exact:true}).waitFor({state:'hidden'});
+  assert.equal(await page.getByPlaceholder(/Escribí tu credencial/).count(),0,'Saved provider credential is reused');
+  await selectProvider('QA Gateway');
+  await page.waitForFunction(()=>window.qaCredentialChecks.includes('ai_gateway_api_key'));
+  await page.getByRole('textbox',{name:'Buscar proveedor',exact:true}).waitFor({state:'hidden'});
+  assert.equal(await page.getByPlaceholder(/Escribí tu credencial/).count(),0,'Gateway selection uses its saved native credential');
+  await selectProvider('QA missing');
+  await page.getByPlaceholder('Escribí tu credencial de QA missing').waitFor();
+  await page.getByPlaceholder('Escribí tu credencial de QA missing').press('Escape');
+  await page.getByPlaceholder(/Escribí tu credencial/).waitFor({state:'hidden'});
+  await page.getByRole('textbox',{name:'Mensaje',exact:true}).fill('Draft after cancelling credential');
+  assert.equal(await page.getByRole('button',{name:'Guardar credencial',exact:true}).count(),0,'Escape restores the normal send action');
+  assert.equal(await page.getByRole('button',{name:'Enviar',exact:true}).isEnabled(),true);
+  await page.getByRole('textbox',{name:'Mensaje',exact:true}).fill('');
+  await selectProvider('QA saved');
+  await selectProvider('QA missing');
+  await page.getByPlaceholder('Escribí tu credencial de QA missing').waitFor();
+  await page.locator('.messages-area').click({position:{x:10,y:10}});
+  await page.getByPlaceholder(/Escribí tu credencial/).waitFor({state:'hidden'});
+  await page.getByRole('button',{name:'Guardar credencial',exact:true}).waitFor({state:'hidden'});
+  await selectProvider('QA saved');
+  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('codeclub:language-change',{detail:{language:'en'}})));
+  // Provider command aliases stay available in either language.
+  await page.getByRole('textbox',{name:'Message',exact:true}).fill('/proveedor');
+  await page.getByRole('option',{name:'Provider Select provider'}).click();
+  await page.getByRole('textbox',{name:'Search provider',exact:true}).fill('QA missing');
+  await page.getByRole('option',{name:'QA missing provider',exact:true}).click();
+  await page.getByPlaceholder('Enter your credential for QA missing').waitFor();
+  await page.getByPlaceholder('Enter your credential for QA missing').press('Escape');
+  await page.getByPlaceholder(/Enter your credential/).waitFor({state:'hidden'});
+  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('codeclub:language-change',{detail:{language:'es'}})));
   assert.deepEqual(pageErrors,[]);
   console.log(JSON.stringify({passed:true,fixtureMessages:10000,mountedTurns:mounted,providerMessages:networkMessages.length,raceProtected:true,streamPersisted:true,sequentialTransitions:true,stableEntry:true}));
 }finally{

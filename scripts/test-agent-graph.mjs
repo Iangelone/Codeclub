@@ -98,6 +98,22 @@ setTimeout(() => backoffAbort.abort(), 20);
 await assert.rejects(pausedRun);
 assert.equal(pausedModel.doStreamCalls.length, 1);
 
+const unavailable = Object.assign(new Error('Service temporarily unavailable'), { statusCode: 503, responseHeaders: { 'retry-after': '0' } });
+const recovered = new MockLanguageModelV3({ doStream: [stream([{ type: 'error', error: unavailable }], 'error'), stream(text, 'stop')] });
+assert.equal(await runStream({ model: recovered, system: 'Fixture', messages: [{ role: 'user', content: 'Recover temporary outage' }], tools: {}, callbacks: { onTextDelta: () => {} } }), 'Verified.');
+assert.equal(recovered.doStreamCalls.length, 2);
+const serviceDown = new MockLanguageModelV3({ doStream: () => stream([{ type: 'error', error: unavailable }], 'error') });
+await assert.rejects(runStream({ model: serviceDown, system: 'Fixture', messages: [{ role: 'user', content: 'Bound outage retries' }], tools: {}, callbacks: { onTextDelta: () => {} } }));
+assert.equal(serviceDown.doStreamCalls.length, 3);
+const partialOutage = new MockLanguageModelV3({ doStream: stream([call('partial-outage'), { type: 'error', error: unavailable }], 'error') });
+await assert.rejects(runStream({ model: partialOutage, system: 'Fixture', messages: [{ role: 'user', content: 'No replay after a tool' }], tools, callbacks: { onTextDelta: () => {} } }));
+assert.equal(partialOutage.doStreamCalls.length, 1);
+const forbidden = new MockLanguageModelV3({ doStream: stream([{ type: 'error', error: Object.assign(new Error('Unauthorized'), { statusCode: 401 }) }], 'error') });
+await assert.rejects(runStream({ model: forbidden, system: 'Fixture', messages: [{ role: 'user', content: 'No retry for invalid credentials' }], tools: {}, callbacks: { onTextDelta: () => {} } }));
+assert.equal(forbidden.doStreamCalls.length, 1);
+const separated = new MockLanguageModelV3({ doStream: [stream([...text, call('between-paragraphs')], 'tool-calls'), stream(text, 'stop')] });
+assert.equal(await runStream({ model: separated, system: 'Fixture', messages: [{ role: 'user', content: 'Separate step text' }], tools, callbacks: { onTextDelta: () => {} } }), 'Verified.\n\nVerified.');
+
 let structured;
 const objectModel = new MockLanguageModelV3({ doStream: stream([
   { type: 'text-start', id: 'json' }, { type: 'text-delta', id: 'json', delta: '{"completed":true}' }, { type: 'text-end', id: 'json' },

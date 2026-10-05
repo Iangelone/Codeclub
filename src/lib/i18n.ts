@@ -18,6 +18,11 @@ export const aiCredentialTranslations = {
   en: { enter: 'Enter your credential for' },
 };
 
+export const providerErrorTranslations = {
+  es: { temporarilyUnavailable: 'El proveedor no está disponible temporalmente. Esperá un momento o elegí otro modelo.' },
+  en: { temporarilyUnavailable: 'The provider is temporarily unavailable. Wait a moment or choose another model.' },
+};
+
 export const floatingChatTranslations = {
   es: { chat: 'Chat flotante', controls: 'Controles del chat', open: 'Abrir Codeclub', newChat: 'Nuevo chat', collapse: 'Contraer chat', close: 'Cerrar widget', openAttention: 'Abrir pendiente', noAttention: 'Sin pendientes', drag: 'Arrastrar arriba o abajo de la pantalla' },
   en: { chat: 'Floating chat', controls: 'Chat controls', open: 'Open Codeclub', newChat: 'New chat', collapse: 'Collapse chat', close: 'Close widget', openAttention: 'Open pending item', noAttention: 'No pending items', drag: 'Drag to the top or bottom of the screen' },
