@@ -1,4 +1,5 @@
 import './globals.css';
+import OrbPaletteProvider from '../components/OrbPaletteProvider';
 
 export const metadata = { title: 'Codeclub', description: 'AI-focused IDE', icons: { icon: '/logo.png', shortcut: '/logo.png', apple: '/logo.png' } };
 const contentSecurityPolicy = [
@@ -15,5 +16,5 @@ const contentSecurityPolicy = [
 ].join('; ');
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="es"><head><meta httpEquiv="Content-Security-Policy" content={contentSecurityPolicy} /></head><body>{children}</body></html>;
+  return <html lang="es"><head><meta httpEquiv="Content-Security-Policy" content={contentSecurityPolicy} /></head><body><OrbPaletteProvider>{children}</OrbPaletteProvider></body></html>;
 }

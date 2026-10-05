@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'rea
 import { House, Bell, Plus, ChevronDown, GripHorizontal, Pin, PinOff, X } from 'lucide-react';
 import { motion, useAnimationControls, useReducedMotion } from 'motion/react';
 import ChatInterface from './ChatInterface';
-import FluidOrb from './ui/fluid-orb';
+import OrbPaletteButton from './ui/OrbPaletteButton';
 import { models, providers } from '../lib/ai-catalog';
 import { activityTranslations, floatingChatTranslations, useAppLanguage } from '../lib/i18n';
 import { useSharedSessions } from '../lib/shared-sessions';
@@ -127,7 +127,10 @@ export default function FloatingChat() {
     onDragEnter={event=>{event.preventDefault();setDropping(true);resize(true);}}
     onDragLeave={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node))setDropping(false);}}
     onDrop={()=>{setDropping(false);lastActivity.current=Date.now();}}>
-    <button className="floating-peek" type="button" title={text.chat} aria-label={text.chat} onClick={()=>resize(true)}><FluidOrb size={24} active={Boolean(relevant?.busy)} /><GripHorizontal size={14}/></button>
+    <div className="floating-peek">
+      <OrbPaletteButton size={24} active={Boolean(relevant?.busy)} className="floating-peek-orb" />
+      <button className="floating-peek-open" type="button" title={text.chat} aria-label={text.chat} onClick={()=>resize(true)}><GripHorizontal size={14}/></button>
+    </div>
     <header className="floating-toolbar">
       <nav aria-label={text.controls}>
         <button type="button" title={text.open} aria-label={text.open} onClick={() => void bridge()?.floatingOpenMain()}><House size={17} strokeWidth={1.7} /></button>
@@ -140,7 +143,7 @@ export default function FloatingChat() {
       <button className="floating-close" type="button" title={text.close} aria-label={text.close} onClick={() => void bridge()?.floatingClose()}><X size={16} strokeWidth={1.7} /></button>
     </header>
     <section className="floating-surface">
-      <ChatInterface catalog={catalog} defaultProvider={defaultProvider} defaultModel={defaultModel} panelId="floating" eventPrefix="codeclub:floating" floating onDraftChange={onDraft} composerLeading={<div className={`floating-orb ${needsAnswer?'needs-answer':relevant?.busy?'is-working':''}`} title={text.drag} aria-label={text.drag} {...dragProps}><FluidOrb aria-hidden="true" size={24} color="#2D5FD6" active={!needsAnswer && Boolean(relevant?.busy)} /></div>} />
+      <ChatInterface catalog={catalog} defaultProvider={defaultProvider} defaultModel={defaultModel} panelId="floating" eventPrefix="codeclub:floating" floating onDraftChange={onDraft} composerLeading={<div className={`floating-orb ${needsAnswer?'needs-answer':relevant?.busy?'is-working':''}`} title={text.drag} aria-label={text.drag} {...dragProps}><OrbPaletteButton size={24} active={!needsAnswer && Boolean(relevant?.busy)} className="floating-orb-button" /></div>} />
     </section>
   </motion.main>;
 }

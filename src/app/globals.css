@@ -1,5 +1,41 @@
 @import 'tailwindcss';
 
+@property --nexo-orb-blue {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #2d5fd6;
+}
+
+@property --codeclub-accent {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #3d9bff;
+}
+
+@property --codeclub-accent-bright {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #8bc7ff;
+}
+
+@property --nexo-electric-blue {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #2f6bff;
+}
+
+@property --electric-blue {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #2f6bff;
+}
+
+@property --codeclub-chat-glow {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(45, 95, 214, 0.2);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -23,10 +59,9 @@
   --codeclub-bg: #111111;
   --codeclub-center: #111111;
   --codeclub-surface: #161616;
-  --codeclub-chat-background: radial-gradient(ellipse at 30% 110%, #2d5fd633, transparent 55%), #111315;
   --codeclub-surface-raised: #1e1e1e;
   --codeclub-panel: rgba(27, 32, 41, 1);
-  --codeclub-graphite: linear-gradient(115deg, #1c2028 0%, #1b202a 52%, #1d2535 100%);
+  --codeclub-graphite: linear-gradient(115deg, color-mix(in srgb, var(--nexo-orb-blue) 6%, #1c2028) 0%, color-mix(in srgb, var(--nexo-orb-blue) 6%, #1b202a) 52%, color-mix(in srgb, var(--nexo-orb-blue) 12%, #1d2535) 100%);
   --codeclub-border: #2b2b2b;
   --codeclub-border-soft: rgba(255, 255, 255, 0.1);
   --codeclub-border-faint: rgba(255, 255, 255, 0.06);
@@ -98,7 +133,7 @@ body[data-theme='light'] {
 }
 
 .codeclub-graphite {
-  background: var(--codeclub-graphite);
+  background: linear-gradient(115deg, color-mix(in srgb, var(--nexo-orb-blue) 6%, #1c2028) 0%, color-mix(in srgb, var(--nexo-orb-blue) 6%, #1b202a) 52%, color-mix(in srgb, var(--nexo-orb-blue) 12%, #1d2535) 100%);
 }
 
 /* Paleta del marco del widget, limitada a las barras y la navegación lateral. */
@@ -143,7 +178,7 @@ section[aria-label='Gestor de paneles'] {
   border: 1px solid #303030;
   border-radius: 24px;
   padding: 6px 10px;
-  background: #272727;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--nexo-orb-blue) 5%, #272727), #272727 76%);
   color: #F5F5EF;
 }
 
@@ -160,6 +195,23 @@ section[aria-label='Gestor de paneles'] {
 .chat-composer .composer-box-inner .chat-input-orb {
   position: static;
   flex: 0 0 22px;
+}
+
+.orb-palette-trigger {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.orb-palette-trigger:focus-visible {
+  outline: 2px solid var(--codeclub-accent-bright);
+  outline-offset: 3px;
 }
 
 .chat-composer .composer-box-inner textarea {
@@ -253,7 +305,7 @@ section[aria-label='Gestor de paneles'] {
 
 /* Superficies principales: un único lenguaje de fondos para toda la app. */
 .codeclub-conversation-surface {
-  background: var(--codeclub-chat-background);
+  background: radial-gradient(ellipse at 30% 110%, var(--codeclub-chat-glow), transparent 55%), #111315;
   border-top-left-radius: 16px;
 }
 
@@ -265,8 +317,8 @@ section[aria-label='Gestor de paneles'] {
 }
 
 #codeclub-chat-panel .chat-composer .composer-box {
-  background: var(--codeclub-surface);
-  border-color: var(--codeclub-border);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--nexo-orb-blue) 5%, var(--codeclub-surface)), var(--codeclub-surface) 76%);
+  border-color: color-mix(in srgb, var(--codeclub-accent) 14%, var(--codeclub-border));
 }
 
 #codeclub-right-sidebar,

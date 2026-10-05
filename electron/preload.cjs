@@ -55,6 +55,8 @@ contextBridge.exposeInMainWorld('codeclub', {
   taskAssignment: () => ipcRenderer.invoke('codeclub:task-assignment'),
   taskFinish: (error) => ipcRenderer.invoke('codeclub:task-finish', error),
   onTasksChanged: (handler) => { const listener = () => handler(); ipcRenderer.on('codeclub:scheduled-tasks-changed', listener); return () => ipcRenderer.removeListener('codeclub:scheduled-tasks-changed', listener); },
+  broadcastOrbPalette: (index) => ipcRenderer.send('codeclub:orb-palette-change', index),
+  onOrbPaletteChange: (handler) => { const listener = (_event, index) => handler(index); ipcRenderer.on('codeclub:orb-palette-change', listener); return () => ipcRenderer.removeListener('codeclub:orb-palette-change', listener); },
   getPathForFile: (file) => webUtils.getPathForFile(file),
   integrationConfig: () => ipcRenderer.invoke('codeclub:integration-config'),
   integrationSave: (config) => ipcRenderer.invoke('codeclub:integration-save',config),

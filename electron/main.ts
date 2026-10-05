@@ -914,6 +914,15 @@ app.whenReady().then(async () => {
     await saveProjects();
     return project;
   });
+  ipcMain.on('codeclub:orb-palette-change', (event, index: unknown) => {
+    const sender = BrowserWindow.fromWebContents(event.sender);
+    if (!sender || sender.isDestroyed() || typeof index !== 'number' || !Number.isInteger(index) || index < 0 || index > 8) return;
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (window.id !== sender.id && !window.isDestroyed() && !window.webContents.isDestroyed()) {
+        window.webContents.send('codeclub:orb-palette-change', index);
+      }
+    }
+  });
   ipcMain.handle('window:minimize', (event) => BrowserWindow.fromWebContents(event.sender)?.minimize());
   ipcMain.handle('window:maximize', (event) => { const window = BrowserWindow.fromWebContents(event.sender); if (window?.isMaximized()) window.unmaximize(); else window?.maximize(); });
   ipcMain.handle('window:is-full-screen', (event) => BrowserWindow.fromWebContents(event.sender)?.isFullScreen() ?? false);

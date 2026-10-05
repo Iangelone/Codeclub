@@ -36,7 +36,7 @@ import { appendGlobalChatTranscript, getProjectChatPath, getProjectTranscriptPat
 import { codeclubExtensions, type CodeclubExtension } from '../lib/extensions';
 import { activityTranslations, aiCredentialTranslations, chatHistoryTranslations, chatActionTranslations, LANGUAGE_STORAGE_KEY, rightSidebarTranslations, type AppLanguage, useAppLanguage } from '../lib/i18n';
 import { connectAllAgentPluginMcp, loadAgentPlugins } from '../lib/agent-plugins';
-import FluidOrb from './ui/fluid-orb';
+import OrbPaletteButton from './ui/OrbPaletteButton';
 import { credentialKeyFor, credentialTargetFor, modelIdFor, modelMatchesProvider, usesGateway } from '../lib/ai-routing';
 
 const formatProcessingDuration = (durationMs: number) => durationMs >= 60000 ? `${(durationMs / 60000).toFixed(1)}min` : `${Math.max(0, Math.round(durationMs / 1000))}s`;
@@ -2943,8 +2943,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             </button>
           )}
           <span id="chat-input-help" className="sr-only">Escribí un mensaje. Usa Shift+Enter para una nueva línea y / para abrir comandos.</span>
-          <span className="chat-input-orb absolute left-3 top-3 z-10 grid h-[22px] w-[22px] place-items-center overflow-hidden rounded-full" aria-hidden={composerLeading ? undefined : true}>
-            {composerLeading || <FluidOrb size={22} color="#2D5FD6" animateOnHover={false} />}
+          <span className="chat-input-orb absolute left-3 top-3 z-10 grid h-[22px] w-[22px] place-items-center rounded-full">
+            {composerLeading || <OrbPaletteButton size={22} className="h-[22px] w-[22px]" />}
           </span>
           <textarea
             ref={chatInputRef}

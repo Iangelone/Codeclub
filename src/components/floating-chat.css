@@ -6,18 +6,21 @@
 .floating-toolbar button { padding: 0; flex-shrink: 0; }
 .floating-toolbar button:disabled { color: #666; cursor: default; }
 .floating-toolbar svg { width: 14px; height: 14px; stroke-width: 1.7; }
-.floating-toolbar button:focus-visible, .floating-chat-options button:focus-visible { outline: 2px solid #8bc7ff; outline-offset: 2px; }
+.floating-toolbar button:focus-visible, .floating-chat-options button:focus-visible { outline: 2px solid var(--codeclub-accent-bright); outline-offset: 2px; }
 .floating-drag-handle { flex: 1; height: 26px; display: grid; place-items: center; color: #444; cursor: grab; touch-action: none; }
-.floating-surface { flex: 1; display: flex; flex-direction: column; position: relative; min-height: 0; border: 1px solid #202020; border-radius: 22px; overflow: hidden; background: var(--codeclub-chat-background); }
+.floating-surface { flex: 1; display: flex; flex-direction: column; position: relative; min-height: 0; border: 1px solid #202020; border-radius: 22px; overflow: hidden; background: radial-gradient(ellipse at 30% 110%, var(--codeclub-chat-glow), transparent 55%), #111315; }
 .floating-orb { cursor: grab; touch-action: none; }
-.floating-orb.needs-answer { outline: 1px solid #8bc7ff; outline-offset: 3px; border-radius: 50%; }
+.floating-orb.needs-answer { outline: 1px solid var(--codeclub-accent-bright); outline-offset: 3px; border-radius: 50%; }
 .floating-peek { display: none; }
+.floating-peek-open { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
+.floating-peek-open:hover { background: color-mix(in srgb, var(--codeclub-accent) 14%, transparent); color: var(--codeclub-accent-bright); }
+.floating-peek-open:focus-visible { outline: 2px solid var(--codeclub-accent-bright); outline-offset: 2px; }
 .floating-shell.is-retracted { width: 80px; height: 36px; margin: 8px auto; padding: 4px 8px; border-radius: 20px; }
 .floating-shell.is-retracted .floating-toolbar, .floating-shell.is-retracted .floating-surface { display: none; }
-.floating-shell.is-retracted .floating-peek { display: flex; align-items: center; justify-content: space-between; width: 100%; border: 0; padding: 0; background: transparent; color: #777; cursor: pointer; }
-.floating-shell.is-dropping { border-color: #8bc7ff; }
+.floating-shell.is-retracted .floating-peek { display: flex; align-items: center; justify-content: space-between; width: 100%; color: #777; }
+.floating-shell.is-dropping { border-color: var(--codeclub-accent-bright); }
 @media (prefers-reduced-motion: no-preference) { .floating-orb.is-working { animation: codeclub-orb-pulse 2s ease-in-out infinite; } }
-@keyframes codeclub-orb-pulse { 50% { filter: drop-shadow(0 0 4px #3d9bff80); } }
+@keyframes codeclub-orb-pulse { 50% { filter: drop-shadow(0 0 4px color-mix(in srgb, var(--codeclub-accent) 50%, transparent)); } }
 .floating-surface .chat-interface-container { flex: 1; height: auto; min-height: 0; max-width: none; padding: 0 10px 10px; }
 .floating-surface .messages-area { padding: 12px 6px 14px; }
 .floating-surface .chat-turn { padding-left: 14px; }
@@ -28,7 +31,7 @@
 .floating-surface .chat-markdown pre { max-width: 100%; overflow-x: auto; }
 .floating-surface .command-menu { max-height: 140px; overflow-y: auto; }
 .floating-surface .messages-area > .pointer-events-none { font-size: 15px; opacity: .6; }
-.floating-surface .chat-composer .composer-box { padding: 0; background: #161616; border-color: #2b2b2b; border-radius: 20px; }
+.floating-surface .chat-composer .composer-box { padding: 0; background: linear-gradient(135deg, color-mix(in srgb, var(--nexo-orb-blue) 5%, #161616), #161616 76%); border-color: color-mix(in srgb, var(--codeclub-accent) 14%, #2b2b2b); border-radius: 20px; }
 .floating-surface .chat-composer .composer-box-inner { min-height: 38px !important; padding: 6px 10px !important; gap: 10px; }
 .floating-surface .chat-composer .composer-box-inner .chat-input-orb { position: static; flex: 0 0 24px; width: 24px; height: 24px; }
 .floating-surface textarea { font-size: 13px; }

@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
+import { motion, useReducedMotion } from 'motion/react';
+import { useOrbPalette } from '../OrbPaletteProvider';
 
 export type FluidOrbProps = React.ComponentProps<'div'> & {
   size?: number;
@@ -134,6 +136,8 @@ export default function FluidOrb({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [hovered, setHovered] = useState(false);
   const [fallback, setFallback] = useState(false);
+  const { palette } = useOrbPalette();
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -220,11 +224,18 @@ export default function FluidOrb({
   return <div
     data-slot="fluid-orb"
     className={`relative overflow-hidden ${shape === 'circle' ? 'rounded-full' : ''} ${className || ''}`}
-    style={{ width: size, height: size, background: fallback ? `radial-gradient(circle at 32% 24%, #ffffff 0 24%, #a8c7ff 54%, ${color} 82%)` : 'transparent', ...style }}
+    style={{ width: size, height: size, ...style }}
     onPointerEnter={() => { if (animateOnHover) setHovered(true); }}
     onPointerLeave={() => { if (animateOnHover) setHovered(false); }}
     {...props}
   >
-    <canvas ref={canvasRef} className="block h-full w-full" aria-hidden="true" />
+    <motion.div
+      className="h-full w-full"
+      style={{ background: fallback ? `radial-gradient(circle at 32% 24%, #ffffff 0 24%, #a8c7ff 54%, ${color} 82%)` : 'transparent' }}
+      animate={{ filter: `hue-rotate(${palette.hue}deg)` }}
+      transition={reducedMotion ? { duration: 0 } : { duration: 0.48, ease: [0.22, 1, 0.36, 1] }}
+    >
+      <canvas ref={canvasRef} className="block h-full w-full" aria-hidden="true" />
+    </motion.div>
   </div>;
 }
