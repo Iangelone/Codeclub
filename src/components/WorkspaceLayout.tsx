@@ -413,12 +413,6 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
       root.querySelectorAll<HTMLElement>('[role="tablist"] > div').forEach((item) => item.setAttribute('role', 'presentation'));
       const panelMenu = root.querySelector<HTMLElement>('[role="menu"]');
       panelMenu?.setAttribute('aria-label', 'Paneles de la sidebar derecha');
-      const treeToggle = root.querySelector<HTMLButtonElement>('button[aria-pressed]');
-      if (treeToggle) {
-        const label = filesTreeVisible ? 'Ocultar árbol de archivos' : 'Mostrar árbol de archivos';
-        treeToggle.setAttribute('aria-label', label);
-        treeToggle.setAttribute('title', label);
-      }
       const fileTree = root.querySelector<HTMLElement>('aside');
       if (fileTree) {
         fileTree.setAttribute('role', 'tree');
@@ -1187,7 +1181,7 @@ export function BrowserPanel({ isolated = false }: { isolated?: boolean } = {}) 
     setSelectionMode(true);
     let pickerCursor = '';
     try {
-      const response = await fetch('/cursors/dark/arrow.cur');
+      const response = await fetch('./cursors/dark/arrow.cur');
       const bytes = new Uint8Array(await response.arrayBuffer());
       let binary = '';
       bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
