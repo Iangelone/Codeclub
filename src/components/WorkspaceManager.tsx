@@ -67,6 +67,7 @@ function WorkspaceManager({ catalog, defaultProvider, defaultModel }: { catalog:
   }, []);
 
   const selectActiveProject = (project: ProjectEntry) => {
+    const projectChanged = selectedProject?.projectPath !== project.path;
     setProjectPickerOpen(false);
     window.dispatchEvent(new CustomEvent('codeclub:project-selection-changed', {
       detail: { selected: Boolean(project.path), keepChat: !project.path, projectPath: project.path, projectName: project.name },
@@ -74,6 +75,7 @@ function WorkspaceManager({ catalog, defaultProvider, defaultModel }: { catalog:
     window.dispatchEvent(new CustomEvent('codeclub:active-project', {
       detail: { projectPath: project.path || null, projectName: project.name },
     }));
+    if (projectChanged) window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
   };
 
   useEffect(() => {
