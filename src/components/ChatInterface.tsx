@@ -20,7 +20,7 @@ import { oneDark } from '@codemirror/theme-one-dark';
 import { copyText, safeListen, desktopFileUrl as convertFileSrc, nativeInvoke as invoke, fileExists as exists, makeDirectory as mkdir, readDesktopBytes as readFile, readDesktopText as readTextFile, removeDesktopFile as remove, writeDesktopText as writeTextFile, selectDesktopFiles as open } from '../lib/runtime';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { createGoogle } from '@ai-sdk/google';
-import { createGateway, jsonSchema, Output } from 'ai';
+import { createGateway, jsonSchema, Output, tool } from 'ai';
 import ReactMarkdown from 'react-markdown';
 import { AnimatePresence, motion, useAnimationControls, useReducedMotion } from 'motion/react';
 import { generateManifest } from 'material-icon-theme';
@@ -35,7 +35,7 @@ import { appendGenerationUsage, type GenerationUsageRecord } from '../lib/usage'
 import { appendExecutionLog } from '../lib/execution-log';
 import { appendGlobalChatTranscript, getProjectChatPath, getProjectTranscriptPath, readGlobalChatHistory, readGlobalChats, readProjectIndex, readProjectMeta, writeGlobalChatHistory, writeGlobalChats, writeProjectMeta, type ProjectMeta } from '../lib/projectManager';
 import { codeclubExtensions, type CodeclubExtension } from '../lib/extensions';
-import { activityTranslations, aiCredentialTranslations, providerErrorTranslations, chatHistoryTranslations, chatActionTranslations, LANGUAGE_STORAGE_KEY, rightSidebarTranslations, type AppLanguage, useAppLanguage } from '../lib/i18n';
+import { activityTranslations, aiCredentialTranslations, providerErrorTranslations, chatHistoryTranslations, chatActionTranslations, agentTextSelectionTranslations, LANGUAGE_STORAGE_KEY, rightSidebarTranslations, type AppLanguage, useAppLanguage } from '../lib/i18n';
 import { connectAllAgentPluginMcp, loadAgentPlugins } from '../lib/agent-plugins';
 import OrbPaletteButton from './ui/OrbPaletteButton';
 import { ORB_PALETTES, useOrbPalette } from './OrbPaletteProvider';
@@ -103,22 +103,7 @@ function MarkdownCodeBlock({ children }: { children?: React.ReactNode }) {
 }
 
 function MarkdownInlineCode({ children }: { children?: React.ReactNode }) {
-  const [copied, setCopied] = useState(false);
-  const content = getMarkdownNodeText(children);
-  const handleCopy = async () => {
-    await copyText(content);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1400);
-  };
-
-  return <code className="chat-inline-code">
-    <span>{children}</span>
-    <span className="chat-inline-code-actions">
-      <span className="chat-inline-code-divider" aria-hidden="true">|</span>
-      <button type="button" onClick={() => window.dispatchEvent(new CustomEvent('codeclub:execute-inline-code', { detail: { code: content } }))} aria-label="Ejecutar código inline" title="Ejecutar código inline"><Play size={11} strokeWidth={2} aria-hidden="true" /></button>
-      <button type="button" onClick={() => void handleCopy()} aria-label={copied ? 'Código copiado' : 'Copiar código inline'} title={copied ? 'Copiado' : 'Copiar'}>{copied ? <Check size={11} strokeWidth={2.2} aria-hidden="true" /> : <Copy size={11} strokeWidth={1.9} aria-hidden="true" />}</button>
-    </span>
-  </code>;
+  return <code className="chat-inline-code">{children}</code>;
 }
 
 const MemoizedChatMarkdown = React.memo(function MemoizedChatMarkdown({ content }: { content: string }) {
@@ -376,14 +361,61 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [input, setInput] = useState('');
   useEffect(() => { onDraftChange?.(input); }, [input, onDraftChange]);
+  const [agentTextSelection, setAgentTextSelection] = useState<{ text: string; top: number; left: number } | null>(null);
+  const [selectionCommentOpen, setSelectionCommentOpen] = useState(false);
+  const [selectionComment, setSelectionComment] = useState('');
   const [artifactReferences, setArtifactReferences] = useState<{ kind: 'plan' | 'todo'; id: string; title: string }[]>([]);
   const [browserReferences, setBrowserReferences] = useState<{ id: string; title: string; text: string; url?: string; markerId?: string }[]>([]);
+  const [selectedTextReferences, setSelectedTextReferences] = useState<{ id: string; text: string; comment?: string }[]>([]);
   const browserRefContainerRef = useRef<HTMLDivElement>(null);
   const [maxVisibleBrowserRefs, setMaxVisibleBrowserRefs] = useState(3);
   const [attachedFiles, setAttachedFiles] = useState<ChatAttachment[]>([]);
   const [attachmentProgress,setAttachmentProgress] = useState('');
   const [attachmentError,setAttachmentError] = useState(false);
   const chatPanelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const hideSelectionBar = () => {
+      setAgentTextSelection(null);
+      setSelectionCommentOpen(false);
+      setSelectionComment('');
+    };
+    const handleSelectionChange = () => {
+      if (document.activeElement instanceof Element && document.activeElement.closest('.chat-selection-toolbar-wrap')) return;
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed || !selection.toString().trim()) { hideSelectionBar(); return; }
+      const rootFor = (node: Node | null) => (node instanceof Element ? node : node?.parentElement)?.closest('.chat-markdown-assistant') || null;
+      const root = rootFor(selection.anchorNode);
+      if (!root || root !== rootFor(selection.focusNode)) { hideSelectionBar(); return; }
+      const range = selection.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      if (!rect.width && !rect.height) { hideSelectionBar(); return; }
+      const barWidth = Math.min(286, window.innerWidth - 16);
+      const left = Math.max(8, Math.min(window.innerWidth - barWidth - 8, rect.left + rect.width / 2 - barWidth / 2));
+      const preferredTop = rect.top > 58 ? rect.top - 48 : rect.bottom + 8;
+      const top = Math.max(8, Math.min(window.innerHeight - 48, preferredTop));
+      setAgentTextSelection({ text: selection.toString().trim(), top, left });
+    };
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('.chat-selection-toolbar-wrap')) return;
+      if (target?.closest('.chat-markdown-assistant')) {
+        setSelectionCommentOpen(false);
+        setSelectionComment('');
+        return;
+      }
+      hideSelectionBar();
+    };
+    document.addEventListener('selectionchange', handleSelectionChange);
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('scroll', hideSelectionBar, true);
+    window.addEventListener('resize', hideSelectionBar);
+    return () => {
+      document.removeEventListener('selectionchange', handleSelectionChange);
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('scroll', hideSelectionBar, true);
+      window.removeEventListener('resize', hideSelectionBar);
+    };
+  }, []);
   const [isStreaming, setIsStreaming] = useState(false);
   const [agentState, setAgentState] = useState('idle');
   const agentStartedAtRef = useRef(0);
@@ -497,6 +529,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
           content: message.content || '',
           displayContent: message.displayContent,
           reasoning: message.reasoning || '',
+          progress: message.progress || '',
           timeline: message.timeline || [],
           tools: message.tools || [],
           meta: message.meta || null,
@@ -538,7 +571,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   }, []);
   const agentStatusText = chatText.status[agentState as keyof typeof chatText.status] || chatText.status.idle;
   const isAgentBusy = isStreaming;
-  const sendButtonActive = isAgentBusy || Boolean(input.trim()) || attachedFiles.length > 0 || Boolean(browserReferences.length) || artifactReferences.length > 0 || Boolean(computerContext) || Boolean(credentialProvider);
+  const sendButtonActive = isAgentBusy || Boolean(input.trim()) || attachedFiles.length > 0 || Boolean(browserReferences.length) || selectedTextReferences.length > 0 || artifactReferences.length > 0 || Boolean(computerContext) || Boolean(credentialProvider);
   useEffect(() => { window.dispatchEvent(new CustomEvent('codeclub:agent-activity', { detail: { chatId: activeChat?.chatId, state: agentState, tool: activeToolName, agent: 'Desarrollo' } })); }, [activeChat?.chatId, agentState, activeToolName]);
   useEffect(() => {
     const handleArtifactReference = (event: Event) => {
@@ -1537,18 +1570,21 @@ const lineDelta = (before: string[], after: string[]) => {
 const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnapshot) => {
   let additions = 0;
   let deletions = 0;
-  let files = 0;
+  const fileChanges: Array<{ path: string; additions: number; deletions: number; status: 'added' | 'deleted' | 'modified' }> = [];
   const paths = new Set([...before.keys(), ...after.keys()]);
   paths.forEach((path) => {
     const beforeContent = before.get(path);
     const afterContent = after.get(path);
-    if (beforeContent === null || afterContent === null || beforeContent === undefined || afterContent === undefined) return;
-    const delta = lineDelta((beforeContent || '').split(/\r?\n/), (afterContent || '').split(/\r?\n/));
+    if (beforeContent === afterContent || beforeContent === null || afterContent === null) return;
+    const oldText = beforeContent ?? '';
+    const newText = afterContent ?? '';
+    const delta = lineDelta(oldText.split(/\r?\n/), newText.split(/\r?\n/));
+    if (!delta.additions && !delta.deletions) return;
     additions += delta.additions;
     deletions += delta.deletions;
-    if (delta.additions || delta.deletions) files += 1;
+    fileChanges.push({ path, ...delta, status: beforeContent === undefined ? 'added' : afterContent === undefined ? 'deleted' : 'modified' });
   });
-  return { additions, deletions, files };
+  return { additions, deletions, files: fileChanges.length, fileChanges };
 };
 
   const escapeXml = (value: unknown) => String(value ?? '')
@@ -1824,6 +1860,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       visualAnimationRef.current = null;
     }
     const messageArtifactReferences = artifactReferences;
+    const messageSelectedTextReferences = selectedTextReferences;
     const visibleContent = content;
     if (messageArtifactReferences.length > 0) {
       const refsText = messageArtifactReferences.map((reference, index) => `Referencia de artifact ${index + 1}: @${reference.kind} "${reference.title}" (id: ${reference.id})`).join('\n');
@@ -1842,6 +1879,13 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         .join('\n\n');
       content = `${content}\n\n${refsText}`;
       setBrowserReferences([]);
+    }
+    if (messageSelectedTextReferences.length > 0) {
+      const refsText = messageSelectedTextReferences
+        .map((ref) => `${ref.comment ? `Comentario sobre el texto seleccionado:\n${ref.comment}\n\n` : ''}Texto seleccionado:\n${ref.text}`)
+        .join('\n\n');
+      content = `${content}${content.trim() ? '\n\n' : ''}${refsText}`;
+      setSelectedTextReferences([]);
     }
     const abortController = new AbortController();
     let pluginMcpClose: (() => Promise<unknown>) | undefined;
@@ -1936,7 +1980,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         ? { ...message, tools: message.tools.map((event: any) => event.id === resolvedAskUserId ? { ...event, answer: visibleContent } : event) }
         : message)
       : baseMessages;
-    const userMessage = { historyIndex: (baseMessages[0]?.historyIndex??historyWindow.range.current.start)+baseMessages.length, role: 'user', content, displayContent: resumeAskUserId ? '' : visibleContent, createdAt: Date.now(), hidden: Boolean(resumeAskUserId), artifactReferences: messageArtifactReferences, browserReferences: messageBrowserReferences, computerContext: messageComputerContext, attachments: attachments.map(({ path, name, mediaType, size, previewUrl }) => ({ path, name, mediaType, size, previewUrl })) };
+    const userMessage = { historyIndex: (baseMessages[0]?.historyIndex??historyWindow.range.current.start)+baseMessages.length, role: 'user', content, displayContent: resumeAskUserId ? '' : visibleContent, createdAt: Date.now(), hidden: Boolean(resumeAskUserId), artifactReferences: messageArtifactReferences, browserReferences: messageBrowserReferences, selectedTextReferences: messageSelectedTextReferences, computerContext: messageComputerContext, attachments: attachments.map(({ path, name, mediaType, size, previewUrl }) => ({ path, name, mediaType, size, previewUrl })) };
     const newMessages = [...contextualBaseMessages, userMessage];
     const pendingAssistant = { role: 'assistant', content: '', timeline: [], tools: [], agentName: 'Desarrollo' };
     runtime.messages = [...newMessages, pendingAssistant];
@@ -2000,6 +2044,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       let routeSpecialist: AgentSpecialist = 'primary';
       let assistantContent = '';
       let assistantReasoning = '';
+      let assistantProgress = '';
       let assistantTools: any[] = [];
       let assistantTimeline: any[] = [];
       let executionStartedAt = Date.now();
@@ -2008,7 +2053,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       const executionCallQueues = new Map<string, string[]>();
       let assistantUpdateFrame: number | null = null;
       const updateAssistantMessage = () => {
-        runtime.messages = [...newMessages, { role: 'assistant', content: assistantContent, reasoning: assistantReasoning, timeline: assistantTimeline, tools: assistantTools, agentName: 'Desarrollo' }];
+        runtime.messages = [...newMessages, { role: 'assistant', content: assistantContent, reasoning: assistantReasoning, progress: assistantProgress, timeline: assistantTimeline, tools: assistantTools, agentName: 'Desarrollo' }];
         if (isVisibleGeneration()) setMessages(runtime.messages);
         publishRuntime();
       };
@@ -2125,10 +2170,23 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         };
         void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'tool-router', input: { mode: runMode, specialist: routeSpecialist, prompt: content }, output: { status: 'fallback-deterministic', error: String(error), tools: Object.keys(tools) } });
       }
+      tools = {
+        ...tools,
+        reportProgress: tool({
+          description: 'Show a short, user-facing status of the current task or phase. Call before substantial work and when the phase changes. This is a concise progress label, not private reasoning.',
+          inputSchema: jsonSchema<any>({ type: 'object', properties: { summary: { type: 'string', minLength: 2, maxLength: 120, description: 'A brief natural-language phrase describing what you are doing, in the user\'s language.' } }, required: ['summary'], additionalProperties: false }),
+          execute: async ({ summary }: { summary: string }) => {
+            assistantProgress = String(summary || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+            updateAssistantMessage();
+            return { ok: true, summary: assistantProgress };
+          },
+        }),
+      };
       beforeWorkspaceSnapshot = await readWorkspaceSnapshot(toolProjectPath);
       updateAssistantMessage();
       const system = [
         'You are Codeclub\'s coding agent. Think and operate internally in English. On demand, discover and use tools, skills, plugins, and prior chat context. Verify real results; never invent. Reply in the user\'s language.',
+        'For substantial work, call reportProgress before starting and when moving to a new phase. Use one brief user-facing phrase in the user\'s language (for example, "Inspecting the project" or "Implementing the selected text actions"). These are progress updates, not chain-of-thought; never reveal private reasoning. Do not call it for routine short answers.',
         responseSaverEnabled ? 'Keep the final response concise and within a strict maximum of 500 characters. Preserve only the most useful facts and omit lengthy explanations.' : '',
       ].filter(Boolean).join(' ');
       // Algunos proveedores compatibles rechazan response_format junto con tools.
@@ -2209,6 +2267,12 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             onToolExecutionStart: ({ callId, toolCall }) => {
               if (!isCurrentGeneration()) return;
               const name = toolCall?.toolName || 'tool';
+              if (name === 'reportProgress') {
+                runtime.tool = '';
+                publishRuntime();
+                if (isVisibleGeneration()) setActiveToolName('');
+                return;
+              }
               const innerToolName = name === 'executeTool' ? toolCall?.input?.name : name;
               if (String(innerToolName || '').startsWith('computer')) setComputerUseActive(true);
               const sourceCallId = callId || toolCall?.toolCallId || '';
@@ -2226,6 +2290,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             },
             onToolExecutionEnd: ({ callId, toolCall, toolExecutionMs, toolOutput }) => {
               if (!isCurrentGeneration()) return;
+              if (toolCall?.toolName === 'reportProgress') return;
               const toolResult = toolOutput?.output ?? toolOutput?.result ?? toolOutput;
               const toolStatus = toolOutput?.type === 'tool-result' && toolResult?.ok !== false ? 'completed' : 'error';
               const sourceCallId = callId || toolCall?.toolCallId || '';
@@ -2324,7 +2389,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       if (responseSaverEnabled) assistantContent = limitResponseLength(assistantContent);
       if (!isCurrentGeneration() || abortController.signal.aborted) return;
       const changes = contextProjectPath ? summarizeWorkspaceDelta(beforeWorkspaceSnapshot, await readWorkspaceSnapshot(toolProjectPath)) : null;
-      const assistantMessage = { historyIndex: userMessage.historyIndex+1, role: 'assistant', content: assistantContent || 'La ejecución terminó sin texto final, pero las evidencias quedaron registradas.', timeline: assistantTimeline, tools: assistantTools, agentName: 'Desarrollo', meta: { provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt, status: 'completed', changes, usage: latestUsage ? { inputTokens: latestUsage.inputTokens, outputTokens: latestUsage.outputTokens, totalTokens: latestUsage.totalTokens, reasoningTokens: latestUsage.reasoningTokens } : null } };
+      const assistantMessage = { historyIndex: userMessage.historyIndex+1, role: 'assistant', content: assistantContent || 'La ejecución terminó sin texto final, pero las evidencias quedaron registradas.', progress: assistantProgress, timeline: assistantTimeline, tools: assistantTools, agentName: 'Desarrollo', meta: { provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt, status: 'completed', changes, usage: latestUsage ? { inputTokens: latestUsage.inputTokens, outputTokens: latestUsage.outputTokens, totalTokens: latestUsage.totalTokens, reasoningTokens: latestUsage.reasoningTokens } : null } };
       if (assistantUpdateFrame !== null) {
         window.cancelAnimationFrame(assistantUpdateFrame);
         assistantUpdateFrame = null;
@@ -2481,10 +2546,31 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     if (visualAnimationRef.current) clearInterval(visualAnimationRef.current);
   }, []);
 
+  const dismissAgentTextSelection = () => {
+    setAgentTextSelection(null);
+    setSelectionCommentOpen(false);
+    setSelectionComment('');
+    window.getSelection()?.removeAllRanges();
+  };
+  const addSelectedTextToChat = (comment = '') => {
+    if (!agentTextSelection) return;
+    setSelectedTextReferences((current) => [...current, { id: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`, text: agentTextSelection.text, ...(comment.trim() ? { comment: comment.trim() } : {}) }]);
+    setComposerDocked(true);
+    dismissAgentTextSelection();
+    requestAnimationFrame(() => chatInputRef.current?.focus());
+  };
+  const askForMoreDetails = () => {
+    if (!agentTextSelection || isAgentBusy) return;
+    const selectedText = agentTextSelection.text.split(/\r?\n/).map((line) => `> ${line}`).join('\n');
+    const prompt = `${agentTextSelectionTranslations[language].detailPrompt}\n\n${selectedText}`;
+    dismissAgentTextSelection();
+    void sendMessage(prompt, messages, false);
+  };
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (chatTransitionPhase === 'exiting' || chatTransitionPhase === 'loading') return;
-    if ((!input.trim() && attachedFiles.length === 0 && browserReferences.length === 0 && artifactReferences.length === 0 && !computerContext) || isAgentBusy) return;
+    if ((!input.trim() && attachedFiles.length === 0 && browserReferences.length === 0 && selectedTextReferences.length === 0 && artifactReferences.length === 0 && !computerContext) || isAgentBusy) return;
 
     if (/^\/terminal$/i.test(input.trim())) {
       const rect = e.currentTarget.getBoundingClientRect();
@@ -2619,11 +2705,41 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       const completeMessages = bridge?.chatAll ? await bridge.chatAll(chat.projectPath, chat.chatId)
         : chat.projectPath ? await readProjectChatHistory(chat.projectPath, chat.chatId) : await readGlobalChatHistory(chat.chatId);
       for (const [index, message] of visibleMessages.entries()) completeMessages[message.historyIndex ?? rangeStart + index] = message;
+      const tracedMessages = completeMessages.map((message: any) => {
+        if (message?.role !== 'assistant') return message;
+        const tools = Array.isArray(message.tools) ? message.tools : [];
+        const fileChanges = message.meta?.changes?.fileChanges || [];
+        const hasActivity = Boolean(message.progress) || tools.length > 0 || (message.timeline || []).some((event: any) => event.type === 'tool') || fileChanges.length > 0;
+        const components = ['MemoizedChatMarkdown'];
+        if (hasActivity) components.push('TurnActivity');
+        if (tools.some((event: any) => event.name === 'askUser')) components.push('AskUserCards');
+        return {
+          ...message,
+          tracePresentation: {
+            component: 'ChatInterface',
+            source: 'src/components/ChatInterface.tsx',
+            children: components,
+            activity: hasActivity ? {
+              component: 'TurnActivity',
+              source: 'src/components/ChatInterface.tsx',
+              props: ['progress', 'timeline', 'tools', 'meta.changes', 'active', 'language'],
+              summary: { progress: message.progress || '', actionCount: tools.length, changedFiles: fileChanges.length, additions: message.meta?.changes?.additions ?? 0, deletions: message.meta?.changes?.deletions ?? 0 },
+              contents: {
+                actions: tools.map((event: any, index: number) => ({ id: event.id || event.callId || null, component: event.name, input: event.input ?? {}, outputPath: `tools.${index}.output`, status: event.output?.status || event.status || (event.output?.ok === false || event.output?.error || event.output?.code > 0 ? 'error' : 'completed'), durationMs: event.durationMs ?? null })),
+                commands: tools.flatMap((event: any, index: number) => event.name === 'runCommand' ? [{ component: 'runCommand', toolIndex: index, command: [event.input?.command, ...(event.input?.args || [])].filter(Boolean).join(' '), outputPath: `tools.${index}.output`, displays: ['stdout', 'stderr', 'code'] }] : []),
+                files: fileChanges,
+              },
+            } : null,
+          },
+        };
+      });
       const trace = {
+        schemaVersion: 2,
         capturedAt: new Date().toISOString(),
         chat: { id: chat.chatId, projectPath: chat.projectPath, name: chat.name || null },
         selection: { provider: currentProvider.id, model: currentModel?.id || null },
-        messages: completeMessages,
+        presentation: { component: 'ChatInterface', source: 'src/components/ChatInterface.tsx', activityComponent: 'TurnActivity', activityStyles: 'src/app/globals.css (.turn-activity)' },
+        messages: tracedMessages,
       };
       if (!await copyText(JSON.stringify(trace, null, 2))) return;
     } catch (error) {
@@ -2836,6 +2952,17 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
 
   return (
     <div ref={chatPanelRef} role="region" aria-label={`Chat${activeChat?.name ? `: ${activeChat.name}` : ''}`} className={`chat-interface-container @container mx-auto flex h-full w-full max-w-[680px] min-w-0 flex-col ${floating ? 'gap-0' : 'gap-4'} overflow-visible px-3 pb-5 ${timelineVisible ? '' : 'timeline-hidden'}`} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleComposerDrop}>
+      {agentTextSelection && createPortal(<div className="chat-selection-toolbar-wrap" style={{ top: agentTextSelection.top, left: agentTextSelection.left, '--selection-accent': palette.accent } as React.CSSProperties} onPointerDown={(event) => event.preventDefault()}>
+        {!selectionCommentOpen && <div className="chat-selection-toolbar" role="toolbar" aria-label={agentTextSelectionTranslations[language].toolbar}>
+          <button type="button" onClick={() => { setSelectionCommentOpen(true); setSelectionComment(''); }}>{agentTextSelectionTranslations[language].addToChat}</button>
+          <span className="chat-selection-toolbar-divider" aria-hidden="true" />
+          <button type="button" disabled={isAgentBusy} onClick={askForMoreDetails}>{agentTextSelectionTranslations[language].moreDetails}</button>
+        </div>}
+        {selectionCommentOpen && <form className="chat-selection-comment" onSubmit={(event) => { event.preventDefault(); addSelectedTextToChat(selectionComment); }}>
+          <textarea autoFocus value={selectionComment} onChange={(event) => setSelectionComment(event.target.value)} placeholder={agentTextSelectionTranslations[language].commentPlaceholder} aria-label={agentTextSelectionTranslations[language].commentPlaceholder} rows={1} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); setSelectionCommentOpen(false); } if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); addSelectedTextToChat(selectionComment); } }} />
+          <button type="submit" aria-label={agentTextSelectionTranslations[language].addToChat} title={agentTextSelectionTranslations[language].addToChat}><ArrowUp size={16} strokeWidth={2} /></button>
+        </form>}
+      </div>, document.body)}
       {/* Zona de mensajes */}
       {historyWindow.loading && <div role="status" className="text-center text-[11px] text-(--codeclub-text-muted)">{chatHistoryTranslations[language].loading}</div>}
       {historyWindow.error && <div role="alert" className="flex items-center justify-center gap-2 text-[11px] text-(--codeclub-text-muted)">{chatHistoryTranslations[language].failed}<button type="button" onClick={()=>{const chat=activeChatRef.current;if(chat)void historyWindow.open(chat);}} className="text-(--codeclub-accent-bright)">{chatHistoryTranslations[language].retry}</button></div>}
@@ -2868,9 +2995,10 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               const isLiveAssistant = m.role === 'assistant' && isStreaming && i === messages.length - 1;
               return <React.Fragment key={`${m.role}-${i}`}>
             {<motion.div initial={isLiveAssistant ? { opacity: 0.58 } : false} animate={{ opacity: 1 }} transition={{ duration: 0.2, ease: 'easeOut' }} className={`group/message ${m.role === 'assistant' ? 'chat-assistant-message' : 'chat-user-message'} ${m.meta?.status === 'error' ? 'chat-error-message' : ''}`} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '4px', maxWidth: m.role === 'user' ? '76%' : '100%', minWidth: 0 }}>
-              {m.role === 'user' && (m.artifactReferences?.length > 0 || m.browserReferences?.length > 0 || m.attachments?.length > 0) && <div className="chat-reference-row" aria-label="Referencias y archivos">
+              {m.role === 'user' && (m.artifactReferences?.length > 0 || m.browserReferences?.length > 0 || m.selectedTextReferences?.length > 0 || m.attachments?.length > 0) && <div className="chat-reference-row" aria-label="Referencias y archivos">
                 {m.artifactReferences?.map((ref: { kind: 'plan' | 'todo'; id: string; title: string }) => <div key={`${ref.kind}-${ref.id}`} className="chat-reference-card chat-artifact-reference-card" title={`@${ref.kind} · ${ref.title}`}><span className="chat-reference-kind">@{ref.kind}</span><span className="chat-reference-title">{ref.title}</span></div>)}
                 {m.browserReferences?.map((ref: { id: string; title: string; text: string; url?: string }, referenceIndex: number) => <div key={ref.id || `${ref.title}-${referenceIndex}`} className="chat-reference-card chat-browser-reference-card" title={ref.title}><span className="chat-browser-reference-number">{referenceIndex + 1}</span>{getBrowserReferenceFavicon(ref) ? <img src={getBrowserReferenceFavicon(ref)} alt="" className="chat-reference-favicon" /> : <Globe size={16} className="chat-reference-favicon chat-reference-fallback-icon" aria-hidden="true" />}<span className="chat-reference-title">{ref.title}</span></div>)}
+                {m.selectedTextReferences?.map((ref: { id: string; text: string; comment?: string }) => <div key={ref.id} className="chat-reference-card chat-selected-text-reference-card" title={ref.comment ? `${ref.comment}\n\n${ref.text}` : ref.text}><span className="chat-selected-text-content">{ref.text}</span><span className="chat-selected-text-label">{agentTextSelectionTranslations[language].selectedReference}</span></div>)}
                 {m.attachments?.map((file: ChatAttachment) => file.mediaType?.startsWith('image/') ? <div key={file.path || file.name} className="chat-reference-card chat-attachment-card" title={file.name}><img src={file.previewUrl || convertFileSrc(file.path)} alt={file.name} /></div> : <div key={file.path || file.name} className="chat-reference-card chat-attachment-card chat-attachment-file" title={file.name}>{file.previewText ? <pre className="chat-attachment-preview-text">{file.previewText}</pre> : <span>{file.name.split('.').pop()?.toUpperCase().slice(0, 6) || 'FILE'}</span>}</div>)}
               </div>}
               <div className={`chat-markdown min-w-0 max-w-full break-words [overflow-wrap:anywhere] text-sm leading-6 text-(--codeclub-text-strong) ${m.role === 'user' ? 'chat-markdown-user' : 'chat-markdown-assistant'} ${m.role === 'user' && getVisibleUserContent(m).trim() ? 'w-fit overflow-hidden rounded-[22px] border border-[#2B2B2B] bg-(--codeclub-user-bubble) px-4 py-2.5 leading-6' : 'w-full'}`}>
@@ -2884,7 +3012,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 </motion.div>
                 {m.role === 'assistant' && isStreaming && agentState !== 'error' && i === messages.length - 1 && !m.content && !m.timeline?.some((event: any) => event.type === 'tool') && <motion.span initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: 'easeOut' }} className="chat-thinking-label composer-action-shine" style={{ display: 'inline-block', fontSize: '13px' }}>Pensando</motion.span>}
               </div>
-              {m.role === 'assistant' && <ExecutionTimeline timeline={m.timeline} active={isLiveAssistant && !m.content?.trim()} language={language} />}
+              {m.role === 'assistant' && <TurnActivity progress={m.progress} timeline={m.timeline} tools={m.tools} changes={m.meta?.changes} active={isLiveAssistant} language={language} />}
               {m.role === 'assistant' && <AskUserCards tools={m.tools} onSelect={(answer, questionId) => void sendMessage(answer, messages, false, false, [], questionId)} onRespondInChat={() => {
                 setComposerDocked(true);
                 requestAnimationFrame(() => {
@@ -2893,7 +3021,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 });
               }} disabled={isAgentBusy} />}
               {m.role === 'assistant' && i === messages.length - 1 && <ApprovalCards approvals={pendingApprovals} onResolve={resolveToolApproval} />}
-              {m.role === 'assistant' && <ChangeSummaryCard changes={m.meta?.changes} />}
               {!floating && m.role === 'assistant' && (!isStreaming || i !== messages.length - 1 || m.meta?.status === 'error') && <div data-message-actions={i} className="message-actions relative flex items-center gap-1 self-start">
                 <button type="button" aria-label={copiedMessageIndex === i ? chatActionTranslations[language].copied : chatActionTranslations[language].copy} title={copiedMessageIndex === i ? chatActionTranslations[language].copied : chatActionTranslations[language].copy} onClick={() => void handleCopyMessage(m.content, i)} className={`grid h-6 w-6 place-items-center rounded-md border-0 bg-transparent transition-colors hover:bg-white/[0.06] ${copiedMessageIndex === i ? 'text-(--codeclub-accent-bright)' : 'text-(--codeclub-text-muted)'}`}>{copiedMessageIndex === i ? <Check size={12} strokeWidth={1.8} /> : <Copy size={12} strokeWidth={1.8} />}</button>
                 <button type="button" aria-label={chatActionTranslations[language].more} title={chatActionTranslations[language].more} aria-haspopup="menu" aria-expanded={moreMenuIndex === i} onClick={() => setMoreMenuIndex((current) => current === i ? null : i)} className="grid h-6 w-6 place-items-center rounded-md border-0 bg-transparent text-(--codeclub-text-muted) transition-colors hover:bg-white/[0.06] hover:text-(--codeclub-text-strong)"><MoreHorizontal size={13} strokeWidth={1.8} /></button>
@@ -2915,13 +3042,18 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           {computerContext && <div className="flex min-h-[28px] items-center gap-2 border-b border-[#202020] px-4 py-1.5" aria-label="Contexto de Computer Use"><span className="shrink-0 rounded-full border border-[#3D9BFF]/60 bg-[#1687FF]/10 px-2 py-0.5 text-[10px] font-medium text-[#8BC7FF]">PC</span><span className="min-w-0 flex-1 truncate text-[10px] text-[#bdbdbd]">{computerContext.title || 'Ventana desconocida'} · ({computerContext.x}, {computerContext.y})</span><button type="button" onClick={() => setComputerContext(null)} className="grid h-5 w-5 shrink-0 place-items-center rounded-full text-[#777] hover:bg-white/[0.08] hover:text-[#eee]" title="Quitar contexto de Computer Use" aria-label="Quitar contexto de Computer Use"><X size={12} /></button></div>}
           {attachmentProgress&&<p className="m-0 truncate py-1 text-[10px] text-[#8bc7ff]" role="status">{attachmentProgress}</p>}
           {attachmentError&&<p className="m-0 py-1 text-[10px] text-[#aaa]" role="alert">{activityTranslations[language].attachmentFailed}</p>}
-          {(artifactReferences.length > 0 || browserReferences.length > 0 || attachedFiles.length > 0) && (
+          {(artifactReferences.length > 0 || browserReferences.length > 0 || selectedTextReferences.length > 0 || attachedFiles.length > 0) && (
             <div ref={browserRefContainerRef} className="file-preview-scrollbar flex min-h-[76px] w-full min-w-0 max-w-full flex-nowrap items-center gap-2 overflow-x-auto overflow-y-hidden border-b-0 px-3 py-1.5" aria-label="Referencias y archivos">
               {artifactReferences.map((reference) => <button key={`${reference.kind}-${reference.id}`} type="button" onClick={() => setArtifactReferences((current) => current.filter((item) => item.kind !== reference.kind || item.id !== reference.id))} className="attachment-artifact-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] text-left text-[#cfcfcf]" title={`Quitar @${reference.kind}`}><span className="absolute left-1 top-1 text-[8px] uppercase tracking-[0.04em] text-[#858585]">@{reference.kind}</span><span className="absolute inset-x-1 bottom-1 line-clamp-2 text-center text-[8px] leading-[10px] text-[#d6d6d6]">{reference.title}</span><span aria-hidden="true" className="attachment-artifact-remove pointer-events-none absolute inset-0 z-10 grid place-items-center bg-[#161616]/80 text-[#eeeeee]"><span className="grid h-6 w-6 place-items-center rounded-full bg-[#252525] text-[#bdbdbd]"><X size={13} strokeWidth={2} /></span></span></button>)}
               {browserReferences.map((ref, index) => <button key={ref.id} type="button" onClick={() => { setBrowserReferences((current) => current.filter((item) => item.id !== ref.id)); if (ref.markerId) window.dispatchEvent(new CustomEvent('codeclub:remove-browser-marker', { detail: { markerId: ref.markerId } })); }} className="browser-reference-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] px-1 text-left text-[#cfcfcf]" title={`Quitar @${ref.title}`}>
                 <span className="absolute left-1 top-1 z-[1] grid h-4 w-4 place-items-center rounded-full bg-[#1687ff] text-[9px] font-semibold text-white">{index + 1}</span>
                 {getBrowserReferenceFavicon(ref) ? <img src={getBrowserReferenceFavicon(ref)} alt="" className="h-7 w-7 rounded-md object-contain" /> : <span className="grid h-7 w-7 place-items-center rounded-md bg-[#202020] text-[#8BC7FF]"><Globe size={14} /></span>}
                 <span className="absolute inset-x-1 bottom-1 truncate text-center text-[9px] text-[#d6d6d6]">{ref.title}</span>
+                <span aria-hidden="true" className="browser-reference-remove pointer-events-none absolute inset-0 grid place-items-center bg-[#161616]/80 text-[#eeeeee]"><span className="grid h-6 w-6 place-items-center rounded-full bg-[#252525] text-[#bdbdbd]"><X size={13} strokeWidth={2} /></span></span>
+              </button>)}
+              {selectedTextReferences.map((ref) => <button key={ref.id} type="button" onClick={() => setSelectedTextReferences((current) => current.filter((item) => item.id !== ref.id))} className="browser-reference-preview chat-selected-text-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] px-1 text-left text-[#cfcfcf]" title={`${agentTextSelectionTranslations[language].removeReference}: ${ref.comment ? `${ref.comment} · ` : ''}${ref.text}`}>
+                <span className="chat-selected-text-content">{ref.text}</span>
+                <span className="chat-selected-text-label">{agentTextSelectionTranslations[language].selectedReference}</span>
                 <span aria-hidden="true" className="browser-reference-remove pointer-events-none absolute inset-0 grid place-items-center bg-[#161616]/80 text-[#eeeeee]"><span className="grid h-6 w-6 place-items-center rounded-full bg-[#252525] text-[#bdbdbd]"><X size={13} strokeWidth={2} /></span></span>
               </button>)}
               {false && browserReferences.length > maxVisibleBrowserRefs && (
@@ -3247,6 +3379,21 @@ function toolActivityLabel(name: string, input: Record<string, any>, language: A
   return detail ? `${prefix} ${detail}` : prefix;
 }
 
+function ToolActivityIcon({ name, ...props }: { name: string } & React.ComponentProps<typeof Code2>) {
+  const Icon = name === 'listFiles' ? FolderOpen
+    : name === 'readFile' ? FileText
+    : name === 'searchText' || name === 'searchTools' ? Search
+    : name === 'writeFile' ? FileCode2
+    : name === 'runCommand' || name === 'terminal' ? Terminal
+    : name === 'openBrowser' || name === 'getBrowserState' || name === 'browserAction' ? Globe
+    : name.startsWith('computer') ? Monitor
+    : name === 'createPlan' || name === 'updatePlan' || name === 'todo' || name === 'getTaskStatus' ? LayoutTemplate
+    : name === 'swarm' || name === 'subagent' ? WandSparkles
+    : name === 'askUser' ? MessageSquare
+    : Code2;
+  return <Icon {...props} />;
+}
+
 function ProcessingStatusStateFixed({ startedAt, language }: { startedAt: number; language: AppLanguage }) {
   const [elapsed, setElapsed] = useState(() => Math.max(0, Date.now() - startedAt));
   useEffect(() => {
@@ -3259,18 +3406,67 @@ function ProcessingStatusStateFixed({ startedAt, language }: { startedAt: number
   return <span className="chat-turn-processing" style={{ color: '#777', fontSize: '11px' }}>{processingLabel}</span>;
 }
 
-function ExecutionTimeline({ timeline = [], active, language }: { timeline?: any[]; active: boolean; language: AppLanguage }) {
-  if (!active || !timeline.length) return null;
-  const toolEvents = timeline.filter((event) => event.type === 'tool');
-  if (!toolEvents.length) return null;
-  const event = [...toolEvents].reverse().find((item) => item.status === 'running') || toolEvents[toolEvents.length - 1];
-  const command = event.name === 'runCommand' ? [event.input?.command, ...(event.input?.args || [])].filter(Boolean).join(' ') : '';
-  const detail = command || event.input?.path || event.input?.childName || event.input?.specialist || '';
-  const failed = event.status === 'error' || event.output?.error;
-  const activity = toolActivityLabel(event.name, event.input || {}, language, event.status !== 'running' && !failed);
-  const label = detail && activity === event.name ? `${activity} ${detail}` : activity;
-  const shineClass = failed ? 'composer-action-shine-error' : 'composer-action-shine chat-thinking-label chat-tool-thinking-label';
-  return <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '10px 0 3px', color: failed ? '#d98b8b' : '#999', fontSize: '13px' }}><span className={shineClass}>{failed ? `Falló ${label}` : label}</span></div>;
+function TurnActivity({ progress = '', timeline = [], tools = [], changes, active, language }: { progress?: string; timeline?: any[]; tools?: any[]; changes?: { additions: number; deletions: number; files: number; fileChanges?: Array<{ path: string; additions: number; deletions: number; status: string }> } | null; active: boolean; language: AppLanguage }) {
+  const events = tools.length ? tools : timeline.filter((event) => event.type === 'tool');
+  const fileChanges = changes?.fileChanges || [];
+  if (!events.length && !fileChanges.length && !(active && progress)) return null;
+  const english = language === 'en';
+  const summary = progress.trim() || (active
+    ? (english ? 'Working…' : 'Trabajando…')
+    : (english ? `Activity · ${events.length + fileChanges.length} steps` : `Actividad · ${events.length + fileChanges.length} pasos`));
+  const changedPathsByWrite = new Set(events.filter((event) => event.name === 'writeFile').map((event) => event.input?.path));
+  const commandOutput = (event: any) => event.output?.stdout ?? event.output?.output?.stdout ?? event.output?.result?.stdout ?? '';
+  return <details className="turn-activity">
+    <summary className="turn-activity-summary">
+      <ScrollText size={14} aria-hidden="true" />
+      <span>{summary}</span>
+      <ChevronDown size={14} className="turn-activity-chevron" aria-hidden="true" />
+    </summary>
+    <div className="turn-activity-list">
+      {events.map((event, index) => {
+        const name = event.name === 'executeTool' ? event.input?.name || event.name : event.name;
+        const input = event.name === 'executeTool' ? { ...event.input, ...(event.input?.arguments || {}) } : event.input || {};
+        const isRunning = event.output?.status === 'running' || event.status === 'running';
+        const isFailed = event.output?.ok === false || event.output?.error || event.output?.code > 0 || event.status === 'error';
+        const label = name === 'runCommand' ? (english ? 'Command executed' : 'Comando ejecutado') : name === 'writeFile' ? (english ? 'Edited' : 'Editó') : toolActivityLabel(name, input, language, !isRunning && !isFailed);
+        const pathChange = name === 'writeFile' ? fileChanges.find((item) => item.path === input.path) : null;
+        const pathLabel = String(input.path || input.filePath || input.command || input.url || input.title || input.specialist || '');
+        const command = [input.command, ...(Array.isArray(input.args) ? input.args : [])].filter(Boolean).join(' ');
+        const stdout = commandOutput(event);
+        const stderr = event.output?.stderr ?? event.output?.output?.stderr ?? event.output?.result?.stderr ?? '';
+        const exitCode = event.output?.code ?? event.output?.output?.code ?? event.output?.result?.code;
+        const isCommand = name === 'runCommand';
+        const changedCount = pathChange ? <span className="turn-activity-delta"><span>+{pathChange.additions}</span><span>−{pathChange.deletions}</span></span> : null;
+        return <details className="turn-activity-item" key={event.id || event.callId || `${name}-${index}`}>
+          <summary>
+            <ToolActivityIcon name={name} className="turn-activity-action-icon" size={14} strokeWidth={1.7} aria-hidden="true" />
+            <span className="sr-only">{isRunning ? (english ? 'Running' : 'En curso') : isFailed ? (english ? 'Failed' : 'Falló') : (english ? 'Done' : 'Listo')}</span>
+            <span className={`turn-activity-item-label ${isFailed ? 'turn-activity-item-error' : ''}`}>{label}</span>
+            <span className="turn-activity-item-detail" title={isCommand ? command : pathLabel}>{isCommand ? command : pathLabel}</span>
+            {changedCount}
+            <ChevronDown size={13} className="turn-activity-chevron" aria-hidden="true" />
+          </summary>
+          <div className="turn-activity-detail">
+            {isCommand && <div className="turn-command-card">
+              <div className="turn-command-heading"><Terminal size={13} /><span>Shell</span>{typeof exitCode === 'number' && <span className={exitCode === 0 ? 'turn-command-ok' : 'turn-command-error'}>{exitCode === 0 ? (english ? 'Done' : 'Listo') : `Exit ${exitCode}`}</span>}</div>
+              <pre className="turn-command-code"><span aria-hidden="true">$ </span>{command}</pre>
+              {(stdout || stderr) ? <pre className={stderr ? 'turn-command-output turn-command-stderr' : 'turn-command-output'}>{[stdout, stderr].filter(Boolean).join('\n')}</pre> : <div className="turn-command-empty">{english ? 'No output' : 'Sin salida'}</div>}
+            </div>}
+            {!isCommand && pathChange && <div className="turn-activity-file-delta"><FileCode2 size={13} /><span>{input.path}</span><span className="turn-activity-delta"><span>+{pathChange.additions}</span><span>−{pathChange.deletions}</span></span></div>}
+            {!isCommand && !pathChange && pathLabel && <div className="turn-activity-raw-detail">{pathLabel}</div>}
+            {typeof event.durationMs === 'number' && <div className="turn-activity-duration">{(event.durationMs / 1000).toFixed(1)}s</div>}
+          </div>
+        </details>;
+      })}
+      {fileChanges.filter((change) => !changedPathsByWrite.has(change.path)).map((change) => <div className="turn-activity-item turn-activity-file-row" key={`change-${change.path}`}>
+        <FileCode2 className="turn-activity-action-icon" size={14} strokeWidth={1.7} aria-hidden="true" />
+        <FileCode2 size={13} aria-hidden="true" />
+        <span className="turn-activity-item-label">{english ? 'Edited' : 'Editó'}</span>
+        <span className="turn-activity-item-detail" title={change.path}>{change.path}</span>
+        <span className="turn-activity-delta"><span>+{change.additions}</span><span>−{change.deletions}</span></span>
+      </div>)}
+    </div>
+  </details>;
 }
 
 function AskUserCards({ tools = [], onSelect, onRespondInChat }: { tools?: any[]; onSelect: (answer: string, questionId: string) => void; onRespondInChat: () => void; disabled?: boolean }) {
@@ -3303,16 +3499,6 @@ function ApprovalCards({ approvals = [], onResolve }: { approvals?: any[]; onRes
         <button type="button" onClick={() => onResolve(approval.id, false)} style={{ minHeight: '26px', border: 0, borderRadius: '7px', padding: '0 10px', background: 'transparent', color: '#999', cursor: 'pointer', fontSize: '11px' }}>{text.deny}</button>
       </div>
     </div>)}
-  </div>;
-}
-
-function ChangeSummaryCard({ changes }: { changes?: { additions: number; deletions: number; files: number } | null }) {
-  if (!changes || changes.files === 0) return null;
-  return <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: 'min(520px, 100%)', margin: '2px 0 2px', padding: '7px 9px', border: '1px solid #252525', borderRadius: '8px', background: '#151515', color: '#777', fontSize: '10px' }}>
-    <span style={{ color: '#d8d8d8', fontWeight: 600 }}>Cambios</span>
-    <span style={{ color: '#8fbe9b' }}>+{changes.additions}</span>
-    <span style={{ color: '#d98b8b' }}>−{changes.deletions}</span>
-    <span>{changes.files} {changes.files === 1 ? 'archivo' : 'archivos'}</span>
   </div>;
 }
 

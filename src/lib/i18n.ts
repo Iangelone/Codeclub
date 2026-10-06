@@ -163,6 +163,11 @@ export const chatActionTranslations = {
   en: { copy: 'Copy message', copied: 'Message copied', more: 'More response options', regenerate: 'Regenerate response', trace: 'Copy full chat trace' },
 } as const;
 
+export const agentTextSelectionTranslations = {
+  es: { addToChat: 'Añadir al chat', addComment: 'Añadir comentario', commentPlaceholder: 'Añade un comentario opcional…', moreDetails: 'Más detalles', toolbar: 'Acciones para el texto seleccionado', detailPrompt: 'Explicame con más detalle esta parte:', selectedReference: 'Texto seleccionado', removeReference: 'Quitar referencia' },
+  en: { addToChat: 'Add to chat', addComment: 'Add a comment', commentPlaceholder: 'Add an optional comment…', moreDetails: 'More details', toolbar: 'Actions for selected text', detailPrompt: 'Explain this part in more detail:', selectedReference: 'Selected text', removeReference: 'Remove reference' },
+} as const;
+
 export const scheduledRuntimeTranslations = {
   es: {
     availability: 'Las tareas se ejecutan mientras Codeclub está abierto, incluso en la bandeja. Al volver de una suspensión se ejecuta una vez la tarea pendiente.',
