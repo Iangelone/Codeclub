@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Folder, FolderOpen, House, Minus, PanelLeft, PanelRight, PanelTop, Plus, Square, X } from 'lucide-react';
+import { Command, Folder, FolderOpen, House, Minus, PanelLeft, PanelRight, PanelTop, Plus, Square, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { topbarTranslations, useAppLanguage } from '../lib/i18n';
 
@@ -10,7 +10,19 @@ export default function Topbar({ leftOpen, rightOpen, topbarOpen, onToggleLeft, 
   const t = topbarTranslations[language];
   const [projects, setProjects] = useState<Array<{ id: string; name: string; path: string }>>([]);
   const [activeProjectId, setActiveProjectId] = useState('home');
+  const [chatPanelVisible, setChatPanelVisible] = useState(true);
+  const [slashMenuActive, setSlashMenuActive] = useState(false);
   const noDragStyle = { WebkitAppRegion: 'no-drag' } as React.CSSProperties;
+  useEffect(() => {
+    const handleChatPanelVisibility = (event: Event) => setChatPanelVisible((event as CustomEvent<{ visible?: boolean }>).detail?.visible === true);
+    const handleSlashMenuState = (event: Event) => setSlashMenuActive((event as CustomEvent<{ active?: boolean }>).detail?.active === true);
+    window.addEventListener('codeclub:chat-panel-visibility', handleChatPanelVisibility);
+    window.addEventListener('codeclub:slash-menu-state', handleSlashMenuState);
+    return () => {
+      window.removeEventListener('codeclub:chat-panel-visibility', handleChatPanelVisibility);
+      window.removeEventListener('codeclub:slash-menu-state', handleSlashMenuState);
+    };
+  }, []);
   const persistOpenProjects = (nextProjects: Array<{ id: string; name: string; path: string }>) => {
     window.localStorage.setItem('codeclub:open-projects', JSON.stringify(nextProjects.map((project) => project.id)));
     window.dispatchEvent(new CustomEvent('codeclub:open-projects-changed'));
@@ -102,11 +114,12 @@ export default function Topbar({ leftOpen, rightOpen, topbarOpen, onToggleLeft, 
       <motion.button type="button" title={topbarOpen ? t.hideTopbar : t.showTopbar} onClick={onToggleTopbar} animate={{ scale: topbarOpen ? 1 : 0.94, opacity: topbarOpen ? 1 : 0.58 }} whileHover={{ scale: topbarOpen ? 1.08 : 1 }} whileTap={{ scale: 0.9 }} transition={{ type: 'spring', stiffness: 420, damping: 26 }} className={`grid h-7 w-7 place-items-center border focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--codeclub-accent) ${topbarOpen ? 'rounded-full border-(--codeclub-border-soft) bg-(--codeclub-acrylic-active) text-(--codeclub-text-strong)' : 'rounded-md border-transparent bg-transparent text-(--codeclub-icon) hover:bg-(--codeclub-hover)'}`} aria-label={topbarOpen ? t.hideTopbar : t.showTopbar} aria-pressed={topbarOpen}><PanelTop size={14} aria-hidden="true" /></motion.button>
       <motion.button type="button" title={leftOpen ? t.hideLeftSidebar : t.showLeftSidebar} onClick={onToggleLeft} animate={{ scale: leftOpen ? 1 : 0.94, opacity: leftOpen ? 1 : 0.58 }} whileHover={{ scale: leftOpen ? 1.08 : 1 }} whileTap={{ scale: 0.9 }} transition={{ type: 'spring', stiffness: 420, damping: 26 }} className={`grid h-7 w-7 place-items-center border focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--codeclub-accent) ${leftOpen ? 'rounded-full border-(--codeclub-border-soft) bg-(--codeclub-acrylic-active) text-(--codeclub-text-strong)' : 'rounded-md border-transparent bg-transparent text-(--codeclub-icon) hover:bg-(--codeclub-hover)'}`} aria-label={leftOpen ? t.hideLeftSidebar : t.showLeftSidebar} aria-pressed={leftOpen}><PanelLeft size={14} aria-hidden="true" /></motion.button>
       <motion.button type="button" title={rightOpen ? t.hideRightSidebar : t.showRightSidebar} onClick={onToggleRight} animate={{ scale: rightOpen ? 1 : 0.94, opacity: rightOpen ? 1 : 0.58 }} whileHover={{ scale: rightOpen ? 1.08 : 1 }} whileTap={{ scale: 0.9 }} transition={{ type: 'spring', stiffness: 420, damping: 26 }} className={`grid h-7 w-7 place-items-center border focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--codeclub-accent) ${rightOpen ? 'rounded-full border-(--codeclub-border-soft) bg-(--codeclub-acrylic-active) text-(--codeclub-text-strong)' : 'rounded-md border-transparent bg-transparent text-(--codeclub-icon) hover:bg-(--codeclub-hover)'}`} aria-label={rightOpen ? t.hideRightSidebar : t.showRightSidebar} aria-pressed={rightOpen}><PanelRight size={14} aria-hidden="true" /></motion.button>
+      {chatPanelVisible && <motion.button type="button" data-slash-menu-toggle="true" title={slashMenuActive ? t.closeCommands : t.openCommands} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:toggle-slash-menu'))} whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.9 }} transition={{ type: 'spring', stiffness: 420, damping: 26 }} className={`grid h-7 w-7 place-items-center border focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--codeclub-accent) ${slashMenuActive ? 'rounded-full border-(--codeclub-border-soft) bg-(--codeclub-acrylic-active) text-(--codeclub-text-strong)' : 'rounded-md border-transparent bg-transparent text-(--codeclub-icon) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)'}`} aria-label={slashMenuActive ? t.closeCommands : t.openCommands} aria-pressed={slashMenuActive}><Command size={14} aria-hidden="true" /></motion.button>}
     </nav>
     <nav className="flex h-full items-center" aria-label={t.windowControls}>
-      <button id="minimize" title="Minimizar ventana" style={noDragStyle} onClick={() => nativeWindow('windowMinimize')} className="grid h-[34px] w-[42px] place-items-center border-0 bg-transparent text-(--codeclub-text) hover:bg-(--codeclub-hover) focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--codeclub-accent)" aria-label="Minimizar ventana"><Minus size={13} aria-hidden="true" /></button>
-      <button id="maximize" title="Maximizar o restaurar ventana" style={noDragStyle} onClick={() => nativeWindow('windowMaximize')} className="grid h-[34px] w-[42px] place-items-center border-0 bg-transparent text-(--codeclub-text) hover:bg-(--codeclub-hover) focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--codeclub-accent)" aria-label="Maximizar o restaurar ventana"><Square size={12} aria-hidden="true" /></button>
-      <button id="close" title="Ocultar en la bandeja" style={noDragStyle} onClick={() => nativeWindow('windowClose')} className="grid h-[34px] w-[42px] place-items-center border-0 bg-transparent text-(--codeclub-text) hover:bg-(--codeclub-danger) hover:text-white focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--codeclub-accent)" aria-label="Ocultar aplicación en la bandeja"><X size={15} aria-hidden="true" /></button>
+      <button id="minimize" title={t.minimizeWindow} style={noDragStyle} onClick={() => nativeWindow('windowMinimize')} className="grid h-[34px] w-[42px] place-items-center border-0 bg-transparent text-(--codeclub-text) hover:bg-(--codeclub-hover) focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--codeclub-accent)" aria-label={t.minimizeWindow}><Minus size={13} aria-hidden="true" /></button>
+      <button id="maximize" title={t.maximizeWindow} style={noDragStyle} onClick={() => nativeWindow('windowMaximize')} className="grid h-[34px] w-[42px] place-items-center border-0 bg-transparent text-(--codeclub-text) hover:bg-(--codeclub-hover) focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--codeclub-accent)" aria-label={t.maximizeWindow}><Square size={12} aria-hidden="true" /></button>
+      <button id="close" title={t.hideInTray} style={noDragStyle} onClick={() => nativeWindow('windowClose')} className="grid h-[34px] w-[42px] place-items-center border-0 bg-transparent text-(--codeclub-text) hover:bg-(--codeclub-danger) hover:text-white focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--codeclub-accent)" aria-label={t.hideInTray}><X size={15} aria-hidden="true" /></button>
     </nav>
   </header>;
 }

@@ -32,6 +32,8 @@ Tasks use codeclub:scheduled-tasks-changed; artifacts use codeclub:artifacts-cha
 
 ChatInterface emits codeclub:language-change with language es or en. Components using useAppLanguage update without a reload, and the document lang attribute changes too. The topbar can detect a newer release and perform a full Electron window reload.
 
+The command shortcut in Topbar is visible while PanelManager shows chat. PanelManager emits `codeclub:chat-panel-visibility` with `{ visible: boolean }`; Topbar consumes it and removes its listener in the same `useEffect`. The shortcut emits `codeclub:toggle-slash-menu` without a payload; ChatInterface toggles the command menu. ChatInterface also emits `codeclub:slash-menu-state` with `{ active: boolean }`; Topbar consumes it to reflect the active state. Both listeners are cleaned up in their registering `useEffect`.
+
 ## Rule for new events
 
 Define the emitter, payload, consumers, and cleanup before adding an event. Install and remove listeners within the same useEffect.

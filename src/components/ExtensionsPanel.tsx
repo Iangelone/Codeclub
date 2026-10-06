@@ -42,17 +42,22 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
     color: '#8BC7FF',
     scope: plugin.scope,
   })), [plugins]);
+  const localizedBuiltIns = language === 'en' ? builtInExtensions : builtInExtensions.map((extension) => ({
+    ...extension,
+    name: ({ documents: 'Documentos', spreadsheets: 'Hojas de cálculo', presentations: 'Presentaciones', 'template-creator': 'Creador de plantillas' } as Record<string, string>)[extension.id] || extension.name,
+    description: ({ documents: 'Crear y editar documentos', pdf: 'Leer, crear y verificar archivos PDF', spreadsheets: 'Crear y editar hojas de cálculo', presentations: 'Crear y editar presentaciones', 'template-creator': 'Crear o actualizar plantillas reutilizables' } as Record<string, string>)[extension.id] || extension.description,
+  }));
   const allExtensions = useMemo<ExtensionItem[]>(() => [
     { id: 'browser-control', name: 'Codeclub Browser Control', description: language === 'en' ? 'Control tabs in Chromium-based browsers' : 'Controlá pestañas de navegadores Chromium', icon: Globe, color: '#1687FF', scope: 'global', protected: true },
-    ...builtInExtensions.map((extension) => ({ ...extension, scope: 'global' as const, protected: true })),
+    ...localizedBuiltIns.map((extension) => ({ ...extension, scope: 'global' as const, protected: true })),
     ...pluginExtensions,
-  ], [pluginExtensions, language]);
+  ], [pluginExtensions, localizedBuiltIns, language]);
   const filteredExtensions = useMemo(() => allExtensions.filter(({ name, description }) => `${name} ${description}`.toLowerCase().includes(query.toLowerCase())), [allExtensions, query]);
   const filteredSkills = useMemo(() => skills.filter((skill) => `${skill.name} ${skill.description} ${skill.source}`.toLowerCase().includes(query.toLowerCase())), [skills, query]);
 
   const text = language === 'en'
-    ? { title: 'Extensions', description: 'Manage extensions, skills, and MCP by scope.', extensions: 'Extensions', skills: 'Skills', search: 'Search', list: 'Available extensions', empty: 'No extensions found.', noSkills: 'No SKILL.md files found.', noMcp: 'No MCP servers connected.', project: 'Active project', noProject: 'No active project: only global items are shown.' }
-    : { title: 'Extensiones', description: 'Administrá extensiones, skills y MCP por alcance.', extensions: 'Extensiones', skills: 'Skills', search: 'Buscar', list: 'Extensiones disponibles', empty: 'No se encontraron extensiones.', noSkills: 'No se encontraron archivos SKILL.md.', noMcp: 'No hay servidores MCP conectados.', project: 'Proyecto activo', noProject: 'Sin proyecto activo: solo se muestran elementos globales.' };
+    ? { title: 'Extensions', description: 'Manage extensions, skills, and MCP by scope.', extensions: 'Extensions', skills: 'Skills', search: 'Search', list: 'Available extensions', empty: 'No extensions found.', noSkills: 'No SKILL.md files found.', noMcp: 'No MCP servers connected.', project: 'Active project', noProject: 'No active project: only global items are shown.', categories: 'Extension categories', skillsList: 'Available skills', mcpList: 'MCP servers', deletePlugin: 'Delete plugin', disable: 'Disable', enable: 'Enable' }
+    : { title: 'Extensiones', description: 'Administrá extensiones, skills y MCP por alcance.', extensions: 'Extensiones', skills: 'Skills', search: 'Buscar', list: 'Extensiones disponibles', empty: 'No se encontraron extensiones.', noSkills: 'No se encontraron archivos SKILL.md.', noMcp: 'No hay servidores MCP conectados.', project: 'Proyecto activo', noProject: 'Sin proyecto activo: solo se muestran elementos globales.', categories: 'Categorías de extensiones', skillsList: 'Habilidades disponibles', mcpList: 'Servidores MCP', deletePlugin: 'Eliminar plugin', disable: 'Desactivar', enable: 'Activar' };
 
   const refresh = () => {
     void Promise.all(builtInExtensions.map(async (extension) => [extension.id, await getSetting(`codeclub_extension_enabled_${extension.id}`, 'true') !== 'false'] as const))
@@ -144,7 +149,7 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
         </header>
 
         <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
-          <nav className="flex items-center gap-0.5 text-[13px] text-[#777777]" aria-label="Categorías de extensiones">
+          <nav className="flex items-center gap-0.5 text-[13px] text-[#777777]" aria-label={text.categories}>
             {([{ id: 'extensions', label: text.extensions, count: allExtensions.length, icon: Blocks }, { id: 'skills', label: text.skills, count: skills.length, icon: WandSparkles }, { id: 'mcp', label: 'MCP', count: mcpServers.length, icon: PlugZap }] as const).map(({ id, label, count, icon: Icon }) => <button key={id} type="button" onClick={() => setTab(id)} aria-label={`${label} ${count}`} className={`inline-flex items-center gap-1.5 rounded-[8px] border-0 px-3 py-1.5 ${tab === id ? 'bg-[#2b2b2b] text-[#eeeeee]' : 'bg-transparent text-[#777777] hover:bg-[#202020]'}`}><Icon size={14} strokeWidth={1.8} className="shrink-0 text-[#eeeeee]" aria-hidden="true" />{label} <span className="text-[#999999]">{count}</span></button>)}
           </nav>
           <label className="flex h-9 w-full max-w-[280px] items-center gap-2 rounded-full border border-[#4a4a4a] bg-[#2b2b2b] px-3.5 text-[#a7a7a7] focus-within:border-[#666666]"><Search size={17} strokeWidth={1.7} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={language === 'en' ? 'Search extensions' : 'Buscar complementos'} aria-label={language === 'en' ? 'Search extensions' : 'Buscar complementos'} className="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[#d0d0d0] outline-none placeholder:text-[#a7a7a7]" /></label>
@@ -178,17 +183,17 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
               <div className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] border border-[#2d2d2d] bg-[#151515]"><div className="grid h-7 w-7 place-items-center rounded-[7px]" style={{ background: color }}><Icon size={17} strokeWidth={1.8} className="text-white" /></div></div>
               <div className="min-w-0 w-0 flex-1"><h2 className="m-0 truncate text-[14px] font-semibold text-[#eeeeee]">{name}</h2><p className="mt-0.5 truncate text-[13px] text-[#888888]">{description}</p></div>
               <span className="shrink-0 rounded-full border border-[#303030] px-2 py-1 text-[10px] text-[#8f8f8f]">{scopeLabel(scope, language)}</span>
-              <button type="button" role="switch" aria-checked={isEnabled} aria-label={`${isEnabled ? 'Desactivar' : 'Activar'} ${name}`} onClick={() => { const next = !isEnabled; setEnabled((current) => ({ ...current, [enabledKey]: next })); if (isProtected) void setSetting(`codeclub_extension_enabled_${id}`, String(next)); }} className={`relative h-6 w-10 shrink-0 rounded-full border-0 transition-colors ${isEnabled ? 'bg-[#3d9bff]' : 'bg-[#3a3a3a]'}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${isEnabled ? 'right-1' : 'left-1'}`} /></button>
-              {!isProtected && <button type="button" onClick={() => { void invoke('codeclub_delete_agent_plugin', { projectPath, pluginId: id.replace(/^plugin:/, ''), scope }).then(refresh).catch(() => undefined); }} className="grid h-7 w-7 shrink-0 place-items-center rounded-md border-0 bg-transparent text-[#777777] hover:bg-[#2b2b2b] hover:text-[#eeeeee]" title="Eliminar plugin"><Trash2 size={14} /></button>}
+              <button type="button" role="switch" aria-checked={isEnabled} aria-label={`${isEnabled ? text.disable : text.enable} ${name}`} onClick={() => { const next = !isEnabled; setEnabled((current) => ({ ...current, [enabledKey]: next })); if (isProtected) void setSetting(`codeclub_extension_enabled_${id}`, String(next)); }} className={`relative h-6 w-10 shrink-0 rounded-full border-0 transition-colors ${isEnabled ? 'bg-[#3d9bff]' : 'bg-[#3a3a3a]'}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${isEnabled ? 'right-1' : 'left-1'}`} /></button>
+              {!isProtected && <button type="button" onClick={() => { void invoke('codeclub_delete_agent_plugin', { projectPath, pluginId: id.replace(/^plugin:/, ''), scope }).then(refresh).catch(() => undefined); }} className="grid h-7 w-7 shrink-0 place-items-center rounded-md border-0 bg-transparent text-[#777777] hover:bg-[#2b2b2b] hover:text-[#eeeeee]" title={text.deletePlugin} aria-label={`${text.deletePlugin}: ${name}`}><Trash2 size={14} /></button>}
             </div>;
           })}
           {filteredExtensions.length === 0 && <div className="py-12 text-center text-sm text-[#777777]">{text.empty}</div>}
         </section>}
-        {tab === 'skills' && <section className="mt-9 grid min-w-0 gap-1.5" aria-label="Skills disponibles">
+        {tab === 'skills' && <section className="mt-9 grid min-w-0 gap-1.5" aria-label={text.skillsList}>
           {filteredSkills.map((skill) => <div key={`${skill.source}-${skill.id}`} className="flex min-h-[60px] min-w-0 items-center gap-3 overflow-hidden rounded-lg px-3 transition-colors hover:bg-[#202020]"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] border border-[#2d2d2d] bg-[#151515]"><WandSparkles size={19} strokeWidth={1.7} className="text-[#8bc7ff]" /></div><div className="min-w-0 w-0 flex-1"><h2 className="m-0 truncate text-[14px] font-semibold text-[#eeeeee]">{skill.name}</h2><p className="mt-0.5 truncate text-[13px] text-[#888888]">{skill.description}</p></div><span className="shrink-0 text-[11px] text-[#777777]">{skill.source} · {scopeLabel(skill.scope, language)}</span></div>)}
           {filteredSkills.length === 0 && <div className="py-12 text-center text-sm text-[#777777]">{text.noSkills}</div>}
         </section>}
-        {tab === 'mcp' && <section className="mt-9 grid min-w-0 gap-1.5" aria-label="Servidores MCP">
+        {tab === 'mcp' && <section className="mt-9 grid min-w-0 gap-1.5" aria-label={text.mcpList}>
           {mcpServers.map((server) => <div key={server.id} className="flex min-h-[60px] min-w-0 items-center gap-3 overflow-hidden rounded-lg px-3 transition-colors hover:bg-[#202020]"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] border border-[#2d2d2d] bg-[#151515]"><PlugZap size={19} className="text-[#8bc7ff]" /></div><div className="min-w-0 w-0 flex-1"><h2 className="m-0 truncate text-[14px] font-semibold text-[#eeeeee]">{server.name}</h2><p className="mt-0.5 truncate text-[13px] text-[#888888]">{server.url}</p></div><span className="shrink-0 text-[11px] text-[#777777]">{scopeLabel(server.scope, language)}</span></div>)}
           {mcpServers.length === 0 && <div className="py-12 text-center text-sm text-[#777777]">{text.noMcp}</div>}
         </section>}

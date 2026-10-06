@@ -76,6 +76,7 @@ const getMarkdownCodeDetails = (children: React.ReactNode) => {
 };
 
 function MarkdownCodeBlock({ children }: { children?: React.ReactNode }) {
+  const appLanguage = useAppLanguage();
   const [copied, setCopied] = useState(false);
   const { language, content } = getMarkdownCodeDetails(children);
   const label = language === 'text' ? 'Texto' : language.charAt(0).toUpperCase() + language.slice(1);
@@ -90,11 +91,11 @@ function MarkdownCodeBlock({ children }: { children?: React.ReactNode }) {
     <div className="chat-code-card-header">
       <span className="chat-code-card-language"><Code2 size={14} strokeWidth={1.8} aria-hidden="true" />{label}</span>
       <span className="chat-code-card-actions">
-        <button type="button" className="chat-code-card-icon-button" onClick={() => window.dispatchEvent(new CustomEvent('codeclub:execute-inline-code', { detail: { code: content, language } }))} aria-label="Ejecutar código" title="Ejecutar código"><Play size={13} strokeWidth={2} aria-hidden="true" /></button>
+        <button type="button" className="chat-code-card-icon-button" onClick={() => window.dispatchEvent(new CustomEvent('codeclub:execute-inline-code', { detail: { code: content, language } }))} aria-label={appLanguage === 'en' ? 'Run code' : 'Ejecutar código'} title={appLanguage === 'en' ? 'Run code' : 'Ejecutar código'}><Play size={13} strokeWidth={2} aria-hidden="true" /></button>
         <span className="chat-code-card-divider" aria-hidden="true">|</span>
-        <button type="button" className="chat-code-card-copy" onClick={() => void handleCopy()} aria-label={copied ? 'Código copiado' : 'Copiar código'} title={copied ? 'Copiado' : 'Copiar'}>
+        <button type="button" className="chat-code-card-copy" onClick={() => void handleCopy()} aria-label={copied ? (appLanguage === 'en' ? 'Code copied' : 'Código copiado') : (appLanguage === 'en' ? 'Copy code' : 'Copiar código')} title={copied ? (appLanguage === 'en' ? 'Copied' : 'Copiado') : (appLanguage === 'en' ? 'Copy' : 'Copiar')}>
           {copied ? <Check size={14} strokeWidth={2.2} aria-hidden="true" /> : <Copy size={14} strokeWidth={1.9} aria-hidden="true" />}
-          <span>{copied ? 'Copiado' : 'Copiar'}</span>
+          <span>{copied ? (appLanguage === 'en' ? 'Copied' : 'Copiado') : (appLanguage === 'en' ? 'Copy' : 'Copiar')}</span>
         </button>
       </span>
     </div>
@@ -305,8 +306,8 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const projectsSlashLabel = language === 'en' ? 'Projects' : 'Proyectos';
   const isDevelopmentBuild = process.env.NODE_ENV === 'development';
   const languageOptions = [
-    { id: 'es', label: 'Español', description: 'Usar español', type: 'language' },
-    { id: 'en', label: 'English', description: 'Use English', type: 'language' },
+    { id: 'es', label: 'Español', description: language === 'en' ? 'Use Spanish' : 'Usar español', type: 'language' },
+    { id: 'en', label: 'English', description: language === 'en' ? 'Use English' : 'Usar inglés', type: 'language' },
   ];
   const developmentOptions = [
     { id: 'build-feature', label: 'Desarrollar funcionalidad', description: 'Planificar, implementar y verificar', type: 'development', prompt: 'Desarrollá esta funcionalidad usando las tools necesarias. Primero inspeccioná el proyecto, proponé un plan breve, implementá los cambios y verificá que todo funcione.' },
@@ -1091,6 +1092,25 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     setTimeout(() => commandMenuRef.current?.focus(), 10);
   };
 
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('codeclub:slash-menu-state', { detail: { active: menuOpen } }));
+  }, [menuOpen]);
+
+  useEffect(() => {
+    const handleToggleSlashMenu = () => {
+      if (menuOpen) {
+        setMenuOpen(false);
+        setCommandKind('');
+        setSearchQuery('');
+        requestAnimationFrame(() => chatInputRef.current?.focus());
+        return;
+      }
+      openCommandMenu('command');
+    };
+    window.addEventListener('codeclub:toggle-slash-menu', handleToggleSlashMenu);
+    return () => window.removeEventListener('codeclub:toggle-slash-menu', handleToggleSlashMenu);
+  }, [menuOpen]);
+
   const readProjectsForCommandMenu = async () => {
     const bridge = (window as any).codeclub;
     if (typeof bridge?.listProjects === 'function') {
@@ -1232,7 +1252,9 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     if (!menuOpen) return;
 
     const handlePointerDown = (event: PointerEvent) => {
-      const button = (event.target as HTMLElement).closest('button') as HTMLButtonElement | null;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('[data-slash-menu-toggle]')) return;
+      const button = target?.closest('button') as HTMLButtonElement | null;
       const isCommandDockButton = ['provider', 'model', 'project'].includes(button?.dataset.commandMenuKind || '') || /^(Proveedor|Modelo|Proyecto):/.test(button?.getAttribute('aria-label') || '');
       if (commandMenuRef.current?.contains(event.target as Node) || button?.title === 'Proveedor, modelo y proyecto' || isCommandDockButton) return;
       setMenuOpen(false);
@@ -2872,7 +2894,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                       {query && (
                         <button
                           type="button"
-                          aria-label="Limpiar búsqueda"
+                          aria-label={language === 'en' ? 'Clear search' : 'Limpiar búsqueda'}
                           onClick={() => setArtifactSearch((current) => ({ ...current, [kind]: '' }))}
                           className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-0 bg-transparent p-0 text-[#777777] hover:bg-[var(--color-surface-5)] hover:text-[#eeeeee]"
                         >
@@ -2967,7 +2989,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       {historyWindow.loading && <div role="status" className="text-center text-[11px] text-(--codeclub-text-muted)">{chatHistoryTranslations[language].loading}</div>}
       {historyWindow.error && <div role="alert" className="flex items-center justify-center gap-2 text-[11px] text-(--codeclub-text-muted)">{chatHistoryTranslations[language].failed}<button type="button" onClick={()=>{const chat=activeChatRef.current;if(chat)void historyWindow.open(chat);}} className="text-(--codeclub-accent-bright)">{chatHistoryTranslations[language].retry}</button></div>}
       {!floating && historyWindow.range.current.start+messages.length<historyWindow.range.current.total && <button type="button" title={chatHistoryTranslations[language].latest} aria-label={chatHistoryTranslations[language].latest} className="self-end rounded-full p-1 text-(--codeclub-text-muted) hover:bg-(--codeclub-hover)" onClick={()=>{const chat=activeChatRef.current;if(chat){shouldAutoScrollMessagesRef.current=true;void historyWindow.open(chat);}}}><ChevronDown size={16}/></button>}
-      <motion.div ref={messagesAreaRef} initial={false} animate={chatAnimations} data-chat-transition={chatTransitionPhase} aria-busy={chatTransitionPhase !== 'idle' || historyWindow.loading} onScroll={handleMessagesScroll} className={`messages-area relative min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain [overflow-anchor:none] bg-transparent [scrollbar-width:none] ${composerDocked ? 'flex' : 'hidden'} ${chatTransitionPhase === 'idle' ? '' : 'pointer-events-none'}`} role="log" aria-label="Mensajes del chat" aria-live="polite" aria-relevant="additions text">
+      <motion.div ref={messagesAreaRef} initial={false} animate={chatAnimations} data-chat-transition={chatTransitionPhase} aria-busy={chatTransitionPhase !== 'idle' || historyWindow.loading} onScroll={handleMessagesScroll} className={`messages-area relative min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain [overflow-anchor:none] bg-transparent [scrollbar-width:none] ${composerDocked ? 'flex' : 'hidden'} ${chatTransitionPhase === 'idle' ? '' : 'pointer-events-none'}`} role="log" aria-label={language === 'en' ? 'Chat messages' : 'Mensajes del chat'} aria-live="polite" aria-relevant="additions text">
         <div aria-hidden="true" className="min-h-0 flex-1" />
         {!floating && showEmptyGreeting && <div aria-hidden={messages.length > 0} className={`pointer-events-none absolute inset-0 grid place-items-center whitespace-nowrap px-5 text-lg font-medium tracking-[-0.02em] text-(--codeclub-text-strong) transition-[opacity,transform] duration-300 ${messages.length === 0 ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0'}`}>{chatText.greeting}, {username}?</div>}
         <div className="relative w-full shrink-0" style={{height:turnVirtualizer.getTotalSize()}}>
@@ -2995,7 +3017,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               const isLiveAssistant = m.role === 'assistant' && isStreaming && i === messages.length - 1;
               return <React.Fragment key={`${m.role}-${i}`}>
             {<motion.div initial={isLiveAssistant ? { opacity: 0.58 } : false} animate={{ opacity: 1 }} transition={{ duration: 0.2, ease: 'easeOut' }} className={`group/message ${m.role === 'assistant' ? 'chat-assistant-message' : 'chat-user-message'} ${m.meta?.status === 'error' ? 'chat-error-message' : ''}`} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '4px', maxWidth: m.role === 'user' ? '76%' : '100%', minWidth: 0 }}>
-              {m.role === 'user' && (m.artifactReferences?.length > 0 || m.browserReferences?.length > 0 || m.selectedTextReferences?.length > 0 || m.attachments?.length > 0) && <div className="chat-reference-row" aria-label="Referencias y archivos">
+              {m.role === 'user' && (m.artifactReferences?.length > 0 || m.browserReferences?.length > 0 || m.selectedTextReferences?.length > 0 || m.attachments?.length > 0) && <div className="chat-reference-row" aria-label={language === 'en' ? 'References and files' : 'Referencias y archivos'}>
                 {m.artifactReferences?.map((ref: { kind: 'plan' | 'todo'; id: string; title: string }) => <div key={`${ref.kind}-${ref.id}`} className="chat-reference-card chat-artifact-reference-card" title={`@${ref.kind} · ${ref.title}`}><span className="chat-reference-kind">@{ref.kind}</span><span className="chat-reference-title">{ref.title}</span></div>)}
                 {m.browserReferences?.map((ref: { id: string; title: string; text: string; url?: string }, referenceIndex: number) => <div key={ref.id || `${ref.title}-${referenceIndex}`} className="chat-reference-card chat-browser-reference-card" title={ref.title}><span className="chat-browser-reference-number">{referenceIndex + 1}</span>{getBrowserReferenceFavicon(ref) ? <img src={getBrowserReferenceFavicon(ref)} alt="" className="chat-reference-favicon" /> : <Globe size={16} className="chat-reference-favicon chat-reference-fallback-icon" aria-hidden="true" />}<span className="chat-reference-title">{ref.title}</span></div>)}
                 {m.selectedTextReferences?.map((ref: { id: string; text: string; comment?: string }) => <div key={ref.id} className="chat-reference-card chat-selected-text-reference-card" title={ref.comment ? `${ref.comment}\n\n${ref.text}` : ref.text}><span className="chat-selected-text-content">{ref.text}</span><span className="chat-selected-text-label">{agentTextSelectionTranslations[language].selectedReference}</span></div>)}
@@ -3010,7 +3032,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 >
                 <MemoizedChatMarkdown content={normalizeChatContent(m.role === 'user' ? getVisibleUserContent(m) : (m.meta?.status === 'error' ? (m.meta.errorMessage || (language === 'en' ? 'No response' : 'Sin respuesta')) : (m.displayContent || m.content)))} />
                 </motion.div>
-                {m.role === 'assistant' && isStreaming && agentState !== 'error' && i === messages.length - 1 && !m.content && !m.timeline?.some((event: any) => event.type === 'tool') && <motion.span initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: 'easeOut' }} className="chat-thinking-label composer-action-shine" style={{ display: 'inline-block', fontSize: '13px' }}>Pensando</motion.span>}
+                {m.role === 'assistant' && isStreaming && agentState !== 'error' && i === messages.length - 1 && !m.content && !m.timeline?.some((event: any) => event.type === 'tool') && <motion.span initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: 'easeOut' }} className="chat-thinking-label composer-action-shine" style={{ display: 'inline-block', fontSize: '13px' }}>{language === 'en' ? 'Thinking' : 'Pensando'}</motion.span>}
               </div>
               {m.role === 'assistant' && <TurnActivity progress={m.progress} timeline={m.timeline} tools={m.tools} changes={m.meta?.changes} active={isLiveAssistant} language={language} />}
               {m.role === 'assistant' && <AskUserCards tools={m.tools} onSelect={(answer, questionId) => void sendMessage(answer, messages, false, false, [], questionId)} onRespondInChat={() => {
@@ -3039,11 +3061,11 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
 
       <div className="chat-composer composer-row flex w-full min-w-0 shrink-0 items-center gap-2 bg-transparent">
           <div className="composer-box min-h-10 min-w-0 flex-1 overflow-visible rounded-[22px] border border-(--codeclub-border-soft) bg-(--codeclub-surface-raised) p-0 shadow-none">
-          {computerContext && <div className="flex min-h-[28px] items-center gap-2 border-b border-[#202020] px-4 py-1.5" aria-label="Contexto de Computer Use"><span className="shrink-0 rounded-full border border-[#3D9BFF]/60 bg-[#1687FF]/10 px-2 py-0.5 text-[10px] font-medium text-[#8BC7FF]">PC</span><span className="min-w-0 flex-1 truncate text-[10px] text-[#bdbdbd]">{computerContext.title || 'Ventana desconocida'} · ({computerContext.x}, {computerContext.y})</span><button type="button" onClick={() => setComputerContext(null)} className="grid h-5 w-5 shrink-0 place-items-center rounded-full text-[#777] hover:bg-white/[0.08] hover:text-[#eee]" title="Quitar contexto de Computer Use" aria-label="Quitar contexto de Computer Use"><X size={12} /></button></div>}
+          {computerContext && <div className="flex min-h-[28px] items-center gap-2 border-b border-[#202020] px-4 py-1.5" aria-label={language === 'en' ? 'Computer Use context' : 'Contexto de Computer Use'}><span className="shrink-0 rounded-full border border-[#3D9BFF]/60 bg-[#1687FF]/10 px-2 py-0.5 text-[10px] font-medium text-[#8BC7FF]">PC</span><span className="min-w-0 flex-1 truncate text-[10px] text-[#bdbdbd]">{computerContext.title || (language === 'en' ? 'Unknown window' : 'Ventana desconocida')} · ({computerContext.x}, {computerContext.y})</span><button type="button" onClick={() => setComputerContext(null)} className="grid h-5 w-5 shrink-0 place-items-center rounded-full text-[#777] hover:bg-white/[0.08] hover:text-[#eee]" title={language === 'en' ? 'Remove Computer Use context' : 'Quitar contexto de Computer Use'} aria-label={language === 'en' ? 'Remove Computer Use context' : 'Quitar contexto de Computer Use'}><X size={12} /></button></div>}
           {attachmentProgress&&<p className="m-0 truncate py-1 text-[10px] text-[#8bc7ff]" role="status">{attachmentProgress}</p>}
           {attachmentError&&<p className="m-0 py-1 text-[10px] text-[#aaa]" role="alert">{activityTranslations[language].attachmentFailed}</p>}
           {(artifactReferences.length > 0 || browserReferences.length > 0 || selectedTextReferences.length > 0 || attachedFiles.length > 0) && (
-            <div ref={browserRefContainerRef} className="file-preview-scrollbar flex min-h-[76px] w-full min-w-0 max-w-full flex-nowrap items-center gap-2 overflow-x-auto overflow-y-hidden border-b-0 px-3 py-1.5" aria-label="Referencias y archivos">
+            <div ref={browserRefContainerRef} className="file-preview-scrollbar flex min-h-[76px] w-full min-w-0 max-w-full flex-nowrap items-center gap-2 overflow-x-auto overflow-y-hidden border-b-0 px-3 py-1.5" aria-label={language === 'en' ? 'References and files' : 'Referencias y archivos'}>
               {artifactReferences.map((reference) => <button key={`${reference.kind}-${reference.id}`} type="button" onClick={() => setArtifactReferences((current) => current.filter((item) => item.kind !== reference.kind || item.id !== reference.id))} className="attachment-artifact-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] text-left text-[#cfcfcf]" title={`Quitar @${reference.kind}`}><span className="absolute left-1 top-1 text-[8px] uppercase tracking-[0.04em] text-[#858585]">@{reference.kind}</span><span className="absolute inset-x-1 bottom-1 line-clamp-2 text-center text-[8px] leading-[10px] text-[#d6d6d6]">{reference.title}</span><span aria-hidden="true" className="attachment-artifact-remove pointer-events-none absolute inset-0 z-10 grid place-items-center bg-[#161616]/80 text-[#eeeeee]"><span className="grid h-6 w-6 place-items-center rounded-full bg-[#252525] text-[#bdbdbd]"><X size={13} strokeWidth={2} /></span></span></button>)}
               {browserReferences.map((ref, index) => <button key={ref.id} type="button" onClick={() => { setBrowserReferences((current) => current.filter((item) => item.id !== ref.id)); if (ref.markerId) window.dispatchEvent(new CustomEvent('codeclub:remove-browser-marker', { detail: { markerId: ref.markerId } })); }} className="browser-reference-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] px-1 text-left text-[#cfcfcf]" title={`Quitar @${ref.title}`}>
                 <span className="absolute left-1 top-1 z-[1] grid h-4 w-4 place-items-center rounded-full bg-[#1687ff] text-[9px] font-semibold text-white">{index + 1}</span>
@@ -3062,26 +3084,26 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                   onClick={() => setBrowserReferences([])}
                   className="shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-medium transition-[filter] hover:brightness-105"
                   style={{ borderColor: '#F8EAD8', color: '#111111', background: 'linear-gradient(135deg, #1687FF 0%, #67BAFF 38%, #F8EAD8 72%, #FFF3DF 100%)' }}
-                  title="Quitar todas las referencias"
+                  title={language === 'en' ? 'Remove all references' : 'Quitar todas las referencias'}
                 >
                   +{browserReferences.length - maxVisibleBrowserRefs} referencias
                 </button>
               )}
-           {attachedFiles.length > 0 && <div className="contents" aria-label="Archivos adjuntos">{attachedFiles.map((file, index) => file.mediaType.startsWith('image/') ? <motion.button key={file.path} type="button" onClick={() => setAttachedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} transition={{ type: 'spring', stiffness: 420, damping: 28 }} className="attachment-image-preview relative h-16 w-16 shrink-0 overflow-hidden rounded-[10px] border-0 bg-[#161616]" title={`Quitar ${file.name}`}><img src={file.previewUrl} alt={file.name} onError={(event) => { event.currentTarget.style.display = 'none'; }} className="attachment-image-preview-image h-full w-full object-cover" /><span className="attachment-image-preview-name absolute inset-x-1 bottom-1 truncate text-center text-[9px] text-white/75">{file.name}</span><span aria-hidden="true" className="attachment-image-preview-close pointer-events-none absolute inset-0 grid place-items-center text-white"><X size={18} strokeWidth={2.2} /></span></motion.button> : <motion.button key={file.path} type="button" onClick={() => setAttachedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} transition={{ type: 'spring', stiffness: 420, damping: 28 }} className="attachment-file-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] text-[10px] font-semibold uppercase tracking-[0.04em] text-[#cfcfcf]" title={`Quitar ${file.name}`}>{file.previewText ? <pre className="attachment-file-preview-text">{file.previewText}</pre> : <span className="attachment-file-preview-name" title={file.name}>{file.name}</span>}<span aria-hidden="true" className="attachment-file-preview-close pointer-events-none absolute inset-0 grid place-items-center text-white"><X size={18} strokeWidth={2.2} /></span></motion.button>)}</div>}
+           {attachedFiles.length > 0 && <div className="contents" aria-label={language === 'en' ? 'Attached files' : 'Archivos adjuntos'}>{attachedFiles.map((file, index) => file.mediaType.startsWith('image/') ? <motion.button key={file.path} type="button" onClick={() => setAttachedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} transition={{ type: 'spring', stiffness: 420, damping: 28 }} className="attachment-image-preview relative h-16 w-16 shrink-0 overflow-hidden rounded-[10px] border-0 bg-[#161616]" title={`${language === 'en' ? 'Remove' : 'Quitar'} ${file.name}`}><img src={file.previewUrl} alt={file.name} onError={(event) => { event.currentTarget.style.display = 'none'; }} className="attachment-image-preview-image h-full w-full object-cover" /><span className="attachment-image-preview-name absolute inset-x-1 bottom-1 truncate text-center text-[9px] text-white/75">{file.name}</span><span aria-hidden="true" className="attachment-image-preview-close pointer-events-none absolute inset-0 grid place-items-center text-white"><X size={18} strokeWidth={2.2} /></span></motion.button> : <motion.button key={file.path} type="button" onClick={() => setAttachedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} transition={{ type: 'spring', stiffness: 420, damping: 28 }} className="attachment-file-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] text-[10px] font-semibold uppercase tracking-[0.04em] text-[#cfcfcf]" title={`${language === 'en' ? 'Remove' : 'Quitar'} ${file.name}`}>{file.previewText ? <pre className="attachment-file-preview-text">{file.previewText}</pre> : <span className="attachment-file-preview-name" title={file.name}>{file.name}</span>}<span aria-hidden="true" className="attachment-file-preview-close pointer-events-none absolute inset-0 grid place-items-center text-white"><X size={18} strokeWidth={2.2} /></span></motion.button>)}</div>}
             </div>
           )}
           {activeSkills.length > 0 && <div className="flex min-h-[28px] items-center gap-1.5 overflow-x-auto border-b border-[#202020] px-3 py-1.5" aria-label={chatText.activeSkills}>
-            {activeSkills.map((skill) => <button key={skill.id} type="button" onClick={() => setActiveSkills((current) => current.filter((item) => item.id !== skill.id))} className="flex shrink-0 items-center gap-1 rounded-full border border-[#3d9bff]/50 bg-[#1687ff]/10 px-2.5 py-1 text-[10px] text-[#b9dcff] hover:bg-[#1687ff]/20" title="Quitar habilidad de esta sesión">
+            {activeSkills.map((skill) => <button key={skill.id} type="button" onClick={() => setActiveSkills((current) => current.filter((item) => item.id !== skill.id))} className="flex shrink-0 items-center gap-1 rounded-full border border-[#3d9bff]/50 bg-[#1687ff]/10 px-2.5 py-1 text-[10px] text-[#b9dcff] hover:bg-[#1687ff]/20" title={chatText.removeSkill}>
               <span className="max-w-[150px] truncate">{skill.name}</span><span className="text-[#8bc7ff]/70">×</span>
             </button>)}
           </div>}
           {activeExtensions.length > 0 && <div className="flex min-h-[28px] items-center gap-1.5 overflow-x-auto border-b border-[#202020] px-3 py-1.5" aria-label={chatText.activeExtensions}>
-            {activeExtensions.map((extension) => { const Icon = extensionIcons[extension.id] || Box; return <button key={extension.id} type="button" onClick={() => setActiveExtensions((current) => current.filter((item) => item.id !== extension.id))} className="flex shrink-0 items-center gap-1 rounded-full border border-[#3d9bff]/50 bg-[#1687ff]/10 px-2.5 py-1 text-[10px] text-[#b9dcff] hover:bg-[#1687ff]/20" title="Quitar complemento de esta sesión"><Icon size={11} /><span>{extension.name}</span><span className="text-[#8bc7ff]/70">×</span></button>; })}
+            {activeExtensions.map((extension) => { const Icon = extensionIcons[extension.id] || Box; return <button key={extension.id} type="button" onClick={() => setActiveExtensions((current) => current.filter((item) => item.id !== extension.id))} className="flex shrink-0 items-center gap-1 rounded-full border border-[#3d9bff]/50 bg-[#1687ff]/10 px-2.5 py-1 text-[10px] text-[#b9dcff] hover:bg-[#1687ff]/20" title={chatText.removeExtension}><Icon size={11} /><span>{extension.name}</span><span className="text-[#8bc7ff]/70">×</span></button>; })}
           </div>}
           <div ref={commandMenuHostRef} className="w-full" />
-          <form onSubmit={handleSubmit} aria-label="Compositor de mensaje" className="composer-box-inner relative flex min-h-[44px] w-full min-w-0 flex-col items-stretch gap-0 rounded-none border-0 bg-transparent px-1.5 pb-3 pl-4 pr-3 pt-3 @max-[520px]:pl-3 @max-[520px]:pr-2 [&>button.absolute]:hidden">
+          <form onSubmit={handleSubmit} aria-label={language === 'en' ? 'Message composer' : 'Compositor de mensaje'} className="composer-box-inner relative flex min-h-[44px] w-full min-w-0 flex-col items-stretch gap-0 rounded-none border-0 bg-transparent px-1.5 pb-3 pl-4 pr-3 pt-3 @max-[520px]:pl-3 @max-[520px]:pr-2 [&>button.absolute]:hidden">
            {false && (
-          <button type="button" onClick={handleAttachFiles} className="text-white/40 hover:text-white transition-colors" aria-label="Añadir archivos" style={{ flex: '0 0 28px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, background: 'transparent', cursor: 'pointer' }}>
+          <button type="button" onClick={handleAttachFiles} className="text-white/40 hover:text-white transition-colors" aria-label={language === 'en' ? 'Add files' : 'Añadir archivos'} style={{ flex: '0 0 28px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, background: 'transparent', cursor: 'pointer' }}>
             <Paperclip size={16} strokeWidth={1.8} />
           </button>
           )}
@@ -3090,14 +3112,14 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               type="button"
               onClick={() => setAttachedFiles([])}
               className="shrink-0 bg-[var(--color-surface-3)] text-[#bdbdbd] hover:bg-[var(--color-surface-7)] hover:text-[#eeeeee] transition-colors"
-              aria-label="Quitar archivos añadidos"
-              title="Quitar archivos añadidos"
+              aria-label={chatText.removeFiles}
+              title={chatText.removeFiles}
               style={{ minHeight: '24px', display: 'flex', alignItems: 'center', padding: '0 9px', border: '1px solid var(--color-surface-8, #2b2b2b)', borderRadius: '999px', fontSize: '11px', cursor: 'pointer' }}
             >
               Añadido {attachedFiles.length}
             </button>
           )}
-          <span id="chat-input-help" className="sr-only">Escribí un mensaje. Usa Shift+Enter para una nueva línea y / para abrir comandos.</span>
+          <span id="chat-input-help" className="sr-only">{language === 'en' ? 'Write a message. Use Shift+Enter for a new line and / to open commands.' : 'Escribí un mensaje. Usá Shift+Enter para una nueva línea y / para abrir comandos.'}</span>
           <span className="chat-input-orb absolute left-3 top-3 z-10 grid h-[22px] w-[22px] place-items-center rounded-full">
             {composerLeading || <OrbPaletteButton size={22} className="h-[22px] w-[22px]" />}
           </span>
@@ -3146,7 +3168,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             placeholder={agentStatusText}
           />
           <div className="absolute right-3 top-2 z-20 flex min-h-[30px] min-w-0 items-center justify-end gap-3 @max-[520px]:gap-1.5">
-            <motion.button type={isAgentBusy ? 'button' : 'submit'} onPointerDown={(event) => { if (!isAgentBusy) return; event.preventDefault(); event.stopPropagation(); cancelGeneration(); }} onClick={isAgentBusy ? cancelGeneration : undefined} disabled={!sendButtonActive} animate={{ scale: sendButtonActive ? 1 : 0.94, opacity: sendButtonActive ? 1 : 0.62 }} whileHover={{ scale: sendButtonActive ? 1.06 : 0.98 }} whileTap={{ scale: 0.9 }} transition={{ type: 'spring', stiffness: 460, damping: 28 }} className={`send-button ml-auto flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full text-(--codeclub-text-strong) shadow-none transition-colors disabled:cursor-not-allowed ${sendButtonActive ? 'send-button-shine border border-(--codeclub-border-soft) bg-(--codeclub-send-active-radial)' : 'border border-transparent bg-(--codeclub-surface-raised)'}`} aria-label={isAgentBusy ? "Cancelar generación" : credentialProvider ? "Guardar credencial" : "Enviar"} title={isAgentBusy ? "Cancelar generación" : credentialProvider ? "Guardar credencial" : "Enviar"}>
+            <motion.button type={isAgentBusy ? 'button' : 'submit'} onPointerDown={(event) => { if (!isAgentBusy) return; event.preventDefault(); event.stopPropagation(); cancelGeneration(); }} onClick={isAgentBusy ? cancelGeneration : undefined} disabled={!sendButtonActive} animate={{ scale: sendButtonActive ? 1 : 0.94, opacity: sendButtonActive ? 1 : 0.62 }} whileHover={{ scale: sendButtonActive ? 1.06 : 0.98 }} whileTap={{ scale: 0.9 }} transition={{ type: 'spring', stiffness: 460, damping: 28 }} className={`send-button ml-auto flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full text-(--codeclub-text-strong) shadow-none transition-colors disabled:cursor-not-allowed ${sendButtonActive ? 'send-button-shine border border-(--codeclub-border-soft) bg-(--codeclub-send-active-radial)' : 'border border-transparent bg-(--codeclub-surface-raised)'}`} aria-label={isAgentBusy ? chatText.cancel : credentialProvider ? (language === 'en' ? 'Save credential' : 'Guardar credencial') : chatText.send} title={isAgentBusy ? chatText.cancel : credentialProvider ? (language === 'en' ? 'Save credential' : 'Guardar credencial') : chatText.send}>
             {isAgentBusy ? <Square size={13} strokeWidth={2.4} fill="currentColor" /> : <ArrowUp size={15} strokeWidth={2.2} />}
             </motion.button>
           </div>
@@ -3157,7 +3179,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           tabIndex={-1}
           onKeyDown={handleCommandMenuKeyDown}
           role="listbox"
-          aria-label="Comandos disponibles"
+          aria-label={language === 'en' ? 'Available commands' : 'Comandos disponibles'}
           aria-activedescendant={activeCommandIndex >= 0 ? `command-option-${activeCommandIndex}` : undefined}
           className={`command-menu ${menuOpen ? 'is-open' : ''}`}
           initial={false}
@@ -3195,11 +3217,11 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           ) : commandKind === 'custom-config' ? (
             <div style={{ display: 'grid', gap: '8px' }}>
               <div style={{ position: 'relative', minHeight: '34px' }}>
-                {customUrl.trim() ? <button type="button" onClick={saveCustomProviderConfig} aria-label="Guardar URL" style={{ position: 'absolute', right: '4px', top: '50%', width: '26px', height: '26px', display: 'grid', placeItems: 'center', transform: 'translateY(-50%)', border: 0, borderRadius: '6px', background: 'transparent', color: '#d6d6d6', cursor: 'pointer' }}><Check size={15} strokeWidth={1.8} /></button> : <Globe size={15} strokeWidth={1.8} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: '#d6d6d6', pointerEvents: 'none' }} />}
-                <input ref={customUrlRef} value={customUrl} onChange={(event) => { setCustomUrl(event.target.value); setCustomConfigError(''); }} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); saveCustomProviderConfig(); } }} placeholder="URL del proveedor" style={{ boxSizing: 'border-box', width: '100%', height: '34px', padding: '0 32px 0 10px', border: 0, borderRadius: '8px', background: 'transparent', color: '#eeeeee', fontSize: '12px', outline: 'none' }} />
+                {customUrl.trim() ? <button type="button" onClick={saveCustomProviderConfig} aria-label={language === 'en' ? 'Save URL' : 'Guardar URL'} style={{ position: 'absolute', right: '4px', top: '50%', width: '26px', height: '26px', display: 'grid', placeItems: 'center', transform: 'translateY(-50%)', border: 0, borderRadius: '6px', background: 'transparent', color: '#d6d6d6', cursor: 'pointer' }}><Check size={15} strokeWidth={1.8} /></button> : <Globe size={15} strokeWidth={1.8} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: '#d6d6d6', pointerEvents: 'none' }} />}
+                <input ref={customUrlRef} value={customUrl} onChange={(event) => { setCustomUrl(event.target.value); setCustomConfigError(''); }} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); saveCustomProviderConfig(); } }} placeholder={language === 'en' ? 'Provider URL' : 'URL del proveedor'} style={{ boxSizing: 'border-box', width: '100%', height: '34px', padding: '0 32px 0 10px', border: 0, borderRadius: '8px', background: 'transparent', color: '#eeeeee', fontSize: '12px', outline: 'none' }} />
               </div>
               <div style={{ display: 'grid', gap: '5px', color: '#999999', fontSize: '11px' }}>
-                Formato de tools
+                {language === 'en' ? 'Tool format' : 'Formato de herramientas'}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px' }}>
                   {(['json', 'xml'] as const).map((format) => <button key={format} type="button" onClick={() => setCustomToolsFormat(format)} style={{ height: '30px', border: '1px solid #2b2b2b', borderRadius: '7px', background: customToolsFormat === format ? '#1E1E1E' : 'transparent', color: customToolsFormat === format ? '#eeeeee' : '#777777', fontSize: '11px' }}>{format.toUpperCase()}</button>)}
                 </div>
@@ -3470,6 +3492,7 @@ function TurnActivity({ progress = '', timeline = [], tools = [], changes, activ
 }
 
 function AskUserCards({ tools = [], onSelect, onRespondInChat }: { tools?: any[]; onSelect: (answer: string, questionId: string) => void; onRespondInChat: () => void; disabled?: boolean }) {
+  const language = useAppLanguage();
   const questions = tools.filter((event) => event.name === 'askUser' && event.output?.status === 'awaiting_user' && !event.answer);
   if (!questions.length) return null;
   return <div style={{ display: 'grid', gap: '8px', width: 'min(520px, 100%)', margin: '2px 0 2px' }}>
@@ -3479,7 +3502,7 @@ function AskUserCards({ tools = [], onSelect, onRespondInChat }: { tools?: any[]
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '7px' }}>
         {event.output.options?.length
           ? event.output.options.map((option: string) => <button key={option} type="button" onClick={() => onSelect(option, event.id)} onMouseEnter={(event) => { event.currentTarget.style.background = '#202020'; event.currentTarget.style.borderColor = '#4a4a4a'; }} onMouseLeave={(event) => { event.currentTarget.style.background = '#151515'; event.currentTarget.style.borderColor = '#252525'; }} style={{ display: 'flex', alignItems: 'center', minHeight: '36px', padding: '5px 9px', border: '1px solid #252525', borderRadius: '8px', background: '#151515', color: '#ddd', cursor: 'pointer', textAlign: 'left', fontSize: '11px', transition: 'background 120ms ease, border-color 120ms ease' }}>{option}</button>)
-          : <button type="button" onClick={onRespondInChat} onMouseEnter={(event) => { event.currentTarget.style.background = '#202020'; event.currentTarget.style.borderColor = '#4a4a4a'; }} onMouseLeave={(event) => { event.currentTarget.style.background = '#151515'; event.currentTarget.style.borderColor = '#252525'; }} style={{ display: 'flex', alignItems: 'center', minHeight: '36px', padding: '5px 9px', border: '1px solid #252525', borderRadius: '8px', background: '#151515', color: '#ddd', cursor: 'pointer', textAlign: 'left', fontSize: '11px', transition: 'background 120ms ease, border-color 120ms ease' }}>Responder en el chat</button>}
+          : <button type="button" onClick={onRespondInChat} onMouseEnter={(event) => { event.currentTarget.style.background = '#202020'; event.currentTarget.style.borderColor = '#4a4a4a'; }} onMouseLeave={(event) => { event.currentTarget.style.background = '#151515'; event.currentTarget.style.borderColor = '#252525'; }} style={{ display: 'flex', alignItems: 'center', minHeight: '36px', padding: '5px 9px', border: '1px solid #252525', borderRadius: '8px', background: '#151515', color: '#ddd', cursor: 'pointer', textAlign: 'left', fontSize: '11px', transition: 'background 120ms ease, border-color 120ms ease' }}>{language === 'en' ? 'Reply in chat' : 'Responder en el chat'}</button>}
       </div>
     </div>)}
   </div>;
@@ -3503,6 +3526,7 @@ function ApprovalCards({ approvals = [], onResolve }: { approvals?: any[]; onRes
 }
 
 function FilePreview({ projectPath, file, onChange }: { projectPath: string; file: OpenFile; onChange?: (content: string) => void }) {
+  const language = useAppLanguage();
   const extension = getExtension(file.path);
   const sourcePath = file.fsPath || `${projectPath}/${file.path}`;
   if (file.error) return <div className="p-4 text-xs text-[#c28d8d]">{file.error}</div>;
@@ -3514,7 +3538,7 @@ function FilePreview({ projectPath, file, onChange }: { projectPath: string; fil
     const rows = parseCsv(file.content);
     return <div className="h-full overflow-auto p-4"><table className="min-w-full border-collapse text-left text-xs"><tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((value, cellIndex) => rowIndex === 0 ? <th key={cellIndex} className="border border-[#2b2b2b] bg-[#1c1c1c] px-3 py-2 font-medium text-[#eeeeee]">{value}</th> : <td key={cellIndex} className="border border-[#2b2b2b] px-3 py-2 text-[#bdbdbd]">{value}</td>)}</tr>)}</tbody></table></div>;
   }
-  if (extension === 'docx') return file.html ? <article className="prose max-w-none overflow-auto bg-white p-8 text-black" dangerouslySetInnerHTML={{ __html: file.html }} /> : <div className="p-4 text-xs text-[#8f8f8f]">Convirtiendo documento...</div>;
+  if (extension === 'docx') return file.html ? <article className="prose max-w-none overflow-auto bg-white p-8 text-black" dangerouslySetInnerHTML={{ __html: file.html }} /> : <div className="p-4 text-xs text-[#8f8f8f]">{language === 'en' ? 'Converting document...' : 'Convirtiendo documento...'}</div>;
   return <CodeMirrorFileEditor path={file.path} content={file.content} onChange={onChange} />;
 }
 
