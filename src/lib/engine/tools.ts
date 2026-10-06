@@ -256,7 +256,9 @@ export function selectToolsForPrompt(toolset: Record<string, any>, _mode: 'devel
 
   const add = (...names: string[]) => names.forEach((name) => keys.add(name));
   const has = (...terms: string[]) => terms.some((term) => text.includes(term));
-  if (has('controlar la pc', 'control de pc', 'computadora', 'mouse', 'teclado', 'windows', 'notepad', 'bloc de notas', 'chatgpt', 'app de escritorio', 'aplicación de escritorio', 'aplicacion de escritorio', 'ocr', 'pantalla', 'accesibilidad')) add('computerListWindows', 'computerGetState', 'computerOcr', 'computerAction');
+  // Navegadores instalados y apps de escritorio usan Windows UI Automation/OCR;
+  // el browserAction separado solo controla el WebView integrado de Codeclub.
+  if (has('controlar la pc', 'control de pc', 'computadora', 'mouse', 'teclado', 'windows', 'notepad', 'bloc de notas', 'chatgpt', 'app de escritorio', 'aplicación de escritorio', 'aplicacion de escritorio', 'ocr', 'pantalla', 'accesibilidad', 'edge', 'microsoft edge', 'chrome', 'google chrome', 'chromium', 'firefox', 'safari', 'navegador externo', 'navegador abierto', 'pestaña abierta', 'pestañas abiertas')) add('computerListWindows', 'computerGetState', 'computerOcr', 'computerAction');
   if (has('captura de pantalla', 'screenshot')) add('computerScreenshot');
 
   // Failsafe de escritura: el router IA sigue siendo la decisión principal.
@@ -269,7 +271,7 @@ export function selectToolsForPrompt(toolset: Record<string, any>, _mode: 'devel
   if (has('navegador', 'browser', 'web', 'url', 'dom', 'elemento', 'botón', 'boton', 'click', 'clic', 'escrib')) add('openBrowser', 'getBrowserState', 'browserAction');
   if (has('log', 'auditar', 'ejecución', 'ejecucion', 'herramientas', 'debug')) add('getExecutionLog');
 
-  if (_mode === 'development' && has('control de pc', 'computadora', 'mouse', 'teclado', 'navegador', 'edge', 'notepad', 'bloc de notas', 'chatgpt', 'app de escritorio', 'aplicación de escritorio', 'aplicacion de escritorio')) add('subagent', 'runCommand', 'openBrowser', 'getBrowserState', 'browserAction');
+  if (_mode === 'development' && has('control de pc', 'computadora', 'mouse', 'teclado', 'navegador', 'edge', 'chrome', 'firefox', 'safari', 'notepad', 'bloc de notas', 'chatgpt', 'app de escritorio', 'aplicación de escritorio', 'aplicacion de escritorio')) add('subagent', 'runCommand', 'openBrowser', 'getBrowserState', 'browserAction');
 
   return Object.fromEntries([...keys].filter((name) => toolset[name]).map((name) => [name, toolset[name]]));
 }

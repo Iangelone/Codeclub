@@ -36,6 +36,14 @@ observación nueva. No hace falta enviar una imagen al modelo del chat.
 
 ## Flujo de herramientas
 
+El especialista Computer Use se activa para pedidos sobre Edge, Chrome, Firefox,
+Safari y otras ventanas de Windows. En esos casos recibe las tools de Computer
+Use además de las del navegador integrado. `browserAction` controla el WebView de
+Codeclub; para navegadores instalados, primero identificar la ventana con
+`computerListWindows` y operar con `computerGetState`, `computerOcr` y
+`computerAction`. Así el modelo usa el DOM disponible cuando trabaja en el
+navegador integrado y la accesibilidad/OCR del sistema cuando trabaja en otra app.
+
 1. `computerListWindows({})`: elegir `windows[].windowId`.
 2. `computerAction({action:"focus", windowId:"…"})`: observar `state` devuelto.
 3. Buscar el control en `state.elements`; elegir una acción disponible.
