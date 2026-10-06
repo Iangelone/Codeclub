@@ -63,6 +63,41 @@ try {
   console.error("Error fetching models.dev catalog:", e);
 }
 
+// models.dev supplies Google's model metadata but not the Gemini API endpoint.
+// Keep the direct route available even when the remote catalog is unavailable.
+const googleProvider = fetchedProviders.find((provider) => provider.id === 'google');
+if (googleProvider) {
+  googleProvider.label = 'Google Gemini API';
+  googleProvider.api = 'https://generativelanguage.googleapis.com/v1beta';
+  googleProvider.doc = 'https://ai.google.dev/gemini-api/docs';
+  googleProvider.requiresApiKey = true;
+} else {
+  fetchedProviders.push({
+    id: 'google',
+    label: 'Google Gemini API',
+    shortLabel: 'G',
+    doc: 'https://ai.google.dev/gemini-api/docs',
+    api: 'https://generativelanguage.googleapis.com/v1beta',
+    env: ['GOOGLE_GENERATIVE_AI_API_KEY'],
+    requiresApiKey: true,
+  });
+}
+if (!fetchedModels.some((model) => model.providerId === 'google')) {
+  fetchedModels.push({
+    id: 'gemini-flash-latest',
+    gatewayId: 'google/gemini-flash-latest',
+    label: 'Gemini Flash Latest',
+    providerId: 'google',
+    providerName: 'Google Gemini API',
+    description: 'Gemini Flash model for coding and agent workflows',
+    reasoning: true,
+    toolCall: true,
+    structuredOutput: true,
+    contextWindow: 1_048_576,
+    cost: null,
+  });
+}
+
 try {
   const gatewayResponse = await fetch('https://ai-gateway.vercel.sh/v1/models');
   if (!gatewayResponse.ok) throw new Error(`AI Gateway catalog: HTTP ${gatewayResponse.status}`);

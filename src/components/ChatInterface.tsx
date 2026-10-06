@@ -19,6 +19,7 @@ import { xml } from '@codemirror/lang-xml';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { copyText, safeListen, desktopFileUrl as convertFileSrc, nativeInvoke as invoke, fileExists as exists, makeDirectory as mkdir, readDesktopBytes as readFile, readDesktopText as readTextFile, removeDesktopFile as remove, writeDesktopText as writeTextFile, selectDesktopFiles as open } from '../lib/runtime';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
+import { createGoogle } from '@ai-sdk/google';
 import { createGateway, jsonSchema, Output } from 'ai';
 import ReactMarkdown from 'react-markdown';
 import { AnimatePresence, motion, useAnimationControls, useReducedMotion } from 'motion/react';
@@ -1981,7 +1982,13 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       for (const [name, value] of Object.entries(configuredHeaders)) {
         if (typeof value === 'string' && /^[a-z0-9-]+$/i.test(name) && !['authorization', 'cookie', 'host'].includes(name.toLowerCase())) requestHeaders[name] = value.replaceAll('${chatId}', chat.chatId);
       }
-      const provider = useGateway ? createGateway({ apiKey: apiKey || undefined, fetch:desktopModelFetch }) : createOpenAICompatible({
+      const provider = useGateway ? createGateway({ apiKey: apiKey || undefined, fetch:desktopModelFetch }) : currentProvider.id === 'google' ? createGoogle({
+        name: 'google',
+        baseURL: currentProvider.api,
+        apiKey,
+        headers: requestHeaders,
+        fetch: desktopModelFetch,
+      }) : createOpenAICompatible({
         name: currentProvider.id,
         baseURL: currentProvider.api,
         apiKey,

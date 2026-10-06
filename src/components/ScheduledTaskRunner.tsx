@@ -2,6 +2,7 @@
 import { useEffect, useRef } from 'react';
 import { createGateway } from 'ai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
+import { createGoogle } from '@ai-sdk/google';
 import { nativeInvoke } from '../lib/runtime';
 import { getSetting } from '../lib/persistence';
 import { credentialKeyFor, modelIdFor, usesGateway } from '../lib/ai-routing';
@@ -85,7 +86,7 @@ async function execute() {
     const headers = await getSetting<Record<string, string>>(`codeclub_provider_headers_${selectedProvider.id}`, {});
     const requestHeaders: Record<string, string> = { 'x-codeclub-session': run.chatId };
     for (const [key, value] of Object.entries(headers)) if (typeof value === 'string' && /^[a-z0-9-]+$/i.test(key) && !['authorization', 'cookie', 'host'].includes(key.toLowerCase())) requestHeaders[key] = value.replaceAll('${chatId}', run.chatId);
-    const provider = usesGateway(selectedProvider, selectedModel) ? createGateway({ apiKey: 'codeclub-native-credential', fetch: desktopFetch }) : createOpenAICompatible({ name: selectedProvider.id, baseURL, apiKey: hasCredential ? 'codeclub-native-credential' : undefined, headers: requestHeaders, fetch: desktopFetch });
+    const provider = usesGateway(selectedProvider, selectedModel) ? createGateway({ apiKey: 'codeclub-native-credential', fetch: desktopFetch }) : selectedProvider.id === 'google' ? createGoogle({ name: 'google', baseURL, apiKey: hasCredential ? 'codeclub-native-credential' : undefined, headers: requestHeaders, fetch: desktopFetch }) : createOpenAICompatible({ name: selectedProvider.id, baseURL, apiKey: hasCredential ? 'codeclub-native-credential' : undefined, headers: requestHeaders, fetch: desktopFetch });
     const projectPath = task.projectPath || await nativeInvoke<string>('codeclub_get_system_root');
     const recordToolEvent = (name: string, input: any, output: any) => { toolEvents.push({ id: crypto.randomUUID(), name, input, output, at: new Date().toISOString() }); toolName = name; void publish(); };
     const plugins = await loadAgentPlugins(task.projectPath);
@@ -107,7 +108,7 @@ async function execute() {
       if (agents) instructions.push(`Workspace instructions:\n${agents.slice(0, 20000)}`);
     }
     content = await runStream({ model: provider(modelIdFor(selectedProvider, selectedModel)), contextWindow: selectedModel.contextWindow, system: instructions.join('\n\n'), messages: [{ role: 'user', content: task.prompt }], tools, signal: controller.signal, maxSteps: 32,
-      providerOptions: selectedModel.reasoning ? { [usesGateway(selectedProvider, selectedModel) ? selectedModel.providerId : selectedProvider.id]: { reasoningEffort: effort } } : undefined,
+      providerOptions: selectedModel.reasoning && selectedProvider.id !== 'google' ? { [usesGateway(selectedProvider, selectedModel) ? selectedModel.providerId : selectedProvider.id]: { reasoningEffort: effort } } : undefined,
       callbacks: { onTextDelta: value => { content = value; void publish(); }, onReasoningDelta: value => { reasoning = value; }, onEnd: ({ steps }) => { if (steps.at(-1)?.finishReason === 'tool-calls') failure ||= 'TASK_STEP_LIMIT'; }, onUsage: async usage => { await appendGenerationUsage({ id: crypto.randomUUID(), at: new Date().toISOString(), projectPath: task.projectPath, chatId: run.chatId, mode: 'scheduled', provider: selectedProvider.id, model: selectedModel.id, inputTokens: usage.inputTokens ?? null, outputTokens: usage.outputTokens ?? null, totalTokens: usage.totalTokens ?? null, reasoningTokens: usage.reasoningTokens ?? null, durationMs: usage.durationMs, status: 'completed' }); } }
     });
     if (failure) throw new Error(failure);

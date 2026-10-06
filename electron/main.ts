@@ -682,7 +682,7 @@ async function invokeNativeCommand(command: string, args: any = {}, signal?: Abo
       const url = String(request.url || '');
       if (!/^https?:\/\//i.test(url)) throw new Error('Solo se permiten URLs HTTP o HTTPS.');
       const requestHeaders = new Headers(Object.fromEntries(Array.isArray(request.headers) ? request.headers.map((header: any) => [String(header.name), String(header.value)]) : []));
-      if(request.credentialKey){const secret=credentialVault.authorization(String(request.credentialKey),url);if(secret)requestHeaders.set('authorization',`Bearer ${secret}`);}
+      if(request.credentialKey){const secret=credentialVault.authorization(String(request.credentialKey),url);if(secret){if(new URL(url).hostname==='generativelanguage.googleapis.com'){requestHeaders.delete('authorization');requestHeaders.set('x-goog-api-key',secret);}else requestHeaders.set('authorization',`Bearer ${secret}`);}}
       const controller=new AbortController();
       const requestId=String(request.requestId||randomUUID());
       modelRequests.set(requestId,controller);
