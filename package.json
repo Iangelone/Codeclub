@@ -22,6 +22,7 @@
     "test:native-commands": "npm run electron:compile && node scripts/test-native-commands.mjs",
     "test:chat-ui": "npm run desktop:build && node scripts/test-chat-ui.mjs",
     "test:page-bootstrap": "node scripts/test-page-bootstrap.mjs",
+    "test:external-browser": "npm run electron:compile && node scripts/test-external-browser.mjs",
     "test:packaged-win": "node scripts/test-packaged-win.mjs",
     "package:win": "npm run desktop:build && electron-builder --win --x64 --publish never"
   },

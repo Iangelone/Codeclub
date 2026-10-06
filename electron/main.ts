@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import * as pty from 'node-pty';
 import electronUpdater from 'electron-updater';
 import { createComputerUse } from './computer-use.js';
+import { createExternalBrowserControl } from './external-browser.js';
 import { createFloatingChat } from './floating-chat.js';
 const { autoUpdater } = electronUpdater;
 
@@ -26,6 +27,7 @@ const ownsAppInstance = app.requestSingleInstanceLock();
 if (!ownsAppInstance) app.quit();
 app.on('second-instance', () => showMainWindow());
 const desktopControl = createComputerUse(app.getAppPath(), app.isPackaged ? process.resourcesPath : undefined);
+const externalBrowserControl = createExternalBrowserControl();
 let projects: Project[] = [];
 let mainWindow: BrowserWindow | null = null;
 type FullscreenRestore = { bounds: Electron.Rectangle; displayId: number; maximized: boolean };
@@ -587,6 +589,9 @@ async function invokeNativeCommand(command: string, args: any = {}, signal?: Abo
     case 'codeclub_computer_action': return desktopControl.computer.run('action', args.request || {});
     case 'codeclub_computer_ocr': return desktopControl.computer.run('ocr', args.request || {});
     case 'codeclub_computer_stop': desktopControl.stop(); return { ok: true };
+    case 'codeclub_external_browser_list': return externalBrowserControl.list(args.request || {});
+    case 'codeclub_external_browser_state': return externalBrowserControl.getState(args.request || {});
+    case 'codeclub_external_browser_action': return externalBrowserControl.action(args.request || {});
     case 'codeclub_http_fetch': {
       const request = args.request || {};
       const url = String(request.url || '');
@@ -879,6 +884,7 @@ app.whenReady().then(async () => {
       }
     }
     if(payload.command==='codeclub_http_fetch'&&(payload.args?.request as any)?.credentialKey)requireAppSender(event);
+    if (payload.command.startsWith('codeclub_external_browser_')) requireAppSender(event);
     if(payload.command==='codeclub_http_abort'){
       requireAppSender(event);modelRequests.get(`${event.sender.id}:${String(payload.args?.requestId)}`)?.abort();return;
     }

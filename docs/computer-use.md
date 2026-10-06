@@ -71,6 +71,30 @@ vez o acotar el recorte. Las acciones UIA no dependen de igualdad de capturas.
 incluye por defecto en el conjunto seleccionado para control de PC ni en el
 especialista textual. El navegador integrado mantiene sus tools DOM existentes.
 
+## Navegadores externos por CDP
+
+Codeclub puede observar e interactuar con pestañas abiertas de navegadores basados
+en Chromium que expongan Chrome DevTools Protocol (Edge, Chrome, Brave y Chromium).
+El endpoint debe escuchar en loopback en uno de los puertos `9222`–`9232` (o podés
+indicar un puerto local distinto a `externalBrowserList`); la app no abre puertos de
+red ni inicia navegadores con depuración activada. Para habilitarlo,
+cerrá el navegador y arrancalo con un perfil dedicado, por ejemplo:
+
+```powershell
+msedge.exe --remote-debugging-port=9222 --user-data-dir="$env:LOCALAPPDATA\Codeclub\Edge-CDP"
+```
+
+La IA usa `externalBrowserList` para encontrar endpoints y pestañas, y luego
+`externalBrowserState`/`externalBrowserAction` para leer DOM visible y actuar con
+selectores de una observación reciente. Se omiten los valores de campos password;
+no se exponen cookies, almacenamiento del navegador, headers ni ejecución de JS
+arbitrario. Las mutaciones consumen el snapshot y devuelven uno nuevo.
+
+CDP concede acceso amplio al perfil del navegador. Usá un perfil dedicado, no uno
+con sesiones personales, y apagá el proceso al terminar. Firefox y Safari no hablan
+CDP: siguen disponibles por Computer Use visual/UI Automation cuando Windows los
+expone.
+
 ## Alternativa que va más allá del OCR: OmniParser
 
 La contribución de [OmniParser de Microsoft](https://github.com/microsoft/OmniParser)
