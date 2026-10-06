@@ -37,12 +37,13 @@ observación nueva. No hace falta enviar una imagen al modelo del chat.
 ## Flujo de herramientas
 
 El especialista Computer Use se activa para pedidos sobre Edge, Chrome, Firefox,
-Safari y otras ventanas de Windows. En esos casos recibe las tools de Computer
-Use además de las del navegador integrado. `browserAction` controla el WebView de
-Codeclub; para navegadores instalados, primero identificar la ventana con
-`computerListWindows` y operar con `computerGetState`, `computerOcr` y
-`computerAction`. Así el modelo usa el DOM disponible cuando trabaja en el
-navegador integrado y la accesibilidad/OCR del sistema cuando trabaja en otra app.
+Safari y otras ventanas de Windows. Para Edge/Chrome/Brave, primero busca la
+extensión con `externalBrowserList` y usa `externalBrowserState`/`externalBrowserAction`
+para acceder al DOM de pestañas abiertas. También admite CDP local si el navegador
+se inició con un endpoint permitido. Si falta la extensión o la página no es
+compatible, puede operar de forma visual con `computerListWindows`,
+`computerGetState`, `computerOcr` y `computerAction`. `browserAction` controla el
+WebView integrado de Codeclub.
 
 1. `computerListWindows({})`: elegir `windows[].windowId`.
 2. `computerAction({action:"focus", windowId:"…"})`: observar `state` devuelto.
@@ -71,29 +72,41 @@ vez o acotar el recorte. Las acciones UIA no dependen de igualdad de capturas.
 incluye por defecto en el conjunto seleccionado para control de PC ni en el
 especialista textual. El navegador integrado mantiene sus tools DOM existentes.
 
-## Navegadores externos por CDP
+## Extensión para navegadores externos
 
-Codeclub puede observar e interactuar con pestañas abiertas de navegadores basados
-en Chromium que expongan Chrome DevTools Protocol (Edge, Chrome, Brave y Chromium).
-El endpoint debe escuchar en loopback en uno de los puertos `9222`–`9232` (o podés
-indicar un puerto local distinto a `externalBrowserList`); la app no abre puertos de
-red ni inicia navegadores con depuración activada. Para habilitarlo,
-cerrá el navegador y arrancalo con un perfil dedicado, por ejemplo:
+La extensión oficial de Codeclub conecta pestañas que ya están abiertas en Edge,
+Chrome, Brave y otros navegadores Chromium compatibles. Usa `chrome.debugger`, el
+transporte CDP de la extensión, y un WebSocket local que solo acepta el origen de
+la extensión firmada. No pide cerrar ni reiniciar el navegador ni activar puertos
+de depuración. Al conectarse, el navegador muestra su indicador de depuración.
 
-```powershell
-msedge.exe --remote-debugging-port=9222 --user-data-dir="$env:LOCALAPPDATA\Codeclub\Edge-CDP"
-```
+Instalación de una vez:
 
-La IA usa `externalBrowserList` para encontrar endpoints y pestañas, y luego
-`externalBrowserState`/`externalBrowserAction` para leer DOM visible y actuar con
-selectores de una observación reciente. Se omiten los valores de campos password;
-no se exponen cookies, almacenamiento del navegador, headers ni ejecución de JS
-arbitrario. Las mutaciones consumen el snapshot y devuelven uno nuevo.
+1. En Codeclub abrí **Extensiones → Codeclub Browser Control → Instalar** para abrir
+   la página de extensiones del navegador y la carpeta preparada por la app.
+2. Activá **Developer mode**, elegí **Load unpacked** y seleccioná esa carpeta.
+   El navegador muestra sus propios permisos antes de habilitarla.
+3. Para quitarla, usá **Desinstalar** en la misma fila y confirmá **Remove/Quitar**
+   en el navegador. La API del navegador exige esa confirmación nativa.
 
-CDP concede acceso amplio al perfil del navegador. Usá un perfil dedicado, no uno
-con sesiones personales, y apagá el proceso al terminar. Firefox y Safari no hablan
-CDP: siguen disponibles por Computer Use visual/UI Automation cuando Windows los
-expone.
+El panel detecta Edge, Chrome, Brave, Opera y Vivaldi instalados. Firefox y Safari no
+están soportados por este companion basado en `chrome.debugger`.
+3. Aceptá el permiso **debugger** para Codeclub Browser Control.
+4. Dejá Codeclub abierto. Pedile a la IA que liste pestañas externas; la extensión
+   se conecta sola y la IA puede observar DOM visible e interactuar.
+
+`externalBrowserList` devuelve el `browserId` y `targetId` de cada pestaña.
+`externalBrowserState` observa texto y controles; `externalBrowserAction` permite
+navegar, hacer clic, escribir, usar teclas y desplazarse. Cada acción requiere el
+snapshot reciente y devuelve estado nuevo. Se ocultan valores password; no se leen
+cookies ni almacenamiento, y no se expone ejecución JavaScript arbitraria.
+
+La extensión solicita **debugger**, un permiso potente del navegador: permite
+instrumentar pestañas mientras Codeclub está conectado. Desconectar la extensión o
+cerrar Codeclub termina el puente. El perfil queda bajo control del navegador.
+Computer Use visual/UI Automation sigue disponible para Firefox, Safari y controles
+que no exponga esta API. Como alternativa para Chromium también se mantiene CDP
+directo por loopback en puertos `9222`–`9232` o uno indicado explícitamente.
 
 ## Alternativa que va más allá del OCR: OmniParser
 

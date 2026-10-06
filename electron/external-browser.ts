@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { BrowserExtensionBridge } from './browser-extension-bridge.js';
 
 type CdpTarget = { id: string; type: string; title?: string; url?: string; webSocketDebuggerUrl?: string };
 type BrowserEndpoint = { port: number; name: string; targets: CdpTarget[] };
@@ -111,8 +112,9 @@ const stateExpression = `(() => {
 
 export class ExternalBrowserControl {
   private snapshots = new Map<string, BrowserSnapshot>();
+  constructor(private readonly extensionBridge?: BrowserExtensionBridge) {}
 
-  async list(request: { ports?: unknown } = {}): Promise<{ ok: boolean; browsers: Array<{ port: number; name: string; targets: Array<{ targetId: string; title: string; url: string }> }>; hint: string }> {
+  async list(request: { ports?: unknown } = {}): Promise<{ ok: boolean; browsers: Array<{ browserId: string; connection: string; port?: number; name: string; targets: Array<{ targetId: string; title: string; url: string; active?: boolean; windowId?: number }> }>; hint: string }> {
     const requested = Array.isArray(request.ports) ? request.ports.map(validPort).filter((port): port is number => Boolean(port)).slice(0, 20) : DEFAULT_PORTS;
     const ports = [...new Set(requested)];
     const results = await Promise.all(ports.map(async (port): Promise<BrowserEndpoint | undefined> => {
@@ -126,12 +128,26 @@ export class ExternalBrowserControl {
         return { port, name: String(version.Browser).slice(0, 100), targets };
       } catch { return undefined; }
     }));
-    const browsers = results.filter((item): item is BrowserEndpoint => Boolean(item)).map(({ port, name, targets }) => ({ port, name, targets: targets.map(target => ({ targetId: target.id, title: String(target.title || '').slice(0, 300), url: String(target.url || '').slice(0, 2000) })) }));
-    return { ok: true, browsers, hint: browsers.length ? '' : 'No se encontraron endpoints CDP en los puertos locales 9222–9232. Iniciá Edge/Chrome con --remote-debugging-port y --user-data-dir; para otros puertos, indicá ports a externalBrowserList.' };
+    const browsers: Array<{ browserId: string; connection: string; port?: number; name: string; targets: Array<{ targetId: string; title: string; url: string; active?: boolean; windowId?: number }> }> = results.filter((item): item is BrowserEndpoint => Boolean(item)).map(({ port, name, targets }) => ({ browserId: `cdp:${port}`, connection: 'cdp', port, name, targets: targets.map(target => ({ targetId: target.id, title: String(target.title || '').slice(0, 300), url: String(target.url || '').slice(0, 2000), active: false })) }));
+    if (this.extensionBridge) {
+      const extensions = await Promise.all(this.extensionBridge.list().map(async browser => {
+        try { return { ...browser, targets: await this.extensionBridge!.tabs(browser.browserId) }; }
+        catch { return browser; }
+      }));
+      browsers.push(...extensions);
+    }
+    return { ok: true, browsers, hint: browsers.length ? '' : 'No hay navegadores conectados. Activá la extensión Codeclub Browser Control o usá CDP en los puertos 9222–9232.' };
   }
 
-  async getState(request: { port?: unknown; targetId?: unknown }) {
-    const port = validPort(request.port);
+  async getState(request: { port?: unknown; targetId?: unknown; browserId?: unknown }) {
+    const browserId = String((request as any).browserId || '');
+    if (browserId.startsWith('extension:')) {
+      if (!this.extensionBridge) return { ok: false, error: 'El puente de extensión no está disponible.' };
+      try { const state = await this.extensionBridge.state(browserId, String(request.targetId || '')); return { ...state, browserId, connection: 'extension', targetId: String(request.targetId || '') }; }
+      catch (error) { return { ok: false, error: error instanceof Error ? error.message : 'No se pudo observar la pestaña.' }; }
+    }
+    const selectedPort = browserId.startsWith('cdp:') ? browserId.slice(4) : request.port;
+    const port = validPort(selectedPort);
     const targetId = String(request.targetId || '');
     if (!port || !targetId || targetId.length > 200) return { ok: false, error: 'Indicá port y targetId obtenidos de externalBrowserList.' };
     try {
@@ -152,8 +168,14 @@ export class ExternalBrowserControl {
     } catch (error) { return { ok: false, error: error instanceof Error ? error.message : 'No se pudo observar la pestaña.' }; }
   }
 
-  async action(request: { port?: unknown; targetId?: unknown; snapshotId?: unknown; selector?: unknown; action?: unknown; text?: unknown; key?: unknown; amount?: unknown }) {
-    const port = validPort(request.port); const targetId = String(request.targetId || '');
+  async action(request: { port?: unknown; targetId?: unknown; browserId?: unknown; snapshotId?: unknown; selector?: unknown; action?: unknown; text?: unknown; key?: unknown; amount?: unknown }) {
+    const browserId = String((request as any).browserId || '');
+    if (browserId.startsWith('extension:')) {
+      if (!this.extensionBridge) return { ok: false, error: 'El puente de extensión no está disponible.' };
+      try { const result = await this.extensionBridge.action(browserId, request as any); return { ...result, browserId, connection: 'extension', targetId: String(request.targetId || ''), state: result?.state ? { ...result.state, browserId, connection: 'extension', targetId: String(request.targetId || '') } : result?.state }; }
+      catch (error) { return { ok: false, error: error instanceof Error ? error.message : 'Falló la acción del navegador.' }; }
+    }
+    const port = validPort(browserId.startsWith('cdp:') ? browserId.slice(4) : request.port); const targetId = String(request.targetId || '');
     const snapshotId = String(request.snapshotId || ''); const selector = String(request.selector || '');
     const action = String(request.action || ''); const text = String(request.text ?? ''); const key = String(request.key || '');
     const amount = Number(request.amount);
@@ -216,4 +238,4 @@ export class ExternalBrowserControl {
   private pruneSnapshots() { const now = Date.now(); for (const [id, snapshot] of this.snapshots) if (now - snapshot.createdAt > MAX_SNAPSHOT_AGE_MS) this.snapshots.delete(id); }
 }
 
-export const createExternalBrowserControl = () => new ExternalBrowserControl();
+export const createExternalBrowserControl = (extensionBridge?: BrowserExtensionBridge) => new ExternalBrowserControl(extensionBridge);

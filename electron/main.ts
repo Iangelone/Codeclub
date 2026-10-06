@@ -17,6 +17,7 @@ import * as pty from 'node-pty';
 import electronUpdater from 'electron-updater';
 import { createComputerUse } from './computer-use.js';
 import { createExternalBrowserControl } from './external-browser.js';
+import { createBrowserExtensionBridge } from './browser-extension-bridge.js';
 import { createFloatingChat } from './floating-chat.js';
 const { autoUpdater } = electronUpdater;
 
@@ -27,7 +28,35 @@ const ownsAppInstance = app.requestSingleInstanceLock();
 if (!ownsAppInstance) app.quit();
 app.on('second-instance', () => showMainWindow());
 const desktopControl = createComputerUse(app.getAppPath(), app.isPackaged ? process.resourcesPath : undefined);
-const externalBrowserControl = createExternalBrowserControl();
+const browserExtensionBridge = createBrowserExtensionBridge();
+const externalBrowserControl = createExternalBrowserControl(browserExtensionBridge);
+const browserExtensionManagers = {
+  edge: { name: 'Microsoft Edge', page: 'edge://extensions/', executable: ['Microsoft/Edge/Application/msedge.exe'] },
+  chrome: { name: 'Google Chrome', page: 'chrome://extensions/', executable: ['Google/Chrome/Application/chrome.exe'] },
+  brave: { name: 'Brave', page: 'brave://extensions/', executable: ['BraveSoftware/Brave-Browser/Application/brave.exe'] },
+  opera: { name: 'Opera', page: 'opera://extensions/', executable: ['Programs/Opera/launcher.exe', 'Opera/launcher.exe'] },
+  vivaldi: { name: 'Vivaldi', page: 'vivaldi://extensions/', executable: ['Vivaldi/Application/vivaldi.exe'] },
+} as const;
+type BrowserExtensionManagerId = keyof typeof browserExtensionManagers;
+const browserExecutableCandidates = (id: BrowserExtensionManagerId) => {
+  const executablePaths = browserExtensionManagers[id].executable;
+  const roots = [process.env['PROGRAMFILES(X86)'], process.env.PROGRAMFILES, process.env.LOCALAPPDATA].filter((root): root is string => Boolean(root));
+  return roots.flatMap(root => executablePaths.map(relative => path.join(root, relative)));
+};
+const findBrowserExecutable = async (id: BrowserExtensionManagerId) => {
+  for (const candidate of browserExecutableCandidates(id)) {
+    try { if ((await fs.stat(candidate)).isFile()) return candidate; } catch { /* Continue through the standard install locations. */ }
+  }
+  return null;
+};
+const prepareBrowserExtension = async () => {
+  const source = path.join(app.isPackaged ? process.resourcesPath : app.getAppPath(), 'browser-extension');
+  const destination = path.join(app.getPath('userData'), 'browser-extension');
+  await fs.access(path.join(source, 'manifest.json'));
+  await fs.mkdir(destination, { recursive: true });
+  await fs.cp(source, destination, { recursive: true, force: true });
+  return destination;
+};
 let projects: Project[] = [];
 let mainWindow: BrowserWindow | null = null;
 type FullscreenRestore = { bounds: Electron.Rectangle; displayId: number; maximized: boolean };
@@ -87,6 +116,8 @@ function executeScheduledTask(task: ScheduledTask, run: TaskRun): Promise<void> 
 }
 const computerOverlayWindows = new Set<BrowserWindow>();
 let computerOverlayActive = false;
+let computerOverlayPaletteIndex = 0;
+let computerOverlayLanguage = 'es';
 let computerMouseHook: ReturnType<typeof spawn> | null = null;
 let computerMenuWindow: BrowserWindow | null = null;
 let lastComputerContext: Record<string, unknown> | null = null;
@@ -98,24 +129,38 @@ const nativeMcpSessions = new Map<string, NativeMcpSession>();
 type NativeTerminal = { child: pty.IPty; info: any; buffer: string };
 const nativeTerminals = new Map<string, NativeTerminal>();
 
-const computerOverlayHtml = (language: string) => {
+const COMPUTER_OVERLAY_PALETTES = [
+  { orb: '#2D5FD6', accent: '#3D9BFF', bright: '#8BC7FF' },
+  { orb: '#D63D52', accent: '#F04E65', bright: '#FFABB7' },
+  { orb: '#D6A317', accent: '#E8B930', bright: '#FFE08A' },
+  { orb: '#7543D6', accent: '#9C6AFF', bright: '#C1A5FF' },
+  { orb: '#21845A', accent: '#39B77C', bright: '#8FE6B9' },
+  { orb: '#D6752B', accent: '#F0893A', bright: '#FFC092' },
+  { orb: '#D64A9E', accent: '#F15BB9', bright: '#FFABD8' },
+  { orb: '#228FAD', accent: '#31B4D5', bright: '#92E5F2' },
+  { orb: '#8CAB20', accent: '#B4D43A', bright: '#DBEF8D' },
+] as const;
+
+const computerOverlayHtml = (language: string, paletteIndex: number) => {
   const title = language === 'en' ? 'Codeclub is using your computer' : 'Codeclub está usando tu computadora';
   const cancel = language === 'en' ? 'Esc to cancel' : 'Esc para cancelar';
+  const palette = COMPUTER_OVERLAY_PALETTES[paletteIndex] || COMPUTER_OVERLAY_PALETTES[0];
   return `<!doctype html><html><head><meta charset="utf-8"><style>
 *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:transparent;overflow:hidden;font-family:Segoe UI,Arial,sans-serif}
-body{border:1px solid #3d9bff;box-shadow:inset 0 0 0 1px rgba(139,199,255,.42),inset 0 0 28px rgba(61,155,255,.12),0 0 18px rgba(61,155,255,.16)}
-.pill{position:absolute;top:18px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;padding:12px 26px;border:1px solid rgba(139,199,255,.78);border-radius:999px;background:linear-gradient(110deg,rgba(44,150,216,.96),rgba(73,173,225,.92));box-shadow:0 0 28px rgba(61,155,255,.55),0 8px 28px rgba(0,0,0,.26);color:#fff;font-size:16px;font-weight:600;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.2)}
-.dot{width:10px;height:10px;border-radius:50%;background:#fff;box-shadow:0 0 10px #fff;flex:none}.sep{opacity:.7}.cancel{font-weight:500;opacity:.92}
+body{border:1px solid ${palette.accent};box-shadow:inset 0 0 0 1px ${palette.bright}6b,inset 0 0 28px ${palette.accent}1f,0 0 18px ${palette.accent}29}
+.pill{position:absolute;top:10px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:7px;padding:7px 16px;border:1px solid ${palette.bright}c7;border-radius:999px;background:linear-gradient(110deg,${palette.orb}f5,${palette.accent}eb);box-shadow:0 0 20px ${palette.accent}8c,0 5px 18px rgba(0,0,0,.26);color:#fff;font-size:12px;font-weight:600;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.2)}
+.dot{width:7px;height:7px;border-radius:50%;background:#fff;box-shadow:0 0 7px #fff;flex:none}.sep{opacity:.7}.cancel{font-weight:500;opacity:.92}
 </style></head><body><div class="pill"><span class="dot"></span><span>${title}</span><span class="sep">·</span><span class="cancel">${cancel}</span></div></body></html>`;
 };
 
-const computerContextMenuHtml = (language: string) => {
+const computerContextMenuHtml = (language: string, paletteIndex = computerOverlayPaletteIndex) => {
   const items = language === 'en'
     ? [['select', '⌖', 'Select element'], ['coordinate', '⌁', 'Use coordinate'], ['screenshot', '▣', 'Capture screen']]
     : [['select', '⌖', 'Seleccionar elemento'], ['coordinate', '⌁', 'Usar coordenada'], ['screenshot', '▣', 'Capturar pantalla']];
   const rows = items.map(([action, icon, label]) => `<button data-action="${action}"><span class="icon">${icon}</span><span>${label}</span></button>`).join('');
+  const palette = COMPUTER_OVERLAY_PALETTES[paletteIndex] || COMPUTER_OVERLAY_PALETTES[0];
   return `<!doctype html><html><head><meta charset="utf-8"><style>
-*{box-sizing:border-box}html,body{margin:0;background:transparent;font-family:Segoe UI,Arial,sans-serif;overflow:hidden}main{width:286px;padding:7px;border:1px solid rgba(139,199,255,.38);border-radius:15px;background:rgba(28,32,40,.97);box-shadow:0 16px 38px rgba(0,0,0,.46),0 0 20px rgba(61,155,255,.16);backdrop-filter:blur(18px)}button{display:flex;align-items:center;gap:12px;width:100%;height:42px;padding:0 12px;border:0;border-radius:9px;background:transparent;color:#e7edf5;font:500 14px Segoe UI,Arial,sans-serif;text-align:left;cursor:pointer}button:hover{background:rgba(139,199,255,.18);color:#fff}.icon{display:grid;place-items:center;width:20px;color:#8bc7ff;font-size:20px;line-height:1}</style></head><body><main>${rows}</main><script>for(const button of document.querySelectorAll('button'))button.addEventListener('click',()=>window.codeclub.computerMenuAction(button.dataset.action));window.addEventListener('keydown',event=>{if(event.key==='Escape')window.codeclub.computerMenuAction('close')});</script></body></html>`;
+*{box-sizing:border-box}html,body{margin:0;background:transparent;font-family:Segoe UI,Arial,sans-serif;overflow:hidden}main{width:286px;padding:7px;border:1px solid ${palette.bright}61;border-radius:15px;background:rgba(28,32,40,.97);box-shadow:0 16px 38px rgba(0,0,0,.46),0 0 20px ${palette.accent}29;backdrop-filter:blur(18px)}button{display:flex;align-items:center;gap:12px;width:100%;height:42px;padding:0 12px;border:0;border-radius:9px;background:transparent;color:#e7edf5;font:500 14px Segoe UI,Arial,sans-serif;text-align:left;cursor:pointer}button:hover{background:${palette.bright}2e;color:#fff}.icon{display:grid;place-items:center;width:20px;color:${palette.bright};font-size:20px;line-height:1}</style></head><body><main>${rows}</main><script>for(const button of document.querySelectorAll('button'))button.addEventListener('click',()=>window.codeclub.computerMenuAction(button.dataset.action));window.addEventListener('keydown',event=>{if(event.key==='Escape')window.codeclub.computerMenuAction('close')});</script></body></html>`;
 };
 
 const computerMouseHookScript = `
@@ -168,7 +213,7 @@ function showComputerContextMenu(payload: any) {
   computerMenuWindow.setAlwaysOnTop(true, 'screen-saver');
   computerMenuWindow.on('blur', () => { if (computerMenuWindow && !computerMenuWindow.isDestroyed()) computerMenuWindow.close(); });
   computerMenuWindow.on('closed', () => { computerMenuWindow = null; });
-  void computerMenuWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(computerContextMenuHtml('es'))}`);
+  void computerMenuWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(computerContextMenuHtml('es', computerOverlayPaletteIndex))}`);
   computerMenuWindow.once('ready-to-show', () => computerMenuWindow?.showInactive());
   computerMenuWindow.webContents.once('did-finish-load', () => computerMenuWindow?.focus());
 }
@@ -195,9 +240,11 @@ function destroyComputerOverlay() {
   computerOverlayActive = false;
 }
 
-function createComputerOverlay(language: string) {
+function createComputerOverlay(language: string, paletteIndex = computerOverlayPaletteIndex) {
   for (const display of screen.getAllDisplays()) {
-    const bounds = display.bounds;
+    // bounds puede coincidir con el área de trabajo en algunas configuraciones de Windows;
+    // size conserva el tamaño completo del monitor, incluida la franja de la barra de tareas.
+    const bounds = { ...display.bounds, width: display.size.width, height: display.size.height };
     const overlay = new BrowserWindow({
       x: bounds.x,
       y: bounds.y,
@@ -218,16 +265,22 @@ function createComputerOverlay(language: string) {
     overlay.setIgnoreMouseEvents(true, { forward: true });
     overlay.on('closed', () => computerOverlayWindows.delete(overlay));
     computerOverlayWindows.add(overlay);
-    void overlay.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(computerOverlayHtml(language))}`);
-    overlay.once('ready-to-show', () => { if (!overlay.isDestroyed() && computerOverlayActive) overlay.showInactive(); });
+    void overlay.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(computerOverlayHtml(language, paletteIndex))}`);
+    overlay.once('ready-to-show', () => {
+      if (overlay.isDestroyed() || !computerOverlayActive) return;
+      overlay.showInactive();
+      overlay.setAlwaysOnTop(true, 'screen-saver');
+    });
   }
 }
 
-function setComputerOverlay(active: boolean, language = 'es') {
+function setComputerOverlay(active: boolean, language = 'es', paletteIndex = computerOverlayPaletteIndex) {
   if (!active) { destroyComputerOverlay(); return { ok: true, active: false }; }
   destroyComputerOverlay();
+  computerOverlayLanguage = language;
+  computerOverlayPaletteIndex = Number.isInteger(paletteIndex) && paletteIndex >= 0 && paletteIndex < COMPUTER_OVERLAY_PALETTES.length ? paletteIndex : 0;
   computerOverlayActive = true;
-  createComputerOverlay(language);
+  createComputerOverlay(computerOverlayLanguage, computerOverlayPaletteIndex);
   startComputerMouseHook();
   globalShortcut.register('Esc', () => {
     if (!computerOverlayActive) return;
@@ -476,6 +529,38 @@ async function invokeNativeCommand(command: string, args: any = {}, signal?: Abo
       return true;
     }
     case 'codeclub_get_app_version': return app.getVersion();
+    case 'codeclub_browser_extension_info': {
+      const browsers = await Promise.all((Object.keys(browserExtensionManagers) as BrowserExtensionManagerId[]).map(async id => ({
+        id,
+        name: browserExtensionManagers[id].name,
+        installed: Boolean(await findBrowserExecutable(id)),
+        connected: browserExtensionBridge.list().some(client => {
+          const name = client.name.toLowerCase();
+          return id === 'edge' ? name.includes('edge') : id === 'chrome' ? name.includes('chrome') : id === 'brave' ? name.includes('brave') : id === 'opera' ? name.includes('opera') : name.includes('vivaldi');
+        }),
+      })));
+      return { browsers, extensionId: 'pomkkenhcjkfjdabdhogladflacafopd' };
+    }
+    case 'codeclub_browser_extension_manage': {
+      if (process.platform !== 'win32') throw new Error('El instalador de extensiones está disponible en Windows.');
+      const id = String(args.browser || '') as BrowserExtensionManagerId;
+      if (!Object.hasOwn(browserExtensionManagers, id)) throw new Error('Navegador no compatible.');
+      if (!['install', 'uninstall'].includes(String(args.action || ''))) throw new Error('Acción de extensión inválida.');
+      const browser = browserExtensionManagers[id];
+      const executable = await findBrowserExecutable(id);
+      if (!executable) throw new Error(`${browser.name} no está instalado en este equipo.`);
+      const extensionPath = args.action === 'install' ? await prepareBrowserExtension() : undefined;
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn(executable, [browser.page], { detached: true, stdio: 'ignore', windowsHide: false });
+        child.once('error', reject);
+        child.once('spawn', () => { child.unref(); resolve(); });
+      });
+      if (extensionPath) {
+        const error = await shell.openPath(extensionPath);
+        if (error) throw new Error(`No se pudo abrir la carpeta de la extensión: ${error}`);
+      }
+      return { ok: true, browser: id, action: args.action === 'install' ? 'install' : 'uninstall', extensionPath };
+    }
     case 'codeclub_list_files': return listProjectFiles(String(args.projectPath || ''), Number(args.maxFiles) || 400);
     case 'codeclub_path_kind': {
       const target = await resolveProjectFile(String(args.projectPath || ''), String(args.path || '.'));
@@ -769,6 +854,8 @@ app.setAppUserModelId('com.codeclub.desktop');
 app.commandLine.appendSwitch('force-renderer-accessibility');
 app.whenReady().then(async () => {
   if (!ownsAppInstance) return;
+  void browserExtensionBridge.start();
+  app.once('will-quit', () => browserExtensionBridge.stop());
   credentialVault=new CredentialVault(app.getPath('userData'),safeStorage);
   credentialVault.migrate(path.join(app.getPath('userData'),'settings.json'));
   taskScheduler = new TaskScheduler(path.join(app.getPath('userData'), 'scheduled-tasks.json'), executeScheduledTask, publishTaskChange, (task, run) => {
@@ -884,7 +971,7 @@ app.whenReady().then(async () => {
       }
     }
     if(payload.command==='codeclub_http_fetch'&&(payload.args?.request as any)?.credentialKey)requireAppSender(event);
-    if (payload.command.startsWith('codeclub_external_browser_')) requireAppSender(event);
+    if (payload.command.startsWith('codeclub_external_browser_') || payload.command.startsWith('codeclub_browser_extension_')) requireAppSender(event);
     if(payload.command==='codeclub_http_abort'){
       requireAppSender(event);modelRequests.get(`${event.sender.id}:${String(payload.args?.requestId)}`)?.abort();return;
     }
@@ -923,6 +1010,12 @@ app.whenReady().then(async () => {
   ipcMain.on('codeclub:orb-palette-change', (event, index: unknown) => {
     const sender = BrowserWindow.fromWebContents(event.sender);
     if (!sender || sender.isDestroyed() || typeof index !== 'number' || !Number.isInteger(index) || index < 0 || index > 8) return;
+    computerOverlayPaletteIndex = index;
+    if (computerOverlayActive) {
+      for (const overlay of computerOverlayWindows) overlay.destroy();
+      computerOverlayWindows.clear();
+      createComputerOverlay(computerOverlayLanguage, computerOverlayPaletteIndex);
+    }
     for (const window of BrowserWindow.getAllWindows()) {
       if (window.id !== sender.id && !window.isDestroyed() && !window.webContents.isDestroyed()) {
         window.webContents.send('codeclub:orb-palette-change', index);
@@ -941,7 +1034,7 @@ app.whenReady().then(async () => {
     try { await autoUpdater.checkForUpdates(); return autoUpdateState; } catch (error) { const state = { state: 'error', error: error instanceof Error ? error.message : String(error) } satisfies AutoUpdateState; publishAutoUpdate(state); return state; }
   });
   ipcMain.handle('app:install-update', () => { if (autoUpdateState.state === 'downloaded') autoUpdater.quitAndInstall(); return autoUpdateState; });
-  ipcMain.handle('computer:overlay', (_event, payload: { active?: boolean; language?: string }) => setComputerOverlay(Boolean(payload?.active), payload?.language === 'en' ? 'en' : 'es'));
+  ipcMain.handle('computer:overlay', (_event, payload: { active?: boolean; language?: string; paletteIndex?: number }) => setComputerOverlay(Boolean(payload?.active), payload?.language === 'en' ? 'en' : 'es', payload?.paletteIndex));
   ipcMain.on('computer:menu-action', (_event, action: string) => {
     if (computerMenuWindow && !computerMenuWindow.isDestroyed()) computerMenuWindow.close();
     if (action === 'close') return;

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Blocks, Box, FileText, FileType2, Folder, LayoutTemplate, PlugZap, Presentation, Search, Table2, Trash2, WandSparkles } from 'lucide-react';
+import { Blocks, Box, ExternalLink, FileText, FileType2, Folder, Globe, LayoutTemplate, PlugZap, Presentation, Search, Table2, Trash2, WandSparkles } from 'lucide-react';
 import { getSetting, setSetting } from '../lib/persistence';
 import { useAppLanguage, type AppLanguage } from '../lib/i18n';
 import { loadAgentPlugins, type AgentPlugin } from '../lib/agent-plugins';
@@ -17,6 +17,7 @@ type Scope = 'global' | 'project';
 type ExtensionItem = { id: string; name: string; description: string; icon: typeof Box; color: string; scope: Scope; protected?: boolean };
 type SkillItem = { id: string; name: string; description: string; source: string; scope: Scope };
 type McpItem = { id: string; name: string; url: string; scope: Scope };
+type BrowserManager = { id: string; name: string; installed: boolean; connected: boolean };
 
 const scopeLabel = (scope: Scope, language: AppLanguage) => scope === 'global' ? (language === 'en' ? 'Global' : 'Global') : (language === 'en' ? 'Project' : 'Proyecto');
 
@@ -28,6 +29,10 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
   const [skills, setSkills] = useState<SkillItem[]>([]);
   const [mcpServers, setMcpServers] = useState<McpItem[]>([]);
   const [plugins, setPlugins] = useState<AgentPlugin[]>([]);
+  const [browserManagers, setBrowserManagers] = useState<BrowserManager[]>([]);
+  const [browserBusy, setBrowserBusy] = useState('');
+  const [browserNotice, setBrowserNotice] = useState('');
+  const [browserError, setBrowserError] = useState('');
   const projectPath = selectedProject?.projectPath || '';
   const pluginExtensions = useMemo<ExtensionItem[]>(() => plugins.map((plugin) => ({
     id: `plugin:${plugin.id}`,
@@ -38,9 +43,10 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
     scope: plugin.scope,
   })), [plugins]);
   const allExtensions = useMemo<ExtensionItem[]>(() => [
+    { id: 'browser-control', name: 'Codeclub Browser Control', description: language === 'en' ? 'Control tabs in Chromium-based browsers' : 'Controlá pestañas de navegadores Chromium', icon: Globe, color: '#1687FF', scope: 'global', protected: true },
     ...builtInExtensions.map((extension) => ({ ...extension, scope: 'global' as const, protected: true })),
     ...pluginExtensions,
-  ], [pluginExtensions]);
+  ], [pluginExtensions, language]);
   const filteredExtensions = useMemo(() => allExtensions.filter(({ name, description }) => `${name} ${description}`.toLowerCase().includes(query.toLowerCase())), [allExtensions, query]);
   const filteredSkills = useMemo(() => skills.filter((skill) => `${skill.name} ${skill.description} ${skill.source}`.toLowerCase().includes(query.toLowerCase())), [skills, query]);
 
@@ -59,11 +65,37 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
     }).catch(() => { setSkills([]); setPlugins([]); setMcpServers([]); });
   };
 
+  const refreshBrowserManagers = () => {
+    void invoke<{ browsers?: BrowserManager[] }>('codeclub_browser_extension_info')
+      .then((result) => setBrowserManagers(result.browsers || []))
+      .catch(() => setBrowserManagers([]));
+  };
+
+  const manageBrowser = async (browser: BrowserManager, action: 'install' | 'uninstall') => {
+    const busyKey = `${browser.id}:${action}`;
+    setBrowserBusy(busyKey);
+    setBrowserError('');
+    setBrowserNotice('');
+    try {
+      await invoke('codeclub_browser_extension_manage', { browser: browser.id, action });
+      setBrowserNotice(action === 'install'
+        ? (language === 'en' ? `Choose “Load unpacked” in ${browser.name}, then select the opened Codeclub Browser Control folder.` : `En ${browser.name}, elegí «Cargar descomprimida» y seleccioná la carpeta Codeclub Browser Control que se abrió.`)
+        : (language === 'en' ? `Remove Codeclub Browser Control from the extensions page in ${browser.name}.` : `Confirmá «Quitar» Codeclub Browser Control en la página de extensiones de ${browser.name}.`));
+      refreshBrowserManagers();
+    } catch (error) {
+      setBrowserError(error instanceof Error ? error.message : (language === 'en' ? 'Could not open browser extension settings.' : 'No se pudo abrir la configuración de extensiones.'));
+    } finally {
+      setBrowserBusy('');
+    }
+  };
+
   useEffect(() => {
     refresh();
+    refreshBrowserManagers();
+    const browserRefresh = window.setInterval(refreshBrowserManagers, 3000);
     const events = ['codeclub:extensions-changed', 'codeclub:skills-changed', 'codeclub:mcp-changed'];
     events.forEach((event) => window.addEventListener(event, refresh));
-    return () => events.forEach((event) => window.removeEventListener(event, refresh));
+    return () => { window.clearInterval(browserRefresh); events.forEach((event) => window.removeEventListener(event, refresh)); };
   }, [projectPath]);
 
   useEffect(() => {
@@ -122,6 +154,26 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
           {filteredExtensions.map(({ id, name, description, icon: Icon = Box, color, scope, protected: isProtected }) => {
             const enabledKey = isProtected ? id : name;
             const isEnabled = enabled[enabledKey] ?? true;
+            if (id === 'browser-control') return <div key={id} className="min-w-0 rounded-lg px-3 py-3 transition-colors hover:bg-[#202020]">
+              <div className="flex min-h-[44px] min-w-0 items-center gap-3">
+                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] border border-[#2d2d2d] bg-[#151515]"><div className="grid h-7 w-7 place-items-center rounded-[7px] bg-[#1687FF]"><Globe size={17} strokeWidth={1.8} className="text-white" /></div></div>
+                <div className="min-w-0 w-0 flex-1"><h2 className="m-0 truncate text-[14px] font-semibold text-[#eeeeee]">Codeclub Browser Control</h2><p className="mt-0.5 truncate text-[13px] text-[#888888]">{language === 'en' ? 'Control tabs in Chromium-based browsers' : 'Controlá pestañas en navegadores basados en Chromium'}</p></div>
+                <span className="shrink-0 rounded-full border border-[#303030] px-2 py-1 text-[10px] text-[#8f8f8f]">{scopeLabel('global', language)}</span>
+              </div>
+              <div className="mt-2 grid gap-1.5 pl-[52px]">
+                {browserManagers.filter((browser) => browser.installed).map((browser) => <div key={browser.id} className="flex min-h-10 min-w-0 items-center gap-3 rounded-md px-2 py-1.5 hover:bg-[#252525]">
+                  <div className="min-w-0 flex-1"><p className="m-0 truncate text-[13px] text-[#d5d5d5]">{browser.name}</p><p className="m-0 text-[11px] text-[#888888]">{browser.connected ? (language === 'en' ? 'Connected' : 'Conectado') : (language === 'en' ? 'Not connected' : 'Sin conectar')}</p></div>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <button type="button" disabled={Boolean(browserBusy)} onClick={() => void manageBrowser(browser, 'install')} className="inline-flex h-7 items-center gap-1 rounded-md border border-[#383838] bg-[#252525] px-2.5 text-[11px] text-[#d5d5d5] hover:bg-[#303030] disabled:opacity-50">{language === 'en' ? 'Install' : 'Instalar'} <ExternalLink size={12} /></button>
+                    <button type="button" disabled={Boolean(browserBusy)} onClick={() => void manageBrowser(browser, 'uninstall')} className="inline-flex h-7 items-center gap-1 rounded-md border border-[#383838] bg-transparent px-2.5 text-[11px] text-[#999999] hover:bg-[#303030] hover:text-[#d5d5d5] disabled:opacity-50">{language === 'en' ? 'Uninstall' : 'Desinstalar'} <ExternalLink size={12} /></button>
+                  </div>
+                </div>)}
+                {browserManagers.filter((browser) => browser.installed).length === 0 && <p className="m-0 py-2 text-[12px] text-[#888888]">{language === 'en' ? 'No supported browser was detected. Supports Edge, Chrome, Brave, Opera, and Vivaldi.' : 'No se detectó un navegador compatible. Compatible con Edge, Chrome, Brave, Opera y Vivaldi.'}</p>}
+                <p className="m-0 pt-1 text-[11px] leading-5 text-[#777777]">{language === 'en' ? 'Install opens the browser’s extension page and the extension folder. The browser requires you to load it and approve its permissions. Uninstall opens the page so you can confirm removal.' : 'Instalar abre la página de extensiones y la carpeta. El navegador requiere que la cargues y aceptes sus permisos. Desinstalar abre esa página para que confirmes la eliminación.'}</p>
+                {browserNotice && <p role="status" className="m-0 text-[11px] leading-5 text-[#8bc7ff]">{browserNotice}</p>}
+                {browserError && <p role="alert" className="m-0 text-[11px] leading-5 text-[#ff8a8a]">{browserError}</p>}
+              </div>
+            </div>;
             return <div key={id} className="flex min-h-[60px] min-w-0 items-center gap-3 overflow-hidden rounded-lg px-3 transition-colors hover:bg-[#202020]">
               <div className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] border border-[#2d2d2d] bg-[#151515]"><div className="grid h-7 w-7 place-items-center rounded-[7px]" style={{ background: color }}><Icon size={17} strokeWidth={1.8} className="text-white" /></div></div>
               <div className="min-w-0 w-0 flex-1"><h2 className="m-0 truncate text-[14px] font-semibold text-[#eeeeee]">{name}</h2><p className="mt-0.5 truncate text-[13px] text-[#888888]">{description}</p></div>

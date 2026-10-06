@@ -37,6 +37,7 @@ import { codeclubExtensions, type CodeclubExtension } from '../lib/extensions';
 import { activityTranslations, aiCredentialTranslations, providerErrorTranslations, chatHistoryTranslations, chatActionTranslations, LANGUAGE_STORAGE_KEY, rightSidebarTranslations, type AppLanguage, useAppLanguage } from '../lib/i18n';
 import { connectAllAgentPluginMcp, loadAgentPlugins } from '../lib/agent-plugins';
 import OrbPaletteButton from './ui/OrbPaletteButton';
+import { ORB_PALETTES, useOrbPalette } from './OrbPaletteProvider';
 import { credentialKeyFor, credentialTargetFor, modelIdFor, modelMatchesProvider, usesGateway } from '../lib/ai-routing';
 
 const formatProcessingDuration = (durationMs: number) => durationMs >= 60000 ? `${(durationMs / 60000).toFixed(1)}min` : `${Math.max(0, Math.round(durationMs / 1000))}s`;
@@ -304,6 +305,8 @@ const formatToolExecutionFallback = (mode: AgentMode, specialist: AgentSpecialis
 };
 
 export default function ChatInterface({ catalog, defaultProvider, defaultModel, panelId = 'left', eventPrefix = 'codeclub', selectedProject, blockedPanelState = 'blank', floating = false, onDraftChange, composerLeading }: ChatInterfaceProps) {
+  const { palette } = useOrbPalette();
+  const orbPaletteIndex = ORB_PALETTES.indexOf(palette);
   const [language, setLanguage] = useState<AppLanguage>('es');
   const chatText = language === 'en' ? { greeting: 'What are we working on today', send: 'Send', cancel: 'Cancel generation', message: 'Message', attach: 'Attach', removeFiles: 'Remove added files', activeSkills: 'Active skills', activeExtensions: 'Active extensions', removeSkill: 'Remove skill from this session', removeExtension: 'Remove extension from this session', selected: 'Selected', provider: 'provider', model: 'model', project: 'project', skill: 'skill', extension: 'extension', command: 'command', searchProvider: 'Search provider', searchModel: 'Search active provider model', searchProject: 'Search project', searchSkill: 'Search skill', searchCommand: 'Search command', noProject: 'No project', slash: { provider: 'Provider', model: 'Model', project: 'Project', skill: 'Skill', providerDescription: 'Select provider', modelDescription: 'Select model', projectDescription: 'Select project', skillDescription: 'Load skill in this session' }, status: { idle: 'Ready when you are.', connecting: 'Connecting to provider...', streaming: 'Thinking...', tool_call: 'Using tool...', approval: 'Waiting for approval...', running: 'Running...', error: 'Something went wrong.' } } : { greeting: '¿Qué toca hoy', send: 'Enviar', cancel: 'Cancelar generación', message: 'Mensaje', attach: 'Adjuntar', removeFiles: 'Quitar archivos añadidos', activeSkills: 'Habilidades activas', activeExtensions: 'Extensiones activas', removeSkill: 'Quitar habilidad de esta sesión', removeExtension: 'Quitar extensión de esta sesión', selected: 'Seleccionado', provider: 'proveedor', model: 'modelo', project: 'proyecto', skill: 'habilidad', extension: 'extensión', command: 'comando', searchProvider: 'Buscar proveedor', searchModel: 'Buscar modelo del proveedor activo', searchProject: 'Buscar proyecto', searchSkill: 'Buscar habilidad', searchCommand: 'Buscar comando', noProject: 'Sin proyecto', slash: { provider: 'Proveedor', model: 'Modelo', project: 'Proyecto', skill: 'Habilidad', providerDescription: 'Seleccionar proveedor', modelDescription: 'Seleccionar modelo', projectDescription: 'Seleccionar proyecto', skillDescription: 'Cargar habilidad en esta sesión' }, status: { idle: 'Listo cuando tú lo estés.', connecting: 'Conectando con el proveedor...', streaming: 'Pensando...', tool_call: 'Usando herramienta...', approval: 'Esperando aprobación...', running: 'Ejecutando...', error: 'Algo salió mal.' } };
   if (language === 'es') {
@@ -2464,8 +2467,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       language,
     };
     window.dispatchEvent(new CustomEvent('codeclub:computer-overlay-set', { detail }));
-    void (window as any).codeclub?.setComputerOverlay?.({ active: computerUseActive, language });
-  }, [computerUseActive, currentProvider, defaultProvider, language]);
+    void (window as any).codeclub?.setComputerOverlay?.({ active: computerUseActive, language, paletteIndex: orbPaletteIndex });
+  }, [computerUseActive, currentProvider, defaultProvider, language, orbPaletteIndex]);
 
   useEffect(() => () => {
     if (visualAnimationRef.current) clearInterval(visualAnimationRef.current);

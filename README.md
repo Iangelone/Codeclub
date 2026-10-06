@@ -18,7 +18,7 @@ Most AI coding tools focus on a chat or an editor. Codeclub puts the agent in a 
 
 - **Bring your own AI provider.** Choose a supported OpenAI-compatible provider and model; Codeclub does not lock you to one model vendor.
 - **Work with your real project.** Ask the agent to read, search, and change files, run commands, inspect Git changes, and keep project chats together.
-- **Use browser and desktop tools.** Work with the embedded browser, or ask the agent to inspect and interact with open Windows apps using accessibility and OCR.
+- **Use browser and desktop tools.** Work with the embedded browser, or connect the companion extension to existing Edge, Chrome, or Brave tabs for direct DOM inspection and interaction. Computer Use remains available for the rest of Windows.
 - **Extend the agent.** Add plugins, skills, and MCP servers for custom tools and workflows.
 - **Keep your workspace local-first.** Projects, chats, settings, and usage records are stored on your computer rather than in a Codeclub-hosted workspace.
 
@@ -28,6 +28,7 @@ Most AI coding tools focus on a chat or an editor. Codeclub puts the agent in a 
 - Read and edit project files, search source text, and run commands in PowerShell.
 - Review Git changes and keep plans, TODOs, and artifacts with the project.
 - Open a page in the built-in browser, inspect its DOM, and reference elements in chat.
+- Connect the Codeclub Browser Control extension once to inspect and use open Chromium tabs without restarting the browser or enabling remote-debugging flags.
 - Use Computer Use to observe and control open Windows applications, including browsers such as Edge and Chrome. Computer Use relies on Windows accessibility and OCR; some apps and controls may expose limited information.
 - Create scheduled AI tasks that run while Codeclub is open.
 
@@ -39,6 +40,7 @@ Most AI coding tools focus on a chat or an editor. Codeclub puts the agent in a 
 | **Files and Review** | Browse project files, open previews, and inspect workspace or Git changes. |
 | **PowerShell terminal** | Run commands and keep interactive terminal sessions available. |
 | **Browser** | Browse websites inside Codeclub, inspect page elements, and send references to chat. |
+| **Browser Control extension** | Attach to tabs already open in Edge, Chrome, and Brave for DOM-aware inspection and interaction. |
 | **Computer Use** | Inspect and interact with open Windows apps through UI Automation and OCR. |
 | **Plans and TODOs** | Track task steps and project artifacts from the agent conversation. |
 | **Plugins and MCP** | Connect skills and external tools at global or project scope. |
@@ -71,6 +73,13 @@ npm run package:win
 ```
 
 The installer is generated in `release/`. See [development and releases](docs/desarrollo.md) for the full workflow.
+
+To connect an existing Chromium browser, open **Extensions → Codeclub Browser
+Control → Install**. Codeclub opens the browser's extension manager and the bundled
+extension folder; enable Developer mode, choose **Load unpacked**, and confirm the
+browser's permission prompt. Use **Uninstall** there to confirm removal. Edge,
+Chrome, Brave, Opera, and Vivaldi are supported. See
+[Computer Use on Windows](docs/computer-use.md) for the steps and permissions.
 
 ## How it works
 

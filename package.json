@@ -23,6 +23,7 @@
     "test:chat-ui": "npm run desktop:build && node scripts/test-chat-ui.mjs",
     "test:page-bootstrap": "node scripts/test-page-bootstrap.mjs",
     "test:external-browser": "npm run electron:compile && node scripts/test-external-browser.mjs",
+    "test:browser-extension": "npm run electron:compile && node scripts/test-browser-extension.mjs",
     "test:packaged-win": "node scripts/test-packaged-win.mjs",
     "package:win": "npm run desktop:build && electron-builder --win --x64 --publish never"
   },
@@ -68,12 +69,14 @@
     "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.1",
     "tailwindcss": "^4.3.2",
-    "tesseract.js": "^7.0.0"
+    "tesseract.js": "^7.0.0",
+    "ws": "^8.22.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/react-dom": "^19.2.4",
+    "@types/ws": "^8.18.2",
     "electron": "^43.3.0",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.1",
@@ -108,6 +111,10 @@
         "filter": [
           "*.traineddata.gz"
         ]
+      },
+      {
+        "from": "browser-extension",
+        "to": "browser-extension"
       }
     ],
     "win": {
