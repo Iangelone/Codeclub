@@ -1,149 +1,102 @@
-# Codeclub
-> A local-first desktop workspace for building software with AI agents.
+# Codeclub — AI Coding Agent for Windows
 
-Codeclub brings chat, projects, terminals, a browser, development tools, and visible work evidence into one focused Windows app. It is designed to make agent-assisted development practical: the agent can help, while the person stays in control.
+> A local-first AI coding workspace that brings your projects, AI agent, terminal, browser, and Windows desktop tools together.
+
+Codeclub is a **local-first AI coding assistant for Windows** and a desktop **AI coding agent** workspace. Connect a compatible model provider, open a project, and ask the agent to understand your code, edit files, run commands, inspect a web page, or interact with open desktop apps.
+
+En español: una app de escritorio para **programar con IA en Windows**, con acceso a los archivos del proyecto, PowerShell, el navegador y aplicaciones abiertas.
 
 <p align="center">
-  <img src="docs/assets/codeclub-workspace.png" alt="Codeclub AI workspace" width="1000">
+  <img src="docs/assets/codeclub-workspace.png" alt="Codeclub Windows AI coding workspace with project chat, browser, files, review, and terminal" width="1000">
 </p>
 
-[![Status](https://img.shields.io/badge/status-beta-3d9bff)](#status) [![Platform](https://img.shields.io/badge/platform-Windows-1687ff)](#requirements)
+[![Beta](https://img.shields.io/badge/status-beta-3d9bff)](#project-status) [![Windows](https://img.shields.io/badge/platform-Windows-1687ff)](#requirements) [![Electron](https://img.shields.io/badge/desktop-Electron-8bc7ff)](#how-it-works)
 
-## In plain terms
+## Why Codeclub?
 
-Open a project, talk to the agent, and ask it to work on your code. It can inspect files, search text, edit, use the terminal, browse a page, and leave plans or TODOs that remain visible in the workspace.
+Most AI coding tools focus on a chat or an editor. Codeclub puts the agent in a **desktop development workspace** where it can use project files, PowerShell, a browser, and Windows computer-use tools from the same conversation.
 
-Codeclub runs locally and stores chats, projects, settings, usage data, and logs in Electron storage. Your working data does not depend on a Codeclub-hosted server.
+- **Bring your own AI provider.** Choose a supported OpenAI-compatible provider and model; Codeclub does not lock you to one model vendor.
+- **Work with your real project.** Ask the agent to read, search, and change files, run commands, inspect Git changes, and keep project chats together.
+- **Use browser and desktop tools.** Work with the embedded browser, or ask the agent to inspect and interact with open Windows apps using accessibility and OCR.
+- **Extend the agent.** Add plugins, skills, and MCP servers for custom tools and workflows.
+- **Keep your workspace local-first.** Projects, chats, settings, and usage records are stored on your computer rather than in a Codeclub-hosted workspace.
 
-## What it includes today
+## What you can do
 
-### Chat and agent
+- Build a feature, fix a bug, refactor code, or ask questions about a project.
+- Read and edit project files, search source text, and run commands in PowerShell.
+- Review Git changes and keep plans, TODOs, and artifacts with the project.
+- Open a page in the built-in browser, inspect its DOM, and reference elements in chat.
+- Use Computer Use to observe and control open Windows applications, including browsers such as Edge and Chrome. Computer Use relies on Windows accessibility and OCR; some apps and controls may expose limited information.
+- Create scheduled AI tasks that run while Codeclub is open.
 
-- Streaming responses powered by AI SDK v7.
-- OpenAI-compatible providers and models.
-- Dynamic model and provider discovery.
-- Tool selection based on each prompt's intent.
-- Plans, TODOs, task status, and artifacts.
-- Global history and project-scoped chats.
-- Text, image, PDF, and DOCX attachments.
-- Visual references from the embedded browser.
-- Human confirmation for sensitive operations.
+## One workspace for agentic coding
 
-Consulta el [resumen del motor del agente](docs/agent-stack.md): LangGraph coordina los pasos, LangChain valida y ejecuta tools, AI SDK mantiene transporte/streaming y Agent Plugins amplía capacidades. Incluye límites, pruebas y mejoras pendientes.
-
-### Workspace
-
-| Area | Purpose |
+| Workspace tool | How it helps |
 | --- | --- |
-| Left sidebar | Home, recent chats, projects, Tasks, Extensions, and the visually disabled Devices area. |
-| Main panel | Chat, Extensions, Tasks, and the Devices view prepared for a future QR flow. |
-| Right sidebar | Files, Review, Browser, Artifacts, and Terminals. |
-| Topbar | Projects, navigation, panels, updates, and window controls. |
+| **Project chat** | Keep global or project-specific coding conversations and history. |
+| **Files and Review** | Browse project files, open previews, and inspect workspace or Git changes. |
+| **PowerShell terminal** | Run commands and keep interactive terminal sessions available. |
+| **Browser** | Browse websites inside Codeclub, inspect page elements, and send references to chat. |
+| **Computer Use** | Inspect and interact with open Windows apps through UI Automation and OCR. |
+| **Plans and TODOs** | Track task steps and project artifacts from the agent conversation. |
+| **Plugins and MCP** | Connect skills and external tools at global or project scope. |
 
-Both sidebars can be resized. The main panel keeps a minimum width so the workspace remains usable.
+## Local-first, with your choice of model
 
-### Side tools
+Codeclub runs as a Windows desktop application and stores workspace data locally. **Local-first does not mean local AI inference:** prompts and the context needed for a response are sent to the AI provider you select. You provide that provider’s API key; Codeclub stores credentials separately in its encrypted vault. Provider usage may incur charges under that provider’s terms.
 
-- **Files:** project tree, search, file opening, and previews.
-- **Review:** workspace changes and Git status.
-- **Browser:** an Electron WebView with URL controls, navigation, reload, and external opening.
-- **DOM selection:** select an element, add a comment, and send it to chat as a reference.
-- **Artifacts:** agent-created plans and TODOs, filterable and persistent per project.
-- **Terminals:** interactive PowerShell terminals backed by xterm and PTY.
+## Get started
 
-### Scheduled tasks
-
-Tasks persist globally or per project and execute through Electron while the app remains open, including in the tray. Each task stores its selected provider/model, prompt, schedule, timezone, notifications and state; credentials are stored separately in the encrypted vault. Saving is explicit. See [scheduled tasks](docs/scheduled-tasks.md) for execution history, cancellation and limits.
-
-By default, each run is prepared as a new background chat so scheduled work does not quietly mix with an existing conversation.
-
-### Extensions and language
-
-The Extensions panel shows global items and items filtered to the active project: plugins, skills, and MCP servers.
-
-The interface supports Spanish and English. The selected language is stored locally and applied across navigation, panels, tasks, browser controls, artifacts, extensions, and primary states.
-
-## Agent tools
-
-| Group | Current tools |
-| --- | --- |
-| Files | listFiles, readFile, searchText, writeFile |
-| Terminal | runCommand, terminal |
-| Browser | openBrowser, getBrowserState, browserAction |
-| PC | computerListWindows, computerGetState, computerScreenshot, computerOcr, computerAction |
-| Planning | createPlan, updatePlan, todo, getTaskStatus |
-| Auditing | getExecutionLog |
-| Plugins / MCP | createSkill, createExtension, deleteExtension, createMcpServer, deleteMcpServer |
-| Project | switchProject |
-| Collaboration | subagent, swarm, askUser |
-| Discovery | searchTools, executeTool, listAvailableTools |
-
-> Tools are not hardcoded into every prompt. The agent receives the available catalog and decides what it needs.
-
-## Quick architecture
-
-    React / Next.js
-      page.tsx
-        Topbar
-        WorkspaceLayout
-          ChatPanel -> ChatInterface -> AI SDK -> tools
-          ExtensionsPanel
-          Right sidebar
-
-    Electron
-      preload.cjs -> secure IPC bridge
-      main.ts -> filesystem, terminals, WebView, HTTP, Git, and native processes
-
-The renderer never accesses Node.js directly. Internal communication uses codeclub:* DOM events and IPC through src/lib/runtime.ts.
-
-## Requirements
+### Requirements
 
 - Windows.
-- Node.js 24, or a version compatible with Next.js 16.
-- npm 11 recommended.
-- An API key from a compatible provider to use the agent.
+- Node.js 24 (or a version compatible with Next.js 16) and npm 11 for development.
+- An API key from a supported provider to use the AI agent.
 
-## Install and run
+### Run from source
 
-    npm install
-    npm run dev
+```powershell
+git clone https://github.com/Iangelone/Codeclub.git
+cd Codeclub
+npm install
+npm run dev
+```
 
-Renderer only:
+To create the Windows installer:
 
-    npm run next:dev
+```powershell
+npm run package:win
+```
 
-## Build and verify
+The installer is generated in `release/`. See [development and releases](docs/desarrollo.md) for the full workflow.
 
-    npm run next:build
-    npm run electron:compile
-    npm run desktop:build
-    npm run package:win
+## How it works
 
-package:win creates the Windows installer in release/. For the full beta workflow, see [Development and releases](docs/desarrollo.md).
+Codeclub uses React and Next.js for the interface and Electron for Windows operations. The renderer does not access Node.js directly: filesystem, terminal, browser, and computer-use actions pass through Electron’s preload bridge and IPC.
+
+The agent uses a multi-step tool loop, with LangGraph for orchestration, LangChain for tool validation and execution, and AI SDK for provider transport and streaming. MCP servers, skills, and plugins can extend the available tools.
+
+## Project status
+
+Codeclub is in **early beta** and currently targets Windows. Scheduled tasks run while the app remains open. Computer Use depends on what each Windows application exposes through accessibility and OCR. The project documents active integrations, limitations, and verification in the [agent stack overview](docs/agent-stack.md).
 
 ## Documentation
 
-- [Documentation index](docs/README.md)
 - [Architecture](docs/arquitectura.md)
-- [Flows and events](docs/flujos.md)
-- [Persistence](docs/persistencia.md)
+- [Agent stack, integrations, and limits](docs/agent-stack.md)
+- [Computer Use on Windows](docs/computer-use.md)
+- [Scheduled AI tasks](docs/scheduled-tasks.md)
 - [Terminal and browser](docs/terminal-y-navegador.md)
 - [Development and releases](docs/desarrollo.md)
+- [All documentation](docs/README.md)
 
-## Status
+## License and support
 
-Codeclub is in early beta. The app is useful for local development, while mobile QR connectivity and stable distribution are still evolving. Scheduled tasks execute while the app is open.
+Codeclub uses a **dual license**: free use is available for personal, educational, nonprofit, and qualifying open-source work. Companies and other commercial use require a commercial license. See [LICENSE.md](LICENSE.md) or contact [codeclubide@gmail.com](mailto:codeclubide@gmail.com).
 
-## Community and support
-
-- Donations: [Ko-fi](https://ko-fi.com/iangeldev)
-- Issues and ideas: the project's GitHub repository
-- Commercial licensing: codeclubide@gmail.com
-
-## License
-
-Codeclub uses a dual license: free for personal, educational, open-source, and nonprofit use; paid for companies and for-profit use.
-
-Read the full terms in [LICENSE.md](LICENSE.md).
+- Ideas and bug reports: [GitHub Issues](https://github.com/Iangelone/Codeclub/issues)
+- Support Codeclub: [Ko-fi](https://ko-fi.com/iangeldev)
 
 Fluid Orb is adapted from [Rare UI](https://www.rareui.com/components/fluidorb).
