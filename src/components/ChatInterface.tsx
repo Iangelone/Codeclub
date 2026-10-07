@@ -40,6 +40,7 @@ import { connectAllAgentPluginMcp, loadAgentPlugins } from '../lib/agent-plugins
 import OrbPaletteButton from './ui/OrbPaletteButton';
 import { ORB_PALETTES, useOrbPalette } from './OrbPaletteProvider';
 import { credentialKeyFor, credentialTargetFor, modelIdFor, modelMatchesProvider, usesGateway } from '../lib/ai-routing';
+import { useMarketCatalog } from '../lib/use-market-catalog';
 
 const formatProcessingDuration = (durationMs: number) => durationMs >= 60000 ? `${(durationMs / 60000).toFixed(1)}min` : `${Math.max(0, Math.round(durationMs / 1000))}s`;
 const limitResponseLength = (content: string, maxLength = 500) => content.length > maxLength ? `${content.slice(0, maxLength - 1).trimEnd()}…` : content;
@@ -291,7 +292,8 @@ const formatToolExecutionFallback = (mode: AgentMode, specialist: AgentSpecialis
   return `Ejecución completada con evidencia real.\n\nModo: ${mode}\nEspecialista: ${specialist}\nTools usadas: ${completed.map((event) => event.name).join(', ')}\n\nResultados:\n${details}`;
 };
 
-export default function ChatInterface({ catalog, defaultProvider, defaultModel, panelId = 'left', eventPrefix = 'codeclub', selectedProject, blockedPanelState = 'blank', floating = false, onDraftChange, composerLeading }: ChatInterfaceProps) {
+export default function ChatInterface({ catalog: baseCatalog, defaultProvider, defaultModel, panelId = 'left', eventPrefix = 'codeclub', selectedProject, blockedPanelState = 'blank', floating = false, onDraftChange, composerLeading }: ChatInterfaceProps) {
+  const { catalog, ready: marketCatalogReady } = useMarketCatalog(baseCatalog);
   const { palette } = useOrbPalette();
   const orbPaletteIndex = ORB_PALETTES.indexOf(palette);
   const [language, setLanguage] = useState<AppLanguage>('es');
@@ -1040,6 +1042,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   }, [eventPrefix]);
 
   useEffect(() => {
+    if (!marketCatalogReady) return;
     const restore = () => { void Promise.all([
       getSetting('codeclub_last_provider_id', ''),
       getSetting('codeclub_last_model_id', ''),
@@ -1055,7 +1058,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
     restore();
     window.addEventListener('codeclub:settings-changed', restore);
     return () => window.removeEventListener('codeclub:settings-changed', restore);
-  }, [catalog, defaultProvider, defaultModel]);
+  }, [catalog, defaultProvider, defaultModel, marketCatalogReady]);
 
   useEffect(() => {
     if (settingsReady && currentProvider) void setSetting('codeclub_last_provider_id', currentProvider.id);
@@ -2032,12 +2035,12 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       
       const selectedModelReference = modelIdFor(currentProvider, currentModel);
       if (!useGateway && !currentProvider.api) throw new Error('El catálogo no indica un endpoint compatible para este proveedor.');
-      const configuredHeaders = await getSetting<Record<string, string>>(`codeclub_provider_headers_${currentProvider.id}`, {});
+      const configuredHeaders = await getSetting<Record<string, string>>(`codeclub_provider_headers_${currentProvider.sourceProviderId || currentProvider.id}`, {});
       const requestHeaders: Record<string, string> = { 'user-agent': 'Codeclub', 'x-codeclub-session': chat.chatId };
       for (const [name, value] of Object.entries(configuredHeaders)) {
         if (typeof value === 'string' && /^[a-z0-9-]+$/i.test(name) && !['authorization', 'cookie', 'host'].includes(name.toLowerCase())) requestHeaders[name] = value.replaceAll('${chatId}', chat.chatId);
       }
-      const provider = useGateway ? createGateway({ apiKey: apiKey || undefined, fetch:desktopModelFetch }) : currentProvider.id === 'google' ? createGoogle({
+      const provider = useGateway ? createGateway({ apiKey: apiKey || undefined, fetch:desktopModelFetch }) : (currentProvider.sourceProviderId || currentProvider.id) === 'google' ? createGoogle({
         name: 'google',
         baseURL: currentProvider.api,
         apiKey,

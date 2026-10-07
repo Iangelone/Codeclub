@@ -328,6 +328,10 @@ section[aria-label='Gestor de paneles'] {
   border-top-left-radius: 16px;
 }
 
+.codeclub-conversation-surface[data-main-panel]:not([data-main-panel="new-chat"]) {
+  background: var(--codeclub-center);
+}
+
 #codeclub-chat-panel {
   background: transparent;
   border-top-left-radius: 16px;
@@ -2271,7 +2275,19 @@ button:disabled,
   outline-offset: 2px;
 }
 
+/* Text fields use their existing border/container for a quiet focus state. */
+input:focus,
+textarea:focus {
+  outline: none !important;
+  border-color: #666666 !important;
+  --tw-ring-color: #666666;
+}
+
 @media (forced-colors: active) {
+  input:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid Highlight !important;
+  }
   :where(a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [role="button"], [role="tab"], [tabindex="0"]):focus-visible {
     outline-color: Highlight !important;
   }

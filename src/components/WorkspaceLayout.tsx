@@ -2,13 +2,15 @@
 
 import { createElement, memo, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, Check, ChevronDown, Circle, CircleCheck, CirclePlus, Clock, CopyX, EllipsisVertical, ExternalLink, FileWarning, FolderOpen, FolderPen, FolderTree, Grid2X2, Heart, Home, Hourglass, Info, MessageSquare, MoreHorizontal, MousePointerClick, PanelLeft, Pause, Pencil, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
+import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, Check, ChevronDown, Circle, CircleCheck, CirclePlus, Clock, CopyX, EllipsisVertical, ExternalLink, FileWarning, FolderOpen, FolderPen, FolderTree, Grid2X2, Heart, Home, Hourglass, Info, MessageSquare, MoreHorizontal, MousePointerClick, PanelLeft, Pause, Pencil, Play, Plus, RotateCw, Scale, Search, SquareTerminal, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { GlobeCheck } from 'lucide-react';
 import { Terminal as XtermTerminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import ChatPanel from './ChatPanel';
+import ScheduledSelect from './ui/ScheduledSelect';
+import MarketPanel from './MarketPanel';
 import BrowserStyleEditor, { type BrowserElementSelection, type BrowserElementChanges } from './BrowserStyleEditor';
 import { createBrowserPickerScript, type BrowserMarkerOrder } from '../lib/browser-dom-picker';
 import { ProjectPanelView } from './ChatInterface';
@@ -32,7 +34,7 @@ const DEFAULT_RIGHT = 300;
 
 type Side = 'left' | 'right';
 type RecentChat = { id: string; title: string; customName?: boolean; projectPath?: string; projectName?: string };
-type SidebarSection = 'new-chat' | 'projects' | 'scheduled' | 'extensions';
+type SidebarSection = 'new-chat' | 'projects' | 'scheduled' | 'extensions' | 'market';
 type ChatContextMenu = { chat: RecentChat; x: number; y: number };
 type RightPanelTab = 'files' | 'browser' | 'terminals';
 type RightPanelInstance = { instanceId: string; tab: RightPanelTab; label: string; iconUrl?: string; terminalId?: string };
@@ -45,27 +47,6 @@ const findProvider = (value: string) => providers.find((provider: any) => provid
 const findModel = (value: string, providerId?: string) => models.find((model: any) => (model.id === value || model.gatewayId === value || model.label === value) && (!providerId || providerId === 'custom' || modelMatchesProvider(model, { id: providerId })));
 const normalizeTaskModel = (value: string, providerValue: string) => findModel(value, findProvider(providerValue)?.id)?.label || value;
 const scheduledTimeOptions = Array.from({ length: 48 }, (_, index) => { const hour = Math.floor(index / 2); const minute = index % 2 ? '30' : '00'; const suffix = hour < 12 ? 'a. m.' : 'p. m.'; const displayHour = hour % 12 || 12; return { value: `${String(hour).padStart(2, '0')}:${minute}`, label: `${displayHour}:${minute} ${suffix}` }; });
-
-function ScheduledSelect({ value, options, onChange, label, searchable = false, optionSearchText }: { value: string; options: string[]; onChange: (value: string) => void; label: string; searchable?: boolean; optionSearchText?: (option: string) => string }) {
-  const language = useAppLanguage();
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const selectRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const close = (event: MouseEvent) => { if (!selectRef.current?.contains(event.target as Node)) setOpen(false); };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, []);
-  return <div ref={selectRef} className="relative">
-    <button type="button" onClick={() => setOpen((current) => !current)} className="flex max-w-[280px] items-center gap-2 rounded-lg px-2 py-1.5 text-right text-[14px] text-[#dddddd] transition-colors hover:bg-white/[0.06]" aria-label={label} aria-expanded={open}>
-      <span className="truncate">{value}</span><ChevronDown size={15} className={`shrink-0 text-[#888888] transition-transform ${open ? 'rotate-180' : ''}`} />
-    </button>
-    {open && <div className="absolute right-0 top-[calc(100%+4px)] z-30 max-h-72 min-w-[220px] overflow-y-auto rounded-xl border border-white/[0.1] bg-[#292929] p-1.5 shadow-2xl shadow-black/40">
-      {searchable && <input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`${language === 'en' ? 'Search' : 'Buscar'} ${label.toLowerCase()}`} className="mb-1.5 w-full rounded-lg border border-white/[0.08] bg-[#202020] px-2.5 py-2 text-[12px] text-[#eeeeee] outline-none placeholder:text-[#777777] focus:border-[#555555]" />}
-      {options.filter((option) => `${option} ${optionSearchText?.(option) || ''}`.toLowerCase().includes(query.toLowerCase())).map((option) => <button key={option} type="button" onClick={() => { onChange(option); setQuery(''); setOpen(false); }} className={`flex w-full items-center rounded-lg px-3 py-2 text-left text-[13px] transition-colors ${option === value ? 'bg-[#333333] text-[#8bc7ff]' : 'text-[#cccccc] hover:bg-white/[0.07] hover:text-white'}`}>{option}</button>)}
-    </div>}
-  </div>;
-}
 
 function ScheduledTimeSelect({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const selected = scheduledTimeOptions.find((option) => option.value === value) || scheduledTimeOptions[16];
@@ -783,7 +764,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
             <SidebarItem active={activeSection === 'new-chat' && !activeChatId} icon={<CirclePlus />} label={sidebarText.newChat} onClick={() => selectSidebarSection('new-chat')} />
             <SidebarItem active={activeSection === 'scheduled'} icon={<Clock />} label={sidebarText.tasks} onClick={() => selectSidebarSection('scheduled')} />
             <SidebarItem active={activeSection === 'extensions'} icon={<Grid2X2 />} label={sidebarText.extensions} onClick={() => selectSidebarSection('extensions')} />
-            <SidebarItem active={activeSection === 'projects'} icon={<MoreHorizontal />} label={sidebarText.devices} disabled onClick={() => selectSidebarSection('projects')} />
+            <AdditionalPanelsMenu label={sidebarText.devices} active={activeSection === 'market'} onOpenMarket={() => selectSidebarSection('market')} />
           </nav>
           <div className="mt-5 min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {recentChats.length > 0 && <div className="pb-3"><p className="px-1.5 text-[13px] font-semibold text-(--codeclub-text-muted)">{sidebarText.recent}</p><div className="mt-2 space-y-1">{recentChats.slice().reverse().map((chat) => <button key={chat.id} type="button" onContextMenu={(event) => { event.preventDefault(); setChatContextMenu({ chat, x: event.clientX, y: event.clientY }); }} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: { chatId: chat.id, name: chat.title, customName: chat.customName, projectId: activeProjectId, projectPath: chat.projectPath ?? activeProjectPath, projectName: chat.projectName ?? activeProjectName } }))} className={`flex w-full min-w-0 items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] text-(--codeclub-text-strong) ${activeChatId === chat.id ? 'bg-(--codeclub-acrylic-active)' : 'bg-transparent hover:bg-(--codeclub-hover)'}`}><span className="min-w-0 flex-1 truncate">{chat.title}</span><ChatSessionStatus session={sessions.find(session=>!session.external && sameSession({chatId:chat.id,projectPath:chat.projectPath ?? activeProjectPath ?? ''},session))} language={language} /></button>)}</div></div>}
@@ -795,7 +776,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
       {rightContextMenu && <div ref={rightContextMenuRef} className="fixed z-[100] grid w-52 gap-0.5 rounded-xl border border-white/[0.08] bg-[#2C2C2C]/90 p-1 shadow-2xl backdrop-blur-xl" style={{ left: rightContextMenu.x, top: rightContextMenu.y }} role="menu" aria-label={`${panelText.rightPanel}: ${rightContextMenu.panel.label}`}><button type="button" onClick={() => closeRightPanel(rightContextMenu.panel.instanceId)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><X size={14} aria-hidden="true" />{panelText.closeRightPanel}</button><button type="button" onClick={() => closeOtherRightPanels(rightContextMenu.panel.instanceId)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><CopyX size={14} aria-hidden="true" />{panelText.closeOtherRightPanels}</button><button type="button" onClick={() => closeRightPanelsToRight(rightContextMenu.panel.instanceId)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><ArrowRightToLine size={14} aria-hidden="true" />{panelText.closeRightPanelsAfter}</button></div>}
       {leftOpen && <ResizeHandle side="left" value={leftWidth} maxValue={MAX_WIDTH} onStart={startResize('left')} onKeyboardResize={setLeftWidth} language={language} />}
 
-      <div className="codeclub-conversation-surface flex min-h-0 min-w-0 flex-1 overflow-hidden">
+      <div data-main-panel={activeSection} className="codeclub-conversation-surface flex min-h-0 min-w-0 flex-1 overflow-hidden">
           <PanelManager activeSection={activeSection} projectPath={activeProjectPath} projectId={activeProjectId} />
 
       {rightOpen && <ResizeHandle side="right" value={rightWidth} maxValue={rightMaxWidth} onStart={startResize('right')} onKeyboardResize={setRightWidth} language={language} />}
@@ -842,7 +823,7 @@ const PanelManager = memo(function PanelManager({ activeSection, projectPath, pr
       <div className={`h-full min-h-0 min-w-0 ${chatVisible ? 'block' : 'hidden'}`} aria-hidden={!chatVisible} inert={!chatVisible}><ChatPanel /></div>
       {synapseVisible && <div className="relative z-10 h-full min-h-0 min-w-0"><SynapsePanel /></div>}
       {scheduledVisible && <div className="relative z-10 h-full min-h-0 min-w-0"><ScheduledPanel projectPath={projectPath} /></div>}
-      {!chatVisible && <div className="grid h-full min-h-0 place-items-center bg-(--codeclub-center) px-6 text-center"><div><p className="text-sm font-medium text-(--codeclub-text-strong)">{language === 'en' ? 'Panel without content' : 'Panel sin contenido'}</p><p className="mt-1 text-xs text-(--codeclub-text-muted)">{language === 'en' ? 'This space will adapt when we add this section.' : 'Este espacio se adaptará cuando agreguemos esta sección.'}</p></div></div>}
+      {activeSection === 'market' && <div className="relative z-10 h-full min-h-0 min-w-0"><MarketPanel /></div>}
     </div>
   </main>;
 });
@@ -1889,6 +1870,56 @@ function RightSidebarContent({ panel, projectName, projectPath, selectedFilePath
   return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-auto bg-(--paper) px-3 py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
     <div className="mt-5 grid min-h-[180px] place-items-center rounded-xl bg-transparent px-5 text-center"><div><Icon size={28} strokeWidth={1.3} className="mx-auto text-(--codeclub-text-muted)" aria-hidden="true" /><p className="mt-3 mb-0 text-[12px] text-(--codeclub-text-strong)">{projectPath ? projectName : 'Sin proyecto activo'}</p><p className="mt-1 mb-0 text-[11px] leading-5 text-(--codeclub-text-muted)">{descriptions[tab]}</p></div></div>
   </motion.section>;
+}
+
+function AdditionalPanelsMenu({ label, active, onOpenMarket }: { label: string; active: boolean; onOpenMarket: () => void }) {
+  const language = useAppLanguage();
+  const text = sidebarTranslations[language];
+  const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelClose = () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = null;
+  };
+  const open = () => {
+    cancelClose();
+    const bounds = triggerRef.current?.getBoundingClientRect();
+    const sidebarBounds = triggerRef.current?.closest('aside')?.getBoundingClientRect();
+    if (bounds) setPosition({ left: Math.min((sidebarBounds?.right ?? bounds.right) + 12, window.innerWidth - 182), top: Math.min(bounds.top, window.innerHeight - 52) });
+  };
+  const scheduleClose = () => {
+    cancelClose();
+    closeTimer.current = setTimeout(() => setPosition(null), 220);
+  };
+  useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current); }, []);
+  useEffect(() => {
+    if (!position) return;
+    const dismiss = (event: PointerEvent) => {
+      if (!triggerRef.current?.contains(event.target as Node) && !menuRef.current?.contains(event.target as Node)) setPosition(null);
+    };
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') setPosition(null); };
+    const close = () => setPosition(null);
+    document.addEventListener('pointerdown', dismiss);
+    document.addEventListener('keydown', escape);
+    window.addEventListener('resize', close);
+    window.addEventListener('scroll', close, true);
+    return () => {
+      document.removeEventListener('pointerdown', dismiss);
+      document.removeEventListener('keydown', escape);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('scroll', close, true);
+    };
+  }, [position]);
+  return <>
+    <button ref={triggerRef} type="button" title={label} aria-haspopup="menu" aria-expanded={!!position} onMouseEnter={open} onMouseLeave={scheduleClose} onFocus={open} onBlur={scheduleClose} onClick={open} className={`flex h-8 w-full items-center gap-3 rounded-lg px-1.5 text-left text-[13px] text-(--codeclub-text) transition-colors hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${active ? 'bg-(--codeclub-acrylic-active) text-(--codeclub-text-strong)' : position ? 'bg-(--codeclub-hover)' : ''}`}>
+      <MoreHorizontal size={16} aria-hidden="true" className="shrink-0 text-(--codeclub-text-muted)" /><span>{label}</span>
+    </button>
+    {position && createPortal(<div ref={menuRef} role="menu" aria-label={label} onMouseEnter={cancelClose} onMouseLeave={scheduleClose} onFocus={cancelClose} onBlur={scheduleClose} style={position} className="fixed z-50 w-[170px] rounded-xl border border-[#2C2C2C] bg-[#1E1E1E] p-1 shadow-2xl shadow-black/40">
+      <button type="button" role="menuitem" onClick={() => { cancelClose(); setPosition(null); onOpenMarket(); }} className="flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[12px] text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)"><Scale size={14} strokeWidth={1.8} aria-hidden="true" /><span>{text.market}</span></button>
+    </div>, document.body)}
+  </>;
 }
 
 function SidebarItem({ icon, label, active, disabled = false, onClick }: { icon: React.ReactNode; label: string; active: boolean; disabled?: boolean; onClick: () => void }) {
