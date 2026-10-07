@@ -117,7 +117,8 @@ export default function HomePage() {
   return <MotionConfig reducedMotion="user"><motion.div animate={fullscreenAnimation} transition={fullscreenTransition} className="relative isolate grid h-screen max-h-screen grid-rows-[34px_auto_minmax(0,1fr)] min-w-[320px] min-h-0 overflow-hidden bg-transparent text-(--codeclub-text) font-sans" data-fullscreen={isFullscreen}>
       <a className="codeclub-skip-link" href="#codeclub-main-content">{language === 'en' ? 'Skip to workspace' : 'Saltar al espacio de trabajo'}</a>
       <Topbar leftOpen={leftOpen} rightOpen={rightOpen} topbarOpen={topbarOpen} onToggleLeft={toggleLeft} onToggleRight={toggleRight} onToggleTopbar={toggleTopbar} />
-      <motion.div initial={false} animate={{ height: topbarOpen ? 44 : 0, opacity: topbarOpen ? 1 : 0 }} transition={{ type: 'spring', stiffness: 420, damping: 34 }} className="relative z-50 min-h-0 overflow-visible"><SubTopbar activeProject={activeProject} /></motion.div>
+      {/* La barra cerrada no debe dejar controles invisibles sobre el workspace. */}
+      <div className="relative z-50 min-h-0">{topbarOpen && <SubTopbar activeProject={activeProject} />}</div>
       <WorkspaceLayout leftOpen={leftOpen} rightOpen={rightOpen} onToggleLeft={toggleLeft} />
   </motion.div></MotionConfig>;
 }
