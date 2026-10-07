@@ -833,7 +833,10 @@ function createWindow() {
   const ownerId=mainWindow.webContents.id;
   mainWindow.webContents.on('destroyed', () => sessionHub.disconnect(ownerId));
   mainWindow.webContents.on('render-process-gone', () => sessionHub.disconnect(ownerId));
-  mainWindow.once('ready-to-show', showMainWindow);
+  mainWindow.once('ready-to-show', () => {
+    showMainWindow();
+    if (accessibilityDebugMode) mainWindow?.webContents.openDevTools({ mode: 'detach' });
+  });
   const devUrl = process.env.CODECLUB_NEXT_DEV_URL;
   if (devUrl) void mainWindow.loadURL(devUrl); else void mainWindow.loadFile(path.join(root, '..', 'out', 'index.html'));
 }
@@ -866,8 +869,10 @@ function setupAutoUpdater() {
 app.setAppUserModelId('com.codeclub.desktop');
 // Expone el árbol de accesibilidad de Chromium a UI Automation/Computer Use.
 app.commandLine.appendSwitch('force-renderer-accessibility');
+const accessibilityDebugMode = !app.isPackaged && app.commandLine.hasSwitch('codeclub-a11y-debug');
 app.whenReady().then(async () => {
   if (!ownsAppInstance) return;
+  if (accessibilityDebugMode) app.setAccessibilitySupportEnabled(true);
   void browserExtensionBridge.start();
   app.once('will-quit', () => browserExtensionBridge.stop());
   credentialVault=new CredentialVault(app.getPath('userData'),safeStorage);

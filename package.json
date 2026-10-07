@@ -16,6 +16,7 @@
     "electron:compile": "tsc -p tsconfig.electron.json",
     "electron:launch": "electron .",
     "electron:dev": "npm run electron:compile && electron .",
+    "electron:a11y-debug": "npm run electron:compile && electron . --codeclub-a11y-debug",
     "verify:nvidia": "node scripts/verify-nvidia.mjs",
     "test:chat-history": "npm run electron:compile && node scripts/test-chat-history.mjs",
     "test:agent-graph": "tsx scripts/test-agent-graph.mjs",

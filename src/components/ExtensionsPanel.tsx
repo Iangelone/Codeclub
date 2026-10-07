@@ -140,10 +140,10 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
 
 
   return (
-    <main id="codeclub-extensions-panel" className="extensions-panel-scroll h-full min-h-0 overflow-x-hidden overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden bg-(--codeclub-center)">
+    <section id="codeclub-extensions-panel" aria-labelledby="codeclub-extensions-heading" className="extensions-panel-scroll h-full min-h-0 overflow-x-hidden overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden bg-(--codeclub-center)">
       <div className="mx-auto min-w-0 w-full max-w-[1040px] px-6 py-7 lg:px-8">
         <header>
-          <h1 className="m-0 text-[28px] font-normal tracking-[-0.04em] text-[#eeeeee]">{text.title}</h1>
+          <h1 id="codeclub-extensions-heading" className="m-0 text-[28px] font-normal tracking-[-0.04em] text-[#eeeeee]">{text.title}</h1>
           <p className="mt-1.5 text-[14px] text-[#999999]">{text.description}</p>
           {projectPath && <p className="mt-2 inline-flex items-center gap-1.5 text-[12px] text-[#777777]" title={projectPath}><Folder size={13} />{text.project}: {projectPath.split(/[\\/]/).pop()}</p>}
         </header>
@@ -198,6 +198,6 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
           {mcpServers.length === 0 && <div className="py-12 text-center text-sm text-[#777777]">{text.noMcp}</div>}
         </section>}
       </div>
-    </main>
+    </section>
   );
 }

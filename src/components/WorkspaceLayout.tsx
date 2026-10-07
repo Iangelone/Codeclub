@@ -733,9 +733,9 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
     }
   };
 
-  return <section className="bg-[#080808] grid h-full min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] overflow-hidden" aria-label={sidebarText.workspace}>
+  return <section id="codeclub-workspace" className="bg-[#080808] grid h-full min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] overflow-hidden" aria-label={sidebarText.workspace}>
     <div className="flex h-full min-h-0 min-w-0 overflow-hidden">
-      <motion.aside id="codeclub-left-sidebar" animate={{ width: leftOpen ? leftWidth : 0, opacity: leftOpen ? 1 : 0 }} transition={resizing ? { type: 'spring', stiffness: 900, damping: 58, mass: 0.22 } : { type: 'spring', stiffness: 340, damping: 30 }} className="codeclub-widget-chrome flex h-full min-h-0 shrink-0 flex-col overflow-hidden" aria-label={sidebarText.leftSidebar} aria-hidden={!leftOpen}>
+      <motion.aside id="codeclub-left-sidebar" animate={{ width: leftOpen ? leftWidth : 0, opacity: leftOpen ? 1 : 0 }} transition={resizing ? { type: 'spring', stiffness: 900, damping: 58, mass: 0.22 } : { type: 'spring', stiffness: 340, damping: 30 }} className="codeclub-widget-chrome flex h-full min-h-0 shrink-0 flex-col overflow-hidden" aria-label={sidebarText.leftSidebar} aria-hidden={!leftOpen} inert={!leftOpen}>
         <div className="flex min-h-0 flex-1 flex-col px-2.5 py-2.5 text-(--codeclub-text)">
           <div className="flex h-8 min-w-0 items-center gap-2 px-1.5">
             {editingProjectName ? <input autoFocus value={projectNameDraft} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setProjectNameDraft(event.target.value)} onBlur={() => void commitProjectName()} onKeyDown={(event) => {
@@ -765,10 +765,10 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
       {leftOpen && <ResizeHandle side="left" value={leftWidth} maxValue={MAX_WIDTH} onStart={startResize('left')} onKeyboardResize={setLeftWidth} language={language} />}
 
       <div className="codeclub-conversation-surface flex min-h-0 min-w-0 flex-1 overflow-hidden">
-      <PanelManager activeSection={activeSection} projectPath={activeProjectPath} />
+          <PanelManager activeSection={activeSection} projectPath={activeProjectPath} projectId={activeProjectId} />
 
       {rightOpen && <ResizeHandle side="right" value={rightWidth} maxValue={rightMaxWidth} onStart={startResize('right')} onKeyboardResize={setRightWidth} language={language} />}
-      <motion.aside id="codeclub-right-sidebar" animate={{ width: rightOpen ? rightWidth : 0, opacity: rightOpen ? 1 : 0 }} transition={resizing ? { type: 'spring', stiffness: 900, damping: 58, mass: 0.22 } : { type: 'spring', stiffness: 340, damping: 30 }} className={`codeclub-panel-edge flex h-full min-h-0 shrink-0 flex-col bg-transparent ${rightOpen ? 'pointer-events-auto overflow-visible' : 'pointer-events-none overflow-hidden'}`} aria-label={panelText.rightPanel} aria-hidden={!rightOpen}>
+      <motion.aside id="codeclub-right-sidebar" animate={{ width: rightOpen ? rightWidth : 0, opacity: rightOpen ? 1 : 0 }} transition={resizing ? { type: 'spring', stiffness: 900, damping: 58, mass: 0.22 } : { type: 'spring', stiffness: 340, damping: 30 }} className={`codeclub-panel-edge flex h-full min-h-0 shrink-0 flex-col bg-transparent ${rightOpen ? 'pointer-events-auto overflow-visible' : 'pointer-events-none overflow-hidden'}`} aria-label={panelText.rightPanel} aria-hidden={!rightOpen} inert={!rightOpen}>
         <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
           <div ref={rightMenuRef} className="codeclub-widget-chrome relative z-[2147483647] isolate flex h-11 min-w-0 shrink-0 items-center gap-2 px-2 [transform:translateZ(0)] [pointer-events:auto]">
             <div role="tablist" aria-label={panelText.openPanels} className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -794,7 +794,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
   </section>;
 }
 
-const PanelManager = memo(function PanelManager({ activeSection, projectPath }: { activeSection: SidebarSection; projectPath?: string }) {
+const PanelManager = memo(function PanelManager({ activeSection, projectPath, projectId }: { activeSection: SidebarSection; projectPath?: string; projectId: string }) {
   const language = useAppLanguage();
   const chatVisible = activeSection === 'new-chat' || activeSection === 'extensions';
   const synapseVisible = activeSection === 'projects';
@@ -802,27 +802,27 @@ const PanelManager = memo(function PanelManager({ activeSection, projectPath }: 
   useEffect(() => {
     window.dispatchEvent(new CustomEvent('codeclub:chat-panel-visibility', { detail: { visible: chatVisible } }));
   }, [chatVisible]);
-  return <section role="region" className="relative min-h-0 min-w-0 flex-1 overflow-hidden" aria-label={rightSidebarTranslations[language].panelManager} aria-live="polite">
+  return <main id="codeclub-main-content" tabIndex={-1} className="relative min-h-0 min-w-0 flex-1 overflow-hidden" aria-label={rightSidebarTranslations[language].panelManager} aria-live="polite">
     <div className={`codeclub-panel-shell h-full w-full ${chatVisible ? 'overflow-visible' : 'overflow-hidden'} bg-(--codeclub-center)`}>
-      <div className={`h-full min-h-0 min-w-0 ${chatVisible ? 'block' : 'hidden'}`} aria-hidden={!chatVisible}><ChatPanel /></div>
+      <div className={`h-full min-h-0 min-w-0 ${chatVisible ? 'block' : 'hidden'}`} aria-hidden={!chatVisible} inert={!chatVisible}><ChatPanel /></div>
       {synapseVisible && <div className="relative z-10 h-full min-h-0 min-w-0"><SynapsePanel /></div>}
       {scheduledVisible && <div className="relative z-10 h-full min-h-0 min-w-0"><ScheduledPanel projectPath={projectPath} /></div>}
       {!chatVisible && <div className="grid h-full min-h-0 place-items-center bg-(--codeclub-center) px-6 text-center"><div><p className="text-sm font-medium text-(--codeclub-text-strong)">{language === 'en' ? 'Panel without content' : 'Panel sin contenido'}</p><p className="mt-1 text-xs text-(--codeclub-text-muted)">{language === 'en' ? 'This space will adapt when we add this section.' : 'Este espacio se adaptará cuando agreguemos esta sección.'}</p></div></div>}
     </div>
-  </section>;
+  </main>;
 });
 
 function SynapsePanel() {
   const language = useAppLanguage();
   const text = language === 'en' ? { title: 'Devices', description: 'Connect your phone to the IDE by scanning a QR code.' } : { title: 'Dispositivos', description: 'Conectá tu celular al IDE escaneando un código QR.' };
-  return <main id="codeclub-synapse-panel" className="h-full min-h-0 overflow-auto bg-(--codeclub-center)" aria-label={text.title}>
+  return <section id="codeclub-synapse-panel" className="h-full min-h-0 overflow-auto bg-(--codeclub-center)" aria-label={text.title}>
     <div className="mx-auto min-w-0 w-full max-w-[1040px] px-6 py-7 lg:px-8">
       <header>
         <h1 className="m-0 text-[28px] font-normal tracking-[-0.04em] text-(--codeclub-text-strong)">{text.title}</h1>
         <p className="mt-1.5 text-[14px] text-(--codeclub-text-muted)">{text.description}</p>
       </header>
     </div>
-  </main>;
+  </section>;
 }
 
 export function ScheduledPanel({ projectPath }: { projectPath?: string }) {
@@ -909,7 +909,7 @@ export function ScheduledPanel({ projectPath }: { projectPath?: string }) {
 
   if (selected) return <ScheduledTaskDetail key={selected.id} task={selected} error={error} pending={pending} onBack={() => { setDraftTask(null); setSelectedId(null); }} onSave={updateTask} onRun={runTask} onDelete={() => draftTask ? setDraftTask(null) : deleteTask(selected.id)} />;
 
-  return <main id="codeclub-scheduled-panel" className="h-full min-h-0 overflow-y-auto bg-(--codeclub-center) [scrollbar-color:#444444_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#444444] [&::-webkit-scrollbar-thumb:hover]:bg-[#666666]" aria-label={text.title}>
+  return <section id="codeclub-scheduled-panel" className="h-full min-h-0 overflow-y-auto bg-(--codeclub-center) [scrollbar-color:#444444_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#444444] [&::-webkit-scrollbar-thumb:hover]:bg-[#666666]" aria-label={text.title}>
     <div className="mx-auto min-w-0 w-full max-w-[1040px] px-6 py-7 lg:px-8">
       {error && <p role="alert" className="mb-4 text-sm text-red-300">{error}</p>}
       <header className="mb-6">
@@ -920,8 +920,8 @@ export function ScheduledPanel({ projectPath }: { projectPath?: string }) {
       <div className="relative flex h-9 items-center rounded-full border border-[#454545] bg-[#292929] px-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] focus-within:border-[#666666]">
         <Search size={17} className="mr-2 shrink-0 text-[#999999]" aria-hidden="true" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={text.search} aria-label={text.search} className="min-w-0 flex-1 bg-transparent text-[14px] text-(--codeclub-text-strong) outline-none placeholder:text-[#929292]" />
       </div>
-      <div className="mt-8 flex items-center gap-1 border-b border-white/[0.06] pb-3" role="tablist" aria-label={text.state}>
-        {([{ id: 'all', label: text.all }, { id: 'active', label: text.active }, { id: 'paused', label: text.paused }] as const).map((item) => <button key={item.id} type="button" role="tab" aria-selected={filter === item.id} onClick={() => setFilter(item.id)} className={`rounded-lg px-3 py-1.5 text-[13px] transition-colors ${filter === item.id ? 'bg-[#2d2d2d] text-[#eeeeee]' : 'text-[#888888] hover:bg-white/[0.05] hover:text-[#cccccc]'}`}>{item.label}</button>)}
+      <div className="mt-8 flex items-center gap-1 border-b border-white/[0.06] pb-3" role="group" aria-label={text.state}>
+        {([{ id: 'all', label: text.all }, { id: 'active', label: text.active }, { id: 'paused', label: text.paused }] as const).map((item) => <button key={item.id} type="button" aria-pressed={filter === item.id} onClick={() => setFilter(item.id)} className={`rounded-lg px-3 py-1.5 text-[13px] transition-colors ${filter === item.id ? 'bg-[#2d2d2d] text-[#eeeeee]' : 'text-[#888888] hover:bg-white/[0.05] hover:text-[#cccccc]'}`}>{item.label}</button>)}
         <button type="button" onClick={createCustomTask} disabled={!scheduledReady || pending} className="ml-auto grid h-7 w-7 place-items-center rounded-lg text-[#999999] transition-colors hover:bg-white/[0.08] hover:text-[#eeeeee]" aria-label={text.create} title={text.create}><Plus size={16} strokeWidth={1.8} /></button>
       </div>
       {visibleTasks.length > 0 && <section className="mt-7" aria-label={text.title}>
@@ -931,7 +931,7 @@ export function ScheduledPanel({ projectPath }: { projectPath?: string }) {
       {!scheduledReady && !error && <p role="status" className="mt-8 text-sm text-[#777777]">{runtimeText.loading}</p>}
       {scheduledReady && visibleTasks.length === 0 && <p className="mt-8 px-2 text-[13px] text-[#777777]">{text.noTasks}</p>}
     </div>
-  </main>;
+  </section>;
 }
 
 function ScheduledTaskDetail({ task, error, pending, onBack, onSave, onRun, onDelete }: { task: ScheduledTask; error: string; pending: boolean; onBack: () => void; onSave: (task: ScheduledTask) => void; onRun: (task: ScheduledTask) => void; onDelete: () => void }) {
@@ -964,7 +964,7 @@ function ScheduledTaskDetail({ task, error, pending, onBack, onSave, onRun, onDe
   const intervalLabels: Record<string, string> = { Diario: text.daily, 'Días hábiles': text.weekdays, Semanal: text.weekly, Personalizado: text.custom, 'Una vez': runtimeText.once };
   const notificationLabels: Record<string, string> = { 'Todas las ejecuciones': text.allRuns, 'Solo errores': text.errors, 'Sin notificaciones': text.none };
   const canonicalValue = (labels: Record<string, string>, value: string) => Object.entries(labels).find(([, label]) => label === value)?.[0] || value;
-  return <main className="h-full min-h-0 overflow-y-auto bg-(--codeclub-center) [scrollbar-color:#444444_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#444444] [&::-webkit-scrollbar-thumb:hover]:bg-[#666666]" aria-label={`${text.task}: ${draft.name}`}>
+  return <section className="h-full min-h-0 overflow-y-auto bg-(--codeclub-center) [scrollbar-color:#444444_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#444444] [&::-webkit-scrollbar-thumb:hover]:bg-[#666666]" aria-label={`${text.task}: ${draft.name}`}>
     <div className="mx-auto min-w-0 w-full max-w-[1040px] px-6 py-6 lg:px-8">
       {error && <p role="alert" className="mb-4 text-sm text-red-300">{error}</p>}
       <div className="flex items-center justify-between"><button type="button" onClick={onBack} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] text-[#999999] hover:bg-white/[0.05] hover:text-[#eeeeee]"><ArrowLeft size={15} />{text.back}</button><div className="flex items-center gap-1"><button type="button" onClick={() => { const next = { ...draft, status: draft.status === 'active' ? 'paused' as const : 'active' as const }; if (task.runs) onSave(next); else setDraft(next); }} disabled={pending} className="grid h-8 w-8 place-items-center rounded-lg text-[#999999] hover:bg-white/[0.06] hover:text-[#eeeeee]" title={draft.status === 'active' ? text.pause : text.activate} aria-label={draft.status === 'active' ? text.pause : text.activate}>{draft.status === 'active' ? <Pause size={16} /> : <Play size={16} />}</button><button type="button" onClick={() => onRun(draft)} disabled={pending || !task.runs || task.runs.some(run => ['running', 'queued'].includes(run.status))} className="grid h-8 w-8 place-items-center rounded-lg text-[#999999] hover:bg-white/[0.06] hover:text-[#eeeeee]" title={text.run} aria-label={text.run}><Play size={16} /></button><button type="button" onClick={() => onSave(draft)} disabled={pending || !draft.name.trim() || !draft.prompt.trim()} className="grid h-8 w-8 place-items-center rounded-lg text-[#999999] hover:bg-[#1f3d57] hover:text-[#8bc7ff]" title={text.save} aria-label={text.save}><CircleCheck size={17} /></button><button type="button" onClick={onDelete} disabled={pending || task.runs?.some(run => run.status === 'running')} className="grid h-8 w-8 place-items-center rounded-lg text-[#999999] hover:bg-[#562b2b] hover:text-[#ffb4b4]" title={text.delete} aria-label={text.delete}><Trash2 size={16} /></button><button type="button" onClick={onBack} className="grid h-8 w-8 place-items-center rounded-lg text-[#999999] hover:bg-white/[0.06] hover:text-[#eeeeee]" title={text.close} aria-label={text.close}><X size={17} /></button></div></div>
@@ -990,7 +990,7 @@ function ScheduledTaskDetail({ task, error, pending, onBack, onSave, onRun, onDe
       </section>
       <div className="pb-8" />
     </div>
-  </main>;
+  </section>;
 }
 
 type ReviewFile = { path: string; status: string; additions: number; deletions: number; untracked?: boolean };

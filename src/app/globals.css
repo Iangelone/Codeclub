@@ -1,5 +1,24 @@
 @import 'tailwindcss';
 
+.codeclub-skip-link {
+  position: fixed;
+  z-index: 10000;
+  top: 8px;
+  left: 8px;
+  transform: translateY(calc(-100% - 16px));
+  border: 1px solid var(--codeclub-border-soft, #3a3a3a);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: var(--codeclub-surface-raised, #1e1e1e);
+  color: var(--codeclub-text-strong, #f5f5f5);
+  font-size: 13px;
+  transition: transform 120ms ease-out;
+}
+
+.codeclub-skip-link:focus {
+  transform: translateY(0);
+}
+
 @property --nexo-orb-blue {
   syntax: '<color>';
   inherits: true;
@@ -2129,4 +2148,15 @@ button:disabled,
 
 .file-tabs-scrollbar::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--codeclub-accent) 45%, #3a3a3a);
+}
+
+:where(a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [role="button"], [role="tab"], [tabindex="0"]):focus-visible {
+  outline: 2px solid var(--codeclub-accent-bright, #8bc7ff);
+  outline-offset: 2px;
+}
+
+@media (forced-colors: active) {
+  :where(a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [role="button"], [role="tab"], [tabindex="0"]):focus-visible {
+    outline-color: Highlight !important;
+  }
 }
