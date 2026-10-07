@@ -121,6 +121,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
   const [activeProjectPath, setActiveProjectPath] = useState<string | undefined>();
   const [editingProjectName, setEditingProjectName] = useState(false);
   const [projectNameDraft, setProjectNameDraft] = useState('Codeclub');
+  const [projectNameError, setProjectNameError] = useState('');
   const projectNameEdit = useRef({ token: 0, submitted: true });
   const [chatsByProject, setChatsByProject] = useState<Record<string, RecentChat[]>>({});
   const [activeSection, setActiveSection] = useState<SidebarSection>('new-chat');
@@ -144,7 +145,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
   const [resizing, setResizing] = useState<Side | null>(null);
   const [sizesReady, setSizesReady] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(1280);
-  const resizeRef = useRef<{ side: Side; startX: number; startWidth: number } | null>(null);
+  const resizeRef = useRef<{ side: Side; pointerId: number; startX: number; startWidth: number } | null>(null);
   const resizeFrameRef = useRef<number | null>(null);
   const pendingResizeRef = useRef<{ side: Side; width: number } | null>(null);
 
@@ -237,7 +238,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
     };
     const handleMove = (event: PointerEvent) => {
       const drag = resizeRef.current;
-      if (!drag) return;
+      if (!drag || event.pointerId !== drag.pointerId) return;
       const delta = drag.side === 'left' ? event.clientX - drag.startX : drag.startX - event.clientX;
       const maxWidth = drag.side === 'right' ? rightMaxWidthRef.current : MAX_WIDTH;
       const nextWidth = Math.min(maxWidth, Math.max(MIN_WIDTH, drag.startWidth + delta));
@@ -249,7 +250,8 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
         });
       }
     };
-    const handleEnd = () => {
+    const finishResize = () => {
+      if (!resizeRef.current) return;
       if (resizeFrameRef.current !== null) {
         window.cancelAnimationFrame(resizeFrameRef.current);
         resizeFrameRef.current = null;
@@ -258,11 +260,18 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
       resizeRef.current = null;
       setResizing(null);
     };
+    const handleEnd = (event: PointerEvent) => {
+      if (event.pointerId === resizeRef.current?.pointerId) finishResize();
+    };
     window.addEventListener('pointermove', handleMove);
-    window.addEventListener('pointerup', handleEnd, { once: true });
+    window.addEventListener('pointerup', handleEnd);
+    window.addEventListener('pointercancel', handleEnd);
+    window.addEventListener('blur', finishResize);
     return () => {
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleEnd);
+      window.removeEventListener('pointercancel', handleEnd);
+      window.removeEventListener('blur', finishResize);
       if (resizeFrameRef.current !== null) {
         window.cancelAnimationFrame(resizeFrameRef.current);
         resizeFrameRef.current = null;
@@ -282,6 +291,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
       setProjectNameDraft(nextName);
       projectNameEdit.current = { token: projectNameEdit.current.token + 1, submitted: true };
       setEditingProjectName(false);
+      setProjectNameError('');
       setChatsByProject((current) => current[projectId] ? current : { ...current, [projectId]: [] });
       window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
       if (project.path) window.localStorage.setItem('codeclub:active-project', JSON.stringify({ id: projectId, name: nextName, path: project.path }));
@@ -526,7 +536,8 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
 
   const startResize = (side: Side) => (event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
-    resizeRef.current = { side, startX: event.clientX, startWidth: side === 'left' ? leftWidth : rightWidth };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    resizeRef.current = { side, pointerId: event.pointerId, startX: event.clientX, startWidth: side === 'left' ? leftWidth : rightWidth };
     setResizing(side);
   };
 
@@ -696,12 +707,14 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
   const startProjectNameEdit = () => {
     projectNameEdit.current = { token: projectNameEdit.current.token + 1, submitted: false };
     setProjectNameDraft(activeProjectName);
+    setProjectNameError('');
     setEditingProjectName(true);
   };
 
   const cancelProjectNameEdit = () => {
     projectNameEdit.current = { token: projectNameEdit.current.token + 1, submitted: true };
     setProjectNameDraft(activeProjectName);
+    setProjectNameError('');
     setEditingProjectName(false);
   };
 
@@ -710,9 +723,10 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
     projectNameEdit.current.submitted = true;
     const token = projectNameEdit.current.token;
     const nextName = projectNameDraft.trim();
-    setEditingProjectName(false);
     if (!nextName || nextName === activeProjectName || activeProjectId === 'home') {
       setProjectNameDraft(activeProjectName);
+      setProjectNameError('');
+      setEditingProjectName(false);
       return;
     }
     try {
@@ -720,6 +734,8 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
       if (!project) throw new Error('Project rename returned no project');
       window.dispatchEvent(new CustomEvent('codeclub:project-renamed', { detail: { id: activeProjectId, name: project.name, path: project.path } }));
       if (projectNameEdit.current.token !== token) return;
+      setEditingProjectName(false);
+      setProjectNameError('');
       setActiveProjectName(project.name);
       setProjectNameDraft(project.name);
       setActiveProjectPath(project.path ?? activeProjectPath);
@@ -729,16 +745,20 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
       window.localStorage.setItem('codeclub:active-project', JSON.stringify({ id: activeProjectId, name: project.name, path: project.path ?? activeProjectPath }));
     } catch (error) {
       console.error('No se pudo renombrar el proyecto', error);
-      if (projectNameEdit.current.token === token) setProjectNameDraft(activeProjectName);
+      if (projectNameEdit.current.token === token) {
+        projectNameEdit.current.submitted = false;
+        setProjectNameError(error instanceof Error ? error.message : sidebarText.renameProjectError);
+        setEditingProjectName(true);
+      }
     }
   };
 
   return <section id="codeclub-workspace" className="bg-[#080808] grid h-full min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] overflow-hidden" aria-label={sidebarText.workspace}>
     <div className="flex h-full min-h-0 min-w-0 overflow-hidden">
-      <motion.aside id="codeclub-left-sidebar" animate={{ width: leftOpen ? leftWidth : 0, opacity: leftOpen ? 1 : 0 }} transition={resizing ? { type: 'spring', stiffness: 900, damping: 58, mass: 0.22 } : { type: 'spring', stiffness: 340, damping: 30 }} className="codeclub-widget-chrome flex h-full min-h-0 shrink-0 flex-col overflow-hidden" aria-label={sidebarText.leftSidebar} aria-hidden={!leftOpen} inert={!leftOpen}>
+      <motion.aside id="codeclub-left-sidebar" animate={{ width: leftOpen ? leftWidth : 0, opacity: leftOpen ? 1 : 0 }} transition={resizing ? { duration: 0 } : { type: 'spring', stiffness: 340, damping: 30 }} className="codeclub-widget-chrome flex h-full min-h-0 shrink-0 flex-col overflow-hidden" aria-label={sidebarText.leftSidebar} aria-hidden={!leftOpen} inert={!leftOpen}>
         <div className="flex min-h-0 flex-1 flex-col px-2.5 py-2.5 text-(--codeclub-text)">
           <div className="flex h-8 min-w-0 items-center gap-2 px-1.5">
-            {editingProjectName ? <input autoFocus value={projectNameDraft} onFocus={(event) => event.currentTarget.select()} onChange={(event) => setProjectNameDraft(event.target.value)} onBlur={() => void commitProjectName()} onKeyDown={(event) => {
+            {editingProjectName ? <input autoFocus value={projectNameDraft} onFocus={(event) => event.currentTarget.select()} onChange={(event) => { setProjectNameDraft(event.target.value); setProjectNameError(''); }} onBlur={() => void commitProjectName()} onKeyDown={(event) => {
               if (event.nativeEvent.isComposing) return;
               if (event.key === 'Enter') { event.preventDefault(); void commitProjectName(); }
               if (event.key === 'Escape') { event.preventDefault(); cancelProjectNameEdit(); }
@@ -748,6 +768,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
               <button type="button" onClick={onToggleLeft} className="grid h-7 w-7 place-items-center rounded-md text-(--codeclub-text-muted) transition-colors hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-text-muted)" aria-label={language === 'en' ? 'Hide left sidebar' : 'Ocultar sidebar izquierda'} title={language === 'en' ? 'Hide left sidebar' : 'Ocultar sidebar izquierda'}><PanelLeft size={15} aria-hidden="true" /></button>
             </div>
           </div>
+          {projectNameError && <p role="alert" className="mx-1.5 mt-1 mb-0 text-[11px] leading-4 text-red-300">{projectNameError}</p>}
           <nav className="mt-4 space-y-0.5" aria-label={sidebarText.mainNavigation}>
             <SidebarItem active={activeSection === 'new-chat' && !activeChatId} icon={<CirclePlus />} label={sidebarText.newChat} onClick={() => selectSidebarSection('new-chat')} />
             <SidebarItem active={activeSection === 'scheduled'} icon={<Clock />} label={sidebarText.tasks} onClick={() => selectSidebarSection('scheduled')} />
@@ -768,7 +789,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
           <PanelManager activeSection={activeSection} projectPath={activeProjectPath} projectId={activeProjectId} />
 
       {rightOpen && <ResizeHandle side="right" value={rightWidth} maxValue={rightMaxWidth} onStart={startResize('right')} onKeyboardResize={setRightWidth} language={language} />}
-      <motion.aside id="codeclub-right-sidebar" animate={{ width: rightOpen ? rightWidth : 0, opacity: rightOpen ? 1 : 0 }} transition={resizing ? { type: 'spring', stiffness: 900, damping: 58, mass: 0.22 } : { type: 'spring', stiffness: 340, damping: 30 }} className={`codeclub-panel-edge flex h-full min-h-0 shrink-0 flex-col bg-transparent ${rightOpen ? 'pointer-events-auto overflow-visible' : 'pointer-events-none overflow-hidden'}`} aria-label={panelText.rightPanel} aria-hidden={!rightOpen} inert={!rightOpen}>
+      <motion.aside id="codeclub-right-sidebar" animate={{ width: rightOpen ? rightWidth : 0, opacity: rightOpen ? 1 : 0 }} transition={resizing ? { duration: 0 } : { type: 'spring', stiffness: 340, damping: 30 }} className={`codeclub-panel-edge flex h-full min-h-0 shrink-0 flex-col bg-transparent ${rightOpen ? 'pointer-events-auto overflow-visible' : 'pointer-events-none overflow-hidden'}`} aria-label={panelText.rightPanel} aria-hidden={!rightOpen} inert={!rightOpen}>
         <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
           <div ref={rightMenuRef} className="codeclub-widget-chrome relative z-[2147483647] isolate flex h-11 min-w-0 shrink-0 items-center gap-2 px-2 [transform:translateZ(0)] [pointer-events:auto]">
             <div role="tablist" aria-label={panelText.openPanels} className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

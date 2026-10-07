@@ -14,7 +14,7 @@ const builtInExtensions = [
 ];
 
 type Scope = 'global' | 'project';
-type ExtensionItem = { id: string; name: string; description: string; icon: typeof Box; color: string; scope: Scope; protected?: boolean };
+type ExtensionItem = { id: string; name: string; description: string; icon: typeof Box; color: string; scope: Scope; protected?: boolean; builtIn?: boolean };
 type SkillItem = { id: string; name: string; description: string; source: string; scope: Scope };
 type McpItem = { id: string; name: string; url: string; scope: Scope };
 type BrowserManager = { id: string; name: string; installed: boolean; connected: boolean };
@@ -41,6 +41,8 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
     icon: Blocks,
     color: '#8BC7FF',
     scope: plugin.scope,
+    protected: plugin.builtIn,
+    builtIn: plugin.builtIn,
   })), [plugins]);
   const localizedBuiltIns = language === 'en' ? builtInExtensions : builtInExtensions.map((extension) => ({
     ...extension,
@@ -156,7 +158,7 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
         </div>
 
         {tab === 'extensions' && <section className="mt-9 grid min-w-0 gap-1.5" aria-label={text.list}>
-          {filteredExtensions.map(({ id, name, description, icon: Icon = Box, color, scope, protected: isProtected }) => {
+          {filteredExtensions.map(({ id, name, description, icon: Icon = Box, color, scope, protected: isProtected, builtIn }) => {
             const enabledKey = isProtected ? id : name;
             const isEnabled = enabled[enabledKey] ?? true;
             if (id === 'browser-control') return <div key={id} className="min-w-0 rounded-lg px-3 py-3 transition-colors hover:bg-[#202020]">
@@ -183,7 +185,7 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
               <div className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] border border-[#2d2d2d] bg-[#151515]"><div className="grid h-7 w-7 place-items-center rounded-[7px]" style={{ background: color }}><Icon size={17} strokeWidth={1.8} className="text-white" /></div></div>
               <div className="min-w-0 w-0 flex-1"><h2 className="m-0 truncate text-[14px] font-semibold text-[#eeeeee]">{name}</h2><p className="mt-0.5 truncate text-[13px] text-[#888888]">{description}</p></div>
               <span className="shrink-0 rounded-full border border-[#303030] px-2 py-1 text-[10px] text-[#8f8f8f]">{scopeLabel(scope, language)}</span>
-              <button type="button" role="switch" aria-checked={isEnabled} aria-label={`${isEnabled ? text.disable : text.enable} ${name}`} onClick={() => { const next = !isEnabled; setEnabled((current) => ({ ...current, [enabledKey]: next })); if (isProtected) void setSetting(`codeclub_extension_enabled_${id}`, String(next)); }} className={`relative h-6 w-10 shrink-0 rounded-full border-0 transition-colors ${isEnabled ? 'bg-[#3d9bff]' : 'bg-[#3a3a3a]'}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${isEnabled ? 'right-1' : 'left-1'}`} /></button>
+              {builtIn ? <span className="shrink-0 rounded-full border border-[#303030] px-2 py-1 text-[10px] text-[#8f8f8f]">{language === 'en' ? 'Built in' : 'Incluido'}</span> : <button type="button" role="switch" aria-checked={isEnabled} aria-label={`${isEnabled ? text.disable : text.enable} ${name}`} onClick={() => { const next = !isEnabled; setEnabled((current) => ({ ...current, [enabledKey]: next })); if (isProtected) void setSetting(`codeclub_extension_enabled_${id}`, String(next)); }} className={`relative h-6 w-10 shrink-0 rounded-full border-0 transition-colors ${isEnabled ? 'bg-[#3d9bff]' : 'bg-[#3a3a3a]'}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${isEnabled ? 'right-1' : 'left-1'}`} /></button>}
               {!isProtected && <button type="button" onClick={() => { void invoke('codeclub_delete_agent_plugin', { projectPath, pluginId: id.replace(/^plugin:/, ''), scope }).then(refresh).catch(() => undefined); }} className="grid h-7 w-7 shrink-0 place-items-center rounded-md border-0 bg-transparent text-[#777777] hover:bg-[#2b2b2b] hover:text-[#eeeeee]" title={text.deletePlugin} aria-label={`${text.deletePlugin}: ${name}`}><Trash2 size={14} /></button>}
             </div>;
           })}

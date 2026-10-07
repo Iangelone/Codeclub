@@ -2214,7 +2214,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       beforeWorkspaceSnapshot = await readWorkspaceSnapshot(toolProjectPath);
       updateAssistantMessage();
       const system = [
-        'You are Codeclub\'s coding agent. Think and operate internally in English. On demand, discover and use tools, skills, plugins, and prior chat context. Verify real results; never invent. Reply in the user\'s language.',
+        'You are Codeclub\'s coding agent. Think and operate internally in English. On demand, discover and use tools, skills, plugins, and prior chat context. Before substantial coding tasks, search for a relevant engineering skill and load it when it clearly applies. Verify real results; never invent. Reply in the user\'s language.',
+        activeSkills.length ? `The user activated these skills for this session. Follow their relevant workflow while respecting the user's request and project instructions:\n\n${activeSkills.map((skill) => `## ${skill.name}\n\n${skill.content}`).join('\n\n')}` : '',
         'For substantial work, call reportProgress before starting and when moving to a new phase. Use one brief user-facing phrase in the user\'s language (for example, "Inspecting the project" or "Implementing the selected text actions"). These are progress updates, not chain-of-thought; never reveal private reasoning. Do not call it for routine short answers.',
         responseSaverEnabled ? 'Keep the final response concise and within a strict maximum of 500 characters. Preserve only the most useful facts and omit lengthy explanations.' : '',
       ].filter(Boolean).join(' ');

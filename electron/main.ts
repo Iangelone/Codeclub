@@ -454,10 +454,49 @@ const pluginFile = (scope: PluginScope, projectPath: string, pluginId: string, r
   return target;
 };
 
+const bundledAgentSkillsRoot = () => path.join(
+  app.isPackaged ? process.resourcesPath : app.getAppPath(),
+  app.isPackaged ? 'agent-skills' : path.join('vendor', 'agent-skills'),
+);
+
+async function loadSkillInstructions(pluginRootPath: string, skillPath: string) {
+  const original = await fs.readFile(skillPath, 'utf8');
+  const resources = new Map<string, string>();
+  const pending: Array<{ source: string; reference: string }> = [];
+  const queueReferences = (source: string, content: string) => {
+    const matches = content.match(/(?:(?:\.\.\/)+)?(?:references|scripts)\/[A-Za-z0-9_./-]+/g) || [];
+    for (const reference of matches) pending.push({ source, reference: reference.replace(/[.,;:!?]+$/, '') });
+  };
+  queueReferences(skillPath, original);
+
+  while (pending.length && resources.size < 16) {
+    const { source, reference } = pending.shift()!;
+    const target = path.resolve(path.dirname(source), reference);
+    const relative = path.relative(pluginRootPath, target);
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative) || resources.has(relative)) continue;
+    try {
+      const [realRoot, realTarget] = await Promise.all([fs.realpath(pluginRootPath), fs.realpath(target)]);
+      const realRelative = path.relative(realRoot, realTarget);
+      if (!realRelative || realRelative.startsWith('..') || path.isAbsolute(realRelative)) continue;
+      const content = await fs.readFile(realTarget, 'utf8');
+      if (content.length > 200_000) continue;
+      resources.set(realRelative, content);
+      queueReferences(realTarget, content);
+    } catch {
+      // Some upstream skills mention host-specific files that are not part of the skill bundle.
+    }
+  }
+
+  if (!resources.size) return original;
+  const appendix = Array.from(resources, ([relative, content]) => `### ${relative}\n\n${content}`).join('\n\n');
+  return `${original}\n\n## Supporting files included with this skill\n\n${appendix}`;
+}
+
 async function listAgentPlugins(projectPath: string) {
   const roots = [
     ...(String(projectPath || '').trim() ? [{ root: pluginRoot('project', projectPath), scope: 'project' as PluginScope }] : []),
     { root: pluginRoot('global', projectPath), scope: 'global' as PluginScope },
+    { root: bundledAgentSkillsRoot(), scope: 'global' as PluginScope, builtIn: true },
   ];
   const plugins: any[] = [];
   const seen = new Set<string>();
@@ -478,7 +517,7 @@ async function listAgentPlugins(projectPath: string) {
           if (!skill.isDirectory()) continue;
           const skillPath = path.join(skillsRoot, skill.name, 'SKILL.md');
           try {
-            const content = await fs.readFile(skillPath, 'utf8');
+            const content = await loadSkillInstructions(root, skillPath);
             const name = content.match(/^name:\s*(.+)$/m)?.[1]?.trim();
             const description = content.match(/^description:\s*(.+)$/m)?.[1]?.trim();
             if (name && description) skills.push({ id: skill.name, name, description, content, pluginName: id, scope: entry.scope });
@@ -486,7 +525,7 @@ async function listAgentPlugins(projectPath: string) {
         }
         let mcpServers: Record<string, unknown> = {};
         try { const mcp = JSON.parse(await fs.readFile(path.join(root, 'mcp.json'), 'utf8')); mcpServers = mcp.mcpServers || {}; } catch { /* MCP opcional. */ }
-        plugins.push({ id, name: id, version: manifest.version, description: manifest.description, root, source: entry.scope, scope: entry.scope, projectPath: entry.scope === 'project' ? path.resolve(projectPath) : undefined, skills, mcpServers, warnings: [] });
+        plugins.push({ id, name: manifest.displayName || manifest.interface?.displayName || id, version: manifest.version, description: manifest.description, root, source: entry.scope, scope: entry.scope, projectPath: entry.scope === 'project' ? path.resolve(projectPath) : undefined, skills, mcpServers, warnings: [], builtIn: entry.builtIn === true });
       } catch { /* Manifest inválido: no se carga. */ }
     }
   }

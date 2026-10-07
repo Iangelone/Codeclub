@@ -117,6 +117,10 @@
       {
         "from": "browser-extension",
         "to": "browser-extension"
+      },
+      {
+        "from": "vendor/agent-skills",
+        "to": "agent-skills"
       }
     ],
     "win": {

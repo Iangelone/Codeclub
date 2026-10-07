@@ -57,6 +57,8 @@ El SDK instalado y sus guías en `node_modules/ai/docs/` son la referencia para 
 
 [main.ts](../electron/main.ts), en `listAgentPlugins`, descubre `plugin.json`, `skills/<nombre>/SKILL.md` y `mcp.json` en el almacenamiento global o del proyecto. En conflictos de nombre prevalece el paquete del proyecto. Las tools pueden crear paquetes y comprobar que sus archivos se escribieron.
 
+Codeclub también incluye el paquete MIT [Agent Skills de Addy Osmani](https://github.com/addyosmani/agent-skills) como plugin global de solo lectura. Sus skills se descubren con el catálogo normal y cargan sus recursos Markdown vinculados junto a las instrucciones. Al elegir una skill desde el menú `/`, el agente recibe sus instrucciones en esa sesión; para tareas de código sustanciales, también puede buscar una skill aplicable bajo demanda. La versión incorporada está indicada en `vendor/agent-skills/plugin.json` y el aviso de licencia se conserva en `vendor/agent-skills/LICENSE`.
+
 `searchPlugins` y `searchSkills` entregan metadatos; `loadSkill` entrega instrucciones completas a demanda. No se inyectan todas las skills en cada prompt. El lector actual extrae `name` y `description` mediante expresiones regulares: no es un parser YAML completo. Los archivos auxiliares de una skill no tienen una API general de lectura expuesta por ese descubrimiento.
 
 El cliente conecta stdio, Streamable HTTP y SSE legacy, conserva `PLUGIN_DATA`, expone tools con prefijos y ofrece cleanup de conexiones. Si un servidor falla, otros pueden seguir disponibles. Esto es integración real, pero no basta para declararnos cliente conforme a [Agent Plugins 1.0.0](https://agent-plugins.org/client-implementers/conformance).

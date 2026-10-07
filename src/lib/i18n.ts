@@ -207,12 +207,12 @@ export const scheduledRuntimeTranslations = {
 export const sidebarTranslations = {
   es: {
     chat: 'Chat', projects: 'Proyectos', agents: 'Agentes', extensions: 'Extensiones', chats: 'Chats', settings: 'Ajustes', tasks: 'Tareas', devices: 'Dispositivos', recent: 'Recientes', support: 'Apoyar Codeclub',
-    projectName: 'Nombre del proyecto', renameProject: 'Cambiar nombre del proyecto', saveProjectName: 'Guardar nombre del proyecto', newFile: 'Nuevo archivo', newFolder: 'Nueva carpeta', ready: 'Listo para revisión', workspace: 'Espacio de trabajo', leftSidebar: 'Barra lateral izquierda', mainNavigation: 'Navegación principal', chatMenu: 'Menú del chat', donation: 'Hacer una donación',
+    projectName: 'Nombre del proyecto', renameProject: 'Cambiar nombre del proyecto', saveProjectName: 'Guardar nombre del proyecto', renameProjectError: 'No se pudo cambiar el nombre del proyecto.', newFile: 'Nuevo archivo', newFolder: 'Nueva carpeta', ready: 'Listo para revisión', workspace: 'Espacio de trabajo', leftSidebar: 'Barra lateral izquierda', mainNavigation: 'Navegación principal', chatMenu: 'Menú del chat', donation: 'Hacer una donación',
     couldNotCreate: 'No se pudo crear', newChat: 'Nuevo chat', createNew: 'Crear nuevo...', open: 'Abrir', close: 'Cerrar', rename: 'Renombrar', delete: 'Eliminar', clearChats: 'Limpiar chats', clearHistory: 'Limpiar historial', clearProjectChats: 'Limpiar todos los chats de este proyecto', newName: 'Nuevo nombre', deleteElement: 'Eliminar elemento', selectFolder: 'Seleccionar carpeta para el proyecto',
   },
   en: {
     chat: 'Chat', projects: 'Projects', agents: 'Agents', extensions: 'Extensions', chats: 'Chats', settings: 'Settings', tasks: 'Tasks', devices: 'Devices', recent: 'Recent', support: 'Support Codeclub',
-    projectName: 'Project name', renameProject: 'Rename project', saveProjectName: 'Save project name', newFile: 'New file', newFolder: 'New folder', ready: 'Ready for review', workspace: 'Workspace', leftSidebar: 'Left sidebar', mainNavigation: 'Main navigation', chatMenu: 'Chat menu', donation: 'Make a donation',
+    projectName: 'Project name', renameProject: 'Rename project', saveProjectName: 'Save project name', renameProjectError: 'Could not rename the project.', newFile: 'New file', newFolder: 'New folder', ready: 'Ready for review', workspace: 'Workspace', leftSidebar: 'Left sidebar', mainNavigation: 'Main navigation', chatMenu: 'Chat menu', donation: 'Make a donation',
     couldNotCreate: 'Could not create', newChat: 'New chat', createNew: 'Create new...', open: 'Open', close: 'Close', rename: 'Rename', delete: 'Delete', clearChats: 'Clear chats', clearHistory: 'Clear history', clearProjectChats: 'Clear all chats from this project', newName: 'New name', deleteElement: 'Delete item', selectFolder: 'Select folder for project',
   },
 } as const;

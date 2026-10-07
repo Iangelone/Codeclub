@@ -35,6 +35,7 @@ export type AgentPlugin = {
   skills: AgentPluginSkill[];
   mcpServers: Record<string, AgentPluginServer>;
   warnings: string[];
+  builtIn?: boolean;
 };
 
 type McpTool = { name: string; description?: string; inputSchema?: Record<string, unknown> };
