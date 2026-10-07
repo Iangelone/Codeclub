@@ -1,3 +1,4 @@
+import { publishMarketProvider, deletePublishedProvider, marketUser } from './market-cloud';
 import { getSetting, setSetting } from './persistence';
 
 export type ProviderConfiguration = {
@@ -13,11 +14,11 @@ export type ProviderConfiguration = {
   queueCapacity: number;
 };
 
-export type MarketProvider = ProviderConfiguration & { id: string; registeredAt: string; connected?: boolean; enabled?: boolean };
+export type MarketProvider = ProviderConfiguration & { id: string; registeredAt: string; connected?: boolean; enabled?: boolean; remoteId?: string; ownerId?: string; remote?: boolean };
 const providersKey = 'codeclub_market_providers';
 
 /**
- * Emisores: registerMarketProvider, setMarketProviderConnection setMarketProviderEnabled y removeMarketProvider, después de persistir.
+ * Emisores: registerMarketProvider, setMarketProviderConnection, setMarketProviderEnabled y removeMarketProvider, después de persistir.
  * Evento: codeclub:market-providers-changed; detail: { providerId: string }.
  * Consumidores: MarketPanel y useMarketCatalog recargan lista y catálogo.
  * Cada consumidor instala y elimina el listener en su useEffect.
@@ -47,10 +48,12 @@ export async function registerMarketProvider(configuration: ProviderConfiguratio
     queueCapacity: configuration.queueEnabled ? configuration.queueCapacity : 10,
   };
   const operation = registrationQueue.then(async () => {
+    const user = await marketUser();
     const providers = await readMarketProviders();
     if (providerId && !providers.some((item) => item.id === providerId)) throw new Error('MARKET_PROVIDER_NOT_FOUND');
-    const existing = providerId ? providers.find((item) => item.id === providerId) : providers.find((item) => item.origin === config.origin && item.model === config.model && item.provider === config.provider && item.endpoint === config.endpoint);
-    const provider: MarketProvider = { ...config, id: existing?.id ?? crypto.randomUUID(), registeredAt: existing?.registeredAt ?? new Date().toISOString(), connected: existing?.connected ?? false, enabled: existing?.enabled ?? true };
+    const existing = providerId ? providers.find((item) => item.id === providerId) : providers.find((item) => (!item.ownerId || item.ownerId === user.id) && item.origin === config.origin && item.model === config.model && item.provider === config.provider && item.endpoint === config.endpoint);
+    const provider: MarketProvider = { ...config, id: existing?.id ?? crypto.randomUUID(), registeredAt: existing?.registeredAt ?? new Date().toISOString(), connected: existing?.connected ?? false, enabled: existing?.enabled ?? true, remoteId: existing?.remoteId, ownerId: existing?.ownerId };
+    Object.assign(provider, await publishMarketProvider(provider));
     await setSetting(providersKey, existing ? providers.map((item) => item.id === existing.id ? provider : item) : [...providers, provider]);
     window.dispatchEvent(new CustomEvent(MARKET_PROVIDERS_CHANGED, { detail: { providerId: provider.id } }));
   });
@@ -73,7 +76,9 @@ export async function setMarketProviderEnabled(providerId: string, enabled: bool
   const operation = registrationQueue.then(async () => {
     const providers = await readMarketProviders();
     if (!providers.some((provider) => provider.id === providerId)) throw new Error('MARKET_PROVIDER_NOT_FOUND');
-    await setSetting(providersKey, providers.map((provider) => provider.id === providerId ? { ...provider, enabled } : provider));
+    const provider = { ...providers.find((item) => item.id === providerId)!, enabled };
+    Object.assign(provider, await publishMarketProvider(provider));
+    await setSetting(providersKey, providers.map((item) => item.id === providerId ? provider : item));
     window.dispatchEvent(new CustomEvent(MARKET_PROVIDERS_CHANGED, { detail: { providerId } }));
   });
   registrationQueue = operation.catch(() => undefined);
@@ -83,8 +88,27 @@ export async function setMarketProviderEnabled(providerId: string, enabled: bool
 export async function removeMarketProvider(providerId: string): Promise<void> {
   const operation = registrationQueue.then(async () => {
     const providers = await readMarketProviders();
+    const provider = providers.find((item) => item.id === providerId);
+    if (provider) await deletePublishedProvider(provider);
     await setSetting(providersKey, providers.filter((provider) => provider.id !== providerId));
     window.dispatchEvent(new CustomEvent(MARKET_PROVIDERS_CHANGED, { detail: { providerId } }));
+  });
+  registrationQueue = operation.catch(() => undefined);
+  return operation;
+}
+
+// Consumer subscriptions are stored separately from this PC's supplier configurations.
+export async function readMarketConnections(userId: string): Promise<string[]> {
+  const saved = await getSetting<unknown>(`codeclub_market_connections_${userId}`, []);
+  return Array.isArray(saved) ? saved.filter((id): id is string => typeof id === 'string') : [];
+}
+export async function setPublishedProviderConnection(provider: MarketProvider, connected: boolean): Promise<void> {
+  const operation = registrationQueue.then(async () => {
+    const user = await marketUser();
+    const ids = await readMarketConnections(user.id);
+    const next = connected ? [...new Set([...ids, provider.id])] : ids.filter(id => id !== provider.id);
+    await setSetting(`codeclub_market_connections_${user.id}`, next);
+    window.dispatchEvent(new CustomEvent(MARKET_PROVIDERS_CHANGED, { detail: { providerId: provider.id } }));
   });
   registrationQueue = operation.catch(() => undefined);
   return operation;

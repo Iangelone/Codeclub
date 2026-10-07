@@ -35,7 +35,7 @@ import { appendGenerationUsage, type GenerationUsageRecord } from '../lib/usage'
 import { appendExecutionLog } from '../lib/execution-log';
 import { appendGlobalChatTranscript, getProjectChatPath, getProjectTranscriptPath, readGlobalChatHistory, readGlobalChats, readProjectIndex, readProjectMeta, writeGlobalChatHistory, writeGlobalChats, writeProjectMeta, type ProjectMeta } from '../lib/projectManager';
 import { codeclubExtensions, type CodeclubExtension } from '../lib/extensions';
-import { activityTranslations, aiCredentialTranslations, providerErrorTranslations, chatHistoryTranslations, chatActionTranslations, agentTextSelectionTranslations, LANGUAGE_STORAGE_KEY, rightSidebarTranslations, type AppLanguage, useAppLanguage } from '../lib/i18n';
+import { savedProviderTranslations, activityTranslations, aiCredentialTranslations, providerErrorTranslations, chatHistoryTranslations, chatActionTranslations, agentTextSelectionTranslations, LANGUAGE_STORAGE_KEY, rightSidebarTranslations, type AppLanguage, useAppLanguage } from '../lib/i18n';
 import { connectAllAgentPluginMcp, loadAgentPlugins } from '../lib/agent-plugins';
 import OrbPaletteButton from './ui/OrbPaletteButton';
 import { ORB_PALETTES, useOrbPalette } from './OrbPaletteProvider';
@@ -1166,6 +1166,24 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     return () => { window.removeEventListener('codeclub:open-command-menu', handleOpenCommandMenu); window.removeEventListener('codeclub:open-projects-changed', handleOpenProjectsChanged); };
   }, [menuOpen, commandKind]);
 
+  const [savedCredentialKeys, setSavedCredentialKeys] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!menuOpen || commandKind !== 'provider') return;
+    let active = true;
+    const keys = [...new Set(catalog.filter(item => item.type === 'provider' && !item.marketRemote && (!item.gatewayOnly || item.id === 'ai-gateway')).map(item => credentialKeyFor(item)))];
+    const bridge = (window as any).codeclub;
+    void Promise.all(keys.map(async key => {
+      try {
+        // Ask only whether the vault contains the credential; never read its value.
+        const present = bridge?.credentialPresent ? await bridge.credentialPresent(key) : Boolean(await getSetting(key, ''));
+        return present ? key : null;
+      } catch { return null; }
+    })).then(results => {
+      if (active) setSavedCredentialKeys(new Set(results.filter((key): key is string => key !== null)));
+    });
+    return () => { active = false; };
+  }, [menuOpen, commandKind, catalog]);
+
   const commandOptions: CatalogItem[] = commandKind === 'project' ? projectOptions : commandKind === 'skill' ? skillOptions.map((skill) => ({ ...skill, type: 'skill', label: skill.name })) : commandKind === 'language' ? languageOptions : commandKind === 'development' ? developmentOptions : catalog;
   const filteredCatalog = commandOptions.filter((item) => {
     const matchesKind = item.type === commandKind;
@@ -1201,6 +1219,10 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
       if (commandKind === 'project' && item.projectPath === activeProject?.projectPath) return false;
       return true;
     });
+  const isSavedProvider = (item: CatalogItem) => item.id === 'custom' || (!item.marketRemote && (!item.gatewayOnly || item.id === 'ai-gateway') && savedCredentialKeys.has(credentialKeyFor(item)));
+  if (commandKind === 'provider') {
+    commandMenuItems.sort((a, b) => Number(isSavedProvider(b)) - Number(isSavedProvider(a)));
+  }
   const hasCommandMenuResults = commandMenuItems.length > 0;
 
   useEffect(() => {
@@ -2019,6 +2041,9 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         throw new Error('Elegí un proveedor y un modelo antes de enviar.');
       }
 
+      if (currentProvider.marketRemote) {
+        throw new Error(language === 'en' ? 'Remote marketplace execution is not available yet.' : 'La ejecución remota de Mercado todavía no está disponible.');
+      }
       const useGateway = usesGateway(currentProvider, currentModel);
       const credentialKey = credentialKeyFor(currentProvider, currentModel);
       let apiKey = await getSetting(credentialKey, '');
@@ -3256,7 +3281,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 <motion.span aria-hidden="true" animate={{ opacity: index === activeCommandIndex ? 1 : 0 }} transition={{ duration: 0.12, ease: 'easeOut' }} style={{ position: 'absolute', inset: 0, borderRadius: '7px', background: '#2F2F2F', zIndex: 0, pointerEvents: 'none' }} />
                 <span className="relative z-[1] flex min-w-0 items-center gap-2">{item.icon && React.createElement(item.icon, { size: 14, strokeWidth: 1.8 })}<span className="truncate">{item.label}</span></span>
                 <small className="relative z-[1]" style={{ color: 'rgba(216, 216, 216, 0.36)', fontSize: '11px' }}>
-                  {item.type === 'command' ? item.description : item.type === 'language' ? item.description : item.type === 'development' ? item.description : item.type === 'provider' ? chatText.provider : item.type === 'project' ? chatText.project : item.type === 'skill' ? item.source : item.type === 'extension' ? chatText.extension : chatText.model}
+                  {item.type === 'command' ? item.description : item.type === 'language' ? item.description : item.type === 'development' ? item.description : item.type === 'provider' ? (isSavedProvider(item) ? savedProviderTranslations[language].recent : chatText.provider) : item.type === 'project' ? chatText.project : item.type === 'skill' ? item.source : item.type === 'extension' ? chatText.extension : chatText.model}
                 </small>
               </motion.button>
             ))}

@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, safeStorage, screen, shell, Tray } from 'electron';
 import { runProjectCommand } from './run-command.js';
 import { TaskScheduler, type ScheduledTask, type TaskRun } from './task-scheduler.js';
+import { MarketSessionStore } from './market-session-store.js';
 import { CredentialVault } from './credential-vault.js';
 import { ActivityIntegrations } from './activity-integrations.js';
 import { AgentRelay } from './agent-relay.js';
@@ -959,6 +960,9 @@ app.whenReady().then(async () => {
   updateRelay();app.once('will-quit',()=>relay.stop());
   integrations.start();
   app.once('will-quit',()=>integrations.stop());
+  const marketSessionStore = new MarketSessionStore(app.getPath('userData'), safeStorage);
+  ipcMain.handle('codeclub:market-auth-get', (event, key: string) => { requireAppSender(event); return marketSessionStore.get(key); });
+  ipcMain.handle('codeclub:market-auth-set', (event, key: string, value: string | null) => { requireAppSender(event); marketSessionStore.set(key, value); });
   ipcMain.handle('codeclub:credential-present',(event,key:string)=>{requireAppSender(event);return credentialVault.present(key);});
   ipcMain.handle('codeclub:credential-set',(event,key:string,value:string,origin?:string)=>{requireAppSender(event);credentialVault.set(key,value,origin);});
   ipcMain.handle('codeclub:external-open',(event,url:string)=>{requireAppSender(event);const target=new URL(url);if(target.protocol!=='https:')throw new Error('Invalid external URL');return shell.openExternal(target.href);});
