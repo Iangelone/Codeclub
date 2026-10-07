@@ -375,7 +375,8 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
   const [attachmentError,setAttachmentError] = useState(false);
   const chatPanelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const hideSelectionBar = () => {
+    const hideSelectionBar = (event?: Event) => {
+      if (event?.target instanceof Element && event.target.closest('.chat-selection-toolbar-wrap')) return;
       setAgentTextSelection(null);
       setSelectionCommentOpen(false);
       setSelectionComment('');
@@ -2992,7 +2993,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           <button type="button" disabled={isAgentBusy} onClick={askForMoreDetails}>{agentTextSelectionTranslations[language].moreDetails}</button>
         </div>}
         {selectionCommentOpen && <form className="chat-selection-comment" onSubmit={(event) => { event.preventDefault(); addSelectedTextToChat(selectionComment); }}>
-          <textarea autoFocus value={selectionComment} onChange={(event) => setSelectionComment(event.target.value)} placeholder={agentTextSelectionTranslations[language].commentPlaceholder} aria-label={agentTextSelectionTranslations[language].commentPlaceholder} rows={1} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); setSelectionCommentOpen(false); } if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); addSelectedTextToChat(selectionComment); } }} />
+          <input autoFocus type="text" value={selectionComment} onChange={(event) => setSelectionComment(event.target.value)} placeholder={agentTextSelectionTranslations[language].commentPlaceholder} aria-label={agentTextSelectionTranslations[language].commentPlaceholder} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); setSelectionCommentOpen(false); } }} />
           <button type="submit" aria-label={agentTextSelectionTranslations[language].addToChat} title={agentTextSelectionTranslations[language].addToChat}><ArrowUp size={16} strokeWidth={2} /></button>
         </form>}
       </div>, document.body)}

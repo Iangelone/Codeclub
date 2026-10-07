@@ -828,18 +828,18 @@ section[aria-label='Gestor de paneles'] {
   width: 100%;
 }
 
-#codeclub-right-sidebar .browser-selection-comment textarea {
+#codeclub-right-sidebar .browser-selection-comment textarea,
+#codeclub-right-sidebar .browser-selection-comment input {
   border: 0;
   border-radius: 0;
   padding: 0;
   background: transparent;
 }
 
-.chat-selection-comment textarea {
+.chat-selection-comment textarea,
+.chat-selection-comment input {
   flex: 1;
   min-width: 0;
-  max-height: 64px;
-  resize: none;
   border: 0;
   outline: 0;
   background: transparent;
@@ -848,7 +848,20 @@ section[aria-label='Gestor de paneles'] {
   font-size: 12px;
 }
 
-.chat-selection-comment textarea::placeholder {
+.chat-selection-comment textarea {
+  max-height: 64px;
+  resize: none;
+}
+
+.chat-selection-comment input {
+  height: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+}
+
+.chat-selection-comment textarea::placeholder,
+.chat-selection-comment input::placeholder {
   color: #858585;
 }
 
