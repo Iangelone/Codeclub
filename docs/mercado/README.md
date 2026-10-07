@@ -1,4 +1,11 @@
-# Mercado: esquema inicial
+# Mercado: implementación y esquema
+
+## Idea del producto
+
+- [Propuesta completa en español](IDEA.es.md)
+- [Full proposal in English](IDEA.en.md)
+
+Ambas versiones describen participantes, registro, conexiones, arquitectura, límites, transporte futuro, pagos, comisión y etapas pendientes. La interfaz de Mercado usa el idioma elegido en el menú slash; los documentos se ofrecen por separado en ambos idiomas.
 
 `schema.sql` crea únicamente el esquema `mercado`; no modifica `public` ni la interfaz local.
 Aplicado mediante MCP en el proyecto Supabase Codeclub (dtlifqfupxododxermsu), migración create_mercado_schema, el 7 de octubre de 2026.

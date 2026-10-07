@@ -23,7 +23,7 @@ export default function ProviderRegistrationModal({ onClose, provider }: { onClo
   const [draft, setDraft] = useState(initialDraft);
   const [ready, setReady] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<keyof typeof text | ''>('');
   const [apiKey, setApiKey] = useState('');
   const [hasCredential, setHasCredential] = useState(false);
   const [credentialReady, setCredentialReady] = useState(false);
@@ -45,9 +45,9 @@ export default function ProviderRegistrationModal({ onClose, provider }: { onClo
       if (!active) return;
       if (saved) setDraft({ name: typeof saved.name === 'string' ? saved.name : '', origin: saved.origin === 'codeclub' ? 'codeclub' : 'local', endpoint: typeof saved.endpoint === 'string' ? saved.endpoint : initialDraft.endpoint, model: typeof saved.model === 'string' ? saved.model : '', modelLabel: typeof saved.modelLabel === 'string' ? saved.modelLabel : '', provider: typeof saved.provider === 'string' ? saved.provider : '', concurrency: Number.isInteger(saved.concurrency) ? Math.min(32, Math.max(1, saved.concurrency)) : 1, requestsPerMinute: Number.isInteger(saved.requestsPerMinute) ? Math.min(100000, Math.max(0, saved.requestsPerMinute)) : 0, queueEnabled: saved.queueEnabled === true, queueCapacity: Number.isInteger(saved.queueCapacity) ? Math.min(1000, Math.max(1, saved.queueCapacity)) : 10 });
       setReady(true);
-    }).catch(() => { if (active) setError(text.loadError); });
+    }).catch(() => { if (active) setError('loadError'); });
     return () => { active = false; };
-  }, [text.loadError, provider]);
+  }, [provider]);
 
   useEffect(() => {
     let active = true;
@@ -55,9 +55,9 @@ export default function ProviderRegistrationModal({ onClose, provider }: { onClo
     setHasCredential(false);
     setCredentialReady(false);
     if (draft.origin !== 'codeclub' || !credentialKey || !requiresCredential) { setCredentialReady(true); return; }
-    void getSetting(credentialKey, '').then((credential) => { if (active) { setHasCredential(Boolean(credential)); setCredentialReady(true); } }).catch(() => { if (active) { setError(text.error); setCredentialReady(true); } });
+    void getSetting(credentialKey, '').then((credential) => { if (active) { setHasCredential(Boolean(credential)); setCredentialReady(true); } }).catch(() => { if (active) { setError('error'); setCredentialReady(true); } });
     return () => { active = false; };
-  }, [draft.origin, credentialKey, requiresCredential, text.error]);
+  }, [draft.origin, credentialKey, requiresCredential]);
 
   useEffect(() => {
     const previousFocus = document.activeElement as HTMLElement | null;
@@ -80,11 +80,11 @@ export default function ProviderRegistrationModal({ onClose, provider }: { onClo
     event.preventDefault();
     if (!ready || saving) return;
     setError('');
-    if (!Number.isInteger(draft.concurrency) || draft.concurrency < 1 || draft.concurrency > 32 || !Number.isInteger(draft.requestsPerMinute) || draft.requestsPerMinute < 0 || draft.requestsPerMinute > 100000 || (draft.queueEnabled && (!Number.isInteger(draft.queueCapacity) || draft.queueCapacity < 1 || draft.queueCapacity > 1000))) { setError(text.invalidLimits); return; }
+    if (!Number.isInteger(draft.concurrency) || draft.concurrency < 1 || draft.concurrency > 32 || !Number.isInteger(draft.requestsPerMinute) || draft.requestsPerMinute < 0 || draft.requestsPerMinute > 100000 || (draft.queueEnabled && (!Number.isInteger(draft.queueCapacity) || draft.queueCapacity < 1 || draft.queueCapacity > 1000))) { setError('invalidLimits'); return; }
     if (draft.origin === 'local') try {
       const endpoint = new URL(draft.endpoint.trim());
       if (!['http:', 'https:'].includes(endpoint.protocol) || !endpoint.hostname || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) throw new Error();
-    } catch { setError(text.invalidEndpoint); return; }
+    } catch { setError('invalidEndpoint'); return; }
     setSaving(true);
     try {
       if (draft.origin === 'codeclub') {
@@ -100,7 +100,7 @@ export default function ProviderRegistrationModal({ onClose, provider }: { onClo
       await setSetting(draftKey, configuration);
       await registerMarketProvider(configuration, provider?.id);
       onClose();
-    } catch { setError(text.error); }
+    } catch { setError('error'); }
     finally { setSaving(false); }
   };
 
@@ -134,7 +134,7 @@ export default function ProviderRegistrationModal({ onClose, provider }: { onClo
           </div>
         </fieldset>
         <p className="mb-0 mt-5 border-t border-[#202020] pt-4 text-[11px] leading-5 text-[#888888]">{text.draftNote}</p>
-        {error && <p role="alert" className="mt-3 text-[12px] text-red-300">{error}</p>}
+        {error && <p role="alert" className="mt-3 text-[12px] text-red-300">{text[error]}</p>}
         <footer className="mt-5 flex justify-end gap-2"><button type="button" disabled={saving} onClick={onClose} className="rounded-lg px-3 py-2 text-[12px] hover:bg-[#202020] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)">{text.cancel}</button><button type="submit" disabled={!ready || saving || !draft.name.trim() || !draft.model.trim() || (draft.origin === 'codeclub' && (!selectedProvider || !selectedModel || !credentialReady || (requiresCredential && !hasCredential && !apiKey.trim())))} className="rounded-lg bg-white px-3 py-2 text-[12px] font-medium text-[#111111] hover:bg-[#e5e5e5] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) disabled:cursor-not-allowed disabled:opacity-40">{saving ? text.saving : provider ? text.saveChanges : text.save}</button></footer>
       </form>
     </section>
