@@ -1636,7 +1636,7 @@ function TerminalPanel({ projectPath, terminalId, visible = true }: { projectPat
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<XtermTerminal | null>(null);
   const sessionIdRef = useRef<string | null>(null);
-  const outputRef = useRef('');
+  const outputOffsetRef = useRef(0);
   const pendingRunRef = useRef<TerminalRunRequest | null>(null);
   const syncSizeRef = useRef<(() => void) | null>(null);
   const visibleRef = useRef(visible);
@@ -1668,10 +1668,10 @@ function TerminalPanel({ projectPath, terminalId, visible = true }: { projectPat
       convertEol: true,
       cursorBlink: true,
       fontFamily: 'Consolas, "Cascadia Mono", monospace',
-      fontSize: 14,
+      fontSize: 11,
       lineHeight: 1.25,
       scrollback: 5000,
-       theme: { background: '#1E1E1E', foreground: '#F5F5EF', cursor: '#F5F5EF', selectionBackground: '#8BC7FF66' },
+       theme: { background: '#00000000', foreground: '#F5F5EF', cursor: '#F5F5EF', selectionBackground: '#8BC7FF66' },
     });
     const fit = new FitAddon();
     terminal.loadAddon(fit);
@@ -1708,9 +1708,9 @@ function TerminalPanel({ projectPath, terminalId, visible = true }: { projectPat
     let timer: number | undefined;
     let pollInFlight = false;
     const start = async () => {
-      outputRef.current = '';
+      outputOffsetRef.current = 0;
       try {
-        const existing = terminalId ? await nativeInvoke<{ info?: TerminalInfo; output?: string }>('codeclub_terminal_snapshot', { id: terminalId }) : null;
+        const existing = terminalId ? await nativeInvoke<{ info?: TerminalInfo; output?: string; offset?: number }>('codeclub_terminal_snapshot', { id: terminalId }) : null;
         const created = existing?.info || await nativeInvoke<TerminalInfo>('codeclub_terminal_create', { request: { projectPath, shell: 'powershell', name: 'PowerShell' } });
         if (cancelled) {
           if (!terminalId) await nativeInvoke('codeclub_terminal_delete', { id: created.id }).catch(() => undefined);
@@ -1720,9 +1720,9 @@ function TerminalPanel({ projectPath, terminalId, visible = true }: { projectPat
         syncSizeRef.current?.();
         if (visibleRef.current) terminalRef.current?.focus();
         if (existing?.output) {
-          outputRef.current = String(existing.output);
-          terminalRef.current?.write(outputRef.current);
+          terminalRef.current?.write(String(existing.output));
         }
+        outputOffsetRef.current = Number(existing?.offset) || 0;
         if (pendingRunRef.current) {
           const pending = pendingRunRef.current;
           pendingRunRef.current = null;
@@ -1733,16 +1733,18 @@ function TerminalPanel({ projectPath, terminalId, visible = true }: { projectPat
           if (pollInFlight) return;
           pollInFlight = true;
           try {
-            const snapshot = await nativeInvoke<{ output?: string }>('codeclub_terminal_snapshot', { id: created.id });
+            const snapshot = await nativeInvoke<{ output?: string; offset?: number; truncated?: boolean }>('codeclub_terminal_snapshot', { id: created.id, offset: outputOffsetRef.current });
             if (cancelled) return;
-            const nextOutput = String(snapshot.output || '');
+            const output = String(snapshot.output || '');
             const terminal = terminalRef.current;
-            if (!terminal || nextOutput === outputRef.current) return;
-            const followOutput = terminal.buffer.active.viewportY >= terminal.buffer.active.baseY;
-            if (nextOutput.startsWith(outputRef.current)) terminal.write(nextOutput.slice(outputRef.current.length));
-            else { terminal.reset(); terminal.write(nextOutput); }
-            if (followOutput) terminal.scrollToBottom();
-            outputRef.current = nextOutput;
+            if (!terminal) return;
+            if (output) {
+              const followOutput = terminal.buffer.active.viewportY >= terminal.buffer.active.baseY;
+              if (snapshot.truncated) terminal.reset();
+              terminal.write(output);
+              if (followOutput) terminal.scrollToBottom();
+            }
+            outputOffsetRef.current = Number(snapshot.offset) || outputOffsetRef.current;
           } catch { /* La sesión se limpia al desmontar el panel. */ }
           finally { pollInFlight = false; }
         };

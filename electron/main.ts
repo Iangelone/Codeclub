@@ -126,7 +126,7 @@ let autoUpdateState: AutoUpdateState = { state: 'idle' };
 const activeCommands = new Set<() => void>();
 type NativeMcpSession = { child: ReturnType<typeof spawn>; nextId: number; pending: Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }> };
 const nativeMcpSessions = new Map<string, NativeMcpSession>();
-type NativeTerminal = { child: pty.IPty; info: any; buffer: string };
+type NativeTerminal = { child: pty.IPty; info: any; buffer: string; bufferOffset: number };
 const nativeTerminals = new Map<string, NativeTerminal>();
 
 const COMPUTER_OVERLAY_PALETTES = [
@@ -509,8 +509,15 @@ async function createNativeTerminal(request: any) {
   const id = `terminal-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const child = pty.spawn(shell.command, shell.args, { name: 'xterm-color', cols: 120, rows: 40, cwd, env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' } as Record<string, string> });
   const info = { id, name: String(request.name || 'Terminal'), shell: shell.label, cwd, projectPath: request.projectPath, is_agent: Boolean(request.isAgent), created_at: String(Date.now()), status: 'running' };
-  const session: NativeTerminal = { child, info, buffer: '' };
-  const append = (data: string) => { session.buffer = `${session.buffer}${data}`.slice(-240000); };
+  const session: NativeTerminal = { child, info, buffer: '', bufferOffset: 0 };
+  const append = (data: string) => {
+    session.buffer += data;
+    if (session.buffer.length > 240000) {
+      const removed = session.buffer.length - 240000;
+      session.buffer = session.buffer.slice(removed);
+      session.bufferOffset += removed;
+    }
+  };
   child.onData(append);
   child.onExit(() => { session.info.status = 'exited'; });
   nativeTerminals.set(id, session);
@@ -635,7 +642,14 @@ async function invokeNativeCommand(command: string, args: any = {}, signal?: Abo
     case 'codeclub_terminal_snapshot': {
       const session = nativeTerminals.get(String(args.id));
       if (!session) throw new Error('Terminal no encontrada.');
-      return { info: session.info, output: session.buffer };
+      const nextOffset = session.bufferOffset + session.buffer.length;
+      if (Number.isFinite(Number(args.offset))) {
+        const offset = Math.max(0, Math.floor(Number(args.offset)));
+        const truncated = offset < session.bufferOffset;
+        const start = truncated ? 0 : Math.min(session.buffer.length, offset - session.bufferOffset);
+        return { info: session.info, output: session.buffer.slice(start), offset: nextOffset, truncated };
+      }
+      return { info: session.info, output: session.buffer, offset: nextOffset, truncated: false };
     }
     case 'codeclub_terminal_write': {
       const session = nativeTerminals.get(String(args.id));

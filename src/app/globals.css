@@ -341,7 +341,7 @@ section[aria-label='Gestor de paneles'] {
 
 #codeclub-terminal-panel,
 #codeclub-terminal-panel > div {
-  background-color: var(--nexo-paper) !important;
+  background-color: transparent !important;
   color: var(--nexo-ink);
 }
 
@@ -1212,7 +1212,12 @@ section[aria-label="Espacio de trabajo"] > [role="menu"][aria-label="Menú del c
 
 #codeclub-terminal-panel,
 #codeclub-terminal-panel > div {
-  background-color: var(--paper) !important;
+  background-color: transparent !important;
+}
+
+#codeclub-terminal-panel {
+  box-sizing: border-box;
+  padding: 12px 14px !important;
 }
 
 #codeclub-terminal-panel .xterm {
@@ -1220,8 +1225,12 @@ section[aria-label="Espacio de trabajo"] > [role="menu"][aria-label="Menú del c
 }
 
 #codeclub-terminal-panel .xterm .xterm-viewport {
-  background-color: var(--paper) !important;
+  background-color: transparent !important;
   scrollbar-width: none;
+}
+
+#codeclub-terminal-panel .xterm .xterm-scrollable-element {
+  background-color: transparent !important;
 }
 
 #codeclub-terminal-panel .xterm .xterm-viewport::-webkit-scrollbar {
@@ -1510,8 +1519,8 @@ section[aria-label="Espacio de trabajo"] > [role="menu"][aria-label="Menú del c
 }
 
 #right-panel-artifacts,
-#right-panel-terminals {
-  background: var(--paper);
+[id^="right-panel-terminals"] {
+  background: transparent;
   color: var(--ink);
 }
 
