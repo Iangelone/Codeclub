@@ -353,6 +353,7 @@ section[aria-label='Gestor de paneles'] {
 #codeclub-right-sidebar .codeclub-project-files,
 #codeclub-right-sidebar .codeclub-project-files > div.flex,
 #codeclub-right-sidebar .codeclub-project-files > div.flex > main,
+#codeclub-right-sidebar .codeclub-project-files > div.flex > section,
 #codeclub-right-sidebar .codeclub-project-files > div.flex > main > div:first-child,
 #codeclub-right-sidebar .codeclub-project-files > div.flex > aside {
   background: transparent;
