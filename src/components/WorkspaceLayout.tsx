@@ -1,7 +1,8 @@
 'use client';
 
 import { createElement, memo, useEffect, useRef, useState, type FormEvent } from 'react';
-import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, Bolt, Check, ChevronDown, Circle, CircleCheck, CirclePlus, Clock, CopyX, EllipsisVertical, ExternalLink, FileWarning, FolderOpen, FolderPen, FolderTree, GitBranch, GitCompare, Grid2X2, Heart, Home, Hourglass, Info, MessageSquare, MoreHorizontal, MousePointerClick, PanelLeft, Pause, Pencil, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, Bolt, Check, ChevronDown, Circle, CircleCheck, CirclePlus, Clock, CopyX, EllipsisVertical, ExternalLink, FileWarning, FolderOpen, FolderPen, FolderTree, Grid2X2, Heart, Home, Hourglass, Info, MessageSquare, MoreHorizontal, MousePointerClick, PanelLeft, Pause, Pencil, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { GlobeCheck } from 'lucide-react';
 import { Terminal as XtermTerminal } from '@xterm/xterm';
@@ -9,6 +10,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import ChatPanel from './ChatPanel';
 import { ProjectPanelView } from './ChatInterface';
+import { useOrbPalette } from './OrbPaletteProvider';
 import OrbPaletteButton from './ui/OrbPaletteButton';
 import { readGlobalChats, readProjectMeta, writeGlobalChats, writeProjectMeta } from '../lib/projectManager';
 import { nativeInvoke } from '../lib/runtime';
@@ -30,7 +32,7 @@ type Side = 'left' | 'right';
 type RecentChat = { id: string; title: string; customName?: boolean; projectPath?: string; projectName?: string };
 type SidebarSection = 'new-chat' | 'projects' | 'scheduled' | 'extensions';
 type ChatContextMenu = { chat: RecentChat; x: number; y: number };
-type RightPanelTab = 'files' | 'review' | 'browser' | 'terminals';
+type RightPanelTab = 'files' | 'browser' | 'terminals';
 type RightPanelInstance = { instanceId: string; tab: RightPanelTab; label: string; iconUrl?: string; terminalId?: string };
 type RightPanelContextMenu = { panel: RightPanelInstance; x: number; y: number };
 type ScheduledTask = { id: string; name: string; prompt: string; schedule: string; repeat: string; interval: string; every: string; time: string; status: 'active' | 'paused'; executionTarget: string; provider: string; model: string; apiKey: string; project: string; reasoning: string; notifications: string; lastRun?: string; nextRun?: string; timeZone?: string; weekday?: number; runs?: TaskRun[]; runAt?: string };
@@ -68,9 +70,12 @@ function ScheduledTimeSelect({ value, onChange }: { value: string; onChange: (va
   return <ScheduledSelect value={selected.label} options={scheduledTimeOptions.map((option) => option.label)} label="Hora" onChange={(label) => { const option = scheduledTimeOptions.find((item) => item.label === label); if (option) onChange(option.value); }} />;
 }
 
+function GithubMark({ size = 16 }: { size?: number }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.05c-3.34.73-4.04-1.42-4.04-1.42-.55-1.39-1.33-1.76-1.33-1.76-1.09-.75.08-.74.08-.74 1.2.08 1.83 1.23 1.83 1.23 1.07 1.83 2.8 1.3 3.49.99.11-.77.42-1.3.76-1.6-2.67-.3-5.47-1.34-5.47-5.95 0-1.31.47-2.38 1.23-3.22-.12-.3-.53-1.53.12-3.18 0 0 1-.32 3.3 1.23a11.47 11.47 0 0 1 6 0c2.29-1.55 3.29-1.23 3.29-1.23.66 1.65.25 2.88.13 3.18.77.84 1.23 1.91 1.23 3.22 0 4.62-2.8 5.64-5.48 5.94.43.37.81 1.1.81 2.22v3.29c0 .32.22.69.83.57A12 12 0 0 0 12 .5Z"/></svg>;
+}
+
 const rightPanelTabs: Array<{ id: RightPanelTab; label: string; icon: typeof FolderTree }> = [
   { id: 'files', label: 'Archivos', icon: FolderPen },
-  { id: 'review', label: 'Revisar', icon: GitCompare },
   { id: 'browser', label: 'Navegador', icon: AppWindowMac },
   { id: 'terminals', label: 'Terminales', icon: SquareTerminal },
 ];
@@ -127,7 +132,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
   const [activeRightPanelId, setActiveRightPanelId] = useState('');
   const [selectedRightFilePath, setSelectedRightFilePath] = useState('');
   const [filesTreeVisible, setFilesTreeVisible] = useState(false);
-  const [reviewChangesVisible, setReviewChangesVisible] = useState(false);
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
   const [rightMenuOpen, setRightMenuOpen] = useState(false);
   const rightMenuRef = useRef<HTMLDivElement | null>(null);
   const [rightContextMenu, setRightContextMenu] = useState<RightPanelContextMenu | null>(null);
@@ -773,16 +778,17 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
                 {rightPanelTabs.map(({ id, icon: Icon }) => { const selected = rightPanels.some((panel) => panel.tab === id); const canOpenMultiple = id === 'browser' || id === 'terminals'; const disabled = selected && !canOpenMultiple; return <button key={id} type="button" role="menuitemradio" aria-checked={selected} aria-disabled={disabled} disabled={disabled} onClick={() => openRightPanel(id)} className={`flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[12px] transition-colors focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${disabled ? 'cursor-not-allowed text-(--codeclub-text-muted) opacity-40' : selected ? 'bg-[#2B2B2B] text-(--codeclub-text-strong)' : 'text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)'}`}><Icon size={15} strokeWidth={1.8} aria-hidden="true" /><span className="min-w-0 truncate">{panelText[id]}</span></button>; })}
               </motion.div>}
             </AnimatePresence>
+            {rightPanels.find((panel) => panel.instanceId === activeRightPanelId)?.tab === 'files' && <button type="button" onClick={() => setReviewModalOpen(true)} className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-transparent transition-colors hover:bg-white/[0.08] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${reviewModalOpen ? 'text-(--codeclub-text-strong)' : 'text-(--codeclub-text-muted)'}`} aria-label={language === 'en' ? 'Open GitHub changes' : 'Abrir cambios de GitHub'} aria-pressed={reviewModalOpen} title={language === 'en' ? 'GitHub changes' : 'Cambios de GitHub'}><GithubMark size={16} /></button>}
             {rightPanels.find((panel) => panel.instanceId === activeRightPanelId)?.tab === 'files' && <button type="button" onClick={() => setFilesTreeVisible((visible) => !visible)} className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-transparent transition-colors hover:bg-white/[0.08] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${filesTreeVisible ? 'text-(--codeclub-text-strong)' : 'text-(--codeclub-text-muted)'}`} aria-label={filesTreeVisible ? panelText.toggleFileTreeHide : panelText.toggleFileTreeShow} aria-pressed={filesTreeVisible} title={filesTreeVisible ? panelText.toggleFileTreeHide : panelText.toggleFileTreeShow}><FolderOpen size={16} strokeWidth={1.8} aria-hidden="true" /></button>}
-            {rightPanels.find((panel) => panel.instanceId === activeRightPanelId)?.tab === 'review' && <button type="button" onClick={() => setReviewChangesVisible((visible) => !visible)} className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-transparent transition-colors hover:bg-white/[0.08] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${reviewChangesVisible ? 'text-(--codeclub-text-strong)' : 'text-(--codeclub-text-muted)'}`} aria-label={reviewChangesVisible ? 'Ocultar árbol de cambios' : 'Mostrar árbol de cambios'} aria-pressed={reviewChangesVisible} title={reviewChangesVisible ? 'Ocultar cambios' : 'Mostrar cambios'}><FolderOpen size={16} strokeWidth={1.8} aria-hidden="true" /></button>}
           </div>
           <div className="absolute inset-x-0 top-11 bottom-0 flex min-h-0 flex-col overflow-hidden">
-            {rightPanels.length === 0 ? <RightPanelEmptyState onSelect={openRightPanel} /> : rightPanels.map((panel) => <div key={panel.instanceId} className={`flex min-h-0 min-w-0 flex-1 flex-col ${activeRightPanelId === panel.instanceId ? 'flex' : 'hidden'}`}><RightSidebarContent panel={panel} projectName={activeProjectName} projectPath={activeProjectPath} selectedFilePath={selectedRightFilePath} filesTreeVisible={filesTreeVisible} onToggleFilesTree={() => setFilesTreeVisible((visible) => !visible)} reviewChangesVisible={reviewChangesVisible} visible={activeRightPanelId === panel.instanceId} /></div>)}
+            {rightPanels.length === 0 ? <RightPanelEmptyState onSelect={openRightPanel} /> : rightPanels.map((panel) => <div key={panel.instanceId} className={`flex min-h-0 min-w-0 flex-1 flex-col ${activeRightPanelId === panel.instanceId ? 'flex' : 'hidden'}`}><RightSidebarContent panel={panel} projectName={activeProjectName} projectPath={activeProjectPath} selectedFilePath={selectedRightFilePath} filesTreeVisible={filesTreeVisible} onToggleFilesTree={() => setFilesTreeVisible((visible) => !visible)} visible={activeRightPanelId === panel.instanceId} /></div>)}
           </div>
         </div>
       </motion.aside>
       </div>
     </div>
+    <ReviewPanel projectPath={activeProjectPath} visible={reviewModalOpen} onClose={() => setReviewModalOpen(false)} />
   </section>;
 }
 
@@ -985,15 +991,26 @@ function ScheduledTaskDetail({ task, error, pending, onBack, onSave, onRun, onDe
   </main>;
 }
 
-type ReviewFile = { path: string; status: string; additions: number; deletions: number };
+type ReviewFile = { path: string; status: string; additions: number; deletions: number; untracked?: boolean };
 
-function ReviewPanel({ projectPath, visible }: { projectPath?: string; visible: boolean }) {
+function ReviewPanel({ projectPath, visible, onClose }: { projectPath?: string; visible: boolean; onClose: () => void }) {
   const language = useAppLanguage();
+  const { palette } = useOrbPalette();
   const text = rightSidebarTranslations[language];
   const [files, setFiles] = useState<ReviewFile[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [branch, setBranch] = useState(language === 'en' ? 'No branch' : 'Sin rama');
+  const [changeScope, setChangeScope] = useState<'unstaged' | 'uncommitted' | 'staged' | 'branch'>('unstaged');
+  const [scopeMenuOpen, setScopeMenuOpen] = useState(false);
+  const [compareBranch, setCompareBranch] = useState('');
+  const [branches, setBranches] = useState<string[]>([]);
+  const [branchMenuOpen, setBranchMenuOpen] = useState(false);
+  const [branchQuery, setBranchQuery] = useState('');
+  const scopeMenuRef = useRef<HTMLDivElement | null>(null);
+  const branchMenuRef = useRef<HTMLDivElement | null>(null);
   const [loading, setLoading] = useState(false);
+  const [diffLoading, setDiffLoading] = useState(false);
+  const [diffContent, setDiffContent] = useState('');
   const [error, setError] = useState('');
 
   const loadReview = async () => {
@@ -1001,10 +1018,19 @@ function ReviewPanel({ projectPath, visible }: { projectPath?: string; visible: 
     setLoading(true);
     setError('');
     try {
-      const [statusResult, diffResult, branchResult] = await Promise.all([
+      const diffArgs = changeScope === 'branch'
+        ? ['diff', compareBranch || 'HEAD', '--numstat', '--']
+        : changeScope === 'staged'
+          ? ['diff', '--cached', '--numstat', '--']
+          : changeScope === 'unstaged'
+            ? ['diff', '--numstat', '--']
+            : ['diff', 'HEAD', '--numstat', '--'];
+      const [statusResult, diffResult, branchResult, branchesResult, upstreamResult] = await Promise.all([
         nativeInvoke<{ stdout?: string; stderr?: string; code?: number }>('codeclub_run_command', { projectPath, request: { command: 'git', args: ['status', '--short', '--untracked-files=all'] } }),
-        nativeInvoke<{ stdout?: string; stderr?: string; code?: number }>('codeclub_run_command', { projectPath, request: { command: 'git', args: ['diff', 'HEAD', '--numstat', '--'] } }),
+        nativeInvoke<{ stdout?: string; stderr?: string; code?: number }>('codeclub_run_command', { projectPath, request: { command: 'git', args: diffArgs } }),
         nativeInvoke<{ stdout?: string; stderr?: string; code?: number }>('codeclub_run_command', { projectPath, request: { command: 'git', args: ['branch', '--show-current'] } }),
+        nativeInvoke<{ stdout?: string; stderr?: string; code?: number }>('codeclub_run_command', { projectPath, request: { command: 'git', args: ['branch', '--all', '--no-color', '--format=%(refname:short)'] } }),
+        nativeInvoke<{ stdout?: string; stderr?: string; code?: number }>('codeclub_run_command', { projectPath, request: { command: 'git', args: ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'] } }),
       ]);
       if (statusResult.code && statusResult.code !== 0) throw new Error(language === 'en' ? 'This folder is not a Git repository yet.' : 'Esta carpeta todavía no tiene un repositorio Git.');
       const statusLines = String(statusResult.stdout || '').split(/\r?\n/).filter(Boolean);
@@ -1015,24 +1041,36 @@ function ReviewPanel({ projectPath, visible }: { projectPath?: string; visible: 
         if (!path) return;
         diffByPath.set(path, { additions: added === '-' ? 0 : Number(added) || 0, deletions: removed === '-' ? 0 : Number(removed) || 0 });
       });
-      const nextFiles = statusLines.map((line) => {
+      const visibleStatusLines = statusLines.filter((line) => changeScope === 'staged'
+        ? line.slice(0, 2) !== '??' && line[0] !== ' '
+        : changeScope === 'unstaged'
+          ? line.slice(0, 2) === '??' || line[1] !== ' '
+          : true);
+      const nextFiles = visibleStatusLines.map((line) => {
         const code = line.slice(0, 2);
         const path = line.slice(3).trim();
         const delta = diffByPath.get(path) || { additions: 0, deletions: 0 };
-        return { path, status: code === '??' ? 'A' : code.trim() || 'M', ...delta };
+        return { path, status: code === '??' ? 'A' : code.trim() || 'M', untracked: code === '??', ...delta };
       });
-      diffByPath.forEach((delta, path) => { if (!nextFiles.some((file) => file.path === path)) nextFiles.push({ path, status: 'M', ...delta }); });
+      diffByPath.forEach((delta, path) => { if (!nextFiles.some((file) => file.path === path)) nextFiles.push({ path, status: 'M', untracked: false, ...delta }); });
       setFiles(nextFiles);
-      setBranch(String(branchResult.stdout || '').trim() || (language === 'en' ? 'No branch' : 'Sin rama'));
+      setSelectedFile((current) => current && nextFiles.some((file) => file.path === current) ? current : nextFiles[0]?.path || null);
+      const currentBranch = String(branchResult.stdout || '').trim() || (language === 'en' ? 'No branch' : 'Sin rama');
+      const availableBranches = [...new Set(String(branchesResult.stdout || '').split(/\r?\n/).map((item) => item.trim()).filter(Boolean))];
+      const upstream = String(upstreamResult.stdout || '').trim();
+      setBranch(currentBranch);
+      setBranches(availableBranches);
+      if (!compareBranch && upstream && availableBranches.includes(upstream)) setCompareBranch(upstream);
     } catch (caught) {
       setFiles([]);
+      setSelectedFile(null);
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { void loadReview(); }, [projectPath]);
+  useEffect(() => { void loadReview(); }, [projectPath, compareBranch, changeScope]);
   useEffect(() => {
     const refresh = (event: Event) => {
       const detail = (event as CustomEvent<{ projectPath?: string }>).detail;
@@ -1040,20 +1078,80 @@ function ReviewPanel({ projectPath, visible }: { projectPath?: string; visible: 
     };
     window.addEventListener('codeclub:workspace-changed', refresh);
     return () => window.removeEventListener('codeclub:workspace-changed', refresh);
-  }, [projectPath]);
-
-  if (!projectPath) return <div className="flex h-full flex-col items-center justify-center px-5 text-center"><div><GitCompare size={28} strokeWidth={1.3} className="mx-auto text-(--codeclub-text-muted)" aria-hidden="true" /><p className="mt-3 mb-0 text-[12px] text-(--codeclub-text-strong)">{language === 'en' ? 'No active project' : 'Sin proyecto activo'}</p><p className="mt-1 mb-0 text-[11px] leading-5 text-(--codeclub-text-muted)">{language === 'en' ? 'Link a folder to review its changes.' : 'Vinculá una carpeta para revisar sus cambios.'}</p></div></div>;
+  }, [projectPath, compareBranch, changeScope]);
+  useEffect(() => {
+    if (!visible) return undefined;
+    const closeWithEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', closeWithEscape);
+    return () => window.removeEventListener('keydown', closeWithEscape);
+  }, [visible, onClose]);
+  useEffect(() => {
+    if (!scopeMenuOpen && !branchMenuOpen) return undefined;
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!scopeMenuRef.current?.contains(target)) setScopeMenuOpen(false);
+      if (!branchMenuRef.current?.contains(target)) setBranchMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    return () => document.removeEventListener('pointerdown', closeOnOutsideClick);
+  }, [scopeMenuOpen, branchMenuOpen]);
+  useEffect(() => {
+    const selected = files.find((file) => file.path === selectedFile);
+    if (!projectPath || !selected) { setDiffContent(''); return undefined; }
+    let cancelled = false;
+    setDiffLoading(true);
+    setDiffContent('');
+    const args = selected.untracked
+      ? ['diff', '--no-index', '--no-ext-diff', '--unified=3', '--', '/dev/null', selected.path]
+      : changeScope === 'branch'
+        ? ['diff', compareBranch || 'HEAD', '--no-ext-diff', '--unified=3', '--', selected.path]
+        : changeScope === 'staged'
+          ? ['diff', '--cached', '--no-ext-diff', '--unified=3', '--', selected.path]
+          : changeScope === 'unstaged'
+            ? ['diff', '--no-ext-diff', '--unified=3', '--', selected.path]
+            : ['diff', 'HEAD', '--no-ext-diff', '--unified=3', '--', selected.path];
+    void nativeInvoke<{ stdout?: string; stderr?: string; code?: number }>('codeclub_run_command', { projectPath, request: { command: 'git', args } }).then((result) => {
+      if (cancelled) return;
+      if (result.code && result.code !== 1) throw new Error(result.stderr || (language === 'en' ? 'Could not load this diff.' : 'No se pudo cargar este diff.'));
+      setDiffContent(String(result.stdout || ''));
+    }).catch((caught) => {
+      if (!cancelled) setDiffContent(String(caught instanceof Error ? caught.message : caught));
+    }).finally(() => { if (!cancelled) setDiffLoading(false); });
+    return () => { cancelled = true; };
+  }, [projectPath, selectedFile, files, compareBranch, changeScope]);
 
   const additions = files.reduce((total, file) => total + file.additions, 0);
   const deletions = files.reduce((total, file) => total + file.deletions, 0);
   const selected = files.find((file) => file.path === selectedFile);
-  return <section className="flex h-full min-h-0" aria-label={text.changes}>
-    <main className="flex min-w-0 flex-1 flex-col px-3 py-3">
-      {selected ? <div className="pt-2"><div className="flex items-center gap-2 text-[12px] text-(--codeclub-text-strong)"><GitCompare size={15} aria-hidden="true" /><span className="truncate">{selected.path}</span></div><p className="mt-3 mb-0 text-[11px] text-(--codeclub-text-muted)">{language === 'en' ? 'This file has' : 'Este archivo tiene'} <span className="text-[#8BC7FF]">+{selected.additions}</span> {language === 'en' ? 'added lines and' : 'líneas agregadas y'} <span className="text-(--codeclub-text-strong)">-{selected.deletions}</span> {language === 'en' ? 'removed.' : 'eliminadas.'}</p></div> : <div className="flex flex-1 flex-col items-center justify-center text-center"><GitCompare size={28} strokeWidth={1.3} className="text-(--codeclub-text-muted)" aria-hidden="true" /><p className="mt-3 mb-0 text-[12px] text-(--codeclub-text-strong)">{language === 'en' ? 'Workspace review' : 'Revisión del workspace'}</p><p className="mt-1 mb-0 max-w-[220px] text-[11px] leading-5 text-(--codeclub-text-muted)">{language === 'en' ? 'Open a folder to view and select all changes.' : 'Abrí la carpeta para ver y seleccionar todos los cambios.'}</p></div>}
-    </main>
-    <AnimatePresence initial={false}>{visible && <motion.aside initial={{ width: 0, opacity: 0 }} animate={{ width: 230, opacity: 1 }} exit={{ width: 0, opacity: 0 }} transition={{ type: 'spring', stiffness: 420, damping: 34 }} className="flex w-[230px] shrink-0 flex-col overflow-hidden border-l border-(--codeclub-border-soft) px-2.5 py-3" aria-label={text.changes}><div className="flex items-center gap-1.5 px-1 pb-2 text-[11px] text-(--codeclub-text-muted)"><GitBranch size={12} aria-hidden="true" /><span className="min-w-0 truncate">{branch}</span><span className={`ml-auto shrink-0 ${additions === 0 && deletions === 0 ? 'text-(--codeclub-text-muted)' : ''}`}><span className={additions > 0 ? 'text-[#4ade80]' : ''}>+{additions}</span> <span className={deletions > 0 ? 'text-[#f87171]' : ''}>-{deletions}</span></span></div><div className="min-h-0 flex-1 overflow-y-auto border-t border-(--codeclub-border-soft) pt-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{loading && <p className="m-0 px-1 py-3 text-[11px] text-(--codeclub-text-muted)">{text.reviewing}</p>}{!loading && error && <div className="flex items-start gap-2 px-1 py-3 text-[11px] text-(--codeclub-text-muted)"><FileWarning size={14} className="mt-0.5 shrink-0 text-[#8BC7FF]" aria-hidden="true" /><span>{error}</span></div>}{!loading && !error && files.length === 0 && <p className="m-0 px-1 py-3 text-[11px] text-(--codeclub-text-muted)">{text.noPendingChanges}</p>}{!loading && !error && files.map((file) => <button key={`${file.status}-${file.path}`} type="button" onClick={() => setSelectedFile(file.path)} className={`flex w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-2 text-left text-[11px] transition-colors hover:bg-(--codeclub-hover) ${selectedFile === file.path ? 'bg-(--codeclub-acrylic-active)' : ''}`}><span className={`grid h-5 w-5 shrink-0 place-items-center rounded-md text-[10px] font-semibold ${file.status === 'A' ? 'bg-[#8BC7FF]/10 text-[#8BC7FF]' : file.status === 'D' ? 'bg-white/[0.08] text-[#bdbdbd]' : 'bg-[#2B2B2B] text-(--codeclub-text-strong)'}`} aria-label={file.status === 'A' ? text.added : file.status === 'D' ? text.deleted : text.modified}>{file.status}</span><span className="min-w-0 flex-1 truncate text-(--codeclub-text)">{file.path}</span><span className="shrink-0 tabular-nums text-[10px] text-(--codeclub-text-muted)"><span className="text-[#8BC7FF]">+{file.additions}</span> <span>-{file.deletions}</span></span></button>)}</div></motion.aside>}</AnimatePresence>
-    {!visible && <div className="flex w-full items-start justify-center pt-10 text-center"><p className="m-0 max-w-[220px] text-[11px] leading-5 text-(--codeclub-text-muted)">{language === 'en' ? 'Open the folder from the top bar to view changes.' : 'Abrí la carpeta de la topbar para ver los cambios.'}</p></div>}
-  </section>;
+  const scopeLabels = language === 'en'
+    ? { unstaged: 'Unstaged', uncommitted: 'Uncommitted', staged: 'Staged', branch: 'Branch' }
+    : { unstaged: 'Sin preparar', uncommitted: 'Sin confirmar', staged: 'Preparados', branch: 'Rama' };
+  const filteredBranches = branches.filter((item) => item.toLowerCase().includes(branchQuery.trim().toLowerCase()));
+  const diffRows = diffContent.split(/\r?\n/);
+  const modal = visible && typeof document !== 'undefined' ? createPortal(<div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-black/65 p-4 backdrop-blur-[3px]" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section role="dialog" aria-modal="true" aria-label={language === 'en' ? 'Review changes' : 'Revisar cambios'} className="flex h-[min(720px,85vh)] w-[min(900px,92vw)] flex-col overflow-hidden border border-[#252525] bg-[#111111] shadow-2xl shadow-black/60" style={{ borderRadius: 0, '--codeclub-accent': palette.accent, '--codeclub-accent-bright': palette.bright } as React.CSSProperties}>
+    <header className="relative z-20 flex h-12 shrink-0 items-center gap-3 border-b border-[#252525] px-4">
+      <GithubMark size={18}/>
+      <h2 className="m-0 shrink-0 text-[13px] font-medium text-(--codeclub-text-strong)">{language === 'en' ? 'Review changes' : 'Revisar cambios'}</h2>
+      <div ref={scopeMenuRef} className="relative">
+        <button type="button" onClick={() => { setBranchMenuOpen(false); setScopeMenuOpen((open) => !open); }} className="flex h-7 items-center gap-1.5 rounded-full bg-[#252525] px-2.5 text-[11px] text-(--codeclub-text-strong) hover:bg-[#303030]" aria-haspopup="menu" aria-expanded={scopeMenuOpen} aria-label={language === 'en' ? 'Select change group' : 'Seleccionar grupo de cambios'}>{scopeLabels[changeScope]}<ChevronDown size={12} aria-hidden="true"/></button>
+        {scopeMenuOpen && <div className="absolute left-0 top-[calc(100%+6px)] z-50 w-40 rounded-xl border border-white/[0.08] bg-[#292929] p-1 shadow-2xl" role="menu" aria-label={language === 'en' ? 'Change groups' : 'Grupos de cambios'}>{(['uncommitted', 'unstaged', 'staged', 'branch'] as const).map((scope) => <button key={scope} type="button" role="menuitemradio" aria-checked={changeScope === scope} onClick={() => { setChangeScope(scope); setScopeMenuOpen(false); }} className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-[11px] ${changeScope === scope ? 'bg-white/[0.08] text-(--codeclub-text-strong)' : 'text-(--codeclub-text) hover:bg-white/[0.06]'}`}>{scopeLabels[scope]}{changeScope === scope && <Check size={13} aria-hidden="true"/>}</button>)}</div>}
+      </div>
+      <div ref={branchMenuRef} className="relative min-w-0">
+        <button type="button" onClick={() => { setScopeMenuOpen(false); setBranchQuery(''); setBranchMenuOpen((open) => !open); }} className="flex h-7 max-w-[min(36vw,300px)] items-center gap-2 rounded-full bg-[#252525] px-2.5 text-[11px] text-(--codeclub-text-strong) hover:bg-[#303030]" aria-haspopup="listbox" aria-expanded={branchMenuOpen} aria-label={language === 'en' ? 'Select comparison branch' : 'Seleccionar rama de comparación'} title={`${branch} → ${compareBranch || (language === 'en' ? 'Select branch' : 'Elegir rama')}`}><span className="max-w-[88px] truncate">{branch}</span><span className="text-(--codeclub-text-muted)" aria-hidden="true">→</span><span className="max-w-[110px] truncate">{compareBranch || (language === 'en' ? 'Select branch' : 'Elegir rama')}</span><ChevronDown size={12} className="shrink-0" aria-hidden="true"/></button>
+        {branchMenuOpen && <div className="absolute left-0 top-[calc(100%+6px)] z-50 w-[min(280px,calc(100vw-48px))] rounded-xl border border-white/[0.08] bg-[#292929] p-1 shadow-2xl">
+          <label className="flex h-8 items-center gap-2 border-b border-white/[0.08] px-2 text-(--codeclub-text-muted)"><Search size={13} aria-hidden="true"/><input autoFocus value={branchQuery} onChange={(event) => setBranchQuery(event.target.value)} placeholder={language === 'en' ? 'Search branches' : 'Buscar ramas'} className="min-w-0 flex-1 bg-transparent text-[11px] text-(--codeclub-text-strong) outline-none placeholder:text-(--codeclub-text-muted)" aria-label={language === 'en' ? 'Search branches' : 'Buscar ramas'}/></label>
+          <div className="project-files-modal-scroll max-h-52 overflow-y-auto py-1" role="listbox" aria-label={language === 'en' ? 'Branches' : 'Ramas'}>{filteredBranches.map((item) => <button key={item} type="button" role="option" aria-selected={compareBranch === item} onClick={() => { setCompareBranch(item); setBranchMenuOpen(false); setBranchQuery(''); }} className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] text-(--codeclub-text) hover:bg-white/[0.07]"><span className="truncate">{item}</span>{compareBranch === item && <Check size={13} className="shrink-0" aria-hidden="true"/>}</button>)}{filteredBranches.length === 0 && <p className="m-0 px-2 py-2 text-[10px] text-(--codeclub-text-muted)">{language === 'en' ? 'No branches found' : 'No se encontraron ramas'}</p>}</div>
+        </div>}
+      </div>
+      <div className="ml-auto flex shrink-0 items-center gap-3 text-[11px] tabular-nums"><span className="text-(--codeclub-text-muted)">{files.length} {language === 'en' ? 'files' : 'archivos'}</span><span className="text-[#4ade80]">+{additions}</span><span className="text-[#f87171]">−{deletions}</span><button type="button" onClick={() => void loadReview()} className="grid h-7 w-7 place-items-center text-(--codeclub-text-muted) hover:text-(--codeclub-text-strong)" aria-label={language === 'en' ? 'Refresh changes' : 'Actualizar cambios'} title={language === 'en' ? 'Refresh changes' : 'Actualizar cambios'}><RotateCw size={14} aria-hidden="true"/></button><button type="button" onClick={onClose} className="grid h-7 w-7 place-items-center text-(--codeclub-text-muted) hover:text-(--codeclub-text-strong)" aria-label={language === 'en' ? 'Close' : 'Cerrar'} title={language === 'en' ? 'Close' : 'Cerrar'}><X size={16} aria-hidden="true"/></button></div>
+    </header>
+    {!projectPath ? <div className="grid min-h-0 flex-1 place-items-center px-6 text-center text-[12px] text-(--codeclub-text-muted)">{text.selectProjectReview}</div> : <div className="flex min-h-0 flex-1">
+      <aside className="flex w-[min(340px,36%)] shrink-0 flex-col border-r border-[#252525]" aria-label={language === 'en' ? 'Changed files' : 'Archivos modificados'}><div className="project-files-modal-scroll min-h-0 flex-1 overflow-auto p-1.5">{loading && <p className="m-0 px-2 py-3 text-[11px] text-(--codeclub-text-muted)">{text.reviewing}</p>}{!loading && error && <div className="flex items-start gap-2 px-2 py-3 text-[11px] text-(--codeclub-text-muted)"><FileWarning size={14} className="mt-0.5 shrink-0 text-(--codeclub-accent-bright)" aria-hidden="true"/><span>{error}</span></div>}{!loading && !error && files.length === 0 && <p className="m-0 px-2 py-3 text-[11px] text-(--codeclub-text-muted)">{text.noPendingChanges}</p>}{!loading && !error && files.map((file) => <button key={`${file.status}-${file.path}`} type="button" onClick={() => setSelectedFile(file.path)} className={`flex w-full min-w-0 items-center gap-2 px-2 py-2 text-left text-[11px] transition-colors hover:bg-[#1c1c1c] ${selectedFile === file.path ? 'bg-[#1c1c1c]' : ''}`}><span className={`grid h-5 w-5 shrink-0 place-items-center text-[10px] font-semibold ${file.status === 'A' ? 'text-[#8BC7FF]' : file.status === 'D' ? 'text-[#999999]' : 'text-(--codeclub-text-strong)'}`} aria-label={file.status === 'A' ? text.added : file.status === 'D' ? text.deleted : text.modified}>{file.status}</span><span className="min-w-0 flex-1 truncate text-(--codeclub-text)">{file.path}</span>{(file.additions || file.deletions) > 0 && <span className="shrink-0 tabular-nums text-[10px]"><span className="text-[#4ade80]">+{file.additions}</span> <span className="text-[#f87171]">−{file.deletions}</span></span>}</button>)}</div></aside>
+      <main className="flex min-w-0 flex-1 flex-col"><div className="flex h-9 shrink-0 items-center gap-3 border-b border-[#252525] px-4 text-[11px]">{selected ? <><span className="min-w-0 flex-1 truncate text-(--codeclub-text-strong)">{selected.path}</span>{(selected.additions || selected.deletions) > 0 && <span className="shrink-0 tabular-nums"><span className="text-[#4ade80]">+{selected.additions}</span> <span className="text-[#f87171]">−{selected.deletions}</span></span>}</> : <span className="text-(--codeclub-text-muted)">{language === 'en' ? 'Select a changed file' : 'Seleccioná un archivo modificado'}</span>}</div><div className="project-files-modal-scroll min-h-0 flex-1 overflow-auto font-mono text-[12px] leading-[21px]">{!selected ? <div className="grid h-full place-items-center text-[11px] text-(--codeclub-text-muted)">{loading ? text.reviewing : text.noPendingChanges}</div> : diffLoading ? <div className="p-4 text-[11px] text-(--codeclub-text-muted)">{text.reviewing}</div> : diffContent ? <div className="min-w-max py-2">{diffRows.map((line, index) => { const added = line.startsWith('+') && !line.startsWith('+++'); const removed = line.startsWith('-') && !line.startsWith('---'); const hunk = line.startsWith('@@'); const header = line.startsWith('diff --git') || line.startsWith('index ') || line.startsWith('--- ') || line.startsWith('+++ '); return <div key={`${index}-${line}`} className={`flex min-h-[21px] px-4 ${added ? 'bg-[#12301f] text-[#a4e4b5]' : removed ? 'bg-[#351b1b] text-[#f2aaaa]' : hunk ? 'bg-[#17232e] text-[#9bc7ec]' : header ? 'text-[#858585]' : 'text-[#c6c6c6]'}`}><span className="sticky left-0 w-12 shrink-0 select-none bg-[#111111] pr-3 text-right text-[#555555]">{index + 1}</span><span className="whitespace-pre">{line || ' '}</span></div>; })}</div> : <div className="grid h-full place-items-center px-6 text-center text-[11px] text-(--codeclub-text-muted)">{text.noDiff}</div>}</div></main>
+    </div>}
+    </section></div>, document.body) : null;
+  if (!visible) return null;
+  return modal;
 }
 
 const DEFAULT_BROWSER_URL = 'https://www.google.com/';
@@ -1645,19 +1743,18 @@ function RightPanelEmptyState({ onSelect }: { onSelect: (tab: RightPanelTab) => 
   </section>;
 }
 
-function RightSidebarContent({ panel, projectName, projectPath, selectedFilePath, filesTreeVisible, onToggleFilesTree, reviewChangesVisible, visible }: { panel: RightPanelInstance; projectName: string; projectPath?: string; selectedFilePath?: string; filesTreeVisible: boolean; onToggleFilesTree: () => void; reviewChangesVisible: boolean; visible: boolean }) {
+function RightSidebarContent({ panel, projectName, projectPath, selectedFilePath, filesTreeVisible, onToggleFilesTree, visible }: { panel: RightPanelInstance; projectName: string; projectPath?: string; selectedFilePath?: string; filesTreeVisible: boolean; onToggleFilesTree: () => void; visible: boolean }) {
   const { tab } = panel;
   const language = useAppLanguage();
   const text = rightSidebarTranslations[language];
   const current = rightPanelTabs.find((item) => item.id === tab) ?? rightPanelTabs[0];
   const Icon = current.icon;
   const descriptions: Record<RightPanelTab, string> = language === 'en' ? {
-    files: 'Explore files from the active project.', review: 'Review workspace changes and activity.', browser: 'Open and control pages inside Electron.', terminals: 'Manage persistent session terminals.',
+    files: 'Explore files from the active project.', browser: 'Open and control pages inside Electron.', terminals: 'Manage persistent session terminals.',
   } : {
-    files: 'Explorá los archivos del proyecto activo.', review: 'Revisá cambios y actividad del workspace.', browser: 'Abrí y controlá páginas dentro de Electron.', terminals: 'Gestioná terminales persistentes de la sesión.',
+    files: 'Explorá los archivos del proyecto activo.', browser: 'Abrí y controlá páginas dentro de Electron.', terminals: 'Gestioná terminales persistentes de la sesión.',
   };
   if (tab === 'files') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={text.files} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="h-full min-h-0 flex-1 overflow-hidden bg-(--paper) text-(--ink)">{projectPath ? <ProjectPanelView projectPath={projectPath} selectedPath={selectedFilePath} showFileTree={filesTreeVisible} onToggleFileTree={onToggleFilesTree} /> : <div className="flex h-full flex-col items-center justify-center px-5 text-center"><div><FolderPen size={28} strokeWidth={1.3} className="mx-auto text-(--codeclub-text-muted)" aria-hidden="true" /><p className="mt-3 mb-0 text-[12px] text-(--codeclub-text-strong)">{language === 'en' ? 'No active project' : 'Sin proyecto activo'}</p><p className="mt-1 mb-0 text-[11px] leading-5 text-(--codeclub-text-muted)">{language === 'en' ? 'Link a folder to explore its files.' : 'Vinculá una carpeta para explorar sus archivos.'}</p></div></div>}</motion.section>;
-  if (tab === 'review') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-hidden bg-(--paper) text-(--ink)"><ReviewPanel projectPath={projectPath} visible={reviewChangesVisible} /></motion.section>;
   if (tab === 'browser') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="h-full min-h-0 flex-1 overflow-hidden bg-(--paper) text-(--ink)"><BrowserPanel /></motion.section>;
   if (tab === 'terminals') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-hidden bg-(--paper) text-(--ink)"><TerminalPanel projectPath={projectPath} terminalId={panel.terminalId} visible={visible} /></motion.section>;
   return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-auto bg-(--paper) px-3 py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
