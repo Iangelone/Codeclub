@@ -6,6 +6,10 @@ The visual terminal uses @xterm/xterm. Electron creates a real PTY with node-pty
     xterm -> onData -> IPC -> node-pty
     node-pty -> output -> IPC -> xterm
 
+Electron emits `codeclub:terminal-output` with `{ id }` after buffering PTY output. The preload exposes `onTerminalOutput`; TerminalPanel subscribes and requests an incremental snapshot immediately instead of polling every 120 ms. Concurrent notifications coalesce into a follow-up snapshot. Hidden panels catch up when shown, and the session effect removes its IPC listener on cleanup. Snapshots and offsets remain available to agent tools.
+
+Terminal tabs start as `PowerShell` and use the latest submitted command echoed after a standard PowerShell prompt. TerminalPanel emits `codeclub:terminal-tab-meta` with `{ instanceId, title }` after xterm parses output, joining wrapped lines and limiting the title to 120 characters. WorkspaceLayout updates only the matching tab and removes its listener in the same effect. Unsubmitted input does not change the title or trigger React updates per keystroke. The tab truncates visually and exposes the full label in its tooltip.
+
 It includes PowerShell in the project directory, keyboard input, history, arrows and Ctrl+C, ANSI output, scrolling, visual fitting with @xterm/addon-fit, and cleanup when a tab closes.
 
 ## Browser

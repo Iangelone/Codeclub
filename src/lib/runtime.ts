@@ -14,6 +14,8 @@ export const safeListen = async <T>(event: string, handler: (event: T) => void) 
 };
 
 const desktop = () => (typeof window !== 'undefined' ? (window as any).codeclub : undefined);
+export const onTerminalOutput = (handler: (payload: { id: string }) => void): (() => void) =>
+  desktop()?.onTerminalOutput?.(handler) ?? (() => undefined);
 export const appConfigDir = async () => desktop()?.appConfigDir?.() ?? '';
 export const appCacheDir = async () => desktop()?.appCacheDir?.() ?? '';
 export const joinPath = async (...parts: string[]) => desktop()?.joinPath ? desktop().joinPath(...parts) : parts.join('/');

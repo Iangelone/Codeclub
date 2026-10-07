@@ -2,6 +2,11 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('codeclub', {
   invoke: (command, args) => ipcRenderer.invoke('native:invoke', { command, args }),
+  onTerminalOutput: (handler) => {
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on('codeclub:terminal-output', listener);
+    return () => ipcRenderer.removeListener('codeclub:terminal-output', listener);
+  },
   listProjects: () => ipcRenderer.invoke('projects:list'),
   selectProjectFolder: () => ipcRenderer.invoke('projects:select-folder'),
   selectFiles: () => ipcRenderer.invoke('files:select'),

@@ -556,6 +556,9 @@ async function createNativeTerminal(request: any) {
       session.buffer = session.buffer.slice(removed);
       session.bufferOffset += removed;
     }
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+      mainWindow.webContents.send('codeclub:terminal-output', { id });
+    }
   };
   child.onData(append);
   child.onExit(() => { session.info.status = 'exited'; });
