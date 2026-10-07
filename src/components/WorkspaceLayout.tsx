@@ -2,7 +2,7 @@
 
 import { createElement, memo, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, Bolt, Check, ChevronDown, Circle, CircleCheck, CirclePlus, Clock, CopyX, EllipsisVertical, ExternalLink, FileWarning, FolderOpen, FolderPen, FolderTree, Grid2X2, Heart, Home, Hourglass, Info, MessageSquare, MoreHorizontal, MousePointerClick, PanelLeft, Pause, Pencil, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
+import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, Check, ChevronDown, Circle, CircleCheck, CirclePlus, Clock, CopyX, EllipsisVertical, ExternalLink, FileWarning, FolderOpen, FolderPen, FolderTree, Grid2X2, Heart, Home, Hourglass, Info, MessageSquare, MoreHorizontal, MousePointerClick, PanelLeft, Pause, Pencil, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { GlobeCheck } from 'lucide-react';
 import { Terminal as XtermTerminal } from '@xterm/xterm';
@@ -783,7 +783,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
             <SidebarItem active={activeSection === 'new-chat' && !activeChatId} icon={<CirclePlus />} label={sidebarText.newChat} onClick={() => selectSidebarSection('new-chat')} />
             <SidebarItem active={activeSection === 'scheduled'} icon={<Clock />} label={sidebarText.tasks} onClick={() => selectSidebarSection('scheduled')} />
             <SidebarItem active={activeSection === 'extensions'} icon={<Grid2X2 />} label={sidebarText.extensions} onClick={() => selectSidebarSection('extensions')} />
-            <SidebarItem active={activeSection === 'projects'} icon={<Bolt />} label={sidebarText.devices} disabled onClick={() => selectSidebarSection('projects')} />
+            <SidebarItem active={activeSection === 'projects'} icon={<MoreHorizontal />} label={sidebarText.devices} disabled onClick={() => selectSidebarSection('projects')} />
           </nav>
           <div className="mt-5 min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {recentChats.length > 0 && <div className="pb-3"><p className="px-1.5 text-[13px] font-semibold text-(--codeclub-text-muted)">{sidebarText.recent}</p><div className="mt-2 space-y-1">{recentChats.slice().reverse().map((chat) => <button key={chat.id} type="button" onContextMenu={(event) => { event.preventDefault(); setChatContextMenu({ chat, x: event.clientX, y: event.clientY }); }} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: { chatId: chat.id, name: chat.title, customName: chat.customName, projectId: activeProjectId, projectPath: chat.projectPath ?? activeProjectPath, projectName: chat.projectName ?? activeProjectName } }))} className={`flex w-full min-w-0 items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] text-(--codeclub-text-strong) ${activeChatId === chat.id ? 'bg-(--codeclub-acrylic-active)' : 'bg-transparent hover:bg-(--codeclub-hover)'}`}><span className="min-w-0 flex-1 truncate">{chat.title}</span><ChatSessionStatus session={sessions.find(session=>!session.external && sameSession({chatId:chat.id,projectPath:chat.projectPath ?? activeProjectPath ?? ''},session))} language={language} /></button>)}</div></div>}
