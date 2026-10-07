@@ -3,7 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useChatHistory } from './use-chat-history';
 import { buildChatContext } from '../lib/chat-context';
 import { sameSession, useSharedSessions, type SharedSession } from '../lib/shared-sessions';
-import { ArrowUp, Box, Braces, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Languages, LayoutTemplate, MessageSquare, Minimize2, Monitor, MoreHorizontal, Paperclip, Play, Presentation, Radar, RotateCcw, Search, ScrollText, Square, Table2, Terminal, Folder, WandSparkles, X } from 'lucide-react';
+import { ArrowUp, Box, Braces, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Languages, LayoutTemplate, MessageSquare, Minimize2, Monitor, MoreHorizontal, Paperclip, Pencil, Play, Presentation, Radar, RotateCcw, Search, ScrollText, Square, Table2, Terminal, Folder, WandSparkles, X } from 'lucide-react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -2804,6 +2804,17 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     } finally { setAttachmentProgress(''); }
   };
 
+  // Emitter: ProjectPanelView file tree (`codeclub:file-reference`, { path }). Consumer: composer attachments below; listener is removed with this effect.
+  useEffect(() => {
+    const handleFileReference = (event: Event) => {
+      const path = (event as CustomEvent<{ path?: string }>).detail?.path;
+      if (!path) return;
+      void addAttachmentPaths([path]).then(() => requestAnimationFrame(() => chatInputRef.current?.focus()));
+    };
+    window.addEventListener('codeclub:file-reference', handleFileReference);
+    return () => window.removeEventListener('codeclub:file-reference', handleFileReference);
+  }, [language]);
+
   const handleAttachFiles = async () => {
     try {
       const desktopPicker = (window as any).codeclub?.selectFiles;
@@ -3272,7 +3283,7 @@ type FileTreeNode = { name: string; path: string; kind: 'directory' | 'file'; ch
 
 const materialIconManifest = generateManifest({});
 
-function MaterialFileIcon({ name, kind }: { name: string; kind: FileTreeNode['kind'] }) {
+function MaterialFileIcon({ name, kind, size = 17 }: { name: string; kind: FileTreeNode['kind']; size?: number }) {
   const [failedSource, setFailedSource] = useState<string | null>(null);
   const associations = kind === 'directory' ? materialIconManifest.folderNames : materialIconManifest.fileNames;
   const extension = name.includes('.') ? name.split('.').pop()?.toLowerCase() : undefined;
@@ -3281,9 +3292,9 @@ function MaterialFileIcon({ name, kind }: { name: string; kind: FileTreeNode['ki
   const iconFile = iconPath?.split('/').pop();
   // Relative to the exported app document, also when Electron uses file://.
   const source = iconFile ? `./material-icons/${iconFile}` : null;
-  if (kind === 'file' && (extension === 'json' || extension === 'jsonl')) return <Braces size={15} strokeWidth={1.5} className="shrink-0 text-[#f9a825]" />;
-  if (!source || failedSource === source) return kind === 'directory' ? <Folder size={17} aria-hidden="true" className="shrink-0 text-[#a89b72]" /> : <FileCode2 size={17} aria-hidden="true" className="shrink-0 text-[#777777]" />;
-  return <img src={source} alt="" aria-hidden="true" onError={() => setFailedSource(source)} className="h-[17px] w-[17px] shrink-0" />;
+  if (kind === 'file' && (extension === 'json' || extension === 'jsonl')) return <Braces size={size} strokeWidth={1.5} className="shrink-0 text-[#f9a825]" />;
+  if (!source || failedSource === source) return kind === 'directory' ? <Folder size={size} aria-hidden="true" className="shrink-0 text-[#a89b72]" /> : <FileCode2 size={size} aria-hidden="true" className="shrink-0 text-[#777777]" />;
+  return <img src={source} alt="" aria-hidden="true" onError={() => setFailedSource(source)} style={{ width: size, height: size }} className="shrink-0" />;
 }
 
 function buildFileTree(entries: ProjectFileEntry[]): FileTreeNode[] {
@@ -3318,10 +3329,10 @@ function CodeMirrorFileEditor({ path, content, onChange }: { path: string; conte
     const extension = path.split('.').pop()?.toLowerCase();
     const language = extension === 'tsx' || extension === 'ts' || extension === 'jsx' || extension === 'js'
       ? javascript({ jsx: true, typescript: extension === 'tsx' || extension === 'ts' })
-      : extension === 'html' ? html()
+      : extension === 'html' || extension === 'htm' ? html()
       : extension === 'css' || extension === 'scss' ? css()
       : extension === 'json' ? json()
-      : extension === 'md' || extension === 'mdx' ? markdown()
+      : extension === 'md' || extension === 'mdx' || extension === 'markdown' ? markdown()
       : extension === 'py' ? python()
       : extension === 'rs' ? rust()
       : extension === 'sql' ? sql()
@@ -3525,16 +3536,16 @@ function ApprovalCards({ approvals = [], onResolve }: { approvals?: any[]; onRes
   </div>;
 }
 
-function FilePreview({ projectPath, file, onChange }: { projectPath: string; file: OpenFile; onChange?: (content: string) => void }) {
+function FilePreview({ projectPath, file, preview = true, onChange }: { projectPath: string; file: OpenFile; preview?: boolean; onChange?: (content: string) => void }) {
   const language = useAppLanguage();
   const extension = getExtension(file.path);
   const sourcePath = file.fsPath || `${projectPath}/${file.path}`;
   if (file.error) return <div className="p-4 text-xs text-[#c28d8d]">{file.error}</div>;
   if (imageExtensions.has(extension)) return <div className="flex h-full items-center justify-center overflow-auto p-6"><img src={convertFileSrc(sourcePath)} alt={file.path} className="max-h-full max-w-full object-contain" /></div>;
-  if (extension === 'pdf') return <iframe title={file.path} src={convertFileSrc(sourcePath)} className="h-full w-full border-0 bg-white" />;
-  if (extension === 'html' || extension === 'htm') return <iframe title={file.path} srcDoc={file.content} sandbox="" className="h-full w-full border-0 bg-white" />;
-  if (extension === 'md' || extension === 'mdx') return <article className="prose prose-invert max-w-none overflow-auto p-6 text-sm"><ReactMarkdown>{file.content}</ReactMarkdown></article>;
-  if (extension === 'csv' || extension === 'tsv') {
+  if (extension === 'pdf') return <iframe title={file.path} src={convertFileSrc(sourcePath)} sandbox="allow-same-origin" className="h-full w-full border-0 bg-white" />;
+  if ((extension === 'html' || extension === 'htm') && preview) return <iframe title={file.path} srcDoc={file.content} sandbox="" className="h-full w-full border-0 bg-white" />;
+  if (['md', 'markdown', 'mdx'].includes(extension) && preview) return <div className="h-full overflow-auto p-6"><article className="chat-markdown chat-markdown-assistant max-w-none break-words text-sm leading-6"><MemoizedChatMarkdown content={file.content} /></article></div>;
+  if ((extension === 'csv' || extension === 'tsv') && preview) {
     const rows = parseCsv(file.content);
     return <div className="h-full overflow-auto p-4"><table className="min-w-full border-collapse text-left text-xs"><tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((value, cellIndex) => rowIndex === 0 ? <th key={cellIndex} className="border border-[#2b2b2b] bg-[#1c1c1c] px-3 py-2 font-medium text-[#eeeeee]">{value}</th> : <td key={cellIndex} className="border border-[#2b2b2b] px-3 py-2 text-[#bdbdbd]">{value}</td>)}</tr>)}</tbody></table></div>;
   }
@@ -3544,11 +3555,15 @@ function FilePreview({ projectPath, file, onChange }: { projectPath: string; fil
 
 function TabbedProjectView({ projectPath, initialSelectedPath = '', showFileTree, onToggleFileTree }: { projectPath?: string; initialSelectedPath?: string; showFileTree: boolean; onToggleFileTree?: () => void }) {
   const language = useAppLanguage();
+  const { palette } = useOrbPalette();
   const text = rightSidebarTranslations[language];
   const [loading, setLoading] = useState(true);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const modalScrollRef = useRef<HTMLDivElement | null>(null);
   const [entries, setEntries] = useState<ProjectFileEntry[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [tabs, setTabs] = useState<string[]>([]);
+  const [previewModes, setPreviewModes] = useState<Record<string, boolean>>({});
   const [selectedPath, setSelectedPath] = useState(initialSelectedPath);
   const [fileContextMenu, setFileContextMenu] = useState<{ path: string; x: number; y: number } | null>(null);
   const fileContextMenuRef = useRef<HTMLDivElement | null>(null);
@@ -3574,6 +3589,8 @@ function TabbedProjectView({ projectPath, initialSelectedPath = '', showFileTree
   useEffect(() => { void loadProject(); }, [projectPath]);
 
   const normalizeTabPath = (value: string) => value.replace(/\\/g, '/').replace(/^\.\/+/, '');
+  const supportsPreviewToggle = (path: string) => ['md', 'markdown', 'mdx', 'html', 'htm', 'csv', 'tsv'].includes(getExtension(path));
+  const isPreviewMode = (path: string) => previewModes[path] ?? true;
 
   const openFile = async (path: string, replaceCurrent = false, fsPath?: string) => {
     if (!projectPath) return;
@@ -3698,10 +3715,16 @@ function TabbedProjectView({ projectPath, initialSelectedPath = '', showFileTree
   };
 
   const tree = buildFileTree(entries);
+  useEffect(() => {
+    if (!showFileTree) return undefined;
+    const closeWithEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') onToggleFileTree?.(); };
+    window.addEventListener('keydown', closeWithEscape);
+    return () => window.removeEventListener('keydown', closeWithEscape);
+  }, [showFileTree, onToggleFileTree]);
   const renderTree = (nodes: FileTreeNode[], depth = 0): React.ReactNode => nodes.map((node) => {
     const isOpen = expanded.has(node.path);
     return <React.Fragment key={node.path}>
-      <button type="button" onClick={() => node.kind === 'directory' ? setExpanded((current) => { const next = new Set(current); next.has(node.path) ? next.delete(node.path) : next.add(node.path); return next; }) : void openFile(node.path)} className={`flex w-full items-center gap-1.5 rounded-md border px-2 py-1.5 text-left text-[12px] ${selectedPath === node.path ? 'border-[#3d9bff] bg-[#3d9bff12] text-[#eeeeee]' : 'border-transparent text-[#bdbdbd] hover:bg-[var(--color-surface-3)]'}`} style={{ paddingLeft: `${8 + depth * 14}px` }}>
+      <button id={`project-tree-${encodeURIComponent(node.path)}`} type="button" onContextMenu={(event) => { if (node.kind !== 'file' || !projectPath) return; event.preventDefault(); const path = `${projectPath.replace(/[\/]+$/, '')}\\${node.path.replace(/\//g, '\\')}`; window.dispatchEvent(new CustomEvent('codeclub:file-reference', { detail: { path } })); onToggleFileTree?.(); }} onClick={() => node.kind === 'directory' ? setExpanded((current) => { const next = new Set(current); next.has(node.path) ? next.delete(node.path) : next.add(node.path); return next; }) : void openFile(node.path)} className={`flex w-full items-center gap-1.5 rounded-md border px-2 py-1.5 text-left text-[12px] ${selectedPath === node.path ? 'border-[#3d9bff] bg-[#3d9bff12] text-[#eeeeee]' : 'border-transparent text-[#bdbdbd] hover:bg-[var(--color-surface-3)]'}`} style={{ paddingLeft: `${8 + depth * 14}px` }}>
         {node.kind === 'directory' ? (isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />) : <span className="w-[13px]" />}
         <MaterialFileIcon name={node.name} kind={node.kind} />
         <span className="min-w-0 flex-1 truncate">{node.name}</span>
@@ -3711,10 +3734,10 @@ function TabbedProjectView({ projectPath, initialSelectedPath = '', showFileTree
   });
 
   return <div ref={panelRef} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleFileDrop} className="codeclub-project-files flex h-full w-full min-w-0 flex-col overflow-hidden rounded-tl-lg bg-[#111111] text-[#eeeeee] [&>div:first-child]:hidden">
-    <div className="flex h-9 shrink-0 items-center justify-between border-b border-[#2b2b2b] px-4"><span className="text-[13px] leading-none">/</span><button type="button" onClick={() => setShowFileTree((visible) => !visible)} className="grid h-7 w-7 place-items-center rounded-[9px] bg-[#202020] text-[#eeeeee] hover:bg-[#2b2b2b]" title={text.toggleTree} aria-label={text.toggleTree}><FolderOpen size={16} /></button></div>
+    <div className="flex h-9 shrink-0 items-center justify-between border-b border-[#2b2b2b] px-4"><span className="text-[13px] leading-none">/</span><button type="button" onClick={() => setShowFileTree()} className="grid h-7 w-7 place-items-center rounded-[9px] bg-[#202020] text-[#eeeeee] hover:bg-[#2b2b2b]" title={text.toggleTree} aria-label={text.toggleTree}><FolderOpen size={16} /></button></div>
     {loading ? <div className="flex flex-1 items-center justify-center text-xs text-[#777777]">{text.loadingFiles}</div> : <div className="flex min-h-0 flex-1">
-      <main className="flex min-w-0 flex-1 flex-col bg-[#111111]">{tabs.length ? <><div className="flex h-8 shrink-0 items-end gap-1 overflow-x-auto border-b border-[#2b2b2b] bg-[#111111] px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">{tabs.map((path) => { const fileName = path.split(/[\\/]/).pop() || path; return <div key={path} onContextMenu={(event) => { event.preventDefault(); setFileContextMenu({ path, x: event.clientX, y: event.clientY }); }} className={`group flex h-7 max-w-[190px] min-w-[110px] shrink-0 items-center gap-2 rounded-md px-2.5 text-[11px] transition-colors ${selectedPath === path ? 'bg-[#2C2C2C] text-[#eeeeee]' : 'text-[#777777] hover:text-[#bdbdbd]'}`}><MaterialFileIcon name={fileName} kind="file" /><button type="button" onClick={() => setSelectedPath(path)} className="min-w-0 flex-1 truncate bg-transparent text-left">{fileName}</button><button type="button" onClick={() => closeFile(path)} className={`grid h-5 w-5 shrink-0 place-items-center rounded-md text-[#777777] transition-opacity hover:bg-white/10 hover:text-white ${selectedPath === path ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} title={text.closeTab} aria-label={`${text.closeTab}: ${path}` }><X size={12} /></button></div>; })}</div><div className="min-h-0 flex-1 overflow-hidden bg-transparent">{files[selectedPath] ? <FilePreview projectPath={projectPath || ''} file={files[selectedPath]} onChange={(content) => handleContentChange(selectedPath, content)} /> : <div className="p-4 text-xs text-[#777777]">{text.loadingFile}</div>}</div></> : <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center"><FolderOpen size={44} strokeWidth={1.4} className="text-[#a7a7a7]" /><div><p className="m-0 text-[18px] font-semibold text-[#eeeeee]">{text.openFile}</p><p className="m-0 mt-3 max-w-[360px] text-[16px] leading-6 text-[#a7a7a7]">{text.selectFile}</p></div></div>}</main>
-<AnimatePresence initial={false}>{showFileTree && <motion.aside initial={{ width: 0, opacity: 0 }} animate={{ width: 374, opacity: 1 }} exit={{ width: 0, opacity: 0 }} transition={{ type: 'spring', stiffness: 420, damping: 34 }} className="flex w-[374px] shrink-0 flex-col overflow-hidden border-l border-t border-[#2b2b2b] bg-[#111111]"><div className="min-h-0 flex-1 overflow-auto px-3 py-3 [scrollbar-width:none]">{tree.length ? renderTree(tree) : <div className="p-3 text-sm text-[#777777]">{text.noFiles}</div>}</div></motion.aside>}</AnimatePresence>{fileContextMenu && <div ref={fileContextMenuRef} className="fixed z-[100] grid w-52 gap-0.5 rounded-xl border border-white/[0.08] bg-[#2C2C2C]/95 p-1 shadow-2xl backdrop-blur-xl" style={{ left: fileContextMenu.x, top: fileContextMenu.y }} role="menu" aria-label={text.openFile}><button type="button" onClick={() => closeFile(fileContextMenu.path)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><X size={14} aria-hidden="true" />{text.closeTab}</button><button type="button" onClick={() => closeOtherFiles(fileContextMenu.path)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><Copy size={14} aria-hidden="true" />{text.closeOtherTabs}</button><button type="button" onClick={() => closeFilesToRight(fileContextMenu.path)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><ChevronRight size={14} aria-hidden="true" />{text.closeTabsToRight}</button></div>}
+      <main className="flex min-w-0 flex-1 flex-col bg-[#111111]">{tabs.length ? <><div className="file-tabs-scrollbar flex h-9 shrink-0 items-start gap-1 overflow-x-auto overflow-y-hidden border-b border-[#2b2b2b] bg-[#111111] px-2">{tabs.map((path) => { const fileName = path.split(/[\\/]/).pop() || path; return <div key={path} onContextMenu={(event) => { event.preventDefault(); setFileContextMenu({ path, x: event.clientX, y: event.clientY }); }} className={`group flex h-7 max-w-[190px] min-w-[110px] shrink-0 items-center gap-2 rounded-md px-2.5 text-[11px] transition-colors ${selectedPath === path ? 'bg-[#2C2C2C] text-[#eeeeee]' : 'text-[#777777] hover:text-[#bdbdbd]'}`}><MaterialFileIcon name={fileName} kind="file" /><button type="button" onClick={() => setSelectedPath(path)} className="min-w-0 flex-1 truncate bg-transparent text-left">{fileName}</button><span className="ml-auto flex shrink-0 items-center gap-0.5">{supportsPreviewToggle(path) && <button type="button" onClick={() => setPreviewModes((current) => ({ ...current, [path]: !isPreviewMode(path) }))} className="grid h-5 w-5 shrink-0 place-items-center rounded-md text-[#777777] transition-colors hover:bg-white/10 hover:text-(--codeclub-text-strong)" title={isPreviewMode(path) ? (language === 'en' ? 'Edit file' : 'Editar archivo') : (language === 'en' ? 'Preview file' : 'Previsualizar archivo')} aria-label={`${isPreviewMode(path) ? (language === 'en' ? 'Edit' : 'Editar') : (language === 'en' ? 'Preview' : 'Previsualizar')}: ${path}`}>{isPreviewMode(path) ? <Pencil size={11} strokeWidth={1.8} /> : <Eye size={12} strokeWidth={1.8} />}</button>}<button type="button" onClick={() => closeFile(path)} className={`grid h-5 w-5 shrink-0 place-items-center rounded-md text-[#777777] transition-opacity hover:bg-white/10 hover:text-white ${selectedPath === path ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} title={text.closeTab} aria-label={`${text.closeTab}: ${path}` }><X size={12} /></button></span></div>; })}</div><div className="min-h-0 flex-1 overflow-hidden bg-transparent">{files[selectedPath] ? <FilePreview projectPath={projectPath || ''} file={files[selectedPath]} preview={isPreviewMode(selectedPath)} onChange={(content) => handleContentChange(selectedPath, content)} /> : <div className="p-4 text-xs text-[#777777]">{text.loadingFile}</div>}</div></> : <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center"><FolderOpen size={44} strokeWidth={1.4} className="text-[#a7a7a7]" /><div><p className="m-0 text-[18px] font-semibold text-[#eeeeee]">{text.openFile}</p><p className="m-0 mt-3 max-w-[360px] text-[16px] leading-6 text-[#a7a7a7]">{text.selectFile}</p></div></div>}</main>
+{showFileTree && typeof document !== 'undefined' && createPortal(<div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-black/60 p-4 backdrop-blur-[3px]" style={{ '--codeclub-accent': palette.accent } as React.CSSProperties} onMouseDown={(event) => { if (event.target === event.currentTarget) onToggleFileTree?.(); }}><section role="dialog" aria-modal="true" aria-label={language === 'en' ? 'Project files' : 'Archivos del proyecto'} style={{ borderRadius: 0 }} className="relative flex h-[min(720px,85vh)] w-[min(900px,92vw)] flex-col overflow-hidden rounded-none border border-[#252525] bg-[#111111] shadow-2xl shadow-black/60"><div ref={modalScrollRef} onScroll={(event) => setShowScrollTop(event.currentTarget.scrollTop > 180)} className="project-files-modal-scroll min-h-0 flex-1 overflow-auto p-5">{loading ? <div className="grid h-full place-items-center text-xs text-[#777777]">{text.loadingFiles}</div> : tree.length ? <><section aria-label={language === 'en' ? 'Folders' : 'Carpetas'}><h3 className="mb-3 mt-0 text-[12px] font-semibold text-[#a8a8a8]">{language === 'en' ? 'Folders' : 'Carpetas'}</h3><div className="grid grid-cols-[repeat(auto-fill,minmax(176px,1fr))] gap-2.5">{tree.filter((node) => node.kind === 'directory').map((node) => <button key={node.path} type="button" onClick={() => document.getElementById(`project-tree-${encodeURIComponent(node.path)}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })} className="group flex h-[66px] min-w-0 items-center gap-3 rounded-none border-0 bg-[#161616] px-3 text-left transition-colors hover:bg-[color-mix(in_srgb,var(--codeclub-accent)_9%,#161616)] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={`${language === 'en' ? 'Go to folder' : 'Ir a la carpeta'} ${node.name}`}><MaterialFileIcon name={node.name} kind={node.kind} size={28} /><span className="min-w-0 flex-1"><span className="block truncate text-[12px] font-medium text-[#e3e3e3]">{node.name}</span><span className="mt-0.5 block text-[10px] text-[#777777]">{node.children.length} {language === 'en' ? 'items' : 'elementos'}</span></span><ChevronRight size={15} className="shrink-0 text-[#686868] transition-transform group-hover:translate-x-0.5 group-hover:text-(--codeclub-accent)" aria-hidden="true"/></button>)}</div></section><section className="mt-6" aria-label={language === 'en' ? 'All files' : 'Todos los archivos'}><h3 className="mb-2 mt-0 text-[12px] font-semibold text-[#a8a8a8]">{language === 'en' ? 'All files' : 'Todos los archivos'}</h3><div role="tree" aria-label={language === 'en' ? 'Project files' : 'Archivos del proyecto'}>{renderTree(tree)}</div></section></> : <div className="p-3 text-sm text-[#777777]">{text.noFiles}</div>}</div><button type="button" onClick={() => modalScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })} tabIndex={showScrollTop ? 0 : -1} aria-hidden={!showScrollTop} aria-label={language === 'en' ? 'Back to top' : 'Volver arriba'} title={language === 'en' ? 'Back to top' : 'Volver arriba'} className={`absolute bottom-3 left-1/2 grid h-8 w-8 -translate-x-1/2 place-items-center rounded-full border border-white/[0.08] bg-[#242424]/95 text-(--codeclub-text) shadow-md shadow-black/35 backdrop-blur transition-all duration-200 focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${showScrollTop ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-2 opacity-0'}`}><ArrowUp size={13} aria-hidden="true" /></button></section></div>, document.body)}{fileContextMenu && <div ref={fileContextMenuRef} className="fixed z-[1100] grid w-52 gap-0.5 rounded-xl border border-white/[0.08] bg-[#2C2C2C]/95 p-1 shadow-2xl backdrop-blur-xl" style={{ left: fileContextMenu.x, top: fileContextMenu.y }} role="menu" aria-label={text.openFile}><button type="button" onClick={() => closeFile(fileContextMenu.path)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><X size={14} aria-hidden="true" />{text.closeTab}</button><button type="button" onClick={() => closeOtherFiles(fileContextMenu.path)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><Copy size={14} aria-hidden="true" />{text.closeOtherTabs}</button><button type="button" onClick={() => closeFilesToRight(fileContextMenu.path)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><ChevronRight size={14} aria-hidden="true" />{text.closeTabsToRight}</button></div>}
     </div>}
   </div>;
 }
