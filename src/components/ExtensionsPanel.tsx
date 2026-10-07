@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Blocks, Box, ExternalLink, FileText, FileType2, Folder, Globe, LayoutTemplate, PlugZap, Presentation, Search, Table2, Trash2, WandSparkles } from 'lucide-react';
+import { Blocks, Box, Download, FileText, FileType2, Folder, Globe, LayoutTemplate, PlugZap, Presentation, Search, Table2, Trash2, WandSparkles } from 'lucide-react';
 import { getSetting, setSetting } from '../lib/persistence';
-import { useAppLanguage, type AppLanguage } from '../lib/i18n';
+import { extensionActionTranslations, useAppLanguage, type AppLanguage } from '../lib/i18n';
 import { loadAgentPlugins, type AgentPlugin } from '../lib/agent-plugins';
 import { nativeInvoke as invoke } from '../lib/runtime';
 
@@ -23,6 +23,7 @@ const scopeLabel = (scope: Scope, language: AppLanguage) => scope === 'global' ?
 
 export default function ExtensionsPanel({ selectedProject }: { selectedProject?: { projectPath: string } | null }) {
   const language = useAppLanguage();
+  const actions = extensionActionTranslations[language];
   const [tab, setTab] = useState<'extensions' | 'skills' | 'mcp'>('extensions');
   const [query, setQuery] = useState('');
   const [enabled, setEnabled] = useState<Record<string, boolean>>({});
@@ -143,16 +144,16 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
 
   return (
     <section id="codeclub-extensions-panel" aria-labelledby="codeclub-extensions-heading" className="extensions-panel-scroll h-full min-h-0 overflow-x-hidden overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden bg-(--codeclub-center)">
-      <div className="mx-auto min-w-0 w-full max-w-[1040px] px-6 py-7 lg:px-8">
+      <div className="extensions-panel-content mx-auto min-w-0 w-full max-w-[1040px] px-6 py-7">
         <header>
           <h1 id="codeclub-extensions-heading" className="m-0 text-[28px] font-normal tracking-[-0.04em] text-[#eeeeee]">{text.title}</h1>
           <p className="mt-1.5 text-[14px] text-[#999999]">{text.description}</p>
-          {projectPath && <p className="mt-2 inline-flex items-center gap-1.5 text-[12px] text-[#777777]" title={projectPath}><Folder size={13} />{text.project}: {projectPath.split(/[\\/]/).pop()}</p>}
+          {projectPath && <p className="mt-2 flex min-w-0 items-center gap-1.5 text-[12px] text-[#777777]" title={projectPath}><Folder size={13} className="shrink-0" aria-hidden="true" /><span className="min-w-0 truncate">{text.project}: {projectPath.split(/[\\/]/).pop()}</span></p>}
         </header>
 
-        <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
+        <div className="extensions-toolbar mt-8 flex min-w-0 flex-wrap items-center justify-between gap-3">
           <nav className="flex items-center gap-0.5 text-[13px] text-[#777777]" aria-label={text.categories}>
-            {([{ id: 'extensions', label: text.extensions, count: allExtensions.length, icon: Blocks }, { id: 'skills', label: text.skills, count: skills.length, icon: WandSparkles }, { id: 'mcp', label: 'MCP', count: mcpServers.length, icon: PlugZap }] as const).map(({ id, label, count, icon: Icon }) => <button key={id} type="button" onClick={() => setTab(id)} aria-label={`${label} ${count}`} className={`inline-flex items-center gap-1.5 rounded-[8px] border-0 px-3 py-1.5 ${tab === id ? 'bg-[#2b2b2b] text-[#eeeeee]' : 'bg-transparent text-[#777777] hover:bg-[#202020]'}`}><Icon size={14} strokeWidth={1.8} className="shrink-0 text-[#eeeeee]" aria-hidden="true" />{label} <span className="text-[#999999]">{count}</span></button>)}
+            {([{ id: 'extensions', label: text.extensions, count: allExtensions.length, icon: Blocks }, { id: 'skills', label: text.skills, count: skills.length, icon: WandSparkles }, { id: 'mcp', label: 'MCP', count: mcpServers.length, icon: PlugZap }] as const).map(({ id, label, count, icon: Icon }) => <button key={id} type="button" onClick={() => setTab(id)} aria-label={`${label} ${count}`} title={`${label} ${count}`} className={`extensions-category inline-flex items-center gap-1.5 rounded-[8px] border-0 px-3 py-1.5 ${tab === id ? 'bg-[#2b2b2b] text-[#eeeeee]' : 'bg-transparent text-[#777777] hover:bg-[#202020]'}`}><Icon size={14} strokeWidth={1.8} className="shrink-0 text-[#eeeeee]" aria-hidden="true" /><span className="extensions-category-label">{label}</span> <span className="text-[#999999]">{count}</span></button>)}
           </nav>
           <label className="flex h-9 w-full max-w-[280px] items-center gap-2 rounded-full border border-[#4a4a4a] bg-[#2b2b2b] px-3.5 text-[#a7a7a7] focus-within:border-[#666666]"><Search size={17} strokeWidth={1.7} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={language === 'en' ? 'Search extensions' : 'Buscar complementos'} aria-label={language === 'en' ? 'Search extensions' : 'Buscar complementos'} className="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[#d0d0d0] outline-none placeholder:text-[#a7a7a7]" /></label>
         </div>
@@ -165,14 +166,14 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
               <div className="flex min-h-[44px] min-w-0 items-center gap-3">
                 <div className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] border border-[#2d2d2d] bg-[#151515]"><div className="grid h-7 w-7 place-items-center rounded-[7px] bg-[#1687FF]"><Globe size={17} strokeWidth={1.8} className="text-white" /></div></div>
                 <div className="min-w-0 w-0 flex-1"><h2 className="m-0 truncate text-[14px] font-semibold text-[#eeeeee]">Codeclub Browser Control</h2><p className="mt-0.5 truncate text-[13px] text-[#888888]">{language === 'en' ? 'Control tabs in Chromium-based browsers' : 'Controlá pestañas en navegadores basados en Chromium'}</p></div>
-                <span className="shrink-0 rounded-full border border-[#303030] px-2 py-1 text-[10px] text-[#8f8f8f]">{scopeLabel('global', language)}</span>
+                <span className="extensions-scope shrink-0 rounded-full border border-[#303030] px-2 py-1 text-[10px] text-[#8f8f8f]">{scopeLabel('global', language)}</span>
               </div>
-              <div className="mt-2 grid gap-1.5 pl-[52px]">
-                {browserManagers.filter((browser) => browser.installed).map((browser) => <div key={browser.id} className="flex min-h-10 min-w-0 items-center gap-3 rounded-md px-2 py-1.5 hover:bg-[#252525]">
+              <div className="extensions-browser-managers mt-2 grid min-w-0 gap-1.5 pl-[52px]">
+                {browserManagers.filter((browser) => browser.installed).map((browser) => <div key={browser.id} className="extensions-browser-row grid min-h-10 min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md px-2 py-1.5 hover:bg-[#252525]">
                   <div className="min-w-0 flex-1"><p className="m-0 truncate text-[13px] text-[#d5d5d5]">{browser.name}</p><p className="m-0 text-[11px] text-[#888888]">{browser.connected ? (language === 'en' ? 'Connected' : 'Conectado') : (language === 'en' ? 'Not connected' : 'Sin conectar')}</p></div>
                   <div className="flex shrink-0 items-center gap-1.5">
-                    <button type="button" disabled={Boolean(browserBusy)} onClick={() => void manageBrowser(browser, 'install')} className="inline-flex h-7 items-center gap-1 rounded-md border border-[#383838] bg-[#252525] px-2.5 text-[11px] text-[#d5d5d5] hover:bg-[#303030] disabled:opacity-50">{language === 'en' ? 'Install' : 'Instalar'} <ExternalLink size={12} /></button>
-                    <button type="button" disabled={Boolean(browserBusy)} onClick={() => void manageBrowser(browser, 'uninstall')} className="inline-flex h-7 items-center gap-1 rounded-md border border-[#383838] bg-transparent px-2.5 text-[11px] text-[#999999] hover:bg-[#303030] hover:text-[#d5d5d5] disabled:opacity-50">{language === 'en' ? 'Uninstall' : 'Desinstalar'} <ExternalLink size={12} /></button>
+                    <button type="button" disabled={Boolean(browserBusy)} onClick={() => void manageBrowser(browser, 'install')} aria-label={`${actions.install}: ${browser.name}`} title={`${actions.install}: ${browser.name}`} className="extensions-browser-action inline-flex h-7 items-center justify-center gap-1 rounded-md border border-[#383838] bg-[#252525] px-2.5 text-[11px] text-[#d5d5d5] hover:bg-[#303030] disabled:opacity-50"><Download size={13} className="shrink-0" aria-hidden="true" /><span>{actions.install}</span></button>
+                    <button type="button" disabled={Boolean(browserBusy)} onClick={() => void manageBrowser(browser, 'uninstall')} aria-label={`${actions.uninstall}: ${browser.name}`} title={`${actions.uninstall}: ${browser.name}`} className="extensions-browser-action inline-flex h-7 items-center justify-center gap-1 rounded-md border border-[#383838] bg-transparent px-2.5 text-[11px] text-[#999999] hover:bg-[#303030] hover:text-[#d5d5d5] disabled:opacity-50"><Trash2 size={13} className="shrink-0" aria-hidden="true" /><span>{actions.uninstall}</span></button>
                   </div>
                 </div>)}
                 {browserManagers.filter((browser) => browser.installed).length === 0 && <p className="m-0 py-2 text-[12px] text-[#888888]">{language === 'en' ? 'No supported browser was detected. Supports Edge, Chrome, Brave, Opera, and Vivaldi.' : 'No se detectó un navegador compatible. Compatible con Edge, Chrome, Brave, Opera y Vivaldi.'}</p>}
@@ -181,22 +182,22 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
                 {browserError && <p role="alert" className="m-0 text-[11px] leading-5 text-[#ff8a8a]">{browserError}</p>}
               </div>
             </div>;
-            return <div key={id} className="flex min-h-[60px] min-w-0 items-center gap-3 overflow-hidden rounded-lg px-3 transition-colors hover:bg-[#202020]">
+            return <div key={id} className="extensions-item flex min-h-[60px] min-w-0 items-center gap-3 overflow-hidden rounded-lg px-3 transition-colors hover:bg-[#202020]">
               <div className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] border border-[#2d2d2d] bg-[#151515]"><div className="grid h-7 w-7 place-items-center rounded-[7px]" style={{ background: color }}><Icon size={17} strokeWidth={1.8} className="text-white" /></div></div>
               <div className="min-w-0 w-0 flex-1"><h2 className="m-0 truncate text-[14px] font-semibold text-[#eeeeee]">{name}</h2><p className="mt-0.5 truncate text-[13px] text-[#888888]">{description}</p></div>
-              <span className="shrink-0 rounded-full border border-[#303030] px-2 py-1 text-[10px] text-[#8f8f8f]">{scopeLabel(scope, language)}</span>
-              {builtIn ? <span className="shrink-0 rounded-full border border-[#303030] px-2 py-1 text-[10px] text-[#8f8f8f]">{language === 'en' ? 'Built in' : 'Incluido'}</span> : <button type="button" role="switch" aria-checked={isEnabled} aria-label={`${isEnabled ? text.disable : text.enable} ${name}`} onClick={() => { const next = !isEnabled; setEnabled((current) => ({ ...current, [enabledKey]: next })); if (isProtected) void setSetting(`codeclub_extension_enabled_${id}`, String(next)); }} className={`relative h-6 w-10 shrink-0 rounded-full border-0 transition-colors ${isEnabled ? 'bg-[#3d9bff]' : 'bg-[#3a3a3a]'}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${isEnabled ? 'right-1' : 'left-1'}`} /></button>}
+              <span className="extensions-scope shrink-0 rounded-full border border-[#303030] px-2 py-1 text-[10px] text-[#8f8f8f]">{scopeLabel(scope, language)}</span>
+              {builtIn ? <span className="extensions-included shrink-0 rounded-full border border-[#303030] px-2 py-1 text-[10px] text-[#8f8f8f]">{language === 'en' ? 'Built in' : 'Incluido'}</span> : <button type="button" role="switch" aria-checked={isEnabled} aria-label={`${isEnabled ? text.disable : text.enable} ${name}`} onClick={() => { const next = !isEnabled; setEnabled((current) => ({ ...current, [enabledKey]: next })); if (isProtected) void setSetting(`codeclub_extension_enabled_${id}`, String(next)); }} className={`relative h-6 w-10 shrink-0 rounded-full border-0 transition-colors ${isEnabled ? 'bg-[#3d9bff]' : 'bg-[#3a3a3a]'}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${isEnabled ? 'right-1' : 'left-1'}`} /></button>}
               {!isProtected && <button type="button" onClick={() => { void invoke('codeclub_delete_agent_plugin', { projectPath, pluginId: id.replace(/^plugin:/, ''), scope }).then(refresh).catch(() => undefined); }} className="grid h-7 w-7 shrink-0 place-items-center rounded-md border-0 bg-transparent text-[#777777] hover:bg-[#2b2b2b] hover:text-[#eeeeee]" title={text.deletePlugin} aria-label={`${text.deletePlugin}: ${name}`}><Trash2 size={14} /></button>}
             </div>;
           })}
           {filteredExtensions.length === 0 && <div className="py-12 text-center text-sm text-[#777777]">{text.empty}</div>}
         </section>}
         {tab === 'skills' && <section className="mt-9 grid min-w-0 gap-1.5" aria-label={text.skillsList}>
-          {filteredSkills.map((skill) => <div key={`${skill.source}-${skill.id}`} className="flex min-h-[60px] min-w-0 items-center gap-3 overflow-hidden rounded-lg px-3 transition-colors hover:bg-[#202020]"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] border border-[#2d2d2d] bg-[#151515]"><WandSparkles size={19} strokeWidth={1.7} className="text-[#8bc7ff]" /></div><div className="min-w-0 w-0 flex-1"><h2 className="m-0 truncate text-[14px] font-semibold text-[#eeeeee]">{skill.name}</h2><p className="mt-0.5 truncate text-[13px] text-[#888888]">{skill.description}</p></div><span className="shrink-0 text-[11px] text-[#777777]">{skill.source} · {scopeLabel(skill.scope, language)}</span></div>)}
+          {filteredSkills.map((skill) => <div key={`${skill.source}-${skill.id}`} className="extensions-item flex min-h-[60px] min-w-0 items-center gap-3 overflow-hidden rounded-lg px-3 transition-colors hover:bg-[#202020]"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] border border-[#2d2d2d] bg-[#151515]"><WandSparkles size={19} strokeWidth={1.7} className="text-[#8bc7ff]" /></div><div className="min-w-0 w-0 flex-1"><h2 className="m-0 truncate text-[14px] font-semibold text-[#eeeeee]">{skill.name}</h2><p className="mt-0.5 truncate text-[13px] text-[#888888]">{skill.description}</p></div><span className="extensions-source min-w-0 max-w-[160px] truncate text-[11px] text-[#777777]" title={`${skill.source} · ${scopeLabel(skill.scope, language)}`}>{skill.source} · {scopeLabel(skill.scope, language)}</span></div>)}
           {filteredSkills.length === 0 && <div className="py-12 text-center text-sm text-[#777777]">{text.noSkills}</div>}
         </section>}
         {tab === 'mcp' && <section className="mt-9 grid min-w-0 gap-1.5" aria-label={text.mcpList}>
-          {mcpServers.map((server) => <div key={server.id} className="flex min-h-[60px] min-w-0 items-center gap-3 overflow-hidden rounded-lg px-3 transition-colors hover:bg-[#202020]"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] border border-[#2d2d2d] bg-[#151515]"><PlugZap size={19} className="text-[#8bc7ff]" /></div><div className="min-w-0 w-0 flex-1"><h2 className="m-0 truncate text-[14px] font-semibold text-[#eeeeee]">{server.name}</h2><p className="mt-0.5 truncate text-[13px] text-[#888888]">{server.url}</p></div><span className="shrink-0 text-[11px] text-[#777777]">{scopeLabel(server.scope, language)}</span></div>)}
+          {mcpServers.map((server) => <div key={server.id} className="extensions-item flex min-h-[60px] min-w-0 items-center gap-3 overflow-hidden rounded-lg px-3 transition-colors hover:bg-[#202020]"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] border border-[#2d2d2d] bg-[#151515]"><PlugZap size={19} className="text-[#8bc7ff]" /></div><div className="min-w-0 w-0 flex-1"><h2 className="m-0 truncate text-[14px] font-semibold text-[#eeeeee]">{server.name}</h2><p className="mt-0.5 truncate text-[13px] text-[#888888]">{server.url}</p></div><span className="extensions-scope shrink-0 text-[11px] text-[#777777]">{scopeLabel(server.scope, language)}</span></div>)}
           {mcpServers.length === 0 && <div className="py-12 text-center text-sm text-[#777777]">{text.noMcp}</div>}
         </section>}
       </div>

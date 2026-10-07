@@ -390,12 +390,101 @@ section[aria-label='Gestor de paneles'] {
 
 #codeclub-extensions-panel input {
   border-color: #303030;
-  background: #272727;
+  background: transparent;
   color: #F5F5EF;
 }
 
 #codeclub-extensions-panel input::placeholder {
   color: #AAA9A1;
+}
+
+#codeclub-extensions-panel {
+  container: extensions / inline-size;
+}
+
+.extensions-panel-content {
+  padding-inline: clamp(12px, 4cqi, 32px);
+}
+
+.extensions-browser-managers {
+  overflow-wrap: anywhere;
+}
+
+@container extensions (max-width: 640px) {
+  .extensions-browser-managers {
+    padding-left: 0;
+  }
+
+  .extensions-toolbar > label {
+    max-width: none;
+  }
+}
+
+@container extensions (max-width: 480px) {
+  .extensions-panel-content {
+    padding-block: 20px;
+  }
+
+  .extensions-toolbar {
+    margin-top: 24px;
+  }
+
+  .extensions-toolbar > nav {
+    width: 100%;
+  }
+
+  .extensions-category {
+    flex: 1;
+    justify-content: center;
+    min-width: 0;
+    padding-inline: 8px;
+  }
+
+  .extensions-category-label,
+  .extensions-browser-action > span {
+    display: none;
+  }
+
+  .extensions-browser-action {
+    width: 30px;
+    height: 30px;
+    padding-inline: 0;
+  }
+
+  .extensions-browser-row {
+    gap: 8px;
+  }
+
+  .extensions-item {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr) auto auto;
+    gap: 4px 8px;
+    padding: 10px 8px;
+  }
+
+  .extensions-item > :first-child {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+
+  .extensions-item > div:nth-child(2) {
+    width: auto;
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .extensions-item > .extensions-scope,
+  .extensions-item > .extensions-source {
+    grid-column: 2 / -1;
+    grid-row: 2;
+    justify-self: start;
+    max-width: 100%;
+  }
+
+  .extensions-item > button,
+  .extensions-item > .extensions-included {
+    grid-row: 1;
+  }
 }
 
 .chat-turn {
