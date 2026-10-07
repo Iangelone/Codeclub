@@ -1,6 +1,6 @@
 'use client';
 
-import { createElement, memo, useEffect, useRef, useState, type FormEvent } from 'react';
+import { createElement, memo, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, Bolt, Check, ChevronDown, Circle, CircleCheck, CirclePlus, Clock, CopyX, EllipsisVertical, ExternalLink, FileWarning, FolderOpen, FolderPen, FolderTree, Grid2X2, Heart, Home, Hourglass, Info, MessageSquare, MoreHorizontal, MousePointerClick, PanelLeft, Pause, Pencil, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
@@ -9,6 +9,8 @@ import { Terminal as XtermTerminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import ChatPanel from './ChatPanel';
+import BrowserStyleEditor, { type BrowserElementSelection, type BrowserElementChanges } from './BrowserStyleEditor';
+import { createBrowserPickerScript, type BrowserMarkerOrder } from '../lib/browser-dom-picker';
 import { ProjectPanelView } from './ChatInterface';
 import { useOrbPalette } from './OrbPaletteProvider';
 import OrbPaletteButton from './ui/OrbPaletteButton';
@@ -18,7 +20,7 @@ import { getProjectSetting, getSetting, setProjectSetting, setSetting } from '..
 import { models, providers } from '../lib/ai-catalog';
 import { credentialKeyFor, modelMatchesProvider, usesGateway } from '../lib/ai-routing';
 import { migrateScheduledTasks, type TaskRun } from '../lib/scheduled-tasks';
-import { activityTranslations, agentTextSelectionTranslations, rightSidebarTranslations, scheduledRuntimeTranslations, sidebarTranslations, useAppLanguage, type AppLanguage } from '../lib/i18n';
+import { activityTranslations, agentTextSelectionTranslations, browserStyleTranslations, rightSidebarTranslations, scheduledRuntimeTranslations, sidebarTranslations, useAppLanguage, type AppLanguage } from '../lib/i18n';
 import { sameSession, useSharedSessions, type SharedSession } from '../lib/shared-sessions';
 
 const MIN_WIDTH = 220;
@@ -1172,6 +1174,7 @@ const normalizeBrowserAddress = (value: string) => {
 
 export function BrowserPanel({ isolated = false }: { isolated?: boolean } = {}) {
   const language = useAppLanguage();
+  const { palette } = useOrbPalette();
   const text = rightSidebarTranslations[language];
   const webviewRef = useRef<any>(null);
   const [address, setAddress] = useState(DEFAULT_BROWSER_URL);
@@ -1188,7 +1191,22 @@ export function BrowserPanel({ isolated = false }: { isolated?: boolean } = {}) 
     if (blurInput) (document.getElementById('codeclub-browser-address') as HTMLInputElement | null)?.blur();
   };
   const [selectionMode, setSelectionMode] = useState(false);
-  const [selectedElement, setSelectedElement] = useState<{ title: string; text: string; html: string; x: number; y: number; markerId: string } | null>(null);
+  const [selectedElement, setSelectedElement] = useState<BrowserElementSelection | null>(null);
+  const [styleEditorOpen, setStyleEditorOpen] = useState(false);
+  const selectedElementRef = useRef(selectedElement);
+  selectedElementRef.current = selectedElement;
+  const styleEditorOpenRef = useRef(styleEditorOpen);
+  styleEditorOpenRef.current = styleEditorOpen;
+  const markerOrderRef = useRef<BrowserMarkerOrder>({ total: 0, items: [] });
+  const previewQueueRef = useRef<Promise<unknown>>(Promise.resolve());
+  const selectionSubmittingRef = useRef(false);
+  const runPickerAction = useCallback((script: string, shouldRun?: () => boolean) => {
+    const view = webviewRef.current;
+    const action = previewQueueRef.current.catch(() => false).then(() => shouldRun && !shouldRun() ? false : view?.executeJavaScript(script)).catch(() => false);
+    previewQueueRef.current = action;
+    return action;
+  }, []);
+  const previewStyleChanges = useCallback(async (markerId: string, changes: BrowserElementChanges) => Boolean(await runPickerAction(`window.__codeclubPreviewCommentMarker?.(${JSON.stringify(markerId)}, ${JSON.stringify(changes)}) ?? false`, () => styleEditorOpenRef.current && selectedElementRef.current?.markerId === markerId)), [runPickerAction]);
   const [selectionComment, setSelectionComment] = useState('');
   const selectionCommentRef = useRef<HTMLInputElement | null>(null);
 
@@ -1283,7 +1301,7 @@ export function BrowserPanel({ isolated = false }: { isolated?: boolean } = {}) 
       if (!input) return;
       input.focus();
     });
-  }, [selectedElement]);
+  }, [selectedElement?.markerId]);
 
   const clearPagePicker = async () => {
     try { await webviewRef.current?.executeJavaScript(`window.__codeclubStopPicker?.();`); } catch { /* page may have navigated */ }
@@ -1293,7 +1311,10 @@ export function BrowserPanel({ isolated = false }: { isolated?: boolean } = {}) 
   const startPagePicker = async () => {
     const view = webviewRef.current;
     if (!view) return;
+    selectedElementRef.current = null;
+    styleEditorOpenRef.current = false;
     setSelectedElement(null);
+    setStyleEditorOpen(false);
     setSelectionComment('');
     setSelectionMode(true);
     let pickerCursor = '';
@@ -1305,55 +1326,8 @@ export function BrowserPanel({ isolated = false }: { isolated?: boolean } = {}) 
       pickerCursor = `data:image/x-icon;base64,${btoa(binary)}`;
     } catch { /* use the fallback crosshair */ }
     try {
-      await view.executeJavaScript(`(() => {
-        const pickerCursor = ${JSON.stringify(pickerCursor)};
-        window.__codeclubStopPicker?.();
-        const style = document.createElement('style');
-        style.id = 'codeclub-picker-style';
-        style.textContent = '.codeclub-picker-active,.codeclub-picker-active *{cursor:' + (pickerCursor ? 'url(' + pickerCursor + ') 0 0, ' : '') + 'crosshair!important}.codeclub-picker-hover{outline:2px solid #3d9bff!important;outline-offset:2px!important;background-color:#3d9bff18!important}';
-        document.documentElement.appendChild(style);
-        document.documentElement.classList.add('codeclub-picker-active');
-        const clean = (value, limit) => String(value || '').replace(/\\s+/g, ' ').trim().slice(0, limit);
-        const sanitize = (element) => {
-          const clone = element.cloneNode(true);
-          clone.querySelectorAll('script,style,iframe,canvas,svg').forEach((node) => node.remove());
-          clone.querySelectorAll('*').forEach((node) => Array.from(node.attributes).forEach((attribute) => { if (/^on/i.test(attribute.name)) node.removeAttribute(attribute.name); }));
-          return clone.outerHTML.slice(0, 12000);
-        };
-        const pickable = (node) => node instanceof Element ? (node.closest('button,a,input,textarea,select,[role="button"],section,article,header,main,div') || node) : null;
-        const over = (event) => { const element = pickable(event.target); if (element) element.classList.add('codeclub-picker-hover'); };
-        const out = (event) => { const element = pickable(event.target); if (element) element.classList.remove('codeclub-picker-hover'); };
-        const click = (event) => {
-          event.preventDefault(); event.stopPropagation();
-          const element = pickable(event.target); if (!element) return;
-          document.querySelectorAll('.codeclub-picker-hover').forEach((node) => node.classList.remove('codeclub-picker-hover'));
-          const marker = document.createElement('div');
-          window.__codeclubMarkerCount = Number(window.__codeclubMarkerCount || 0) + 1;
-          const markerId = 'codeclub-comment-' + Date.now() + '-' + window.__codeclubMarkerCount;
-          marker.textContent = String(window.__codeclubMarkerCount);
-          marker.dataset.codeclubMarkerId = markerId;
-          marker.style.cssText = 'position:absolute;z-index:2147483647;display:grid;place-items:center;width:24px;height:24px;border:2px solid #ffffff;border-radius:999px;background:#126cff;color:#ffffff;font:600 12px/1 Arial,sans-serif;box-shadow:0 1px 8px #00000080;pointer-events:none;cursor:pointer;';
-          const rect = element.getBoundingClientRect();
-          marker.style.left = Math.max(4, Math.min(window.innerWidth - 28, rect.right + window.scrollX - 12)) + 'px';
-          marker.style.top = Math.max(4, rect.top + window.scrollY - 12) + 'px';
-          document.body.appendChild(marker);
-          window.__codeclubRenumberCommentMarkers?.();
-          window.__codeclubRemoveCommentMarker = (id) => document.querySelector('[data-codeclub-marker-id="' + id + '"]')?.remove();
-          window.__codeclubSelection = { title: clean(element.getAttribute('aria-label') || element.textContent || element.tagName, 100), text: clean(element.textContent, 2000), html: sanitize(element), x: event.clientX, y: event.clientY, markerId };
-          window.__codeclubStopPicker?.();
-        };
-        window.__codeclubFinalizeCommentMarker = (id) => {
-          const marker = document.querySelector('[data-codeclub-marker-id="' + id + '"]');
-          if (!marker) return;
-          marker.style.pointerEvents = 'auto';
-          marker.onclick = (event) => { event.preventDefault(); event.stopPropagation(); marker.remove(); window.__codeclubRenumberCommentMarkers?.(); window.__codeclubRemovedCommentMarker = id; };
-        };
-        window.__codeclubRenumberCommentMarkers = () => document.querySelectorAll('[data-codeclub-marker-id]').forEach((node, index) => { node.textContent = String(index + 1); });
-        window.__codeclubStopPicker = () => { document.removeEventListener('mouseover', over, true); document.removeEventListener('mouseout', out, true); document.removeEventListener('click', click, true); document.documentElement.classList.remove('codeclub-picker-active'); document.getElementById('codeclub-picker-style')?.remove(); document.querySelectorAll('.codeclub-picker-hover').forEach((node) => node.classList.remove('codeclub-picker-hover')); };
-        window.__codeclubSelection = null;
-        document.addEventListener('mouseover', over, true); document.addEventListener('mouseout', out, true); document.addEventListener('click', click, true);
-        return true;
-      })()`);
+      const started = await runPickerAction(createBrowserPickerScript(pickerCursor, palette.accent, markerOrderRef.current, agentTextSelectionTranslations[language].removeReference));
+      if (!started) setSelectionMode(false);
     } catch { setSelectionMode(false); }
   };
 
@@ -1363,7 +1337,9 @@ export function BrowserPanel({ isolated = false }: { isolated?: boolean } = {}) 
     window.addEventListener('keydown', escape);
     const poll = window.setInterval(async () => {
       try {
-        const result = await webviewRef.current?.executeJavaScript('window.__codeclubSelection || null');
+        const state = await webviewRef.current?.executeJavaScript('({ selection: window.__codeclubSelection || null, cancelled: Boolean(window.__codeclubPickerCancelled) })');
+        if (state?.cancelled) setSelectionMode(false);
+        const result = state?.selection;
         if (result?.html) { setSelectedElement(result); setSelectionMode(false); }
       } catch { /* page may have navigated */ }
     }, 250);
@@ -1373,37 +1349,88 @@ export function BrowserPanel({ isolated = false }: { isolated?: boolean } = {}) 
   useEffect(() => {
     const removeBrowserMarker = (event: Event) => {
       const markerId = (event as CustomEvent<{ markerId?: string }>).detail?.markerId;
-      if (markerId) void webviewRef.current?.executeJavaScript(`window.__codeclubRemoveCommentMarker?.(${JSON.stringify(markerId)}); window.__codeclubRenumberCommentMarkers?.();`);
+      if (markerId) void runPickerAction(`window.__codeclubRemoveCommentMarker?.(${JSON.stringify(markerId)});`);
+    };
+    const updateOrder = (event: Event) => {
+      const order = (event as CustomEvent<BrowserMarkerOrder>).detail;
+      if (!order || !Array.isArray(order.items)) return;
+      markerOrderRef.current = order;
+      void runPickerAction(`window.__codeclubSetCommentMarkerOrder?.(${JSON.stringify(order)});`);
     };
     window.addEventListener('codeclub:remove-browser-marker', removeBrowserMarker);
+    window.addEventListener('codeclub:browser-reference-order', updateOrder);
+    window.dispatchEvent(new CustomEvent('codeclub:browser-reference-order-request'));
+    let active = true, busy = false;
     const pollRemovedMarker = window.setInterval(async () => {
+      if (busy) return;
+      busy = true;
       try {
-        const markerId = await webviewRef.current?.executeJavaScript('window.__codeclubRemovedCommentMarker || null');
-        if (!markerId) return;
-        window.dispatchEvent(new CustomEvent('codeclub:remove-browser-reference', { detail: { markerId } }));
-        await webviewRef.current?.executeJavaScript('window.__codeclubRemovedCommentMarker = null;');
+        const selected = selectedElementRef.current;
+        const state = await webviewRef.current?.executeJavaScript(`window.__codeclubTakeCommentMarkerState?.(${JSON.stringify(selected?.markerId || null)}) ?? null`);
+        if (!active || !state) return;
+        for (const markerId of state.removed) window.dispatchEvent(new CustomEvent('codeclub:remove-browser-reference', { detail: { markerId } }));
+        if (selected && selectedElementRef.current?.markerId === selected.markerId) {
+          if (!state.active) { setSelectedElement(null); setStyleEditorOpen(false); setSelectionComment(''); }
+          else if (state.active.anchor && !styleEditorOpenRef.current) {
+            const { x, y } = state.active.anchor;
+            setSelectedElement((current) => current?.markerId === selected.markerId && (Math.abs(current.x - x) > 1 || Math.abs(current.y - y) > 1) ? { ...current, x, y } : current);
+          }
+        }
       } catch { /* page may have navigated */ }
+      finally { busy = false; }
     }, 250);
     return () => {
+      active = false;
       window.clearInterval(pollRemovedMarker);
       window.removeEventListener('codeclub:remove-browser-marker', removeBrowserMarker);
+      window.removeEventListener('codeclub:browser-reference-order', updateOrder);
+      void runPickerAction('window.__codeclubDisposeDomPicker?.();');
     };
-  }, []);
+  }, [runPickerAction]);
 
-  const addSelectedReference = () => {
-    if (!selectedElement) return;
+  useEffect(() => { void runPickerAction(`window.__codeclubSetPickerPalette?.(${JSON.stringify(palette.accent)});`); }, [palette.accent, runPickerAction]);
+
+  const addSelectedReference = async () => {
+    if (!selectedElement || selectionSubmittingRef.current) return;
+    selectionSubmittingRef.current = true;
+    const valid = await runPickerAction(`window.__codeclubFinalizeCommentMarker?.(${JSON.stringify(selectedElement.markerId)}) ?? false`);
+    selectionSubmittingRef.current = false;
+    if (!valid || selectedElementRef.current?.markerId !== selectedElement.markerId) return;
     const comment = selectionComment.trim();
     const text = `${comment ? `Comentario: ${comment}\n\n` : ''}Componente seleccionado:\n${selectedElement.html}\n\nTexto visible: ${selectedElement.text}`;
-    window.dispatchEvent(new CustomEvent('codeclub:browser-reference', { detail: { title: selectedElement.title || 'Elemento seleccionado', text, url: currentUrl, markerId: selectedElement.markerId } }));
+    window.dispatchEvent(new CustomEvent('codeclub:browser-reference', { detail: { title: selectedElement.title || 'Elemento seleccionado', text, url: selectedElement.pageUrl, markerId: selectedElement.markerId } }));
     setSelectedElement(null);
     setSelectionComment('');
-    void webviewRef.current?.executeJavaScript(`window.__codeclubFinalizeCommentMarker?.(${JSON.stringify(selectedElement.markerId)});`);
+  };
+
+  const addStyleChanges = async (changes: BrowserElementChanges, description: string) => {
+    if (!selectedElement) throw new Error('Selection unavailable');
+    if (!await previewStyleChanges(selectedElement.markerId, changes)) throw new Error('Preview unavailable');
+    const valid = await runPickerAction(`window.__codeclubFinalizeCommentMarker?.(${JSON.stringify(selectedElement.markerId)}) ?? false`);
+    if (!valid || selectedElementRef.current?.markerId !== selectedElement.markerId) throw new Error('Selection changed');
+    const text = `Apply the following exact changes to the selected DOM element in the project source. Only change the listed properties; preserve other styles and children.\n\n${description ? `Description: ${description}\n\n` : ''}Page: ${selectedElement.pageUrl}\nElement: <${selectedElement.tagName}>\n\n${JSON.stringify(changes, null, 2)}\n\nOriginal element HTML:\n${selectedElement.html}`;
+    window.dispatchEvent(new CustomEvent('codeclub:browser-reference', { detail: { title: `${selectedElement.title} · CSS`, text, url: selectedElement.pageUrl, markerId: selectedElement.markerId } }));
+    setStyleEditorOpen(false);
+    setSelectedElement(null);
+    setSelectionComment('');
+  };
+
+  const cancelStyleChanges = async () => {
+    styleEditorOpenRef.current = false;
+    const id = selectedElementRef.current?.markerId;
+    if (id) await runPickerAction(`window.__codeclubRollbackCommentMarker?.(${JSON.stringify(id)});`);
+    if (selectedElementRef.current?.markerId !== id) return;
+    setStyleEditorOpen(false);
+    requestAnimationFrame(() => selectionCommentRef.current?.focus());
   };
 
   const discardSelectedReference = () => {
+    selectedElementRef.current = null;
+    styleEditorOpenRef.current = false;
     setSelectedElement(null);
     setSelectionComment('');
-    void webviewRef.current?.executeJavaScript(`window.__codeclubRemoveCommentMarker?.(${JSON.stringify(selectedElement?.markerId || '')});`);
+    setStyleEditorOpen(false);
+    void runPickerAction(`window.__codeclubRemoveCommentMarker?.(${JSON.stringify(selectedElement?.markerId || '')});`);
   };
 
   const publishState = async () => {
@@ -1447,7 +1474,7 @@ export function BrowserPanel({ isolated = false }: { isolated?: boolean } = {}) 
     const view = webviewRef.current;
     if (!view) return undefined;
     const syncUrl = () => { const next = view.getURL?.() || currentUrl; if (next === EMPTY_BROWSER_URL) { setAddress(''); return; } setAddress(next); rememberBrowserPage(next, view.getTitle?.()); };
-    const start = () => { setLoading(true); setLoadError(''); };
+    const start = () => { setLoading(true); setLoadError(''); selectedElementRef.current = null; styleEditorOpenRef.current = false; setSelectedElement(null); setStyleEditorOpen(false); setSelectionMode(false); setSelectionComment(''); };
     const stop = async () => { setLoading(false); syncUrl(); try { const pageUrl = view.getURL?.() || currentUrl; const favicon = await view.executeJavaScript(`document.querySelector('link[rel~="icon"],link[rel="shortcut icon"]')?.href || ''`); const domain = new URL(pageUrl).hostname; window.dispatchEvent(new CustomEvent('codeclub:browser-tab-meta', { detail: { favicon: favicon || undefined, title: view.getTitle?.() || domain, clearFavicon: !favicon } })); } catch { /* page may have navigated */ } if (view.getURL?.() === EMPTY_BROWSER_URL) await view.insertCSS?.(`html,body{height:100%!important;margin:0!important}body{display:grid!important;place-items:center!important;position:relative!important;background:#202124!important}body::before{content:'⌁  Navegador';position:absolute;top:calc(50% - 82px);left:0;right:0;text-align:center;color:#e8eaed;font:500 22px Arial,sans-serif;letter-spacing:-.02em}body::after{content:'Ingresá una dirección para empezar';position:absolute;top:calc(50% - 42px);left:0;right:0;text-align:center;color:#9aa0a6;font:14px Arial,sans-serif}form{width:min(520px,calc(100% - 48px))!important;height:44px!important;margin:0!important;padding:0 12px!important;border:1px solid #3c4043!important;border-radius:14px!important;background:#2c2c2c!important;box-sizing:border-box!important}form:hover,form:focus-within{background:#353535!important;border-color:#5f6368!important}`); void publishState(); };
     const fail = (event: Event) => {
       const detail = event as Event & { errorCode?: number; errorDescription?: string; isMainFrame?: boolean };
@@ -1581,7 +1608,7 @@ export function BrowserPanel({ isolated = false }: { isolated?: boolean } = {}) 
       <form onSubmit={submitAddress} className="min-w-0 flex-1"><label className="sr-only" htmlFor="codeclub-browser-address">{text.webAddress}</label><input id="codeclub-browser-address" value={address.replace(/^https?:\/\//, '').replace(/\/$/, '')} onChange={(event) => setAddress(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); closeAddressMenu(); event.currentTarget.blur(); } else if (event.key === 'ArrowDown') { const firstRow = browserAddressMenuRef.current?.querySelector<HTMLButtonElement>('.codeclub-browser-history-row'); if (firstRow) { event.preventDefault(); firstRow.focus(); } } }} onFocus={(event) => event.currentTarget.select()} className="h-8 w-full bg-transparent text-center text-[17px] font-medium text-[#f1f3f4] outline-none placeholder:text-[#8a8a8a]" aria-label={text.webAddress} placeholder={text.browserAddressPlaceholder} /></form>
       <div className="relative flex shrink-0 items-center gap-0.5"><button type="button" className={`grid h-7 w-7 place-items-center rounded-full hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${selectionMode ? 'bg-[#3d9bff22] text-[#8bc7ff]' : 'text-[#b8b8b8]'}`} aria-label={text.pickElement} title={text.pickElement} aria-pressed={selectionMode} onClick={() => selectionMode ? void clearPagePicker() : void startPagePicker()}><MousePointerClick size={17} /></button><button type="button" onClick={() => setMenuOpen((open) => !open)} className="grid h-7 w-7 place-items-center rounded-full text-[#b8b8b8] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.moreOptions} title={text.moreOptions} aria-expanded={menuOpen}><EllipsisVertical size={17} /></button>{menuOpen && <div className="absolute top-9 right-0 z-20 w-56 rounded-xl border border-white/[0.08] bg-[#2C2C2C]/95 p-1.5 shadow-xl backdrop-blur-xl"><button type="button" onClick={() => { webviewRef.current?.reload?.(); setMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[11px] whitespace-nowrap text-[#eeeeee] hover:bg-white/[0.08]"><RotateCw className="shrink-0 text-[#b8b8b8]" size={14} strokeWidth={1.8} aria-hidden="true" /><span className="min-w-0 truncate">{text.reload}</span></button><div className="mx-2 my-1 h-px bg-[#444444]" /><button type="button" onClick={() => { window.open(currentUrl, '_blank'); setMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[11px] whitespace-nowrap text-[#eeeeee] hover:bg-white/[0.08]"><ExternalLink className="shrink-0 text-[#b8b8b8]" size={14} strokeWidth={1.8} aria-hidden="true" /><span className="min-w-0 truncate">{text.openOutside}</span></button></div>}</div>
     </div>
-    <div className="absolute top-9 right-0 bottom-0 left-0 overflow-hidden">{createElement('webview', viewProps)}</div>{selectedElement && <div className="absolute z-20 w-[min(360px,calc(100%-16px))]" style={{ left: `clamp(8px, ${selectedElement.x}px, calc(100% - 376px))`, top: `clamp(48px, ${selectedElement.y + 48}px, calc(100% - 152px))` }}><form className="chat-selection-comment browser-selection-comment" onSubmit={(event) => { event.preventDefault(); addSelectedReference(); }}><input ref={selectionCommentRef} type="text" value={selectionComment} onChange={(event) => setSelectionComment(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); discardSelectedReference(); } }} placeholder={agentTextSelectionTranslations[language].commentPlaceholder} aria-label={agentTextSelectionTranslations[language].commentPlaceholder} /><button type="submit" aria-label={agentTextSelectionTranslations[language].addToChat} title={agentTextSelectionTranslations[language].addToChat}><ArrowUp size={16} strokeWidth={2} /></button></form></div>}{loadError && <div className="absolute inset-0 z-10 grid place-items-center bg-[#202124] px-6 text-center"><div className="max-w-[360px]"><p className="m-0 text-[15px] font-medium text-[#f1f3f4]">{text.pageLoadError}</p><p className="mt-2 mb-0 break-words text-[12px] leading-5 text-[#a7a7a7]">{loadError}</p><p className="mt-1 mb-0 break-words text-[11px] text-[#777777]">{currentUrl}</p><button type="button" onClick={() => { setLoadError(''); setLoading(true); webviewRef.current?.reload?.(); }} className="mt-4 rounded-lg bg-white/[0.08] px-3 py-1.5 text-[11px] text-[#eeeeee] hover:bg-white/[0.14]">{text.retry}</button></div></div>}
+    <div className="absolute top-9 right-0 bottom-0 left-0 overflow-hidden">{createElement('webview', viewProps)}</div>{selectedElement && <div className="absolute z-20 w-[min(360px,calc(100%-16px))]" style={{ left: `clamp(8px, ${selectedElement.x}px, calc(100% - 376px))`, top: styleEditorOpen ? `clamp(48px, ${selectedElement.y + 48}px, calc(100% - 328px))` : `clamp(48px, ${selectedElement.y + 48}px, calc(100% - 152px))`, ...(styleEditorOpen ? { height: "min(320px, calc(100% - 56px))" } : {}) }}>{styleEditorOpen ? <BrowserStyleEditor key={selectedElement.markerId} element={selectedElement} language={language} onCancel={cancelStyleChanges} onConfirm={addStyleChanges} onPreview={previewStyleChanges} /> : <form className="chat-selection-comment browser-selection-comment" onSubmit={(event) => { event.preventDefault(); addSelectedReference(); }}><button type="button" onClick={() => setStyleEditorOpen(true)} aria-label={browserStyleTranslations[language].edit} title={browserStyleTranslations[language].edit}><Pencil size={15} strokeWidth={1.8} aria-hidden="true" /></button><input ref={selectionCommentRef} type="text" value={selectionComment} onChange={(event) => setSelectionComment(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); discardSelectedReference(); } }} placeholder={agentTextSelectionTranslations[language].commentPlaceholder} aria-label={agentTextSelectionTranslations[language].commentPlaceholder} /><button type="submit" aria-label={agentTextSelectionTranslations[language].addToChat} title={agentTextSelectionTranslations[language].addToChat}><ArrowUp size={16} strokeWidth={2} /></button></form>}</div>}{loadError && <div className="absolute inset-0 z-10 grid place-items-center bg-[#202124] px-6 text-center"><div className="max-w-[360px]"><p className="m-0 text-[15px] font-medium text-[#f1f3f4]">{text.pageLoadError}</p><p className="mt-2 mb-0 break-words text-[12px] leading-5 text-[#a7a7a7]">{loadError}</p><p className="mt-1 mb-0 break-words text-[11px] text-[#777777]">{currentUrl}</p><button type="button" onClick={() => { setLoadError(''); setLoading(true); webviewRef.current?.reload?.(); }} className="mt-4 rounded-lg bg-white/[0.08] px-3 py-1.5 text-[11px] text-[#eeeeee] hover:bg-white/[0.14]">{text.retry}</button></div></div>}
   </div>;
 }
 

@@ -173,6 +173,11 @@ export const chatActionTranslations = {
   en: { copy: 'Copy message', copied: 'Message copied', more: 'More response options', regenerate: 'Regenerate response', trace: 'Copy full chat trace' },
 } as const;
 
+export const browserStyleTranslations = {
+  es: { edit: 'Editar elemento', pickColor: 'Elegir color', description: 'Describe estos cambios...', content: 'Texto', color: 'Color del texto', background: 'Fondo', opacity: 'Opacidad', fontFamily: 'Fuente', fontSize: 'Tamaño de fuente', fontWeight: 'Grosor de fuente', borderRadius: 'Radio del borde', borderColor: 'Color del borde', borderWidth: 'Ancho del borde', width: 'Ancho', height: 'Altura', padding: 'Relleno', margin: 'Margen', sides: ['Arriba', 'Derecha', 'Abajo', 'Izquierda'], cancel: 'Cancelar', confirm: 'Añadir cambios al chat', invalidValue: 'Valor CSS inválido', previewUnavailable: 'El elemento ya no está disponible. Volvé a seleccionarlo.', changesTitle: 'Cambios de estilo' },
+  en: { edit: 'Edit element', pickColor: 'Choose color', description: 'Describe these changes...', content: 'Text', color: 'Text color', background: 'Background', opacity: 'Opacity', fontFamily: 'Font', fontSize: 'Font size', fontWeight: 'Font weight', borderRadius: 'Border radius', borderColor: 'Border color', borderWidth: 'Border width', width: 'Width', height: 'Height', padding: 'Padding', margin: 'Margin', sides: ['Top', 'Right', 'Bottom', 'Left'], cancel: 'Cancel', confirm: 'Add changes to chat', invalidValue: 'Invalid CSS value', previewUnavailable: 'The element is no longer available. Select it again.', changesTitle: 'Style changes' },
+} as const;
+
 export const agentTextSelectionTranslations = {
   es: { addToChat: 'Añadir al chat', addComment: 'Añadir comentario', commentPlaceholder: 'Añade un comentario opcional…', moreDetails: 'Más detalles', toolbar: 'Acciones para el texto seleccionado', detailPrompt: 'Explicame con más detalle esta parte:', selectedReference: 'Texto seleccionado', removeReference: 'Quitar referencia' },
   en: { addToChat: 'Add to chat', addComment: 'Add a comment', commentPlaceholder: 'Add an optional comment…', moreDetails: 'More details', toolbar: 'Actions for selected text', detailPrompt: 'Explain this part in more detail:', selectedReference: 'Selected text', removeReference: 'Remove reference' },

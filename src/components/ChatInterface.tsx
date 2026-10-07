@@ -611,7 +611,7 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
         markerId: detail.markerId,
       };
       setBrowserReferences((current) => {
-        if (current.some((item) => item.text === newItem.text)) return current;
+        if (current.some((item) => newItem.markerId ? item.markerId === newItem.markerId : item.text === newItem.text)) return current;
         return [...current, newItem];
       });
       requestAnimationFrame(() => chatInputRef.current?.focus());
@@ -627,6 +627,12 @@ export default function ChatInterface({ catalog, defaultProvider, defaultModel, 
       window.removeEventListener('codeclub:remove-browser-reference', handleRemoveBrowserReference);
     };
   }, []);
+  useEffect(() => {
+    const publishOrder = () => window.dispatchEvent(new CustomEvent('codeclub:browser-reference-order', { detail: { total: browserReferences.length, items: browserReferences.flatMap((reference, index) => reference.markerId ? [{ markerId: reference.markerId, number: index + 1 }] : []) } }));
+    window.addEventListener('codeclub:browser-reference-order-request', publishOrder);
+    publishOrder();
+    return () => window.removeEventListener('codeclub:browser-reference-order-request', publishOrder);
+  }, [browserReferences]);
   const approvalResolversRef = useRef(new Map<string, (approved: boolean) => void>());
   const lastModelFetchRef = useRef<{ method: string; url: string; requestBody?: string; status?: number; statusText?: string; responseHeaders?: unknown; responseBody?: unknown; transportError?: string } | null>(null);
   const commandMenuRef = useRef<HTMLDivElement | null>(null);
@@ -3080,7 +3086,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             <div ref={browserRefContainerRef} className="file-preview-scrollbar flex min-h-[76px] w-full min-w-0 max-w-full flex-nowrap items-center gap-2 overflow-x-auto overflow-y-hidden border-b-0 px-3 py-1.5" aria-label={language === 'en' ? 'References and files' : 'Referencias y archivos'}>
               {artifactReferences.map((reference) => <button key={`${reference.kind}-${reference.id}`} type="button" onClick={() => setArtifactReferences((current) => current.filter((item) => item.kind !== reference.kind || item.id !== reference.id))} className="attachment-artifact-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] text-left text-[#cfcfcf]" title={`Quitar @${reference.kind}`}><span className="absolute left-1 top-1 text-[8px] uppercase tracking-[0.04em] text-[#858585]">@{reference.kind}</span><span className="absolute inset-x-1 bottom-1 line-clamp-2 text-center text-[8px] leading-[10px] text-[#d6d6d6]">{reference.title}</span><span aria-hidden="true" className="attachment-artifact-remove pointer-events-none absolute inset-0 z-10 grid place-items-center bg-[#161616]/80 text-[#eeeeee]"><span className="grid h-6 w-6 place-items-center rounded-full bg-[#252525] text-[#bdbdbd]"><X size={13} strokeWidth={2} /></span></span></button>)}
               {browserReferences.map((ref, index) => <button key={ref.id} type="button" onClick={() => { setBrowserReferences((current) => current.filter((item) => item.id !== ref.id)); if (ref.markerId) window.dispatchEvent(new CustomEvent('codeclub:remove-browser-marker', { detail: { markerId: ref.markerId } })); }} className="browser-reference-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] px-1 text-left text-[#cfcfcf]" title={`Quitar @${ref.title}`}>
-                <span className="absolute left-1 top-1 z-[1] grid h-4 w-4 place-items-center rounded-full bg-[#1687ff] text-[9px] font-semibold text-white">{index + 1}</span>
+                <span className="absolute left-1 top-1 z-[1] grid h-4 w-4 place-items-center rounded-full bg-(--codeclub-accent) text-[9px] font-semibold text-[#111111]">{index + 1}</span>
                 {getBrowserReferenceFavicon(ref) ? <img src={getBrowserReferenceFavicon(ref)} alt="" className="h-7 w-7 rounded-md object-contain" /> : <span className="grid h-7 w-7 place-items-center rounded-md bg-[#202020] text-[#8BC7FF]"><Globe size={14} /></span>}
                 <span className="absolute inset-x-1 bottom-1 truncate text-center text-[9px] text-[#d6d6d6]">{ref.title}</span>
                 <span aria-hidden="true" className="browser-reference-remove pointer-events-none absolute inset-0 grid place-items-center bg-[#161616]/80 text-[#eeeeee]"><span className="grid h-6 w-6 place-items-center rounded-full bg-[#252525] text-[#bdbdbd]"><X size={13} strokeWidth={2} /></span></span>
