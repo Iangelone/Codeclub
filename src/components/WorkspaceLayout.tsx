@@ -2,7 +2,7 @@
 
 import { createElement, memo, useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, Bolt, Check, ChevronDown, Circle, CircleCheck, CirclePlus, Clock, CopyX, EllipsisVertical, ExternalLink, FileWarning, FolderOpen, FolderPen, FolderTree, Grid2X2, Heart, Home, Hourglass, Info, MessageSquare, MoreHorizontal, MousePointerClick, PanelLeft, Pause, Pencil, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
+import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, Bolt, Check, ChevronDown, Circle, CircleCheck, CirclePlus, Clock, CopyX, EllipsisVertical, ExternalLink, FileWarning, FolderOpen, FolderPen, FolderTree, Grid2X2, Heart, Home, Hourglass, Info, MessageSquare, MoreHorizontal, MousePointerClick, PanelLeft, Pause, Pencil, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { GlobeCheck } from 'lucide-react';
 import { Terminal as XtermTerminal } from '@xterm/xterm';
@@ -18,7 +18,7 @@ import { getProjectSetting, getSetting, setProjectSetting, setSetting } from '..
 import { models, providers } from '../lib/ai-catalog';
 import { credentialKeyFor, modelMatchesProvider, usesGateway } from '../lib/ai-routing';
 import { migrateScheduledTasks, type TaskRun } from '../lib/scheduled-tasks';
-import { activityTranslations, rightSidebarTranslations, scheduledRuntimeTranslations, sidebarTranslations, useAppLanguage, type AppLanguage } from '../lib/i18n';
+import { activityTranslations, agentTextSelectionTranslations, rightSidebarTranslations, scheduledRuntimeTranslations, sidebarTranslations, useAppLanguage, type AppLanguage } from '../lib/i18n';
 import { sameSession, useSharedSessions, type SharedSession } from '../lib/shared-sessions';
 
 const MIN_WIDTH = 220;
@@ -1161,6 +1161,7 @@ const normalizeBrowserAddress = (value: string) => {
   const raw = value.trim();
   if (!raw) return null;
   try {
+    if (/^[a-z][a-z\d+.-]*:\/\//i.test(raw) && !/^https?:\/\//i.test(raw)) return null;
     const parsed = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
     if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname) return null;
     return parsed.toString();
@@ -1181,6 +1182,11 @@ export function BrowserPanel({ isolated = false }: { isolated?: boolean } = {}) 
   const [browserHistory, setBrowserHistory] = useState<{ url: string; title: string }[]>([]);
   const browserAddressMenuRef = useRef<HTMLDivElement | null>(null);
   const browserAddressFocusedRef = useRef(false);
+  const closeAddressMenu = (blurInput = false) => {
+    browserAddressFocusedRef.current = false;
+    if (browserAddressMenuRef.current) browserAddressMenuRef.current.style.display = 'none';
+    if (blurInput) (document.getElementById('codeclub-browser-address') as HTMLInputElement | null)?.blur();
+  };
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedElement, setSelectedElement] = useState<{ title: string; text: string; html: string; x: number; y: number; markerId: string } | null>(null);
   const [selectionComment, setSelectionComment] = useState('');
@@ -1221,7 +1227,7 @@ export function BrowserPanel({ isolated = false }: { isolated?: boolean } = {}) 
       menu.style.width = `${rect.width}px`;
     };
     const show = () => { browserAddressFocusedRef.current = true; reposition(); menu.style.display = 'block'; };
-    const hide = () => { window.setTimeout(() => { if (!menu.matches(':hover') && document.activeElement !== input) { browserAddressFocusedRef.current = false; menu.style.display = 'none'; } }, 120); };
+    const hide = () => { window.setTimeout(() => { if (!menu.matches(':hover') && !menu.contains(document.activeElement) && document.activeElement !== input) { browserAddressFocusedRef.current = false; menu.style.display = 'none'; } }, 120); };
     input.addEventListener('focus', show);
     input.addEventListener('blur', hide);
     window.addEventListener('resize', reposition);
@@ -1246,10 +1252,22 @@ export function BrowserPanel({ isolated = false }: { isolated?: boolean } = {}) 
       const copy = document.createElement('span'); copy.className = 'codeclub-browser-history-copy';
       const title = document.createElement('span'); title.className = 'codeclub-browser-history-title'; title.textContent = label;
       const meta = document.createElement('span'); meta.className = 'codeclub-browser-history-detail'; meta.textContent = detail;
-      copy.append(title, meta); row.append(copy); row.addEventListener('mousedown', (event) => event.preventDefault()); row.addEventListener('click', onClick); menu.appendChild(row);
+      copy.append(title, meta); row.append(copy);
+      row.addEventListener('mousedown', (event) => event.preventDefault());
+      row.addEventListener('keydown', (event) => {
+        const rows = Array.from(menu.querySelectorAll<HTMLButtonElement>('.codeclub-browser-history-row'));
+        const index = rows.indexOf(row);
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault();
+          rows[(index + (event.key === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length]?.focus();
+        } else if (event.key === 'Escape') {
+          event.preventDefault(); closeAddressMenu(); input.focus();
+        }
+      });
+      row.addEventListener('click', () => { closeAddressMenu(true); onClick(); }); menu.appendChild(row);
     };
     if (query) {
-      addRow(language === 'es' ? `Buscar en la web: ${query}` : `Search the web for: ${query}`, language === 'es' ? 'Buscar en la web' : 'Search the web', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>', () => { const next = `https://www.google.com/search?q=${encodeURIComponent(query)}`; window.dispatchEvent(new CustomEvent('codeclub:browser-navigate', { detail: { url: next } })); });
+      addRow(language === 'es' ? `Buscar en la web: ${query}` : `Search the web for: ${query}`, language === 'es' ? 'Buscar en la web' : 'Search the web', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>', () => { const next = `https://www.google.com/search?q=${encodeURIComponent(query)}`; setAddress(next); rememberBrowserPage(next, query); window.dispatchEvent(new CustomEvent('codeclub:browser-navigate', { detail: { url: next } })); });
     }
     matchingHistory.slice(0, 5).forEach((item, index) => {
       if (query || index > 0) { const divider = document.createElement('div'); divider.className = 'codeclub-browser-history-divider'; menu.appendChild(divider); }
@@ -1541,23 +1559,32 @@ export function BrowserPanel({ isolated = false }: { isolated?: boolean } = {}) 
 
   const submitAddress = (event: FormEvent) => {
     event.preventDefault();
-    if (address.startsWith('Buscar en la web:')) {
+    if (address.startsWith('Buscar en la web:') || address.startsWith('Search the web for:')) {
       const query = address.slice('Buscar en la web:'.length).trim();
-      if (query) { const next = `https://www.google.com/search?q=${encodeURIComponent(query)}`; setAddress(next); setCurrentUrl(next); rememberBrowserPage(next, query); }
+      const searchQuery = address.startsWith('Search the web for:') ? address.slice('Search the web for:'.length).trim() : query;
+      if (searchQuery) { const next = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`; setAddress(next); setCurrentUrl(next); rememberBrowserPage(next, searchQuery); }
+      closeAddressMenu(true);
       return;
     }
-    const next = normalizeBrowserAddress(address);
-    if (next) { setAddress(next); setCurrentUrl(next); rememberBrowserPage(next); }
+    const trimmedAddress = address.trim();
+    const isExplicitUrl = /^https?:\/\//i.test(trimmedAddress);
+    const looksLikeAddress = !/\s/.test(trimmedAddress) && (isExplicitUrl || /[./:]|^localhost$/i.test(trimmedAddress));
+    if (!looksLikeAddress && trimmedAddress) {
+      const next = `https://www.google.com/search?q=${encodeURIComponent(trimmedAddress)}`;
+      setAddress(next); setCurrentUrl(next); rememberBrowserPage(next, trimmedAddress); closeAddressMenu(true); return;
+    }
+    const next = normalizeBrowserAddress(trimmedAddress);
+    if (next) { setAddress(next); setCurrentUrl(next); rememberBrowserPage(next); closeAddressMenu(true); }
   };
   const viewProps = { ref: (node: any) => { webviewRef.current = node; }, src: currentUrl || EMPTY_BROWSER_URL, className: 'absolute inset-0 border-0 bg-[#202124]', hidden: !currentUrl, style: { display: currentUrl ? 'inline-flex' : 'none' }, title: text.browser, allowpopups: 'true' };
 
-  return <div className="relative h-full min-h-0 bg-[#202124] text-[#e8eaed]">
-    <div className="flex h-9 shrink-0 items-center gap-2 bg-[#171717] px-2.5" aria-label={text.browserControls}>{!currentUrl && !loadError && <div className="absolute top-9 right-0 bottom-0 left-0 z-[1] flex flex-col items-center justify-center gap-5 bg-[#202124]"><GlobeCheck aria-hidden="true" className="text-[#9aa0a6]" size={38} strokeWidth={1.7} /><form onSubmit={submitAddress} className="flex h-[52px] w-[min(520px,calc(100%-32px))] items-center gap-2 rounded-[14px] border border-[#3c4043] bg-[#1a1a1a] px-3 shadow-[0_8px_30px_#00000040] transition-colors hover:bg-[#1f1f1f] focus-within:border-[#5f6368]"><span className="grid h-8 w-8 shrink-0 place-items-center text-[24px] text-[#8a8a8a]">⌕</span><input autoFocus value={address} onChange={(event) => setAddress(event.target.value)} className="h-9 min-w-0 flex-1 bg-transparent px-2 text-[13px] text-[#e8eaed] outline-none placeholder:text-[#9a9a9a]" placeholder={text.browserAddressPlaceholder} aria-label={text.webAddress} /><button type="submit" aria-label={text.openUrl} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-transparent text-[24px] text-[#8a8a8a] hover:bg-white/[0.06] hover:text-[#f1f1f1]">↗</button></form></div>}
+  return <div className="relative h-full min-h-0 bg-transparent text-[#e8eaed]">
+    <div className="flex h-9 shrink-0 items-center gap-2 bg-transparent px-2.5" aria-label={text.browserControls}>{!currentUrl && !loadError && <div className="absolute top-9 right-0 bottom-0 left-0 z-[1] flex flex-col items-center justify-center gap-5 bg-[#202124]"><GlobeCheck aria-hidden="true" className="text-[#9aa0a6]" size={38} strokeWidth={1.7} /><form onSubmit={submitAddress} className="flex h-[52px] w-[min(520px,calc(100%-32px))] items-center gap-2 rounded-[14px] border border-[#3c4043] bg-[#1a1a1a] px-3 shadow-[0_8px_30px_#00000040] transition-colors hover:bg-[#1f1f1f] focus-within:border-[#5f6368]"><span className="grid h-8 w-8 shrink-0 place-items-center text-[24px] text-[#8a8a8a]">⌕</span><input autoFocus value={address} onChange={(event) => setAddress(event.target.value)} className="h-9 min-w-0 flex-1 bg-transparent px-2 text-[13px] text-[#e8eaed] outline-none placeholder:text-[#9a9a9a]" placeholder={text.browserAddressPlaceholder} aria-label={text.webAddress} /><button type="submit" aria-label={text.openUrl} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-transparent text-[24px] text-[#8a8a8a] hover:bg-white/[0.06] hover:text-[#f1f1f1]">↗</button></form></div>}
       <div className="flex shrink-0 items-center gap-0.5"><button type="button" onClick={() => webviewRef.current?.goBack?.()} className="grid h-7 w-7 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.back} title={text.back}><ArrowLeft size={16} /></button><button type="button" onClick={() => webviewRef.current?.goForward?.()} className="grid h-7 w-7 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.forward} title={text.forward}><ArrowRight size={16} /></button><button type="button" onClick={() => webviewRef.current?.reload?.()} className="grid h-7 w-7 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.reload} title={text.reload}><RotateCw size={16} className={loading ? 'animate-spin' : ''} /></button><button type="button" onClick={() => { setAddress(''); setCurrentUrl(DEFAULT_BROWSER_URL); setLoadError(''); setLoading(false); }} className="grid h-7 w-7 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.home} title={text.home}><Home size={15} /></button></div>
-      <form onSubmit={submitAddress} className="min-w-0 flex-1"><label className="sr-only" htmlFor="codeclub-browser-address">{text.webAddress}</label><input id="codeclub-browser-address" value={address.replace(/^https?:\/\//, '').replace(/\/$/, '')} onChange={(event) => setAddress(event.target.value)} onFocus={(event) => event.currentTarget.select()} className="h-8 w-full bg-transparent text-center text-[17px] font-medium text-[#f1f3f4] outline-none placeholder:text-[#8a8a8a]" aria-label={text.webAddress} placeholder={text.browserAddressPlaceholder} /></form>
+      <form onSubmit={submitAddress} className="min-w-0 flex-1"><label className="sr-only" htmlFor="codeclub-browser-address">{text.webAddress}</label><input id="codeclub-browser-address" value={address.replace(/^https?:\/\//, '').replace(/\/$/, '')} onChange={(event) => setAddress(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); closeAddressMenu(); event.currentTarget.blur(); } else if (event.key === 'ArrowDown') { const firstRow = browserAddressMenuRef.current?.querySelector<HTMLButtonElement>('.codeclub-browser-history-row'); if (firstRow) { event.preventDefault(); firstRow.focus(); } } }} onFocus={(event) => event.currentTarget.select()} className="h-8 w-full bg-transparent text-center text-[17px] font-medium text-[#f1f3f4] outline-none placeholder:text-[#8a8a8a]" aria-label={text.webAddress} placeholder={text.browserAddressPlaceholder} /></form>
       <div className="relative flex shrink-0 items-center gap-0.5"><button type="button" className={`grid h-7 w-7 place-items-center rounded-full hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${selectionMode ? 'bg-[#3d9bff22] text-[#8bc7ff]' : 'text-[#b8b8b8]'}`} aria-label={text.pickElement} title={text.pickElement} aria-pressed={selectionMode} onClick={() => selectionMode ? void clearPagePicker() : void startPagePicker()}><MousePointerClick size={17} /></button><button type="button" onClick={() => setMenuOpen((open) => !open)} className="grid h-7 w-7 place-items-center rounded-full text-[#b8b8b8] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.moreOptions} title={text.moreOptions} aria-expanded={menuOpen}><EllipsisVertical size={17} /></button>{menuOpen && <div className="absolute top-9 right-0 z-20 w-56 rounded-xl border border-white/[0.08] bg-[#2C2C2C]/95 p-1.5 shadow-xl backdrop-blur-xl"><button type="button" onClick={() => { webviewRef.current?.reload?.(); setMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[11px] whitespace-nowrap text-[#eeeeee] hover:bg-white/[0.08]"><RotateCw className="shrink-0 text-[#b8b8b8]" size={14} strokeWidth={1.8} aria-hidden="true" /><span className="min-w-0 truncate">{text.reload}</span></button><div className="mx-2 my-1 h-px bg-[#444444]" /><button type="button" onClick={() => { window.open(currentUrl, '_blank'); setMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[11px] whitespace-nowrap text-[#eeeeee] hover:bg-white/[0.08]"><ExternalLink className="shrink-0 text-[#b8b8b8]" size={14} strokeWidth={1.8} aria-hidden="true" /><span className="min-w-0 truncate">{text.openOutside}</span></button></div>}</div>
     </div>
-    <div className="absolute top-9 right-0 bottom-0 left-0 overflow-hidden">{createElement('webview', viewProps)}</div>{selectedElement && <div className="absolute z-20 w-[210px] max-w-[calc(100%-16px)] rounded-xl border border-white/[0.1] bg-[#292929]/95 p-2 shadow-2xl backdrop-blur-xl" style={{ left: `clamp(8px, ${selectedElement.x}px, calc(100% - 218px))`, top: `clamp(48px, ${selectedElement.y + 48}px, calc(100% - 152px))` }}><textarea ref={selectionCommentRef} value={selectionComment} onChange={(event) => setSelectionComment(event.target.value)} onInput={(event) => { const input = event.currentTarget; input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 126)}px`; input.style.overflowY = input.scrollHeight > 126 ? 'auto' : 'hidden'; }} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); discardSelectedReference(); } if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); addSelectedReference(); } }} rows={1} placeholder={text.commentPlaceholder} className="selection-comment-scrollbar max-h-[126px] w-full resize-none overflow-y-hidden bg-transparent px-1 text-[13px] leading-[18px] text-[#eeeeee] outline-none placeholder:text-[#858585]" aria-label={text.commentAria} /></div>}{loadError && <div className="absolute inset-0 z-10 grid place-items-center bg-[#202124] px-6 text-center"><div className="max-w-[360px]"><p className="m-0 text-[15px] font-medium text-[#f1f3f4]">{text.pageLoadError}</p><p className="mt-2 mb-0 break-words text-[12px] leading-5 text-[#a7a7a7]">{loadError}</p><p className="mt-1 mb-0 break-words text-[11px] text-[#777777]">{currentUrl}</p><button type="button" onClick={() => { setLoadError(''); setLoading(true); webviewRef.current?.reload?.(); }} className="mt-4 rounded-lg bg-white/[0.08] px-3 py-1.5 text-[11px] text-[#eeeeee] hover:bg-white/[0.14]">{text.retry}</button></div></div>}
+    <div className="absolute top-9 right-0 bottom-0 left-0 overflow-hidden">{createElement('webview', viewProps)}</div>{selectedElement && <div className="absolute z-20 w-[min(360px,calc(100%-16px))]" style={{ left: `clamp(8px, ${selectedElement.x}px, calc(100% - 376px))`, top: `clamp(48px, ${selectedElement.y + 48}px, calc(100% - 152px))` }}><form className="chat-selection-comment browser-selection-comment" onSubmit={(event) => { event.preventDefault(); addSelectedReference(); }}><textarea ref={selectionCommentRef} value={selectionComment} onChange={(event) => setSelectionComment(event.target.value)} onInput={(event) => { const input = event.currentTarget; input.style.height = 'auto'; input.style.height = `${Math.min(input.scrollHeight, 64)}px`; input.style.overflowY = input.scrollHeight > 64 ? 'auto' : 'hidden'; }} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); discardSelectedReference(); } if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); addSelectedReference(); } }} rows={1} placeholder={agentTextSelectionTranslations[language].commentPlaceholder} aria-label={agentTextSelectionTranslations[language].commentPlaceholder} /><button type="submit" aria-label={agentTextSelectionTranslations[language].addToChat} title={agentTextSelectionTranslations[language].addToChat}><ArrowUp size={16} strokeWidth={2} /></button></form></div>}{loadError && <div className="absolute inset-0 z-10 grid place-items-center bg-[#202124] px-6 text-center"><div className="max-w-[360px]"><p className="m-0 text-[15px] font-medium text-[#f1f3f4]">{text.pageLoadError}</p><p className="mt-2 mb-0 break-words text-[12px] leading-5 text-[#a7a7a7]">{loadError}</p><p className="mt-1 mb-0 break-words text-[11px] text-[#777777]">{currentUrl}</p><button type="button" onClick={() => { setLoadError(''); setLoading(true); webviewRef.current?.reload?.(); }} className="mt-4 rounded-lg bg-white/[0.08] px-3 py-1.5 text-[11px] text-[#eeeeee] hover:bg-white/[0.14]">{text.retry}</button></div></div>}
   </div>;
 }
 

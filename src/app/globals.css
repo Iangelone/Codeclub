@@ -824,6 +824,17 @@ section[aria-label='Gestor de paneles'] {
   box-shadow: 0 8px 26px #0009;
 }
 
+#codeclub-right-sidebar .browser-selection-comment {
+  width: 100%;
+}
+
+#codeclub-right-sidebar .browser-selection-comment textarea {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+}
+
 .chat-selection-comment textarea {
   flex: 1;
   min-width: 0;
@@ -1341,6 +1352,15 @@ section[aria-label="Espacio de trabajo"] > [role="menu"][aria-label="Menú del c
 [aria-label="Controles del navegador"] input {
   height: 32px;
   font-size: 16px;
+}
+
+#codeclub-right-sidebar [aria-label="Controles del navegador"] form:has(#codeclub-browser-address),
+#codeclub-right-sidebar [aria-label="Controles del navegador"] input#codeclub-browser-address {
+  border: 0 !important;
+  border-radius: 0;
+  padding: 0;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 [aria-label="Controles del navegador"] input::-webkit-calendar-picker-indicator {
