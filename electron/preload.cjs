@@ -67,8 +67,6 @@ contextBridge.exposeInMainWorld('codeclub', {
   integrationSave: (config) => ipcRenderer.invoke('codeclub:integration-save',config),
   hooksPreview: () => ipcRenderer.invoke('codeclub:hooks-preview'),
   hooksInstall: (id) => ipcRenderer.invoke('codeclub:hooks-install',id),
-  marketAuthGet: (key) => ipcRenderer.invoke('codeclub:market-auth-get', key),
-  marketAuthSet: (key, value) => ipcRenderer.invoke('codeclub:market-auth-set', key, value),
   credentialPresent: (key) => ipcRenderer.invoke('codeclub:credential-present',key),
   credentialSet: (key,value,origin) => ipcRenderer.invoke('codeclub:credential-set',key,value,origin),
   openExternal: (url) => ipcRenderer.invoke('codeclub:external-open',url),

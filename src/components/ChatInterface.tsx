@@ -35,12 +35,11 @@ import { appendGenerationUsage, type GenerationUsageRecord } from '../lib/usage'
 import { appendExecutionLog } from '../lib/execution-log';
 import { appendGlobalChatTranscript, getProjectChatPath, getProjectTranscriptPath, readGlobalChatHistory, readGlobalChats, readProjectIndex, readProjectMeta, writeGlobalChatHistory, writeGlobalChats, writeProjectMeta, type ProjectMeta } from '../lib/projectManager';
 import { codeclubExtensions, type CodeclubExtension } from '../lib/extensions';
-import { marketAccountTranslations, savedProviderTranslations, activityTranslations, aiCredentialTranslations, providerErrorTranslations, chatHistoryTranslations, chatActionTranslations, agentTextSelectionTranslations, LANGUAGE_STORAGE_KEY, rightSidebarTranslations, type AppLanguage, useAppLanguage } from '../lib/i18n';
+import { savedProviderTranslations, activityTranslations, aiCredentialTranslations, providerErrorTranslations, chatHistoryTranslations, chatActionTranslations, agentTextSelectionTranslations, LANGUAGE_STORAGE_KEY, rightSidebarTranslations, type AppLanguage, useAppLanguage } from '../lib/i18n';
 import { connectAllAgentPluginMcp, loadAgentPlugins } from '../lib/agent-plugins';
 import OrbPaletteButton from './ui/OrbPaletteButton';
 import { ORB_PALETTES, useOrbPalette } from './OrbPaletteProvider';
 import { credentialKeyFor, credentialTargetFor, modelIdFor, modelMatchesProvider, usesGateway } from '../lib/ai-routing';
-import { useMarketCatalog } from '../lib/use-market-catalog';
 
 const formatProcessingDuration = (durationMs: number) => durationMs >= 60000 ? `${(durationMs / 60000).toFixed(1)}min` : `${Math.max(0, Math.round(durationMs / 1000))}s`;
 const limitResponseLength = (content: string, maxLength = 500) => content.length > maxLength ? `${content.slice(0, maxLength - 1).trimEnd()}…` : content;
@@ -293,7 +292,7 @@ const formatToolExecutionFallback = (mode: AgentMode, specialist: AgentSpecialis
 };
 
 export default function ChatInterface({ catalog: baseCatalog, defaultProvider, defaultModel, panelId = 'left', eventPrefix = 'codeclub', selectedProject, blockedPanelState = 'blank', floating = false, onDraftChange, composerLeading }: ChatInterfaceProps) {
-  const { catalog, ready: marketCatalogReady } = useMarketCatalog(baseCatalog);
+  const catalog = baseCatalog;
   const { palette } = useOrbPalette();
   const orbPaletteIndex = ORB_PALETTES.indexOf(palette);
   const [language, setLanguage] = useState<AppLanguage>('es');
@@ -1042,7 +1041,6 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
   }, [eventPrefix]);
 
   useEffect(() => {
-    if (!marketCatalogReady) return;
     const restore = () => { void Promise.all([
       getSetting('codeclub_last_provider_id', ''),
       getSetting('codeclub_last_model_id', ''),
@@ -1058,7 +1056,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     restore();
     window.addEventListener('codeclub:settings-changed', restore);
     return () => window.removeEventListener('codeclub:settings-changed', restore);
-  }, [catalog, defaultProvider, defaultModel, marketCatalogReady]);
+  }, [catalog, defaultProvider, defaultModel]);
 
   useEffect(() => {
     if (settingsReady && currentProvider) void setSetting('codeclub_last_provider_id', currentProvider.id);
@@ -1170,7 +1168,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
   useEffect(() => {
     if (!menuOpen || commandKind !== 'provider') return;
     let active = true;
-    const keys = [...new Set(catalog.filter(item => item.type === 'provider' && !item.marketRemote && (!item.gatewayOnly || item.id === 'ai-gateway')).map(item => credentialKeyFor(item)))];
+    const keys = [...new Set(catalog.filter(item => item.type === 'provider' && (!item.gatewayOnly || item.id === 'ai-gateway')).map(item => credentialKeyFor(item)))];
     const bridge = (window as any).codeclub;
     void Promise.all(keys.map(async key => {
       try {
@@ -1219,7 +1217,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
       if (commandKind === 'project' && item.projectPath === activeProject?.projectPath) return false;
       return true;
     });
-  const isSavedProvider = (item: CatalogItem) => item.id === 'custom' || (!item.marketRemote && (!item.gatewayOnly || item.id === 'ai-gateway') && savedCredentialKeys.has(credentialKeyFor(item)));
+  const isSavedProvider = (item: CatalogItem) => item.id === 'custom' || ((!item.gatewayOnly || item.id === 'ai-gateway') && savedCredentialKeys.has(credentialKeyFor(item)));
   if (commandKind === 'provider') {
     commandMenuItems.sort((a, b) => Number(isSavedProvider(b)) - Number(isSavedProvider(a)));
   }
@@ -2041,9 +2039,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         throw new Error('Elegí un proveedor y un modelo antes de enviar.');
       }
 
-      if (currentProvider.marketRemote) {
-        throw new Error(marketAccountTranslations[language].remoteExecutionUnavailable);
-      }
       const useGateway = usesGateway(currentProvider, currentModel);
       const credentialKey = credentialKeyFor(currentProvider, currentModel);
       let apiKey = await getSetting(credentialKey, '');
@@ -2060,12 +2055,12 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       
       const selectedModelReference = modelIdFor(currentProvider, currentModel);
       if (!useGateway && !currentProvider.api) throw new Error('El catálogo no indica un endpoint compatible para este proveedor.');
-      const configuredHeaders = await getSetting<Record<string, string>>(`codeclub_provider_headers_${currentProvider.sourceProviderId || currentProvider.id}`, {});
+      const configuredHeaders = await getSetting<Record<string, string>>(`codeclub_provider_headers_${currentProvider.id}`, {});
       const requestHeaders: Record<string, string> = { 'user-agent': 'Codeclub', 'x-codeclub-session': chat.chatId };
       for (const [name, value] of Object.entries(configuredHeaders)) {
         if (typeof value === 'string' && /^[a-z0-9-]+$/i.test(name) && !['authorization', 'cookie', 'host'].includes(name.toLowerCase())) requestHeaders[name] = value.replaceAll('${chatId}', chat.chatId);
       }
-      const provider = useGateway ? createGateway({ apiKey: apiKey || undefined, fetch:desktopModelFetch }) : (currentProvider.sourceProviderId || currentProvider.id) === 'google' ? createGoogle({
+      const provider = useGateway ? createGateway({ apiKey: apiKey || undefined, fetch:desktopModelFetch }) : currentProvider.id === 'google' ? createGoogle({
         name: 'google',
         baseURL: currentProvider.api,
         apiKey,
