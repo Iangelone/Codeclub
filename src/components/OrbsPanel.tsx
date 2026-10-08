@@ -3,8 +3,9 @@
 /** Lists and edits autonomous or scheduled agents; run status and history are authoritative in Electron. */
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Copy, Play, Plus, Search, Square, X, MessageSquare } from 'lucide-react';
+import { Check, Copy, Play, Plus, Search, Square, X, MessageSquare, Trash2 } from 'lucide-react';
 import { getSetting, setSetting } from '../lib/persistence';
+import { ORBS_STORAGE_KEY, type OrbDefinition } from '../lib/chat-resources';
 import { orbControlTranslations, orbsTranslations, useAppLanguage } from '../lib/i18n';
 import { readGlobalChatHistory } from '../lib/projectManager';
 import type { ScheduledTask } from '../lib/scheduled-tasks';
@@ -14,10 +15,10 @@ import FluidOrb from './ui/fluid-orb';
 import { models, providers } from '../lib/ai-catalog';
 import { credentialKeyFor, modelIdFor, modelMatchesProvider, usesGateway } from '../lib/ai-routing';
 
-type Orb = { id: string; name: string; purpose: string; color: string; providerId: string; modelId: string };
+type Orb = OrbDefinition;
 type CatalogOption = { id: string; label: string; providerId?: string; gatewayId?: string; gatewayOnly?: boolean; gatewayAvailable?: boolean; api?: string; requiresApiKey?: boolean };
 
-const STORAGE_KEY = 'codeclub_orbs';
+const STORAGE_KEY = ORBS_STORAGE_KEY;
 const COLORS = ORB_PALETTES.map((palette) => palette.orb);
 const LEGACY_COLORS = ['#ff8a3d', '#f5b942', '#40c992', '#42a5f5', '#9b7cff', '#ed6a9b'];
 const normalizeColor = (color: string) => {
@@ -159,6 +160,29 @@ export default function OrbsPanel() {
     }
   };
 
+  const deleteOrb = async (orb: Orb) => {
+    if (pendingActions[orb.id]) return;
+    setPendingActions(previous => ({ ...previous, [orb.id]: true }));
+    setControlError('');
+    try {
+      const api = (window as any).codeclub;
+      const currentTasks: ScheduledTask[] = await api.tasksList('');
+      if (currentTasks.some(task => task.id === `orb_${orb.id}`)) {
+        await api.tasksDelete('', `orb_${orb.id}`);
+      }
+      const stored = await getSetting<Orb[]>(STORAGE_KEY, []);
+      const next = stored.filter(item => item.id !== orb.id);
+      await setSetting(STORAGE_KEY, next);
+      setOrbs(next);
+      setTasks(await api.tasksList(''));
+      window.dispatchEvent(new CustomEvent('codeclub:orbs-changed'));
+    } catch {
+      setControlError(controls.actionError);
+    } finally {
+      setPendingActions(previous => ({ ...previous, [orb.id]: false }));
+    }
+  };
+
   useEffect(() => {
     if (!copiedOrb) return;
     const timer = setTimeout(() => setCopiedOrb(''), 2000);
@@ -188,7 +212,7 @@ export default function OrbsPanel() {
 
   useEffect(() => {
     let active = true;
-    void getSetting<unknown>(STORAGE_KEY, []).then((value) => {
+    const refresh = () => { void getSetting<unknown>(STORAGE_KEY, []).then((value) => {
       if (!active) return;
       const saved = Array.isArray(value) ? value.filter((orb): orb is Orb => Boolean(orb && typeof orb.id === 'string' && typeof orb.name === 'string')).map((orb) => {
         const provider = selectableProviders.find((item) => item.id === orb.providerId) || defaultProvider;
@@ -198,7 +222,10 @@ export default function OrbsPanel() {
       setOrbs(saved);
       setReady(true);
     }).catch(() => { if (active) setReady(true); });
-    return () => { active = false; };
+    };
+    refresh();
+    window.addEventListener('codeclub:orbs-changed', refresh);
+    return () => { active = false; window.removeEventListener('codeclub:orbs-changed', refresh); };
   }, []);
 
   useEffect(() => {
@@ -238,6 +265,7 @@ export default function OrbsPanel() {
       : [...orbs, { ...draft, name: draft.name.trim(), purpose: draft.purpose.trim() }];
     try {
       await setSetting(STORAGE_KEY, next);
+      window.dispatchEvent(new CustomEvent('codeclub:orbs-changed'));
       const task = tasks.find((item) => item.id === `orb_${draft.id}`);
       if (task) await (window as any).codeclub.tasksSave('', { ...task, name: draft.name.trim(), prompt: draft.purpose.trim(), provider: draft.providerId, model: draft.modelId, language });
       setOrbs(next);
@@ -319,6 +347,7 @@ export default function OrbsPanel() {
             <button type="button" onClick={() => void controlOrb(orb, 'play')} disabled={active || pending} aria-label={controls.play} title={controls.play} className="grid h-8 w-8 place-items-center text-[#999999] hover:bg-[#242424] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) disabled:opacity-30"><Play size={14} aria-hidden="true" /></button>
             <button type="button" onClick={() => void controlOrb(orb, 'stop')} disabled={!active || pending} aria-label={controls.stop} title={controls.stop} className="grid h-8 w-8 place-items-center text-[#999999] hover:bg-[#242424] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) disabled:opacity-30"><Square size={13} aria-hidden="true" /></button>
             <button type="button" onClick={() => void controlOrb(orb, 'copy')} disabled={!task?.runs.length || pending} aria-label={copiedOrb === orb.id ? controls.copied : controls.copyTrace} title={copiedOrb === orb.id ? controls.copied : controls.copyTrace} className="grid h-8 w-8 place-items-center text-[#999999] hover:bg-[#242424] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) disabled:opacity-30">{copiedOrb === orb.id ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}</button>
+            <button type="button" disabled={pending || active} onClick={() => void deleteOrb(orb)} aria-label={`${controls.delete}: ${orb.name}`} title={active ? controls.stopBeforeDelete : `${controls.delete}: ${orb.name}`} className="grid h-8 w-8 place-items-center text-[#999999] hover:bg-[#242424] hover:text-red-300 focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) disabled:opacity-30"><Trash2 size={14} aria-hidden="true" /></button>
           </div>
         </div>;
         })}

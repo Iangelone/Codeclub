@@ -456,6 +456,29 @@ const pluginFile = (scope: PluginScope, projectPath: string, pluginId: string, r
   return target;
 };
 
+/** Resolve existing ancestors as well as lexical paths, so plugin junctions cannot escape storage. */
+async function safePluginFile(scope: PluginScope, projectPath: string, pluginId: string, relativePath: string, create = false) {
+  const storage = pluginRoot(scope, projectPath);
+  const target = pluginFile(scope, projectPath, pluginId, relativePath);
+  if (create) await fs.mkdir(storage, { recursive: true });
+  const realStorage = await fs.realpath(storage);
+  let ancestor = target;
+  while (true) {
+    try {
+      const realAncestor = await fs.realpath(ancestor);
+      const relative = path.relative(realStorage, realAncestor);
+      if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('La ruta real queda fuera del almacenamiento de plugins.');
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      const parent = path.dirname(ancestor);
+      if (parent === ancestor) throw error;
+      ancestor = parent;
+    }
+  }
+  return target;
+}
+
 const bundledAgentSkillsRoot = () => path.join(
   app.isPackaged ? process.resourcesPath : app.getAppPath(),
   app.isPackaged ? 'agent-skills' : path.join('vendor', 'agent-skills'),
@@ -660,17 +683,32 @@ async function invokeNativeCommand(command: string, args: any = {}, signal?: Abo
     case 'codeclub_agent_plugin_read_file': {
       const projectPath = String(args.projectPath || '');
       const scope = normalizePluginScope(args.scope, projectPath);
-      const target = pluginFile(scope, projectPath, String(args.pluginId || '').trim().toLowerCase(), String(args.path || ''));
+      const target = await safePluginFile(scope, projectPath, String(args.pluginId || '').trim().toLowerCase(), String(args.path || ''));
       return { content: await fs.readFile(target, 'utf8'), scope, pluginPath: pluginDirectory(scope, projectPath, String(args.pluginId || '').trim().toLowerCase()) };
     }
     case 'codeclub_agent_plugin_write_file': {
       const projectPath = String(args.projectPath || '');
       const scope = normalizePluginScope(args.scope, projectPath);
       const pluginId = String(args.pluginId || '').trim().toLowerCase();
-      const target = pluginFile(scope, projectPath, pluginId, String(args.path || ''));
+      let target = await safePluginFile(scope, projectPath, pluginId, String(args.path || ''), true);
       await fs.mkdir(path.dirname(target), { recursive: true });
+      target = await safePluginFile(scope, projectPath, pluginId, String(args.path || ''));
       await fs.writeFile(target, String(args.content ?? ''), 'utf8');
       return { ok: true, path: String(args.path || ''), absolutePath: target, scope, pluginPath: pluginDirectory(scope, projectPath, pluginId) };
+    }
+    case 'codeclub_agent_plugin_remove_skill': {
+      const projectPath = String(args.projectPath || '');
+      const scope = normalizePluginScope(args.scope, projectPath);
+      const pluginId = String(args.pluginId || '').trim().toLowerCase();
+      const skillId = String(args.skillId || '');
+      if (!/^[a-zA-Z0-9_-]+$/.test(skillId)) throw new Error('Identificador de skill inválido.');
+      const root = pluginDirectory(scope, projectPath, pluginId);
+      const target = await safePluginFile(scope, projectPath, pluginId, `skills/${skillId}`);
+      const [realRoot, realTarget] = await Promise.all([fs.realpath(root), fs.realpath(target)]);
+      const relative = path.relative(realRoot, realTarget);
+      if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('La skill queda fuera del plugin.');
+      await fs.rm(target, { recursive: true, force: false });
+      return { ok: true, pluginId, skillId, scope };
     }
     case 'codeclub_delete_agent_plugin': {
       const projectPath = String(args.projectPath || '');

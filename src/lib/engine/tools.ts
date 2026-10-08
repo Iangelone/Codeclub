@@ -7,6 +7,7 @@ import { createId, readAgentState, updateAgentState, waitForAgentStateMutations,
 import { appendGenerationUsage } from '../usage';
 import { readExecutionLog } from '../execution-log';
 import { readProjectIndex } from '../projectManager';
+import { createResourceTools } from './resource-tools';
 
 const jsonSchema = (schema: unknown) => aiJsonSchema<any>(schema as any);
 
@@ -287,6 +288,11 @@ export function createDynamicToolAccess(availableTools: Record<string, any>, rec
     readFile: ['leer', 'archivo', 'contenido', 'file', 'read'],
     searchText: ['buscar', 'busqueda', 'texto', 'todo', 'encontrar', 'search'],
     writeFile: ['crear', 'editar', 'escribir', 'modificar', 'archivo', 'write'],
+    listResources: ['extensiones', 'extensions', 'skills', 'plugins', 'mcp', 'orbes', 'orbs', 'recursos'],
+    editPluginResource: ['editar skill', 'edit skill', 'editar extension', 'editar plugin', 'modificar habilidad', 'manifest'],
+    deleteSkill: ['borrar skill', 'delete skill', 'eliminar habilidad'],
+    manageMcpServer: ['editar mcp', 'eliminar mcp', 'edit mcp', 'remove mcp'],
+    manageOrb: ['orbe', 'orbes', 'orb', 'orbs'],
     createSkill: ['habilidad', 'skill', 'instrucciones', 'codeclub'],
     createExtension: ['complemento', 'extension', 'plugin', 'integracion'],
     deleteExtension: ['eliminar complemento', 'borrar extension', 'quitar plugin'],
@@ -473,6 +479,7 @@ export function createTools(ctx: ToolContext) {
   const writePluginFile = async (scope: PluginScope, pluginId: string, relativePath: string, content: string) => invoke<any>('codeclub_agent_plugin_write_file', { projectPath, scope, pluginId, path: relativePath, content });
 
   return wrapToolSet({
+    ...createResourceTools(ctx),
     ...createSwarmTool({ projectPath, recordToolEvent, setAgentState, requestToolApproval, provider, modelId }),
     scheduleTask: tool({
       description: 'Create a one-shot or recurring scheduled task in this chat project (or globally), using the current provider and model. Runs while Codeclub is open, including the tray. Calendar schedules use an IANA time zone; custom intervals start after creation. Never claim it will run while the app is fully quit.',

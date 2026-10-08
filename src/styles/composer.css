@@ -7,7 +7,7 @@
   border: 1px solid #303030;
   border-radius: 24px;
   padding: 6px 10px;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--nexo-orb-blue) 5%, #272727), #272727 76%);
+  background: #191919;
   color: #F5F5EF;
 }
 

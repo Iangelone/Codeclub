@@ -28,7 +28,7 @@ try {
   const cssDirectory=path.join(repo,'out/_next/static/chunks');
   const styles=(await readdir(cssDirectory)).filter(file=>file.endsWith('.css'));
   const stylesheet=(await Promise.all(styles.map(file=>readFile(path.join(cssDirectory,file),'utf8')))).join('\n');
-  files.set('/qa/settings.json',JSON.stringify({codeclub_last_provider_id:'qa',codeclub_last_model_id:'qa-model',codeclub_api_key_qa:'fixture-only'}));
+  files.set('/qa/settings.json',JSON.stringify({codeclub_last_provider_id:'qa',codeclub_last_model_id:'qa-model',codeclub_api_key_qa:'fixture-only',codeclub_orbs:[{id:'qa-orb',name:'Orbe QA',purpose:'QA only',color:'#2d5fd6',providerId:'qa',modelId:'qa-model'}]}));
   server=createServer(async (request,response)=>{
     if(request.url==='/app.js'){response.setHeader('content-type','text/javascript');response.end(await readFile(bundle));return;}
     if(request.url==='/style.css'){response.setHeader('content-type','text/css');response.end(stylesheet);return;}
@@ -39,7 +39,7 @@ try {
       if(!data.stream) { response.setHeader('content-type','application/json');response.end(JSON.stringify({id:'summary',object:'chat.completion',model:'qa-model',choices:[{message:{role:'assistant',content:'Resumen QA del turno'},finish_reason:'stop',index:0}],usage:{prompt_tokens:10,completion_tokens:5,total_tokens:15}}));return;}
       if(data.stream) {
         response.setHeader('content-type','text/event-stream');
-        const phaseRequest = data.messages?.some(message => message.role === 'user' && message.content === 'QA phases');
+        const phaseRequest = data.messages?.some(message => message.role === 'user' && typeof message.content === 'string' && message.content.startsWith('QA phases'));
         const phaseCount = data.messages?.filter(message => message.role === 'tool').length || 0;
         if (phaseRequest && phaseCount < 3) {
           await new Promise(resolve => setTimeout(resolve, 300));
@@ -81,6 +81,7 @@ try {
       case 'appCacheDir':return '/qa/cache';
       case 'makeDirectory':return true;
       case 'invoke':
+        if(args[0]==='codeclub_list_agent_plugins') return [{id:'qa-plugin',name:'Plugin QA',root:'/qa/plugins/qa-plugin',scope:'global',source:'global',warnings:[],skills:[{id:'qa-skill',name:'Skill QA',description:'Fixture skill',content:'QA skill instructions',scope:'global',pluginName:'qa-plugin'}],mcpServers:{'MCP QA':{type:'streamable-http',url:'http://127.0.0.1:1',headers:{Authorization:'SECRET-MUST-NOT-APPEAR'}}}}];
         if(args[0]==='codeclub_http_fetch'){
           const request=args[1].request;
           if(!request.url.startsWith(`http://127.0.0.1:${server.address().port}/v1/`))throw new Error('Unexpected test provider URL');
@@ -207,6 +208,28 @@ try {
   assert.equal(await page.locator('.chat-turn').count(),0,'New chat clears the previous turn after its exit');
 
   const phaseInput = page.getByRole('textbox',{name:'Mensaje',exact:true});
+  const emptyGeometry = await page.locator('.messages-area').boundingBox();
+  const greetingGeometry = await page.locator('[data-chat-greeting]').boundingBox();
+  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat')));
+  await page.waitForTimeout(40);
+  assert.equal(await page.locator('[data-chat-greeting]').evaluate(el=>getComputedStyle(el).opacity),'1','Empty greeting stays opaque during panel transitions');
+  await page.locator('.messages-area[data-chat-transition="idle"]').waitFor();
+  await phaseInput.fill('/');
+  await page.getByRole('listbox').waitFor();
+  assert.deepEqual(await page.locator('.messages-area').boundingBox(),emptyGeometry,'Slash does not resize the empty chat');
+  assert.deepEqual(await page.locator('[data-chat-greeting]').boundingBox(),greetingGeometry,'Slash does not move the greeting');
+  await page.getByRole('option',{name:/^Plugin QA /}).waitFor();
+  await page.getByRole('option',{name:/Skill QA/}).waitFor();
+  await page.getByRole('option',{name:/MCP QA/}).waitFor();
+  await page.getByRole('option',{name:/Orbe QA/}).waitFor();
+  await page.getByRole('option',{name:/Crear extensión/}).waitFor();
+  await page.getByRole('option',{name:/Crear skill/}).waitFor();
+  await page.getByRole('option',{name:/Crear MCP/}).waitFor();
+  await page.getByRole('option',{name:/Crear orbe/}).waitFor();
+  assert.ok((await page.locator('.command-menu-item small').allTextContents()).every(text=>text.trim().split(/\s+/).length<=2),'Slash descriptions contain at most two words');
+  assert.ok(!(await page.locator('.command-list').innerText()).includes('SECRET-MUST-NOT-APPEAR'),'Slash catalog contains no MCP secret values');
+  await page.getByRole('option',{name:/MCP QA/}).click();
+  await page.getByRole('button',{name:'Quitar referencia: MCP QA',exact:true}).waitFor();
   await phaseInput.fill('QA phases');
   await phaseInput.press('Enter');
   await page.locator('.chat-live-progress').getByText('Revisando el proyecto QA',{exact:true}).waitFor();
@@ -219,8 +242,13 @@ try {
   if(process.env.CODECLUB_UI_CAPTURE_DIR) await page.screenshot({path:path.join(process.env.CODECLUB_UI_CAPTURE_DIR,'codeclub-live-qa.png')});
   await page.getByRole('button',{name:'Enviar',exact:true}).waitFor();
   assert.equal(await page.locator('.chat-live-progress, .turn-activity').count(),0,'Progress disappears after completion');
+  const resourcePrompt=networkMessages.find(message=>message.role==='user'&&typeof message.content==='string'&&message.content.startsWith('QA phases'));
+  assert.ok(resourcePrompt.content.includes('qa-plugin')&&resourcePrompt.content.includes('MCP QA'),'Selected resource identity reaches the model');
+  assert.ok(!resourcePrompt.content.includes('SECRET-MUST-NOT-APPEAR'),'Resource references never include MCP credentials');
   await page.locator('.chat-markdown-assistant').getByText(/Respuesta QA\./).waitFor();
   if(process.env.CODECLUB_UI_CAPTURE_DIR) await page.screenshot({path:path.join(process.env.CODECLUB_UI_CAPTURE_DIR,'codeclub-completed-qa.png')});
+
+  await page.getByRole('button',{name:'Quitar referencia: MCP QA',exact:true}).click();
 
   // Native credentials return presence, never the key itself.
   await page.evaluate(()=>{
@@ -267,6 +295,16 @@ try {
   await page.getByPlaceholder('Enter your credential for QA missing').press('Escape');
   await page.getByPlaceholder(/Enter your credential/).waitFor({state:'hidden'});
   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('codeclub:language-change',{detail:{language:'es'}})));
+  const populatedGeometry = await page.locator('.messages-area').boundingBox();
+  await page.getByRole('textbox',{name:'Mensaje',exact:true}).fill('/');
+  await page.getByRole('listbox').waitFor();
+  assert.deepEqual(await page.locator('.messages-area').boundingBox(),populatedGeometry,'Slash does not resize populated chats');
+  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('codeclub:language-change',{detail:{language:'en'}})));
+  await page.getByRole('option',{name:/Create orb/}).waitFor();
+  await page.getByRole('option',{name:/^Plugin QA Extension .*\.\.\./}).waitFor();
+  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('codeclub:language-change',{detail:{language:'es'}})));
+  await page.getByRole('option',{name:/Crear orbe/}).waitFor();
+  await page.getByRole('textbox',{name:'Mensaje',exact:true}).fill('');
   assert.deepEqual(pageErrors,[]);
   console.log(JSON.stringify({passed:true,fixtureMessages:10000,mountedTurns:mounted,providerMessages:networkMessages.length,raceProtected:true,streamPersisted:true,sequentialTransitions:true,stableEntry:true}));
 }finally{

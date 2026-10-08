@@ -16,7 +16,7 @@
 }
 
 #codeclub-chat-panel .chat-composer .composer-box {
-  background: linear-gradient(135deg, color-mix(in srgb, var(--nexo-orb-blue) 5%, var(--codeclub-surface)), var(--codeclub-surface) 76%);
+  background: #191919;
   border-color: color-mix(in srgb, var(--codeclub-accent) 14%, var(--codeclub-border));
 }
 

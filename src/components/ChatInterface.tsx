@@ -5,7 +5,7 @@ import { useChatHistory } from './use-chat-history';
 import { generateTurnSummary } from '../lib/turn-summary';
 import { buildChatContext } from '../lib/chat-context';
 import { sameSession, useSharedSessions, type SharedSession } from '../lib/shared-sessions';
-import { ArrowUp, Box, Braces, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Languages, LayoutTemplate, MessageSquare, Minimize2, Monitor, MoreHorizontal, Paperclip, Pencil, Play, Presentation, Radar, RotateCcw, Search, ScrollText, Square, Table2, Terminal, Folder, WandSparkles, X } from 'lucide-react';
+import { ArrowUp, BookOpen, BookPlus, Box, Braces, Orbit, PackagePlus, PlugZap, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Languages, LayoutTemplate, MessageSquare, Minimize2, Monitor, MoreHorizontal, Paperclip, Pencil, Play, Presentation, Radar, RotateCcw, Search, ScrollText, Square, Table2, Terminal, Folder, WandSparkles, X } from 'lucide-react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -36,6 +36,8 @@ import { getProjectFilePath, getSetting, logPersistence, setSetting } from '../l
 import { appendGenerationUsage, type GenerationUsageRecord } from '../lib/usage';
 import { appendExecutionLog } from '../lib/execution-log';
 import { appendGlobalChatTranscript, getProjectChatPath, getProjectTranscriptPath, readGlobalChatHistory, readGlobalChats, readProjectIndex, readProjectMeta, writeGlobalChatHistory, writeGlobalChats, writeProjectMeta, type ProjectMeta } from '../lib/projectManager';
+import { chatResources, ORBS_STORAGE_KEY, parseOrbs, type ChatResource } from '../lib/chat-resources';
+import { resourceMenuTranslations } from '../lib/i18n';
 import { codeclubExtensions, type CodeclubExtension } from '../lib/extensions';
 import { orbControlTranslations, savedProviderTranslations, activityTranslations, aiCredentialTranslations, providerErrorTranslations, chatHistoryTranslations, chatActionTranslations, agentTextSelectionTranslations, LANGUAGE_STORAGE_KEY, rightSidebarTranslations, type AppLanguage, useAppLanguage } from '../lib/i18n';
 import { connectAllAgentPluginMcp, loadAgentPlugins } from '../lib/agent-plugins';
@@ -141,6 +143,13 @@ type CatalogItem = { id: string; type?: string; label?: string; name?: string; d
 type ProjectOption = CatalogItem & { path?: string; projectPath?: string | null; projectId?: string; isNone?: boolean };
 type SessionSkill = CatalogItem & { name: string; source: string; content: string; pluginRoot?: string };
 type ChatInterfaceProps = { catalog: CatalogItem[]; defaultProvider: CatalogItem; defaultModel: CatalogItem; panelId?: string; eventPrefix?: string; selectedProject?: { projectPath: string; projectName?: string } | null; blockedPanelState?: string; floating?: boolean; onDraftChange?: (draft: string) => void; composerLeading?: React.ReactNode };
+function compactCommandDescription(description?: string): string {
+  const words = description?.trim().split(/\s+/).filter(Boolean) || [];
+  return words.slice(0, 2).join(' ') + (words.length > 2 ? '...' : '');
+}
+
+const resourceCreationIcons = { Extension: PackagePlus, Skill: BookPlus, Mcp: PlugZap, Orb: Orbit };
+
 const extensionIcons: Record<string, any> = { documents: FileText, pdf: FileType2, spreadsheets: Table2, presentations: Presentation, 'template-creator': LayoutTemplate };
 type ChatRuntime = {
   runId?: string;
@@ -468,11 +477,14 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
   const [commandKind, setCommandKind] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [projectOptions, setProjectOptions] = useState<ProjectOption[]>([]);
+  const resourceText = resourceMenuTranslations[language];
+  const resourceProjectRef = useRef<string | null>(null);
+  const [resourceOptions, setResourceOptions] = useState<ChatResource[]>([]);
+  const [selectedResources, setSelectedResources] = useState<ChatResource[]>([]);
   const [skillOptions, setSkillOptions] = useState<SessionSkill[]>([]);
   const [activeSkills, setActiveSkills] = useState<SessionSkill[]>([]);
   const [activeExtensions, setActiveExtensions] = useState<CodeclubExtension[]>([]);
-  const [availableExtensions, setAvailableExtensions] = useState<CodeclubExtension[]>(codeclubExtensions);
-  const [enabledExtensions, setEnabledExtensions] = useState<Record<string, boolean>>(() => Object.fromEntries(codeclubExtensions.map((extension) => [extension.id, true])));
+  const availableExtensions = codeclubExtensions;
   const [activeCommandIndex, setActiveCommandIndex] = useState(0);
   const [activeProject, setActiveProject] = useState<any>(() => selectedProject ? { projectPath: selectedProject.projectPath, name: selectedProject.projectName || 'Proyecto' } : null);
   const [projectMeta, setProjectMeta] = useState<Record<string, any[]> | null>(null);
@@ -546,34 +558,38 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
   }, [activeProject, currentModel, currentProvider, messages]);
 
   useEffect(() => {
-    const loadSkills = async () => {
+    let disposed = false;
+    let revision = 0;
+    const projectIdentity = activeProject?.projectPath || '';
+    if (resourceProjectRef.current !== projectIdentity) {
+      resourceProjectRef.current = projectIdentity;
+      setResourceOptions([]);
+      setSkillOptions([]);
+      setSelectedResources(previous => previous.filter(resource => resource.scope === 'global'));
+      setActiveSkills(previous => previous.filter(skill => skill.scope === 'global'));
+    }
+    const loadResources = async () => {
+      const current = ++revision;
       try {
-        const plugins = await loadAgentPlugins(activeProject?.projectPath || '');
-        const pluginSkills = plugins.flatMap((plugin) => plugin.skills.map((skill) => ({ ...skill, id: `${plugin.id}:${skill.id}`, source: `plugin:${plugin.name}`, pluginRoot: plugin.root })));
+        const [plugins, orbs] = await Promise.all([loadAgentPlugins(activeProject?.projectPath || ''), getSetting<unknown>(ORBS_STORAGE_KEY, [])]);
+        if (disposed || current !== revision) return;
+        const pluginSkills = plugins.flatMap(plugin => plugin.skills.map(skill => ({ ...skill, id: `${plugin.scope}:${plugin.id}:${skill.id}`, pluginId: plugin.id, skillId: skill.id, source: `${plugin.name} · ${resourceMenuTranslations[language][plugin.scope]}`, pluginRoot: plugin.root, readOnly: !!plugin.builtIn })));
+        const resources = chatResources(plugins, parseOrbs(orbs));
         setSkillOptions(pluginSkills as SessionSkill[]);
-      } catch { setSkillOptions([]); }
+        setResourceOptions(resources);
+        setSelectedResources(previous => previous.filter(item => resources.some(resource => resource.id === item.id && resource.kind === item.kind)));
+        setActiveSkills(previous => previous.filter(item => pluginSkills.some(skill => skill.id === item.id)));
+      } catch {
+        if (!disposed && current === revision) { setSkillOptions([]); setResourceOptions([]); }
+      }
     };
-    const handleSkillsChanged = (event: Event) => {
-      const projectPath = (event as CustomEvent).detail?.projectPath;
-      if (!projectPath || projectPath === activeProject?.projectPath) void loadSkills();
-    };
-    void loadSkills();
-    window.addEventListener('codeclub:skills-changed', handleSkillsChanged);
-    return () => window.removeEventListener('codeclub:skills-changed', handleSkillsChanged);
-  }, [activeProject?.projectPath]);
+    const changed = () => { void loadResources(); };
+    void loadResources();
+    const events = ['codeclub:skills-changed', 'codeclub:extensions-changed', 'codeclub:mcp-changed', 'codeclub:orbs-changed'];
+    events.forEach(name => window.addEventListener(name, changed));
+    return () => { disposed = true; events.forEach(name => window.removeEventListener(name, changed)); };
+  }, [activeProject?.projectPath, language]);
 
-  useEffect(() => {
-    const loadEnabledExtensions = async () => {
-      const all = codeclubExtensions;
-      setAvailableExtensions(all);
-      return Promise.all(all.map(async (extension) => [extension.id, await getSetting(`codeclub_extension_enabled_${extension.id}`, 'true') !== 'false'] as const))
-      .then((entries) => setEnabledExtensions(Object.fromEntries(entries)));
-    };
-    const handleExtensionsChanged = () => { void loadEnabledExtensions(); };
-    void loadEnabledExtensions();
-    window.addEventListener('codeclub:extensions-changed', handleExtensionsChanged);
-    return () => window.removeEventListener('codeclub:extensions-changed', handleExtensionsChanged);
-  }, []);
   const agentStatusText = chatText.status[agentState as keyof typeof chatText.status] || chatText.status.idle;
   const isAgentBusy = isStreaming;
   const sendButtonActive = isAgentBusy || Boolean(input.trim()) || attachedFiles.length > 0 || Boolean(browserReferences.length) || selectedTextReferences.length > 0 || artifactReferences.length > 0 || Boolean(computerContext) || Boolean(credentialProvider);
@@ -982,13 +998,9 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
   }, []);
 
   useEffect(() => {
-    if (messages.length === 0) {
-      setShowEmptyGreeting(true);
-      return;
-    }
-    const timer = window.setTimeout(() => setShowEmptyGreeting(false), 320);
-    return () => window.clearTimeout(timer);
-  }, [messages.length]);
+    // Keep the settled empty state while history changes behind the transition.
+    if (chatTransitionPhase === 'idle') setShowEmptyGreeting(messages.length === 0);
+  }, [messages.length, chatTransitionPhase]);
 
   useEffect(() => {
     const handleActiveProject = (e: any) => {
@@ -1209,8 +1221,11 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     { id: 'ahorro', label: responseSaverEnabled ? (language === 'en' ? 'Disable response saving' : 'Desactivar ahorro de respuestas') : (language === 'en' ? 'Save response length' : 'Ahorrar respuestas'), description: language === 'en' ? 'Limit responses to 500 characters' : 'Limitar respuestas a 500 caracteres', aliases: ['ahorro', 'compactar', 'breve', 'conciso'], type: 'command', icon: Minimize2 },
     ...(isDevelopmentBuild ? [{ id: 'desarrollo', label: language === 'en' ? 'Development' : 'Desarrollo', description: language === 'en' ? 'Insert a development prompt' : 'Inyectar un prompt de desarrollo', aliases: ['desarrollo', 'desarrollar', 'development', 'develop'], type: 'command' as const, icon: Code2 }] : []),
     { id: 'overlay', label: computerUseActive ? (language === 'en' ? 'Disable Computer Use overlay' : 'Desactivar overlay de Computer Use') : (language === 'en' ? 'Enable Computer Use overlay' : 'Activar overlay de Computer Use'), description: language === 'en' ? 'Show or hide the PC control overlay' : 'Mostrar u ocultar el overlay de control de PC', aliases: ['overlay', 'overlay-pc', 'computer-overlay'], type: 'command', icon: Monitor },
-    ...availableExtensions.filter((extension) => enabledExtensions[extension.id]).map((extension) => ({ id: extension.id, label: extension.name, description: extension.description, type: 'extension' as const, icon: extensionIcons[extension.id] || Box, extension })),
-  ].filter((command: CatalogItem) => command.label?.toLowerCase().includes(searchQuery.toLowerCase()) || command.aliases?.some((alias: string) => alias.includes(searchQuery.toLowerCase())));
+    ...skillOptions.map(skill => ({ ...skill, type: 'skill', label: skill.name, aliases: [skill.name.toLowerCase(), 'skill', 'habilidad'], icon: BookOpen })),
+    ...resourceOptions.map(resource => ({ id: `${resource.kind}:${resource.id}`, type: 'resource', label: resource.name, description: `${resourceText[resource.kind]} · ${resourceText[resource.scope]}`, aliases: [resource.kind, resourceText[resource.kind].toLowerCase()], icon: resource.kind === 'orb' ? PyramidMark : resource.kind === 'mcp' ? Braces : Box, resource })),
+    ...(['Extension', 'Skill', 'Mcp', 'Orb'] as const).map(kind => ({ id: `create-resource-${kind}`, type: 'resource-create', label: resourceText[`create${kind}`], description: resourceText.createDescription, aliases: [`crear ${kind.toLowerCase()}`, `create ${kind.toLowerCase()}`], icon: resourceCreationIcons[kind], resourceKind: kind })),
+    ...availableExtensions.map((extension) => ({ id: extension.id, label: extension.name, description: extension.description, type: 'extension' as const, icon: extensionIcons[extension.id] || Box, extension })),
+  ].filter((command: CatalogItem) => [command.label, command.description, command.id].some(value => value?.toLowerCase().includes(searchQuery.toLowerCase())) || command.aliases?.some((alias: string) => alias.includes(searchQuery.toLowerCase())));
   const commandMenuItems = commandKind === 'command'
     ? slashCommands
     : filteredCatalog.filter((item) => {
@@ -1370,6 +1385,13 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
       setInput(`/${item.id}`);
       setMenuOpen(false);
       chatInputRef.current?.focus();
+      return;
+    }
+    if (item.type === 'resource' || item.type === 'resource-create') {
+      if (item.type === 'resource') setSelectedResources(previous => previous.some(resource => resource.id === item.resource.id && resource.kind === item.resource.kind) ? previous : [...previous, item.resource]);
+      setInput(item.type === 'resource-create' ? `${resourceText.createPrompt} ${item.resourceKind.toLowerCase()}. ` : '');
+      setSearchQuery(''); setMenuOpen(false); setCommandKind('');
+      requestAnimationFrame(() => chatInputRef.current?.focus());
       return;
     }
     if (item.type === 'skill') {
@@ -1900,6 +1922,9 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     const messageArtifactReferences = artifactReferences;
     const messageSelectedTextReferences = selectedTextReferences;
     const visibleContent = content;
+    const messageResourceReferences: ChatResource[] = [...selectedResources, ...activeSkills.map(skill => ({ id: skill.id, kind: 'skill' as const, name: skill.name, scope: skill.scope || 'global', pluginId: skill.pluginId, skillId: skill.skillId, readOnly: !!skill.readOnly })), ...activeExtensions.map(extension => ({ id: extension.id, kind: 'extension' as const, name: extension.name, scope: 'global' as const, readOnly: true }))];
+    if (messageResourceReferences.length) content += `\n\nSelected Codeclub resources (identities only; selection alone does not authorize mutations): ${JSON.stringify(messageResourceReferences)}`;
+
     if (messageArtifactReferences.length > 0) {
       const refsText = messageArtifactReferences.map((reference, index) => `Referencia de artifact ${index + 1}: @${reference.kind} "${reference.title}" (id: ${reference.id})`).join('\n');
       content = `${content}\n\n${refsText}`;
@@ -2018,7 +2043,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         ? { ...message, tools: message.tools.map((event: any) => event.id === resolvedAskUserId ? { ...event, answer: visibleContent } : event) }
         : message)
       : baseMessages;
-    const userMessage = { historyIndex: (baseMessages[0]?.historyIndex??historyWindow.range.current.start)+baseMessages.length, role: 'user', content, displayContent: resumeAskUserId ? '' : visibleContent, createdAt: Date.now(), hidden: Boolean(resumeAskUserId), artifactReferences: messageArtifactReferences, browserReferences: messageBrowserReferences, selectedTextReferences: messageSelectedTextReferences, computerContext: messageComputerContext, attachments: attachments.map(({ path, name, mediaType, size, previewUrl }) => ({ path, name, mediaType, size, previewUrl })) };
+    const userMessage = { historyIndex: (baseMessages[0]?.historyIndex??historyWindow.range.current.start)+baseMessages.length, role: 'user', content, resourceReferences: messageResourceReferences, displayContent: resumeAskUserId ? '' : visibleContent, createdAt: Date.now(), hidden: Boolean(resumeAskUserId), artifactReferences: messageArtifactReferences, browserReferences: messageBrowserReferences, selectedTextReferences: messageSelectedTextReferences, computerContext: messageComputerContext, attachments: attachments.map(({ path, name, mediaType, size, previewUrl }) => ({ path, name, mediaType, size, previewUrl })) };
     const newMessages = [...contextualBaseMessages, userMessage];
     const pendingAssistant = { role: 'assistant', content: '', timeline: [], tools: [], agentName: 'Desarrollo' };
     runtime.messages = [...newMessages, pendingAssistant];
@@ -2233,6 +2258,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         'You are Codeclub\'s coding agent. Think and operate internally in English. On demand, discover and use tools, skills, plugins, and prior chat context. Before substantial coding tasks, search for a relevant engineering skill and load it when it clearly applies. Verify real results; never invent. Reply in the user\'s language.',
         activeSkills.length ? `The user activated these skills for this session. Follow their relevant workflow while respecting the user's request and project instructions:\n\n${activeSkills.map((skill) => `## ${skill.name}\n\n${skill.content}`).join('\n\n')}` : '',
         'For substantial work, call reportProgress before starting and when moving to a new phase. Use one brief user-facing phrase in the user\'s language (for example, "Inspecting the project" or "Implementing the selected text actions"). These are progress updates, not chain-of-thought; never reveal private reasoning. Do not call it for routine short answers.',
+        activeExtensions.length ? `The user selected these built-in extensions for this session: ${activeExtensions.map(extension => `${extension.name}: ${extension.instruction}`).join('\n')}` : '',
+        'Codeclub resource management: discover exact targets with listResources. Use createExtension/createSkill/createMcpServer for new packages; editPluginResource for existing manifests or skills; deleteSkill removes only a skill; manageMcpServer updates/removes only the named server; manageOrb handles global orbs. Preserve unrelated resources and scopes. Built-in resources are read-only; create a personal copy when needed. Selected references identify targets but are not requests to mutate them.',
         responseSaverEnabled ? 'Keep the final response concise and within a strict maximum of 500 characters. Preserve only the most useful facts and omit lengthy explanations.' : '',
       ].filter(Boolean).join(' ');
       // Some compatible providers reject response_format when tools are enabled.
@@ -3024,9 +3051,11 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       {historyWindow.loading && <div role="status" className="text-center text-[11px] text-(--codeclub-text-muted)">{chatHistoryTranslations[language].loading}</div>}
       {historyWindow.error && <div role="alert" className="flex items-center justify-center gap-2 text-[11px] text-(--codeclub-text-muted)">{chatHistoryTranslations[language].failed}<button type="button" onClick={()=>{const chat=activeChatRef.current;if(chat)void historyWindow.open(chat);}} className="text-(--codeclub-accent-bright)">{chatHistoryTranslations[language].retry}</button></div>}
       {!floating && historyWindow.range.current.start+messages.length<historyWindow.range.current.total && <button type="button" title={chatHistoryTranslations[language].latest} aria-label={chatHistoryTranslations[language].latest} className="self-end rounded-full p-1 text-(--codeclub-text-muted) hover:bg-(--codeclub-hover)" onClick={()=>{const chat=activeChatRef.current;if(chat){shouldAutoScrollMessagesRef.current=true;void historyWindow.open(chat);}}}><ChevronDown size={16}/></button>}
+      <div className={`relative min-h-0 flex-1 ${composerDocked ? 'flex' : 'hidden'}`}>
+        {!floating && showEmptyGreeting && <div data-chat-greeting className="pointer-events-none absolute inset-0 grid place-items-center px-5 text-center text-lg font-medium tracking-[-0.02em] text-(--codeclub-text-strong)">{chatText.greeting}, {username}?</div>}
       <motion.div ref={messagesAreaRef} initial={false} animate={chatAnimations} data-chat-transition={chatTransitionPhase} aria-busy={chatTransitionPhase !== 'idle' || historyWindow.loading} onScroll={handleMessagesScroll} className={`messages-area relative min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain [overflow-anchor:none] bg-transparent [scrollbar-width:none] ${composerDocked ? 'flex' : 'hidden'} ${chatTransitionPhase === 'idle' ? '' : 'pointer-events-none'}`} role="log" aria-label={language === 'en' ? 'Chat messages' : 'Mensajes del chat'} aria-live="polite" aria-relevant="additions text">
         <div aria-hidden="true" className="min-h-0 flex-1" />
-        {!floating && showEmptyGreeting && <div aria-hidden={messages.length > 0} className={`pointer-events-none absolute inset-0 grid place-items-center whitespace-nowrap px-5 text-lg font-medium tracking-[-0.02em] text-(--codeclub-text-strong) transition-opacity duration-300 ${messages.length === 0 ? 'opacity-100' : 'opacity-0'}`}>{chatText.greeting}, {username}?</div>}
+
         <div className="relative w-full shrink-0" style={virtualizeTurns ? { height: totalTurnHeight } : undefined}>
         {(virtualizeTurns ? turnVirtualizer.getVirtualItems() : turnIndexes.map((messageIndex, index) => ({ index, start: 0, key: `${activeChat?.projectPath || ''}:${activeChat?.chatId || 'new'}:${messages[messageIndex]?.historyIndex ?? messageIndex}` }))).map((virtualTurn) => {
           const turnIndex=turnIndexes[virtualTurn.index];
@@ -3057,7 +3086,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               const isLiveAssistant = m.role === 'assistant' && isStreaming && i === messages.length - 1;
               return <React.Fragment key={`${m.role}-${i}`}>
             {<motion.div initial={false} animate={{ opacity: 1 }} transition={{ duration: 0.2, ease: 'easeOut' }} className={`group/message ${m.role === 'assistant' ? 'chat-assistant-message' : 'chat-user-message'} ${m.meta?.status === 'error' ? 'chat-error-message' : ''}`} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '8px', maxWidth: m.role === 'user' ? '76%' : '100%', minWidth: 0 }}>
-              {m.role === 'user' && (m.artifactReferences?.length > 0 || m.browserReferences?.length > 0 || m.selectedTextReferences?.length > 0 || m.attachments?.length > 0) && <div className="chat-reference-row" aria-label={language === 'en' ? 'References and files' : 'Referencias y archivos'}>
+              {m.role === 'user' && (m.resourceReferences?.length > 0 || m.artifactReferences?.length > 0 || m.browserReferences?.length > 0 || m.selectedTextReferences?.length > 0 || m.attachments?.length > 0) && <div className="chat-reference-row" aria-label={language === 'en' ? 'References and files' : 'Referencias y archivos'}>
+                {m.resourceReferences?.map((resource: ChatResource) => <div key={`${resource.kind}:${resource.id}`} className="chat-reference-card" title={`${resourceText[resource.kind]} · ${resourceText[resource.scope]}`}><span className="chat-reference-title">{resource.name}</span></div>)}
                 {m.artifactReferences?.map((ref: { kind: 'plan' | 'todo'; id: string; title: string }) => <div key={`${ref.kind}-${ref.id}`} className="chat-reference-card chat-artifact-reference-card" title={`@${ref.kind} · ${ref.title}`}><span className="chat-reference-kind">@{ref.kind}</span><span className="chat-reference-title">{ref.title}</span></div>)}
                 {m.browserReferences?.map((ref: { id: string; title: string; text: string; url?: string }, referenceIndex: number) => <div key={ref.id || `${ref.title}-${referenceIndex}`} className="chat-reference-card chat-browser-reference-card" title={ref.title}><span className="chat-browser-reference-number">{referenceIndex + 1}</span>{getBrowserReferenceFavicon(ref) ? <img src={getBrowserReferenceFavicon(ref)} alt="" className="chat-reference-favicon" /> : <Globe size={16} className="chat-reference-favicon chat-reference-fallback-icon" aria-hidden="true" />}<span className="chat-reference-title">{ref.title}</span></div>)}
                 {m.selectedTextReferences?.map((ref: { id: string; text: string; comment?: string }) => <div key={ref.id} className="chat-reference-card chat-selected-text-reference-card" title={ref.comment ? `${ref.comment}\n\n${ref.text}` : ref.text}><span className="chat-selected-text-content">{ref.text}</span><span className="chat-selected-text-label">{agentTextSelectionTranslations[language].selectedReference}</span></div>)}
@@ -3098,8 +3128,10 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         </div>
       </motion.div>
 
+      </div>
+
       <div className="chat-composer composer-row flex w-full min-w-0 shrink-0 items-center gap-2 bg-transparent">
-          <div className="composer-box min-h-10 min-w-0 flex-1 overflow-visible rounded-[22px] border border-(--codeclub-border-soft) bg-(--codeclub-surface-raised) p-0 shadow-none">
+          <div className="composer-box relative min-h-10 min-w-0 flex-1 overflow-visible rounded-[22px] border border-(--codeclub-border-soft) bg-(--codeclub-surface-raised) p-0 shadow-none">
           {computerContext && <div className="flex min-h-[28px] items-center gap-2 border-b border-[#202020] px-4 py-1.5" aria-label={language === 'en' ? 'Computer Use context' : 'Contexto de Computer Use'}><span className="shrink-0 rounded-full border border-[#3D9BFF]/60 bg-[#1687FF]/10 px-2 py-0.5 text-[10px] font-medium text-[#8BC7FF]">PC</span><span className="min-w-0 flex-1 truncate text-[10px] text-[#bdbdbd]">{computerContext.title || (language === 'en' ? 'Unknown window' : 'Ventana desconocida')} · ({computerContext.x}, {computerContext.y})</span><button type="button" onClick={() => setComputerContext(null)} className="grid h-5 w-5 shrink-0 place-items-center rounded-full text-[#777] hover:bg-white/[0.08] hover:text-[#eee]" title={language === 'en' ? 'Remove Computer Use context' : 'Quitar contexto de Computer Use'} aria-label={language === 'en' ? 'Remove Computer Use context' : 'Quitar contexto de Computer Use'}><X size={12} /></button></div>}
           {attachmentProgress&&<p className="m-0 truncate py-1 text-[10px] text-[#8bc7ff]" role="status">{attachmentProgress}</p>}
           {attachmentError&&<p className="m-0 py-1 text-[10px] text-[#aaa]" role="alert">{activityTranslations[language].attachmentFailed}</p>}
@@ -3131,6 +3163,9 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
            {attachedFiles.length > 0 && <div className="contents" aria-label={language === 'en' ? 'Attached files' : 'Archivos adjuntos'}>{attachedFiles.map((file, index) => file.mediaType.startsWith('image/') ? <motion.button key={file.path} type="button" onClick={() => setAttachedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} transition={{ type: 'spring', stiffness: 420, damping: 28 }} className="attachment-image-preview relative h-16 w-16 shrink-0 overflow-hidden rounded-[10px] border-0 bg-[#161616]" title={`${language === 'en' ? 'Remove' : 'Quitar'} ${file.name}`}><img src={file.previewUrl} alt={file.name} onError={(event) => { event.currentTarget.style.display = 'none'; }} className="attachment-image-preview-image h-full w-full object-cover" /><span className="attachment-image-preview-name absolute inset-x-1 bottom-1 truncate text-center text-[9px] text-white/75">{file.name}</span><span aria-hidden="true" className="attachment-image-preview-close pointer-events-none absolute inset-0 grid place-items-center text-white"><X size={18} strokeWidth={2.2} /></span></motion.button> : <motion.button key={file.path} type="button" onClick={() => setAttachedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} transition={{ type: 'spring', stiffness: 420, damping: 28 }} className="attachment-file-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] text-[10px] font-semibold uppercase tracking-[0.04em] text-[#cfcfcf]" title={`${language === 'en' ? 'Remove' : 'Quitar'} ${file.name}`}>{file.previewText ? <pre className="attachment-file-preview-text">{file.previewText}</pre> : <span className="attachment-file-preview-name" title={file.name}>{file.name}</span>}<span aria-hidden="true" className="attachment-file-preview-close pointer-events-none absolute inset-0 grid place-items-center text-white"><X size={18} strokeWidth={2.2} /></span></motion.button>)}</div>}
             </div>
           )}
+          {selectedResources.length > 0 && <div className="flex min-h-[28px] flex-wrap items-center gap-1.5 border-b border-[#202020] px-3 py-1.5" aria-label={resourceText.resources}>
+            {selectedResources.map(resource => <button key={`${resource.kind}:${resource.id}`} type="button" aria-label={`${resourceText.remove}: ${resource.name}`} title={`${resourceText.remove}: ${resource.name}`} onClick={() => setSelectedResources(previous => previous.filter(item => item.id !== resource.id || item.kind !== resource.kind))} className="flex items-center gap-1 rounded-full border border-[#2b2b2b] bg-[#191919] px-2.5 py-1 text-[10px] text-[#b9dcff]"><span>{resourceText[resource.kind]} · {resource.name}</span><X size={10} aria-hidden="true" /></button>)}
+          </div>}
           {activeSkills.length > 0 && <div className="flex min-h-[28px] items-center gap-1.5 overflow-x-auto border-b border-[#202020] px-3 py-1.5" aria-label={chatText.activeSkills}>
             {activeSkills.map((skill) => <button key={skill.id} type="button" onClick={() => setActiveSkills((current) => current.filter((item) => item.id !== skill.id))} className="flex shrink-0 items-center gap-1 rounded-full border border-[#3d9bff]/50 bg-[#1687ff]/10 px-2.5 py-1 text-[10px] text-[#b9dcff] hover:bg-[#1687ff]/20" title={chatText.removeSkill}>
               <span className="max-w-[150px] truncate">{skill.name}</span><span className="text-[#8bc7ff]/70">×</span>
@@ -3139,7 +3174,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           {activeExtensions.length > 0 && <div className="flex min-h-[28px] items-center gap-1.5 overflow-x-auto border-b border-[#202020] px-3 py-1.5" aria-label={chatText.activeExtensions}>
             {activeExtensions.map((extension) => { const Icon = extensionIcons[extension.id] || Box; return <button key={extension.id} type="button" onClick={() => setActiveExtensions((current) => current.filter((item) => item.id !== extension.id))} className="flex shrink-0 items-center gap-1 rounded-full border border-[#3d9bff]/50 bg-[#1687ff]/10 px-2.5 py-1 text-[10px] text-[#b9dcff] hover:bg-[#1687ff]/20" title={chatText.removeExtension}><Icon size={11} /><span>{extension.name}</span><span className="text-[#8bc7ff]/70">×</span></button>; })}
           </div>}
-          <div ref={commandMenuHostRef} className="w-full" />
+          <div ref={commandMenuHostRef} className="absolute inset-x-0 bottom-full z-40 mb-2" />
           <form onSubmit={handleSubmit} aria-label={language === 'en' ? 'Message composer' : 'Compositor de mensaje'} className="composer-box-inner relative flex min-h-[44px] w-full min-w-0 flex-col items-stretch gap-0 rounded-none border-0 bg-transparent px-1.5 pb-3 pl-4 pr-3 pt-3 @max-[520px]:pl-3 @max-[520px]:pr-2 [&>button.absolute]:hidden">
            {false && (
           <button type="button" onClick={handleAttachFiles} className="text-white/40 hover:text-white transition-colors" aria-label={language === 'en' ? 'Add files' : 'Añadir archivos'} style={{ flex: '0 0 28px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, background: 'transparent', cursor: 'pointer' }}>
@@ -3224,7 +3259,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           initial={false}
           animate={{ opacity: menuOpen ? 1 : 0, y: menuOpen ? 0 : -6, scale: menuOpen ? 1 : 0.985 }}
           transition={{ type: 'spring', stiffness: 420, damping: 32, mass: 0.7 }}
-          style={{ position: 'static', width: 'calc(100% - 12px)', margin: '0 6px', display: menuOpen ? 'grid' : 'none', gap: '4px', padding: '4px', border: 0, borderRadius: '10px', background: 'transparent', boxShadow: 'none', zIndex: 10, outline: 'none' }}
+          style={{ position: 'relative', maxHeight: 'min(360px, 55dvh)', overflowY: 'auto', overscrollBehavior: 'contain', width: 'calc(100% - 12px)', margin: '0 6px', display: menuOpen ? 'grid' : 'none', gap: '4px', padding: '8px', border: '1px solid #2B2B2B', borderRadius: '14px', background: '#191919', boxShadow: '0 12px 32px #0006', zIndex: 10, outline: 'none' }}
         >
           {commandKind !== 'credential' && commandKind !== 'custom-config' && <div style={{ position: 'relative' }}>
             <input
@@ -3295,7 +3330,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 <motion.span aria-hidden="true" animate={{ opacity: index === activeCommandIndex ? 1 : 0 }} transition={{ duration: 0.12, ease: 'easeOut' }} style={{ position: 'absolute', inset: 0, borderRadius: '7px', background: '#2F2F2F', zIndex: 0, pointerEvents: 'none' }} />
                 <span className="relative z-[1] flex min-w-0 items-center gap-2">{item.icon && React.createElement(item.icon, { size: 14, strokeWidth: 1.8 })}<span className="truncate">{item.label}</span></span>
                 <small className="relative z-[1]" style={{ color: 'rgba(216, 216, 216, 0.36)', fontSize: '11px' }}>
-                  {item.type === 'command' ? item.description : item.type === 'language' ? item.description : item.type === 'development' ? item.description : item.type === 'provider' ? (isSavedProvider(item) ? savedProviderTranslations[language].recent : chatText.provider) : item.type === 'project' ? chatText.project : item.type === 'skill' ? item.source : item.type === 'extension' ? chatText.extension : chatText.model}
+                  {compactCommandDescription(item.type === 'command' ? item.description : item.type === 'language' ? item.description : item.type === 'development' ? item.description : item.type === 'provider' ? (isSavedProvider(item) ? savedProviderTranslations[language].recent : chatText.provider) : item.type === 'project' ? chatText.project : item.type === 'skill' ? item.source : item.type === 'extension' ? chatText.extension : ['resource', 'resource-create'].includes(item.type || '') ? item.description : chatText.model)}
                 </small>
               </motion.button>
             ))}
