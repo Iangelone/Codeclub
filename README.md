@@ -7,7 +7,7 @@ Codeclub is a **local-first AI coding assistant for Windows** and a desktop **AI
 En español: una app de escritorio para **programar con IA en Windows**, con acceso a los archivos del proyecto, PowerShell, el navegador y aplicaciones abiertas.
 
 <p align="center">
-  <img src="docs/assets/codeclub-workspace.png" alt="Codeclub Windows AI coding workspace with project chat, browser, files, review, and terminal" width="1000">
+  <img src="docs/assets/installed-startup.png" alt="Codeclub Windows AI coding workspace home screen" width="1000">
 </p>
 
 [![Beta](https://img.shields.io/badge/status-beta-3d9bff)](#project-status) [![Windows](https://img.shields.io/badge/platform-Windows-1687ff)](#requirements) [![Electron](https://img.shields.io/badge/desktop-Electron-8bc7ff)](#how-it-works)
