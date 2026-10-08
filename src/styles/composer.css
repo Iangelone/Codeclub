@@ -1,0 +1,133 @@
+/* Shared input styling for the widget's current and future controls. */
+.chat-composer {
+  color: var(--nexo-ink);
+}
+
+.chat-composer .composer-box {
+  border: 1px solid #303030;
+  border-radius: 24px;
+  padding: 6px 10px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--nexo-orb-blue) 5%, #272727), #272727 76%);
+  color: #F5F5EF;
+}
+
+.chat-composer .composer-box-inner {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px !important;
+  padding: 0 !important;
+  color: #F5F5EF;
+}
+
+.chat-composer .composer-box-inner .chat-input-orb {
+  position: static;
+  flex: 0 0 22px;
+}
+
+.orb-palette-trigger {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.orb-palette-trigger:focus-visible {
+  outline: 2px solid var(--codeclub-accent-bright);
+  outline-offset: 3px;
+}
+
+.chat-composer .composer-box-inner textarea {
+  order: 0 !important;
+  align-self: center !important;
+  flex: 1 1 auto;
+  width: auto;
+  min-height: 22px;
+  line-height: 22px !important;
+  padding: 0 !important;
+}
+
+.chat-composer .composer-box-inner > div.absolute {
+  position: static;
+  min-height: 30px;
+}
+
+.chat-composer .composer-box-inner textarea,
+.chat-composer .composer-box-inner input {
+  color: var(--nexo-ink);
+  caret-color: var(--nexo-electric-blue);
+}
+
+.chat-composer .composer-box-inner textarea::placeholder,
+.chat-composer .composer-box-inner input::placeholder {
+  color: #AAA9A1;
+  opacity: 1;
+}
+
+.chat-input-orb [data-slot='fluid-orb'] {
+  flex: 0 0 22px;
+}
+
+.chat-composer .send-button {
+  background: transparent;
+  border-color: transparent;
+}
+
+.chat-composer .send-button:not(:disabled) {
+  color: var(--nexo-ink);
+}
+
+.chat-composer .send-button.send-button-shine::after {
+  display: none;
+}
+
+.nexo-primary,
+.floating-assistant-status {
+  border-color: var(--electric-blue);
+  background: var(--electric-blue);
+  color: #FFFFFF;
+}
+
+.chat-composer [class*='border-b'] {
+  border-color: var(--nexo-line);
+}
+
+.right-panel-launch-card {
+  border-color: var(--codeclub-border);
+  background: var(--codeclub-surface);
+  color: #D4D4D4;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.right-panel-launch-card:hover,
+.right-panel-launch-card:focus-visible {
+  border-color: #505050;
+  background: #232323;
+  color: #F5F5F5;
+}
+
+.right-panel-launch-card:focus-visible {
+  outline: 2px solid #777777;
+  outline-offset: 3px;
+}
+
+.right-panel-launch-card svg {
+  color: #A3A3A3;
+  transition: color 160ms ease;
+}
+
+.right-panel-launch-card:hover svg,
+.right-panel-launch-card:focus-visible svg {
+  color: #F5F5F5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .right-panel-launch-card,
+  .right-panel-launch-card svg { transition: none; }
+}

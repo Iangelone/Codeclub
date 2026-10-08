@@ -1,0 +1,168 @@
+/* Main surfaces share one background hierarchy across the app. */
+.codeclub-conversation-surface {
+  background: radial-gradient(ellipse at 30% 110%, var(--codeclub-chat-glow), transparent 55%), #111315;
+  border-top-left-radius: 16px;
+}
+
+.codeclub-conversation-surface[data-main-panel]:not([data-main-panel="new-chat"]) {
+  background: var(--codeclub-center);
+}
+
+#codeclub-chat-panel {
+  background: transparent;
+  border-top-left-radius: 16px;
+  overflow: hidden;
+  color: var(--nexo-ink);
+}
+
+#codeclub-chat-panel .chat-composer .composer-box {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--nexo-orb-blue) 5%, var(--codeclub-surface)), var(--codeclub-surface) 76%);
+  border-color: color-mix(in srgb, var(--codeclub-accent) 14%, var(--codeclub-border));
+}
+
+#codeclub-right-sidebar,
+#codeclub-right-sidebar [role='tabpanel'] {
+  background: transparent;
+  color: var(--nexo-ink);
+}
+
+#codeclub-right-sidebar .codeclub-widget-chrome {
+  background: transparent;
+}
+
+#codeclub-right-sidebar .codeclub-project-files,
+#codeclub-right-sidebar .codeclub-project-files > div.flex,
+#codeclub-right-sidebar .codeclub-project-files > div.flex > main,
+#codeclub-right-sidebar .codeclub-project-files > div.flex > section,
+#codeclub-right-sidebar .codeclub-project-files > div.flex > main > div:first-child,
+#codeclub-right-sidebar .codeclub-project-files > div.flex > aside {
+  background: transparent;
+}
+
+#codeclub-terminal-panel,
+#codeclub-terminal-panel > div {
+  background-color: transparent !important;
+  color: var(--nexo-ink);
+}
+
+#codeclub-right-sidebar input,
+#codeclub-right-sidebar textarea,
+#codeclub-right-sidebar select {
+  border: 1px solid #303030;
+  border-radius: 9px;
+  padding: 11px 12px;
+  background-color: #272727;
+  color: #F5F5EF;
+  caret-color: var(--nexo-electric-blue);
+}
+
+#codeclub-right-sidebar input::placeholder,
+#codeclub-right-sidebar textarea::placeholder {
+  color: #AAA9A1;
+  opacity: 1;
+}
+
+#codeclub-scheduled-panel,
+#codeclub-extensions-panel {
+  background: var(--codeclub-center);
+  color: #F5F5EF;
+}
+
+#codeclub-extensions-panel input {
+  border-color: #303030;
+  background: transparent;
+  color: #F5F5EF;
+}
+
+#codeclub-extensions-panel input::placeholder {
+  color: #AAA9A1;
+}
+
+#codeclub-extensions-panel {
+  container: extensions / inline-size;
+}
+
+.extensions-panel-content {
+  padding-inline: clamp(12px, 4cqi, 32px);
+}
+
+.extensions-browser-managers {
+  overflow-wrap: anywhere;
+}
+
+@container extensions (max-width: 640px) {
+  .extensions-browser-managers {
+    padding-left: 0;
+  }
+
+  .extensions-toolbar > label {
+    max-width: none;
+  }
+}
+
+@container extensions (max-width: 480px) {
+  .extensions-panel-content {
+    padding-block: 20px;
+  }
+
+  .extensions-toolbar {
+    margin-top: 24px;
+  }
+
+  .extensions-toolbar > nav {
+    width: 100%;
+  }
+
+  .extensions-category {
+    flex: 1;
+    justify-content: center;
+    min-width: 0;
+    padding-inline: 8px;
+  }
+
+  .extensions-category-label,
+  .extensions-browser-action > span {
+    display: none;
+  }
+
+  .extensions-browser-action {
+    width: 30px;
+    height: 30px;
+    padding-inline: 0;
+  }
+
+  .extensions-browser-row {
+    gap: 8px;
+  }
+
+  .extensions-item {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr) auto auto;
+    gap: 4px 8px;
+    padding: 10px 8px;
+  }
+
+  .extensions-item > :first-child {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+
+  .extensions-item > div:nth-child(2) {
+    width: auto;
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .extensions-item > .extensions-scope,
+  .extensions-item > .extensions-source {
+    grid-column: 2 / -1;
+    grid-row: 2;
+    justify-self: start;
+    max-width: 100%;
+  }
+
+  .extensions-item > button,
+  .extensions-item > .extensions-included {
+    grid-row: 1;
+  }
+}

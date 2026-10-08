@@ -39,6 +39,15 @@ try {
       if(!data.stream) { response.setHeader('content-type','application/json');response.end(JSON.stringify({id:'summary',object:'chat.completion',model:'qa-model',choices:[{message:{role:'assistant',content:'Resumen QA del turno'},finish_reason:'stop',index:0}],usage:{prompt_tokens:10,completion_tokens:5,total_tokens:15}}));return;}
       if(data.stream) {
         response.setHeader('content-type','text/event-stream');
+        const phaseRequest = data.messages?.some(message => message.role === 'user' && message.content === 'QA phases');
+        const phaseCount = data.messages?.filter(message => message.role === 'tool').length || 0;
+        if (phaseRequest && phaseCount < 3) {
+          await new Promise(resolve => setTimeout(resolve, 300));
+          response.write('data: '+JSON.stringify({id:'phase',object:'chat.completion.chunk',created:1,model:'qa-model',choices:[{index:0,delta:{tool_calls:[{index:0,id:`phase-${phaseCount}`,type:'function',function:{name:phaseCount === 1 ? 'searchTools' : 'reportProgress',arguments:JSON.stringify(phaseCount === 1 ? {query:'files'} : {summary:phaseCount ? 'Verificando resultados QA' : 'Revisando el proyecto QA'})}}]},finish_reason:null}]})+'\n\n');
+          response.write('data: '+JSON.stringify({id:'phase',object:'chat.completion.chunk',created:1,model:'qa-model',choices:[{index:0,delta:{},finish_reason:'tool_calls'}]})+'\n\n');
+          response.end('data: [DONE]\n\n');
+          return;
+        }
         const delta=(text,finish=null)=>response.write('data: '+JSON.stringify({id:'qa',object:'chat.completion.chunk',created:1,model:'qa-model',choices:[{index:0,delta:text?{content:text}:{},finish_reason:finish}]})+'\n\n');
         for(let index=0;index<30;index++){delta(index===0?'Respuesta QA. ':`stream ${index} `);await new Promise(resolve=>setTimeout(resolve,15));}
         delta('', 'stop');response.end('data: [DONE]\n\n');
@@ -117,7 +126,7 @@ try {
     return {headerGap:bubble.top-time.bottom,nextGap:actions&&nextTime?nextTime.top-actions.bottom:null};
   }));
   assert.ok(turnSpacing.every(turn=>turn.headerGap>=7.5),'Every timestamp sits above its bubble');
-  assert.ok(turnSpacing.every(turn=>turn.nextGap===null||turn.nextGap>=23.5),'Actions are separated from the next timestamp');
+  assert.ok(turnSpacing.every(turn=>turn.nextGap===null||turn.nextGap>=15.5),'Actions are separated from the next timestamp');
   const bottom=await page.locator('.messages-area').evaluate(area=>area.scrollHeight-area.scrollTop-area.clientHeight);assert.ok(bottom<10,'Opened chat is pinned to its latest turn');
   await page.locator('.messages-area').evaluate(area=>{area.scrollTop=0;});
   await page.waitForTimeout(250);
@@ -126,7 +135,7 @@ try {
     window.qaTransitionFrames=[];window.qaRecording=true;
     const sample=()=>{
       const area=document.querySelector('.messages-area');
-      if(area)window.qaTransitionFrames.push({text:area.textContent,opacity:Number(getComputedStyle(area).opacity),phase:area.dataset.chatTransition,bottom:area.scrollHeight-area.scrollTop-area.clientHeight});
+      if(area)window.qaTransitionFrames.push({text:area.textContent,opacity:Number(getComputedStyle(area).opacity),phase:area.dataset.chatTransition,bottom:area.scrollHeight-area.scrollTop-area.clientHeight,lastTop:area.querySelector('.chat-turn.is-last')?.getBoundingClientRect().top,areaTop:area.getBoundingClientRect().top,windowY:window.scrollY,areaHeight:area.clientHeight,turnHeight:area.querySelector('.chat-turn.is-last')?.getBoundingClientRect().height,composerHeight:document.querySelector('.chat-composer')?.getBoundingClientRect().height});
       if(window.qaRecording)requestAnimationFrame(sample);
     };requestAnimationFrame(sample);
   });
@@ -141,6 +150,12 @@ try {
   assert.ok(!transitionFrames.some(frame=>frame.text.includes('FAST response')&&frame.text.includes('QA message')),'Chats never overlap');
   assert.ok(!transitionFrames.some(frame=>frame.text.includes('FAST response')&&frame.opacity>0.1&&frame.bottom>10),'New chat is positioned before appearing');
   assert.equal(await page.locator('.chat-markdown').getByText('SLOW response',{exact:true}).count(),0,'Late history cannot replace the active chat');
+  const shortFrames=transitionFrames.filter(frame=>frame.text.includes('FAST response')&&frame.opacity>0.1);
+  assert.ok(shortFrames.length>3,'Sampled short chat after becoming visible');
+  assert.ok(Math.max(...shortFrames.map(frame=>frame.lastTop))-Math.min(...shortFrames.map(frame=>frame.lastTop))<1,`Short chat does not move after reveal: ${JSON.stringify(shortFrames.map(({phase,lastTop,bottom,areaTop,windowY,areaHeight,turnHeight,composerHeight})=>({phase,lastTop,bottom,areaTop,windowY,areaHeight,turnHeight,composerHeight})))}`);
+  assert.equal(await page.locator('.chat-turn.is-last').evaluate(turn=>getComputedStyle(turn).position),'relative','Short chats use natural layout without estimated heights');
+  assert.equal(await page.locator('.chat-turn.is-last').evaluate(turn=>getComputedStyle(turn).paddingBottom),'8px','Last turn has a compact bottom margin');
+
   await page.evaluate(()=>{
     window.qaLayoutFrames=[];window.qaRecordingLayout=true;
     const sample=()=>{
@@ -167,7 +182,9 @@ try {
   assert.ok(networkMessages.some(message=>typeof message.content==='string'&&message.content.includes('Hola QA')),'Latest prompt remains in context');
   assert.ok((await store.page('','long')).messages.at(-1).content.includes('Respuesta QA.'),'Final stream was persisted');
   assert.equal((await store.page('','long')).messages.at(-1).turnSummary,'Resumen QA del turno','AI summary is saved with the turn');
-  await page.getByTitle('Resumen QA del turno').waitFor();
+  await page.getByRole('button',{name:'Enviar',exact:true}).waitFor();
+  assert.equal(await page.getByTitle('Resumen QA del turno').count(),0,'Completed turn does not repeat a summary header');
+  assert.equal(await page.locator('.chat-live-progress, .turn-activity').count(),0,'Completed turns show only the answer, without progress accordions');
   await open('retry');await page.locator('.chat-markdown').getByText('QA message 9999',{exact:true}).waitFor();
   await page.locator('.messages-area[data-chat-transition="idle"]').waitFor();
   await page.getByRole('button',{name:'Más opciones de la respuesta'}).last().click();
@@ -188,6 +205,22 @@ try {
   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat')));
   await page.locator('.messages-area[data-chat-transition="idle"]').waitFor();
   assert.equal(await page.locator('.chat-turn').count(),0,'New chat clears the previous turn after its exit');
+
+  const phaseInput = page.getByRole('textbox',{name:'Mensaje',exact:true});
+  await phaseInput.fill('QA phases');
+  await phaseInput.press('Enter');
+  await page.locator('.chat-live-progress').getByText('Revisando el proyecto QA',{exact:true}).waitFor();
+  const phaseSteps = page.locator('.chat-live-progress details.turn-activity').first();
+  await phaseSteps.locator('summary').first().click();
+  assert.equal(await phaseSteps.getAttribute('open'),'','Live phase steps can be expanded');
+  assert.ok(await phaseSteps.locator('.turn-activity-item').count() > 0,'Expanded phase contains the real tool step');
+  await page.locator('.chat-live-progress').getByText('Verificando resultados QA',{exact:true}).waitFor();
+  assert.equal(await page.locator('.chat-live-progress .chat-progress-phase').count(),2,'Public progress phases keep their chronological history');
+  if(process.env.CODECLUB_UI_CAPTURE_DIR) await page.screenshot({path:path.join(process.env.CODECLUB_UI_CAPTURE_DIR,'codeclub-live-qa.png')});
+  await page.getByRole('button',{name:'Enviar',exact:true}).waitFor();
+  assert.equal(await page.locator('.chat-live-progress, .turn-activity').count(),0,'Progress disappears after completion');
+  await page.locator('.chat-markdown-assistant').getByText(/Respuesta QA\./).waitFor();
+  if(process.env.CODECLUB_UI_CAPTURE_DIR) await page.screenshot({path:path.join(process.env.CODECLUB_UI_CAPTURE_DIR,'codeclub-completed-qa.png')});
 
   // Native credentials return presence, never the key itself.
   await page.evaluate(()=>{

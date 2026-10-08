@@ -1,0 +1,311 @@
+.chat-turn {
+  position: relative;
+  padding-left: 24px;
+}
+
+.chat-turn::before {
+  position: absolute;
+  top: 24px;
+  bottom: 0;
+  left: 7px;
+  width: 1px;
+  background: #2b2b2b;
+  content: '';
+  pointer-events: none;
+}
+
+.chat-turn.is-last::before {
+  bottom: 0;
+}
+
+.chat-turn > .chat-user-message + .chat-assistant-message {
+  margin-top: 8px;
+}
+
+.timeline-hidden .chat-turn::before {
+  display: none;
+}
+
+.timeline-hidden .chat-turn {
+  padding-left: 0;
+}
+
+.turn-activity {
+  width: 100%;
+  margin: 0;
+  color: #bcbcbc;
+  font-size: 12px;
+}
+
+.turn-activity summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.turn-activity summary::-webkit-details-marker,
+.turn-activity-item summary::-webkit-details-marker {
+  display: none;
+}
+
+.turn-activity-summary {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 8px;
+  color: #bcbcbc;
+  user-select: none;
+}
+
+.turn-activity-summary:hover,
+.turn-activity-item > summary:hover {
+  color: #ededed;
+}
+
+.turn-activity-chevron {
+  flex: 0 0 auto;
+  color: #777;
+  transition: transform 140ms ease;
+}
+
+.turn-activity[open] > .turn-activity-summary .turn-activity-chevron,
+.turn-activity-item[open] > summary .turn-activity-chevron {
+  transform: rotate(180deg);
+}
+
+.turn-activity-summary > span:first-of-type {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.turn-activity-delta {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 5px;
+  color: #929292;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.turn-activity-delta > span:first-child {
+  color: #8fbe9b;
+}
+
+.turn-activity-delta > span:last-child {
+  color: #d98b8b;
+}
+
+.turn-activity-list {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 8px 7px;
+  padding-left: 12px;
+  border-left: 1px solid #303030;
+}
+
+.turn-activity-item > summary,
+.turn-activity-file-row {
+  display: flex;
+  min-width: 0;
+  min-height: 32px;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  color: #a9a9a9;
+  user-select: none;
+}
+
+.turn-activity-item > summary:hover {
+  background: #ffffff08;
+}
+
+.turn-activity-action-icon {
+  flex: 0 0 auto;
+  color: #b4b4b4;
+}
+
+.turn-activity-item-label {
+  flex: 0 0 auto;
+  color: #c3c3c3;
+}
+
+.turn-activity-item-error {
+  color: #d98b8b;
+}
+
+.turn-activity-item-detail {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: #888;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.turn-activity-detail {
+  margin: 2px 5px 7px 20px;
+  color: #aaa;
+}
+
+.turn-command-card {
+  overflow: hidden;
+  border: 1px solid #303030;
+  border-radius: 9px;
+  background: #191919;
+}
+
+.turn-command-heading {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 9px;
+  border-bottom: 1px solid #2b2b2b;
+  color: #a7a7a7;
+  font-size: 11px;
+}
+
+.turn-command-heading > span:last-child {
+  margin-left: auto;
+}
+
+.turn-command-ok {
+  color: #929292;
+}
+
+.turn-command-error,
+.turn-command-stderr {
+  color: #d98b8b !important;
+}
+
+.turn-command-code,
+.turn-command-output {
+  max-height: 320px;
+  overflow: auto;
+  margin: 0;
+  padding: 8px 10px;
+  color: #d0d0d0;
+  font: 12px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.turn-command-code > span {
+  color: #888;
+}
+
+.turn-command-output {
+  border-top: 1px solid #2b2b2b;
+  color: #aaa;
+}
+
+.turn-command-empty {
+  padding: 8px 10px;
+  color: #888;
+  font-size: 11px;
+}
+
+.turn-activity-file-delta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #999;
+  font-size: 11px;
+}
+
+.turn-activity-file-delta .turn-activity-delta {
+  margin-left: auto;
+}
+
+.turn-activity-duration {
+  padding-top: 5px;
+  color: #777;
+  font-size: 10px;
+}
+
+.turn-activity-raw-detail {
+  color: #999;
+  font-size: 11px;
+}
+
+.chat-turn-time {
+  position: relative;
+  flex-shrink: 0;
+  align-self: flex-start;
+  z-index: 1;
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+  height: 16px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--codeclub-text-muted) 68%, transparent);
+  box-shadow: none;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-turn-time > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-turn-time > span:first-child {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+
+.chat-live-progress {
+  display: grid;
+  width: 100%;
+  gap: 14px;
+  padding-block: 4px;
+}
+
+.chat-progress-phase {
+  min-width: 0;
+  color: var(--codeclub-text-muted);
+}
+
+.chat-progress-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  min-height: 32px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.chat-progress-phase[data-active='true'] .chat-progress-label,
+.chat-progress-phase[data-active='true'] .turn-activity-summary {
+  color: var(--codeclub-text-strong);
+}
+
+.turn-activity-summary > span:first-of-type {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+@container (max-width: 480px) {
+  .chat-turn { padding-left: 0; }
+  .chat-turn::before { display: none; }
+}

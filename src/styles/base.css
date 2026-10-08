@@ -1,0 +1,150 @@
+.codeclub-skip-link {
+  position: fixed;
+  z-index: 10000;
+  top: 8px;
+  left: 8px;
+  transform: translateY(calc(-100% - 16px));
+  border: 1px solid var(--codeclub-border-soft, #3a3a3a);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: var(--codeclub-surface-raised, #1e1e1e);
+  color: var(--codeclub-text-strong, #f5f5f5);
+  font-size: 13px;
+  transition: transform 120ms ease-out;
+}
+
+.codeclub-skip-link:focus {
+  transform: translateY(0);
+}
+
+@property --nexo-orb-blue {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #2d5fd6;
+}
+
+@property --codeclub-accent {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #3d9bff;
+}
+
+@property --codeclub-accent-bright {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #8bc7ff;
+}
+
+@property --nexo-electric-blue {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #2f6bff;
+}
+
+@property --electric-blue {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #2f6bff;
+}
+
+@property --codeclub-chat-glow {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(45, 95, 214, 0.2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+:root {
+  --paper: #1E1E1E;
+  --card: #272727;
+  --soft: #2B2B2B;
+  --ink: #F5F5EF;
+  --muted: #AAA9A1;
+  --line: #303030;
+  --electric-blue: #2F6BFF;
+
+  --codeclub-bg: #111111;
+  --codeclub-center: #111111;
+  --codeclub-surface: #161616;
+  --codeclub-surface-raised: #1e1e1e;
+  --codeclub-panel: rgba(27, 32, 41, 1);
+  --codeclub-graphite: linear-gradient(115deg, color-mix(in srgb, var(--nexo-orb-blue) 6%, #1c2028) 0%, color-mix(in srgb, var(--nexo-orb-blue) 6%, #1b202a) 52%, color-mix(in srgb, var(--nexo-orb-blue) 12%, #1d2535) 100%);
+  --codeclub-border: #2b2b2b;
+  --codeclub-border-soft: rgba(255, 255, 255, 0.1);
+  --codeclub-border-faint: rgba(255, 255, 255, 0.06);
+  --codeclub-acrylic: rgba(27, 32, 41, 1);
+  --codeclub-acrylic-active: rgba(43, 48, 58, 1);
+  --codeclub-user-bubble: #191919;
+  --codeclub-acrylic-light: rgba(255, 255, 255, 0.14);
+  --codeclub-acrylic-light-radial: radial-gradient(circle at center, transparent 0%, transparent 42%, rgba(255, 255, 255, 0.13) 100%);
+  --codeclub-send-active-radial: radial-gradient(circle at center, transparent 0%, transparent 42%, rgba(255, 255, 255, 0.025) 72%, rgba(255, 255, 255, 0.06) 100%);
+  --codeclub-hover: rgba(255, 255, 255, 0.08);
+  --codeclub-text: #dedede;
+  --codeclub-text-strong: #f1f1f1;
+  --codeclub-text-muted: #9a9a9a;
+  --codeclub-icon: #c7c9ce;
+  --codeclub-danger: #c42b1c;
+  --codeclub-shadow-soft: 0 1px 3px rgba(0, 0, 0, 0.18);
+  --codeclub-accent: #3d9bff;
+  --codeclub-accent-bright: #8bc7ff;
+
+  /* Shared semantic tokens for the Nexo widget and Codeclub interface. */
+  --nexo-paper: var(--paper);
+  --nexo-card: var(--card);
+  --nexo-soft: var(--soft);
+  --nexo-line: var(--line);
+  --nexo-line-soft: var(--line);
+  --nexo-ink: var(--ink);
+  --nexo-muted: var(--muted);
+  --nexo-electric-blue: var(--electric-blue);
+  --nexo-orb-blue: #2d5fd6;
+  --nexo-overlay: rgba(0, 0, 0, 0.38);
+
+  /* Compatibility aliases for components that still use generic surface names. */
+  --color-bg: var(--nexo-paper);
+  --color-surface-1: var(--nexo-paper);
+  --color-surface-2: var(--nexo-soft);
+  --color-surface-3: var(--nexo-card);
+  --color-surface-4: color-mix(in srgb, var(--nexo-card) 82%, var(--nexo-ink));
+  --color-surface-5: var(--codeclub-hover);
+  --color-surface-7: color-mix(in srgb, var(--nexo-card) 72%, var(--nexo-ink));
+  --color-surface-8: var(--nexo-line);
+  --color-surface-10: var(--nexo-line-soft);
+}
+
+:root.theme-light,
+:root[data-theme='light'],
+body.theme-light,
+body[data-theme='light'] {
+  --paper: #F7F7F4;
+  --card: #F7F7F7;
+  --soft: #E9DFCF;
+  --ink: #171717;
+  --muted: #6B6B6B;
+  --line: #E2E2E2;
+  --electric-blue: #2F6BFF;
+}
+
+html,
+body {
+  background: transparent;
+  color: var(--ink);
+  color-scheme: dark;
+}
+
+html.theme-light,
+html[data-theme='light'],
+body.theme-light,
+body[data-theme='light'] {
+  color-scheme: light;
+}

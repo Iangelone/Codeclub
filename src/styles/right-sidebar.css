@@ -1,0 +1,517 @@
+/* Compact pill tabs for the right sidebar. */
+#codeclub-right-sidebar [role="tablist"] > div {
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+#codeclub-right-sidebar [role="tablist"] > div:has(> button[aria-selected="true"]) {
+  border-color: var(--line);
+  background: var(--card);
+  box-shadow: none;
+  color: var(--ink);
+}
+
+#codeclub-right-sidebar [role="tablist"] > div:not(:has(> button[aria-selected="true"])):hover {
+  border-color: var(--line);
+  background: var(--soft);
+  color: var(--ink);
+}
+
+#codeclub-right-sidebar [role="tablist"] > div > button[role="tab"] {
+  gap: 6px;
+  border-radius: 8px;
+  padding-right: 6px;
+  padding-left: 8px;
+  color: var(--muted);
+}
+
+#codeclub-right-sidebar [role="tablist"] > div:has(> button[aria-selected="true"]) > button[role="tab"] {
+  color: var(--ink);
+}
+
+#codeclub-right-sidebar [role="tablist"] > div > button[aria-label^="Cerrar"] {
+  width: 18px;
+  height: 18px;
+  margin-right: 3px;
+}
+
+#codeclub-right-sidebar [role="tablist"] > div > button[aria-label^="Cerrar"] {
+  border-radius: 999px;
+}
+
+#codeclub-right-sidebar [role="tablist"] > button[aria-haspopup="menu"] {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+}
+
+#codeclub-right-sidebar [role="menu"] > [role="menuitemradio"] + [role="menuitemradio"] {
+  position: relative;
+  margin-top: 7px;
+}
+
+#codeclub-right-sidebar [role="menu"] > [role="menuitemradio"] + [role="menuitemradio"]::before {
+  position: absolute;
+  top: -4px;
+  right: 4px;
+  left: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  content: '';
+}
+
+#codeclub-left-sidebar nav[aria-label="Navegación principal"] > button + button {
+  position: relative;
+  margin-top: 7px;
+}
+
+#codeclub-left-sidebar nav[aria-label="Navegación principal"] > button + button::before {
+  position: absolute;
+  top: -4px;
+  right: 8px;
+  left: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  content: '';
+}
+
+#codeclub-left-sidebar + [role="menu"] > [role="menuitem"] + [role="menuitem"],
+section[aria-label="Espacio de trabajo"] > [role="menu"][aria-label="Menú del chat"] > [role="menuitem"] + [role="menuitem"] {
+  position: relative;
+  margin-top: 7px;
+}
+
+#codeclub-left-sidebar + [role="menu"] > [role="menuitem"] + [role="menuitem"]::before,
+section[aria-label="Espacio de trabajo"] > [role="menu"][aria-label="Menú del chat"] > [role="menuitem"] + [role="menuitem"]::before {
+  position: absolute;
+  top: -4px;
+  right: 4px;
+  left: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  content: '';
+}
+
+/* Open panels fill the full height of the right sidebar. */
+#codeclub-right-sidebar > div > div[role="tabpanel"],
+#codeclub-right-sidebar > div > div.flex-1.flex-col,
+#codeclub-right-sidebar [role="tabpanel"] {
+  min-height: 0;
+  height: 100%;
+}
+
+#codeclub-right-sidebar webview {
+  display: inline-flex;
+  width: 100%;
+  height: 100%;
+}
+
+/* The browser starts on its own landing view, so hide the legacy empty state. */
+[aria-label="Controles del navegador"] > div.absolute {
+  display: none !important;
+}
+
+#codeclub-browser-address {
+  font-size: 14px !important;
+  font-weight: 400 !important;
+}
+
+#codeclub-terminal-panel,
+#codeclub-terminal-panel > div {
+  background-color: transparent !important;
+}
+
+.right-panel-tabs-scroll {
+  scrollbar-width: auto;
+  scrollbar-color: auto;
+}
+
+.right-panel-tabs-scroll::-webkit-scrollbar {
+  height: 4px;
+}
+
+.right-panel-tabs-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.right-panel-tabs-scroll::-webkit-scrollbar-thumb {
+  background: #444444;
+  border-radius: 999px;
+}
+
+.right-panel-tabs-scroll::-webkit-scrollbar-thumb:hover {
+  background: #666666;
+}
+
+#codeclub-terminal-panel {
+  box-sizing: border-box;
+  padding: 12px 14px !important;
+}
+
+#codeclub-terminal-panel .xterm {
+  cursor: default;
+}
+
+#codeclub-terminal-panel .xterm .xterm-viewport {
+  background-color: transparent !important;
+  scrollbar-width: none;
+}
+
+#codeclub-terminal-panel .xterm .xterm-scrollable-element {
+  background-color: transparent !important;
+}
+
+#codeclub-terminal-panel .xterm .xterm-scrollable-element > .scrollbar {
+  display: none !important;
+}
+
+#codeclub-terminal-panel .xterm .xterm-viewport::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+#codeclub-terminal-panel form:has(#codeclub-terminal-input) {
+  display: none !important;
+}
+
+/* Files and Review fill the sidebar's inner viewport. */
+[id^="right-panel-files"] > div[class*="items-center"] > div > svg {
+  display: none;
+}
+
+[id^="right-panel-files"] main > div[class*="items-center"] > svg {
+  display: none;
+}
+
+[id^="right-panel-files"] main > div[class*="items-center"] > div > p:first-child {
+  font-size: 12px;
+  font-weight: 400;
+}
+
+[id^="right-panel-files"] main > div[class*="items-center"] > div > p:last-child {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 20px;
+}
+
+[id^="right-panel-files"] main {
+  background: var(--paper);
+}
+
+[id^="right-panel-files"] aside {
+  background: var(--paper);
+}
+
+[id^="right-panel-files"],
+[id^="right-panel-files"] * {
+  scrollbar-width: thin;
+  scrollbar-color: #a3a3a3 transparent;
+}
+
+[id^="right-panel-files"]::-webkit-scrollbar,
+[id^="right-panel-files"] *::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+[id^="right-panel-files"]::-webkit-scrollbar-track,
+[id^="right-panel-files"] *::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+[id^="right-panel-files"]::-webkit-scrollbar-thumb,
+[id^="right-panel-files"] *::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 10px;
+  background: #a3a3a3;
+  background-clip: padding-box;
+}
+
+[id^="right-panel-files"]::-webkit-scrollbar-thumb:hover,
+[id^="right-panel-files"] *::-webkit-scrollbar-thumb:hover {
+  background: #c2c2c2;
+  background-clip: padding-box;
+}
+
+[id^="right-panel-files"] main > div:first-child[class*="h-8"] > div {
+  min-width: 90px;
+  max-width: 170px;
+  height: 24px;
+  gap: 6px;
+  padding: 0 8px;
+  margin-bottom: 4px;
+  border-radius: 6px;
+}
+
+[id^="right-panel-files"] main > div:first-child[class*="h-8"] {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  background: #111111;
+  scrollbar-width: none;
+}
+
+[id^="right-panel-files"] main > div:first-child[class*="h-8"]::-webkit-scrollbar {
+  display: none;
+}
+
+[id^="right-panel-files"] aside {
+  border-top-left-radius: 12px;
+}
+
+[id^="right-panel-review"] > section > div[class*="items-start"] {
+  display: none;
+}
+
+[id^="right-panel-review"] [class*="items-start"] > svg {
+  display: none;
+}
+
+[id^="right-panel-review"] main > div[class*="items-center"] > svg {
+  display: none;
+}
+
+[id^="right-panel-artifacts"] > div:first-child > div:first-child {
+  display: none;
+}
+
+[id^="right-panel-artifacts"] [class*="min-h-[220px]"] svg {
+  display: none;
+}
+
+[id^="right-panel-artifacts"] [class*="min-h-[220px]"] {
+  min-height: 100%;
+}
+
+[aria-label="Controles del navegador"] {
+  height: 40px;
+  min-height: 40px;
+  gap: 8px;
+  padding-inline: 8px;
+  background: var(--paper);
+  position: relative;
+  z-index: 20;
+}
+
+[aria-label="Controles del navegador"] + div {
+  top: 40px;
+}
+
+[aria-label="Controles del navegador"] > div.flex.shrink-0 > button {
+  width: 28px;
+  height: 28px;
+}
+
+[aria-label="Controles del navegador"] input {
+  height: 32px;
+  font-size: 16px;
+}
+
+#codeclub-right-sidebar [aria-label="Controles del navegador"] form:has(#codeclub-browser-address),
+#codeclub-right-sidebar [aria-label="Controles del navegador"] input#codeclub-browser-address {
+  border: 0 !important;
+  border-radius: 0;
+  padding: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+[aria-label="Controles del navegador"] input::-webkit-calendar-picker-indicator {
+  display: none;
+}
+
+.codeclub-browser-history-menu {
+  position: fixed;
+  z-index: 1000;
+  overflow: hidden;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(44, 44, 44, 0.96);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(18px);
+}
+
+.codeclub-browser-history-row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  border-radius: 9px;
+  padding: 8px 10px;
+  color: #eeeeee;
+  text-align: left;
+  cursor: pointer;
+  background: transparent;
+}
+
+.codeclub-browser-history-row:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.codeclub-browser-history-icon {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  place-items: center;
+  color: #b8b8b8;
+}
+
+.codeclub-browser-history-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.codeclub-browser-history-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.codeclub-browser-history-title,
+.codeclub-browser-history-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.codeclub-browser-history-title {
+  font-size: 12px;
+}
+
+.codeclub-browser-history-detail {
+  color: #858585;
+  font-size: 10px;
+}
+
+.codeclub-browser-history-divider {
+  height: 1px;
+  margin: 3px 10px;
+  background: #444444;
+}
+
+[aria-label="Controles del navegador"] form {
+  border-radius: 10px;
+  transition: background-color 140ms ease, box-shadow 140ms ease;
+}
+
+[aria-label="Controles del navegador"] form:hover {
+  background: #242424;
+}
+
+[aria-label="Controles del navegador"] form:focus-within {
+  background: #2c2c2c;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+[aria-label="Controles del navegador"] + div > form {
+  display: none;
+}
+
+#right-panel-files,
+#right-panel-review,
+#right-panel-files > div:first-child,
+#right-panel-review > section {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  flex: 1 1 auto;
+}
+
+#right-panel-files > div:first-child > div,
+#right-panel-files > div:first-child > div > main,
+#right-panel-review > section > main {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  flex: 1 1 auto;
+}
+
+#right-panel-files > div:first-child > div > main > div[class*="gap-4"][class*="items-center"],
+#right-panel-review > section > main > div[class*="justify-start"] {
+  min-height: 0;
+  height: 100%;
+  flex: 1 1 auto;
+  align-content: center;
+  justify-content: center;
+}
+
+#right-panel-files,
+#right-panel-files > div:first-child,
+#right-panel-files > div:first-child > div > main,
+#right-panel-review,
+#right-panel-review > section {
+  background: var(--paper);
+}
+
+#right-panel-artifacts,
+[id^="right-panel-terminals"] {
+  background: transparent;
+  color: var(--ink);
+}
+
+/* Review expands to the full container when the change list is hidden. */
+#right-panel-review {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+#right-panel-review > section {
+  display: flex;
+  width: 100%;
+  flex: 1 1 auto;
+  flex-direction: row;
+}
+
+#right-panel-review > section > main {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+#right-panel-review > section > main > div[class*="justify-start"] {
+  display: flex;
+  width: 100%;
+  min-height: 0;
+  height: 100%;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  padding-top: 0;
+}
+
+#right-panel-review > div[class*="justify-start"] {
+  display: grid;
+  width: 100%;
+  min-height: 0;
+  height: 100%;
+  flex: 1 1 auto;
+  place-items: center;
+  padding-top: 0;
+}
+
+#right-panel-review > section > aside {
+  width: 38%;
+  max-width: 374px;
+  min-width: 0;
+  flex: 0 1 38%;
+  background: #171717;
+}
+
+/* When the change list is hidden, the main review area fills the available width. */
+#right-panel-review > section > div:last-child:has(> p) {
+  display: none !important;
+}

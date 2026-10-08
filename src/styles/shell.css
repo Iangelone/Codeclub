@@ -1,0 +1,36 @@
+.codeclub-graphite {
+  background: linear-gradient(115deg, color-mix(in srgb, var(--nexo-orb-blue) 6%, #1c2028) 0%, color-mix(in srgb, var(--nexo-orb-blue) 6%, #1b202a) 52%, color-mix(in srgb, var(--nexo-orb-blue) 12%, #1d2535) 100%);
+}
+
+/* Widget frame palette, applied only to its bars and side navigation. */
+.codeclub-widget-chrome {
+  --codeclub-acrylic-active: #252525;
+  --codeclub-hover: #252525;
+  --codeclub-border-soft: #202020;
+  --codeclub-text: #dedede;
+  --codeclub-text-strong: #eeeeee;
+  --codeclub-text-muted: #999999;
+  --codeclub-icon: #999999;
+  background: #080808;
+  color: var(--codeclub-text);
+}
+
+.codeclub-resize-indicator {
+  background: linear-gradient(to bottom, transparent 0%, var(--codeclub-accent) 32%, var(--codeclub-accent) 68%, transparent 100%);
+}
+
+.codeclub-panel-shell {
+  background: transparent !important;
+  border-top: 1px solid var(--codeclub-border-faint);
+  border-left: 1px solid var(--codeclub-border-faint);
+  border-top-left-radius: 16px;
+}
+
+section[aria-label='Gestor de paneles'] {
+  background: transparent !important;
+}
+
+.codeclub-panel-edge {
+  border-top: 1px solid var(--codeclub-border-faint);
+  border-left: 1px solid var(--codeclub-border-faint);
+}

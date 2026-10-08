@@ -1,0 +1,438 @@
+/* Restore readable chat typography because Tailwind resets semantic elements
+   such as lists, headings, and paragraphs. */
+.chat-markdown > :first-child,
+.chat-markdown > div > :first-child {
+  margin-top: 0;
+}
+
+.chat-markdown > :last-child,
+.chat-markdown > div > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-markdown p {
+  margin: 0 0 16px;
+  line-height: 1.6;
+}
+
+.chat-markdown-user p {
+  margin-bottom: 0;
+  line-height: 1.4;
+}
+
+.chat-markdown h1,
+.chat-markdown h2,
+.chat-markdown h3 {
+  color: var(--codeclub-text-strong);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.chat-markdown h1 {
+  margin: 18px 0 10px;
+  font-size: 20px;
+}
+
+.chat-markdown h2 {
+  margin: 16px 0 8px;
+  font-size: 17px;
+}
+
+.chat-markdown h3 {
+  margin: 14px 0 7px;
+  font-size: 15px;
+}
+
+.chat-markdown ul,
+.chat-markdown ol {
+  margin: 10px 0 12px;
+  padding-left: 24px;
+}
+
+.chat-markdown-user ul,
+.chat-markdown-user ol {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.chat-markdown ul {
+  list-style-type: disc;
+}
+
+.chat-markdown ol {
+  list-style-type: decimal;
+}
+
+.chat-markdown ul ul {
+  list-style-type: circle;
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+.chat-markdown li {
+  margin: 4px 0;
+  padding-left: 2px;
+}
+
+.chat-markdown li::marker {
+  color: var(--codeclub-text-muted);
+}
+
+.chat-markdown blockquote {
+  margin: 12px 0;
+  padding: 2px 0 2px 14px;
+  border-left: 3px solid #454545;
+  color: var(--codeclub-text-muted);
+  font-style: italic;
+}
+
+.chat-markdown a {
+  color: var(--codeclub-accent-bright);
+  text-decoration: underline;
+  text-decoration-color: rgba(139, 199, 255, 0.5);
+  text-underline-offset: 2px;
+}
+
+.chat-markdown a:hover {
+  color: #b8ddff;
+}
+
+.chat-markdown-link-icon {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 5px;
+  vertical-align: -2px;
+  object-fit: contain;
+}
+
+.chat-markdown hr {
+  margin: 18px 0;
+  border: 0;
+  border-top: 1px solid var(--codeclub-border);
+}
+
+.chat-markdown :not(pre) > code {
+  display: inline;
+  border: 0;
+  border-radius: 4px;
+  background: #ffffff0d;
+  padding: 1px 4px;
+  color: #d8d8d8;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Consolas, monospace);
+  font-size: 0.92em;
+  line-height: inherit;
+  overflow-wrap: anywhere;
+  box-decoration-break: clone;
+}
+
+.chat-markdown-assistant ::selection {
+  background: color-mix(in srgb, var(--codeclub-accent) 64%, #151515);
+  color: #ffffff;
+}
+
+.chat-selection-toolbar {
+  position: fixed;
+  z-index: 120;
+  display: flex;
+  max-width: calc(100vw - 16px);
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid color-mix(in srgb, var(--selection-accent, var(--codeclub-accent)) 30%, #363636);
+  border-radius: 11px;
+  background: #242424;
+  box-shadow: 0 8px 26px #0009;
+  color: #f2f2f2;
+  white-space: nowrap;
+  backdrop-filter: blur(14px);
+}
+
+.chat-selection-toolbar-wrap {
+  position: fixed;
+  z-index: 120;
+  width: max-content;
+  max-width: calc(100vw - 16px);
+}
+
+.chat-selection-toolbar-wrap .chat-selection-toolbar {
+  position: static;
+  z-index: auto;
+}
+
+.chat-selection-comment {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: min(360px, calc(100vw - 16px));
+  padding: 5px 8px 5px 12px;
+  border: 1px solid #353535;
+  border-radius: 999px;
+  background: #242424;
+  box-shadow: 0 8px 26px #0009;
+}
+
+#codeclub-right-sidebar .browser-selection-comment {
+  width: 100%;
+}
+
+#codeclub-right-sidebar .browser-selection-comment textarea,
+#codeclub-right-sidebar .browser-selection-comment input {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.chat-selection-comment textarea,
+.chat-selection-comment input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #eeeeee;
+  font: inherit;
+  font-size: 12px;
+}
+
+.chat-selection-comment textarea {
+  max-height: 64px;
+  resize: none;
+}
+
+.chat-selection-comment input {
+  height: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+}
+
+.chat-selection-comment textarea::placeholder,
+.chat-selection-comment input::placeholder {
+  color: #858585;
+}
+
+.chat-selection-comment button {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #a4a4a4;
+  cursor: pointer;
+}
+
+.chat-selection-comment button:hover,
+.chat-selection-comment button:focus-visible {
+  outline: none;
+  color: var(--selection-accent, var(--codeclub-accent-bright));
+}
+
+.chat-selection-toolbar button {
+  min-height: 30px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  padding: 0 9px;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.chat-selection-toolbar button:hover:not(:disabled),
+.chat-selection-toolbar button:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--selection-accent, var(--codeclub-accent)) 18%, #242424);
+  color: var(--selection-accent, var(--codeclub-accent-bright));
+}
+
+.chat-selection-toolbar button:disabled {
+  color: #777;
+  cursor: default;
+}
+
+.chat-selection-toolbar-divider {
+  width: 1px;
+  height: 17px;
+  background: #ffffff1a;
+}
+
+.chat-markdown pre {
+  margin: 14px 0;
+  overflow: auto;
+  scrollbar-width: none;
+  border: 1px solid #2b2b2b;
+  border-radius: 8px;
+  background: #181818;
+  padding: 12px 14px;
+  line-height: 1.55;
+  white-space: pre;
+}
+
+.chat-markdown pre::-webkit-scrollbar,
+.chat-markdown-table::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.chat-code-card {
+  margin: 14px 0;
+  overflow: hidden;
+  border: 1px solid #2b2b2b;
+  border-radius: 18px;
+  background: #1b1b1b;
+}
+
+.chat-code-card-header {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 12px 0 14px;
+  border-bottom: 1px solid #292929;
+  background: #1e1e1e;
+  color: var(--codeclub-text-muted);
+  font-size: 11px;
+}
+
+.chat-code-card-language,
+.chat-code-card-actions,
+.chat-code-card-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.chat-code-card-language {
+  color: var(--codeclub-text);
+  font-weight: 600;
+}
+
+.chat-code-card-copy {
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding: 5px 6px;
+  color: var(--codeclub-text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.chat-code-card-actions {
+  gap: 5px;
+}
+
+.chat-code-card-icon-button {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding: 0;
+  color: var(--codeclub-text-muted);
+  cursor: pointer;
+}
+
+.chat-code-card-icon-button:hover {
+  background: var(--codeclub-hover);
+  color: var(--codeclub-text-strong);
+}
+
+.chat-code-card-divider {
+  color: #505050;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.chat-code-card-copy:hover {
+  background: var(--codeclub-hover);
+  color: var(--codeclub-text-strong);
+}
+
+.chat-code-card > pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.chat-markdown pre code {
+  display: block;
+  background: transparent;
+  padding: 0;
+  color: #d7d7d7;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Consolas, monospace);
+  font-size: 12px;
+}
+
+.chat-markdown-table {
+  width: 100%;
+  margin: 12px 0;
+  overflow: auto;
+  scrollbar-width: none;
+  border: 1px solid #2b2b2b;
+  border-radius: 11px;
+  background: #151515;
+}
+
+.chat-markdown table {
+  width: 100%;
+  min-width: 420px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+}
+
+.chat-markdown th,
+.chat-markdown td {
+  border: 1px solid #2b2b2b;
+  padding: 7px 9px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.chat-markdown th {
+  background: #1c1c1c;
+  color: var(--codeclub-text-strong);
+  font-weight: 600;
+}
+
+.chat-markdown tr:first-child th:first-child {
+  border-top-left-radius: 10px;
+}
+
+.chat-markdown tr:first-child th:last-child {
+  border-top-right-radius: 10px;
+}
+
+.chat-markdown tr:last-child td:first-child {
+  border-bottom-left-radius: 10px;
+}
+
+.chat-markdown tr:last-child td:last-child {
+  border-bottom-right-radius: 10px;
+}
+
+.chat-markdown td {
+  color: var(--codeclub-text);
+}
+
+.chat-turn-advice {
+  color: color-mix(in srgb, var(--codeclub-text-muted) 82%, transparent);
+  font-size: 10px;
+}
+
+.chat-error-message .chat-markdown {
+  color: var(--codeclub-text-muted);
+  font-size: 12px;
+}

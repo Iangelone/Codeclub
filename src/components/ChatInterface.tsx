@@ -165,20 +165,6 @@ const getVisibleUserContent = (message: any) => {
   if (typeof message?.displayContent === 'string') return message.displayContent;
   return String(message?.content || '').replace(/\n\nReferencia \d+: @[\s\S]*$/m, '').trim();
 };
-/** A compact local overview: no extra model call, also works with saved history. */
-const getTurnOverview = (user: any, assistants: any[], active: boolean, language: AppLanguage) => {
-  const savedSummary = [...assistants].reverse().find(message => message.turnSummary)?.turnSummary;
-  if (savedSummary) return String(savedSummary);
-  const request = user.role === 'user' && !user.hidden ? getVisibleUserContent(user) : '';
-  const response = [...assistants].reverse().find(message => message.content?.trim() && message.meta?.status !== 'error')?.content || '';
-  const source = active ? request : response || request;
-  const plain = String(source).replace(/```[\s\S]*?```/g, '').replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/<[^>]+>/g, '').replace(/^[\s#>*-]+/gm, '').replace(/[*_`~]/g, '').trim();
-  const firstLine = plain.split(/\n/).find(line => line.trim())?.trim() || '';
-  const sentence = firstLine.match(/^.*?[.!?](?:\s|$)/)?.[0]?.trim() || firstLine;
-  const overview = sentence || (user.attachments?.length ? activityTranslations[language].attached : activityTranslations[language].thinking);
-  return overview.length > 110 ? overview.slice(0, 107).trimEnd() + '…' : overview;
-};
-
 const readDesktopTextFile = async (path: string) => {
   const reader = (window as any).codeclub?.readTextFile;
   return reader ? String(await reader(path)) : readTextFile(path);
@@ -692,6 +678,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     }
     return messages.flatMap((message, index) => message.role === 'user' || index === 0 ? [index] : []);
   },[messages,floating]);
+  const virtualizeTurns = turnIndexes.length > 30;
   const turnVirtualizer = useVirtualizer<HTMLDivElement,HTMLDivElement>({
     count:turnIndexes.length,
     getScrollElement:()=>messagesAreaRef.current,
@@ -699,11 +686,15 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     getItemKey:index=>`${activeChatRef.current?.projectPath||''}:${activeChatRef.current?.chatId||'new'}:${messages[turnIndexes[index]]?.historyIndex??turnIndexes[index]}`,
     overscan:4,
     anchorTo:'end',
-    followOnAppend:true,
+    followOnAppend:false,
     scrollEndThreshold:80,
-    enabled:composerDocked,
+    enabled:composerDocked && virtualizeTurns,
   });
-  const totalTurnHeight = turnVirtualizer.getTotalSize();
+  const totalTurnHeight = virtualizeTurns ? turnVirtualizer.getTotalSize() : 0;
+  const scrollMessagesToEnd = () => {
+    if (virtualizeTurns) turnVirtualizer.scrollToEnd({ behavior: 'auto' });
+    else if (messagesAreaRef.current) messagesAreaRef.current.scrollTop = messagesAreaRef.current.scrollHeight;
+  };
   const shouldAutoScrollMessagesRef = useRef(true);
   const handleMessagesScroll = () => {
     const area = messagesAreaRef.current;
@@ -873,7 +864,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     let previousTop = -1;
     let previousViewport = -1;
     let previousLastTop = -1;
-    turnVirtualizer.scrollToEnd({ behavior: 'auto' });
+    scrollMessagesToEnd();
     const settle = () => {
       if (sequence !== chatLoadSequenceRef.current) return;
       const area = messagesAreaRef.current;
@@ -890,13 +881,13 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
       previousTop = area.scrollTop;
       previousViewport = area.clientHeight;
       previousLastTop = lastTop;
-      if (stableFrames >= (isAgentBusy ? 1 : 4)) {
+      if (stableFrames >= 4) {
         shouldAutoScrollMessagesRef.current = true;
         pendingChatScrollRef.current = null;
         reveal();
         return;
       }
-      if (!atEnd) turnVirtualizer.scrollToEnd({ behavior: 'auto' });
+      if (!atEnd) scrollMessagesToEnd();
       frame = requestAnimationFrame(settle);
     };
     frame = requestAnimationFrame(settle);
@@ -905,8 +896,8 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
 
   useEffect(() => {
     const area = messagesAreaRef.current;
-    if (floating || !area || !activeChat || !composerDocked || historyWindow.loading || !['idle', 'loading'].includes(chatTransitionPhase) || moreMenuIndex !== null || isAgentBusy || historyWindow.range.current.start === 0) return;
-    if (totalTurnHeight <= area.clientHeight + 1) void historyWindow.adjacent('older');
+    if (floating || !area || !activeChat || !composerDocked || historyWindow.loading || chatTransitionPhase !== 'idle' || moreMenuIndex !== null || isAgentBusy || historyWindow.range.current.start === 0) return;
+    if (area.scrollHeight <= area.clientHeight + 1) void historyWindow.adjacent('older');
   }, [activeChat?.chatId, activeChat?.projectPath, composerDocked, historyWindow.loading, messages.length, isAgentBusy, totalTurnHeight, chatTransitionPhase, moreMenuIndex]);
 
   useEffect(() => {
@@ -1254,7 +1245,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
 
   useEffect(() => {
     if (!composerDocked || chatTransitionPhase !== 'idle' || pendingChatScrollRef.current || !shouldAutoScrollMessagesRef.current) return;
-    turnVirtualizer.scrollToEnd({behavior:'auto'});
+    scrollMessagesToEnd();
   }, [messages, isStreaming, pendingApprovals, composerDocked]);
 
   useEffect(() => {
@@ -2040,7 +2031,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     agentStartedAtRef.current = Date.now();
     setAgentState('connecting');
     publishRuntime();
-    
+
     try {
     if (replaceHistory) {
       await writeChatJsonl(newMessages, chat);
@@ -2055,7 +2046,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       const useGateway = usesGateway(currentProvider, currentModel);
       const credentialKey = credentialKeyFor(currentProvider, currentModel);
       let apiKey = await getSetting(credentialKey, '');
-      
+
       const requiresCredential = useGateway || currentProvider.requiresApiKey !== false;
       if ((!apiKey || apiKey === 'dummy-key') && currentProvider.id !== 'custom' && requiresCredential) {
         setCredentialProvider(credentialTargetFor(currentProvider, currentModel));
@@ -2065,7 +2056,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         window.setTimeout(() => credentialInputRef.current?.focus(), 0);
         throw new Error(`API Key no configurada para ${useGateway ? 'AI Gateway' : currentProvider.label || currentProvider.id}. Por favor agregala en la configuración.`);
       }
-      
+
       const selectedModelReference = modelIdFor(currentProvider, currentModel);
       if (!useGateway && !currentProvider.api) throw new Error('El catálogo no indica un endpoint compatible para este proveedor.');
       const configuredHeaders = await getSetting<Record<string, string>>(`codeclub_provider_headers_${currentProvider.id}`, {});
@@ -2230,6 +2221,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           inputSchema: jsonSchema<any>({ type: 'object', properties: { summary: { type: 'string', minLength: 2, maxLength: 120, description: 'A brief natural-language phrase describing what you are doing, in the user\'s language.' } }, required: ['summary'], additionalProperties: false }),
           execute: async ({ summary }: { summary: string }) => {
             assistantProgress = String(summary || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+            assistantTimeline = [...assistantTimeline, { type: 'progress', id: crypto.randomUUID(), text: assistantProgress }];
             updateAssistantMessage();
             return { ok: true, summary: assistantProgress };
           },
@@ -2912,11 +2904,11 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               ? items.filter((item: any) => item.name.toLowerCase().includes(query.toLowerCase()))
               : recentItems.length ? recentItems : items.slice(-3).reverse()
             ).slice(0, 3);
-            
+
             return (
               <div key={kind} className="flex flex-col bg-[var(--color-bg)] border border-[var(--color-surface-10)] rounded-xl overflow-hidden shadow-[0_4px_12px_rgba(0,0,0,0.2)]">
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   onClick={() => { if (!isChatsBlocked) setExpandedMenu(isExpanded ? null : kind); }}
                   disabled={isChatsBlocked}
                   className={`flex items-center justify-between p-[12px_16px] border-0 text-left w-full transition-colors duration-200 outline-none ${isChatsBlocked ? 'cursor-not-allowed text-[#555555]' : `cursor-pointer text-[#eeeeee] ${isExpanded ? 'bg-[var(--color-surface-4)]' : 'bg-transparent hover:bg-[var(--color-surface-3)]'}`}`}
@@ -2988,8 +2980,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             );
           })}
 
-          <button 
-            type="button" 
+          <button
+            type="button"
             onClick={(e) => {
               const rect = e.currentTarget.getBoundingClientRect();
               window.dispatchEvent(new CustomEvent('codeclub:open-terminal-panel', {
@@ -3016,7 +3008,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
   }
 
   return (
-    <div ref={chatPanelRef} role="region" aria-label={`Chat${activeChat?.name ? `: ${activeChat.name}` : ''}`} className={`chat-interface-container @container mx-auto flex h-full w-full max-w-[680px] min-w-0 flex-col ${floating ? 'gap-0' : 'gap-4'} overflow-visible px-3 pb-5 ${timelineVisible ? '' : 'timeline-hidden'}`} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleComposerDrop}>
+    <div ref={chatPanelRef} role="region" aria-label={`Chat${activeChat?.name ? `: ${activeChat.name}` : ''}`} className={`chat-interface-container @container mx-auto flex h-full w-full max-w-[760px] min-w-0 flex-col ${floating ? 'gap-0' : 'gap-4'} overflow-visible px-3 pb-5 ${timelineVisible ? '' : 'timeline-hidden'}`} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleComposerDrop}>
       {agentTextSelection && createPortal(<div className="chat-selection-toolbar-wrap" style={{ top: agentTextSelection.top, left: agentTextSelection.left, '--selection-accent': palette.accent } as React.CSSProperties} onPointerDown={(event) => event.preventDefault()}>
         {!selectionCommentOpen && <div className="chat-selection-toolbar" role="toolbar" aria-label={agentTextSelectionTranslations[language].toolbar}>
           <button type="button" onClick={() => { setSelectionCommentOpen(true); setSelectionComment(''); }}>{agentTextSelectionTranslations[language].addToChat}</button>
@@ -3034,9 +3026,9 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       {!floating && historyWindow.range.current.start+messages.length<historyWindow.range.current.total && <button type="button" title={chatHistoryTranslations[language].latest} aria-label={chatHistoryTranslations[language].latest} className="self-end rounded-full p-1 text-(--codeclub-text-muted) hover:bg-(--codeclub-hover)" onClick={()=>{const chat=activeChatRef.current;if(chat){shouldAutoScrollMessagesRef.current=true;void historyWindow.open(chat);}}}><ChevronDown size={16}/></button>}
       <motion.div ref={messagesAreaRef} initial={false} animate={chatAnimations} data-chat-transition={chatTransitionPhase} aria-busy={chatTransitionPhase !== 'idle' || historyWindow.loading} onScroll={handleMessagesScroll} className={`messages-area relative min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain [overflow-anchor:none] bg-transparent [scrollbar-width:none] ${composerDocked ? 'flex' : 'hidden'} ${chatTransitionPhase === 'idle' ? '' : 'pointer-events-none'}`} role="log" aria-label={language === 'en' ? 'Chat messages' : 'Mensajes del chat'} aria-live="polite" aria-relevant="additions text">
         <div aria-hidden="true" className="min-h-0 flex-1" />
-        {!floating && showEmptyGreeting && <div aria-hidden={messages.length > 0} className={`pointer-events-none absolute inset-0 grid place-items-center whitespace-nowrap px-5 text-lg font-medium tracking-[-0.02em] text-(--codeclub-text-strong) transition-[opacity,transform] duration-300 ${messages.length === 0 ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0'}`}>{chatText.greeting}, {username}?</div>}
-        <div className="relative w-full shrink-0" style={{height:turnVirtualizer.getTotalSize()}}>
-        {turnVirtualizer.getVirtualItems().map((virtualTurn) => {
+        {!floating && showEmptyGreeting && <div aria-hidden={messages.length > 0} className={`pointer-events-none absolute inset-0 grid place-items-center whitespace-nowrap px-5 text-lg font-medium tracking-[-0.02em] text-(--codeclub-text-strong) transition-opacity duration-300 ${messages.length === 0 ? 'opacity-100' : 'opacity-0'}`}>{chatText.greeting}, {username}?</div>}
+        <div className="relative w-full shrink-0" style={virtualizeTurns ? { height: totalTurnHeight } : undefined}>
+        {(virtualizeTurns ? turnVirtualizer.getVirtualItems() : turnIndexes.map((messageIndex, index) => ({ index, start: 0, key: `${activeChat?.projectPath || ''}:${activeChat?.chatId || 'new'}:${messages[messageIndex]?.historyIndex ?? messageIndex}` }))).map((virtualTurn) => {
           const turnIndex=turnIndexes[virtualTurn.index];
           const turnMessage=messages[turnIndex];
           const nextTurnIndex = turnIndexes[virtualTurn.index + 1] ?? messages.length;
@@ -3045,44 +3037,43 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           const resolvedAskUserTurn = assistants.some(message => message.tools?.some((event: any) => event.name === 'askUser' && event.answer));
           if (resolvedAskUserTurn) return null;
           const orbInitiated = turnMessage.source === 'orb-trigger' || Boolean(activeChat?.chatId.startsWith('scheduled-') && (turnMessage.historyIndex ?? turnIndex) === 0 && assistants.some(message => message.agentName));
-          const turnMessages = (floating ? assistants : groupedMessages).filter(message => !message.hidden && !(orbInitiated && message === turnMessage && message.role === 'user'));
+          const liveTurn = isStreaming && nextTurnIndex === messages.length;
+          const finalAssistant = assistants.at(-1);
+          const turnMessages = (floating ? assistants : groupedMessages).filter(message => !message.hidden && !(orbInitiated && message === turnMessage && message.role === 'user') && (liveTurn || message.role !== 'assistant' || message === finalAssistant));
           const turnTime = formatChatTime(turnMessage.createdAt || turnMessage.timestamp, language);
           const isProcessingTurn = Boolean((!turnMessage.hidden || orbInitiated) && isStreaming && agentState !== 'error' && assistants.length && nextTurnIndex === messages.length);
-          const turnOverview = getTurnOverview(turnMessage, assistants, isProcessingTurn, language);
-          const orbOverview = `${assistants[0]?.agentName || activeChat?.name} · ${assistants.find(message => message.turnSummary)?.turnSummary || orbControlTranslations[language].initiatedChat}`;
           const hasErrorTurn = assistants.some(message => message.meta?.status === 'error');
           const isLastTurn = nextTurnIndex === messages.length;
-          return <div ref={turnVirtualizer.measureElement} data-index={virtualTurn.index} className={`chat-turn ${isLastTurn ? 'is-last' : ''}`} key={virtualTurn.key} role="article" aria-label={`Intercambio ${(turnMessage.historyIndex??turnIndex) + 1}`} style={{ position:'absolute',top:0,left:0,width:'100%',transform:`translateY(${virtualTurn.start}px)`,display: 'flex', flexDirection: 'column', gap: '8px', paddingBottom: floating ? 0 : isLastTurn ? 8 : 24 }}>
+          return <div ref={virtualizeTurns ? turnVirtualizer.measureElement : undefined} data-index={virtualTurn.index} className={`chat-turn ${isLastTurn ? 'is-last' : ''}`} key={virtualTurn.key} role="article" aria-label={`Intercambio ${(turnMessage.historyIndex??turnIndex) + 1}`} style={{ position:virtualizeTurns ? 'absolute' : 'relative',top:0,left:0,width:'100%',transform:virtualizeTurns ? `translateY(${virtualTurn.start}px)` : undefined,display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: floating ? 0 : isLastTurn ? 8 : 16 }}>
             {!floating&&<span className="chat-turn-time" aria-label={`Hora ${turnTime}`}>
               <span>{turnTime}</span>
               {isProcessingTurn && <ProcessingStatusStateFixed startedAt={agentStartedAtRef.current || Date.now()} language={language} />}
               {hasErrorTurn && <span className="chat-turn-advice">{language === 'en' ? 'Check the selected provider and model.' : 'Revisá el proveedor y modelo seleccionados.'}</span>}
             </span>}
-            {!floating && <span className="block min-w-0 truncate text-[11px] text-(--codeclub-text-muted)" title={orbInitiated ? orbOverview : turnOverview}>{orbInitiated ? orbOverview : turnOverview}</span>}
+
             {turnMessages.map((turnItem, turnOffset) => {
               const m = turnItem;
               const i = turnIndex + groupedMessages.indexOf(turnItem);
               const isLiveAssistant = m.role === 'assistant' && isStreaming && i === messages.length - 1;
               return <React.Fragment key={`${m.role}-${i}`}>
-            {<motion.div initial={isLiveAssistant ? { opacity: 0.58 } : false} animate={{ opacity: 1 }} transition={{ duration: 0.2, ease: 'easeOut' }} className={`group/message ${m.role === 'assistant' ? 'chat-assistant-message' : 'chat-user-message'} ${m.meta?.status === 'error' ? 'chat-error-message' : ''}`} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '4px', maxWidth: m.role === 'user' ? '76%' : '100%', minWidth: 0 }}>
+            {<motion.div initial={false} animate={{ opacity: 1 }} transition={{ duration: 0.2, ease: 'easeOut' }} className={`group/message ${m.role === 'assistant' ? 'chat-assistant-message' : 'chat-user-message'} ${m.meta?.status === 'error' ? 'chat-error-message' : ''}`} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '8px', maxWidth: m.role === 'user' ? '76%' : '100%', minWidth: 0 }}>
               {m.role === 'user' && (m.artifactReferences?.length > 0 || m.browserReferences?.length > 0 || m.selectedTextReferences?.length > 0 || m.attachments?.length > 0) && <div className="chat-reference-row" aria-label={language === 'en' ? 'References and files' : 'Referencias y archivos'}>
                 {m.artifactReferences?.map((ref: { kind: 'plan' | 'todo'; id: string; title: string }) => <div key={`${ref.kind}-${ref.id}`} className="chat-reference-card chat-artifact-reference-card" title={`@${ref.kind} · ${ref.title}`}><span className="chat-reference-kind">@{ref.kind}</span><span className="chat-reference-title">{ref.title}</span></div>)}
                 {m.browserReferences?.map((ref: { id: string; title: string; text: string; url?: string }, referenceIndex: number) => <div key={ref.id || `${ref.title}-${referenceIndex}`} className="chat-reference-card chat-browser-reference-card" title={ref.title}><span className="chat-browser-reference-number">{referenceIndex + 1}</span>{getBrowserReferenceFavicon(ref) ? <img src={getBrowserReferenceFavicon(ref)} alt="" className="chat-reference-favicon" /> : <Globe size={16} className="chat-reference-favicon chat-reference-fallback-icon" aria-hidden="true" />}<span className="chat-reference-title">{ref.title}</span></div>)}
                 {m.selectedTextReferences?.map((ref: { id: string; text: string; comment?: string }) => <div key={ref.id} className="chat-reference-card chat-selected-text-reference-card" title={ref.comment ? `${ref.comment}\n\n${ref.text}` : ref.text}><span className="chat-selected-text-content">{ref.text}</span><span className="chat-selected-text-label">{agentTextSelectionTranslations[language].selectedReference}</span></div>)}
                 {m.attachments?.map((file: ChatAttachment) => file.mediaType?.startsWith('image/') ? <div key={file.path || file.name} className="chat-reference-card chat-attachment-card" title={file.name}><img src={file.previewUrl || convertFileSrc(file.path)} alt={file.name} /></div> : <div key={file.path || file.name} className="chat-reference-card chat-attachment-card chat-attachment-file" title={file.name}>{file.previewText ? <pre className="chat-attachment-preview-text">{file.previewText}</pre> : <span>{file.name.split('.').pop()?.toUpperCase().slice(0, 6) || 'FILE'}</span>}</div>)}
               </div>}
-              <div className={`chat-markdown min-w-0 max-w-full break-words [overflow-wrap:anywhere] text-sm leading-6 text-(--codeclub-text-strong) ${m.role === 'user' ? 'chat-markdown-user' : 'chat-markdown-assistant'} ${m.role === 'user' && getVisibleUserContent(m).trim() ? 'w-fit overflow-hidden rounded-[22px] border border-[#2B2B2B] bg-(--codeclub-user-bubble) px-4 py-2.5 leading-6' : 'w-full'}`}>
+              {isLiveAssistant && agentState !== 'error' && <LiveTurnProgress message={m} language={language} />}
+              {(m.role === 'user' || m.content || m.displayContent || m.meta?.status === 'error') && <div className={`chat-markdown min-w-0 max-w-full break-words [overflow-wrap:anywhere] text-sm leading-6 text-(--codeclub-text-strong) ${m.role === 'user' ? 'chat-markdown-user' : 'chat-markdown-assistant'} ${m.role === 'user' && getVisibleUserContent(m).trim() ? 'w-fit overflow-hidden rounded-[22px] border border-[#2B2B2B] bg-(--codeclub-user-bubble) px-4 py-2.5 leading-6' : 'w-full'}`}>
                 <motion.div
-                  key={m.role === 'assistant' && m.content?.trim() ? 'assistant-content' : 'message-content'}
-                  initial={isLiveAssistant && m.content?.trim() ? { opacity: 0 } : false}
+
+                  initial={false}
                   animate={{ opacity: 1 }}
                   transition={{ duration: 0.24, ease: 'easeOut' }}
                 >
                 <MemoizedChatMarkdown content={normalizeChatContent(m.role === 'user' ? getVisibleUserContent(m) : (m.meta?.status === 'error' ? (m.meta.errorMessage || (language === 'en' ? 'No response' : 'Sin respuesta')) : (m.displayContent || m.content)))} />
                 </motion.div>
-                {m.role === 'assistant' && isStreaming && agentState !== 'error' && i === messages.length - 1 && !m.content && !m.timeline?.some((event: any) => event.type === 'tool') && <motion.span initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: 'easeOut' }} className="chat-thinking-label composer-action-shine" style={{ display: 'inline-block', fontSize: '13px' }}>{language === 'en' ? 'Thinking' : 'Pensando'}</motion.span>}
-              </div>
-              {m.role === 'assistant' && !activeChat?.chatId.startsWith('scheduled-') && turnMessage.source !== 'orb-trigger' && <TurnActivity progress={m.progress} timeline={m.timeline} tools={m.tools} changes={m.meta?.changes} active={isLiveAssistant} language={language} />}
+              </div>}
               {m.role === 'assistant' && <AskUserCards tools={m.tools} onSelect={(answer, questionId) => void sendMessage(answer, messages, false, false, [], questionId)} onRespondInChat={() => {
                 setComposerDocked(true);
                 requestAnimationFrame(() => {
@@ -3091,7 +3082,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 });
               }} disabled={isAgentBusy} />}
               {m.role === 'assistant' && i === messages.length - 1 && <ApprovalCards approvals={pendingApprovals} onResolve={resolveToolApproval} />}
-              {!floating && m.role === 'assistant' && (!isStreaming || i !== messages.length - 1 || m.meta?.status === 'error') && <div data-message-actions={i} className="message-actions relative flex items-center gap-1 self-start">
+              {!floating && m.role === 'assistant' && (!liveTurn || m.meta?.status === 'error') && <div data-message-actions={i} className="message-actions relative flex items-center gap-1 self-start">
                 <button type="button" aria-label={copiedMessageIndex === i ? chatActionTranslations[language].copied : chatActionTranslations[language].copy} title={copiedMessageIndex === i ? chatActionTranslations[language].copied : chatActionTranslations[language].copy} onClick={() => void handleCopyMessage(m.content, i)} className={`grid h-6 w-6 place-items-center rounded-md border-0 bg-transparent transition-colors hover:bg-white/[0.06] ${copiedMessageIndex === i ? 'text-(--codeclub-accent-bright)' : 'text-(--codeclub-text-muted)'}`}>{copiedMessageIndex === i ? <Check size={12} strokeWidth={1.8} /> : <Copy size={12} strokeWidth={1.8} />}</button>
                 <button type="button" aria-label={chatActionTranslations[language].more} title={chatActionTranslations[language].more} aria-haspopup="menu" aria-expanded={moreMenuIndex === i} onClick={() => setMoreMenuIndex((current) => current === i ? null : i)} className="grid h-6 w-6 place-items-center rounded-md border-0 bg-transparent text-(--codeclub-text-muted) transition-colors hover:bg-white/[0.06] hover:text-(--codeclub-text-strong)"><MoreHorizontal size={13} strokeWidth={1.8} /></button>
                 <AnimatePresence>{moreMenuIndex === i && <motion.div role="menu" aria-label={chatActionTranslations[language].more} initial={{ opacity: 0, y: 6, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 6, scale: 0.96 }} transition={{ duration: 0.14, ease: 'easeOut' }} className="absolute bottom-[calc(100%+8px)] left-0 z-30 grid min-w-[220px] gap-0.5 rounded-xl border border-[#2B2B2B] bg-[#191919] p-1.5 shadow-2xl">
@@ -3515,6 +3506,24 @@ function ProcessingStatusStateFixed({ startedAt, language }: { startedAt: number
   const elapsedLabel = formatProcessingDuration(elapsed);
   const processingLabel = language === 'en' ? `${status} for ${elapsedLabel}` : `${status} desde hace ${elapsedLabel}`;
   return <span className="chat-turn-processing" style={{ color: '#777', fontSize: '11px' }}>{processingLabel}</span>;
+}
+
+function LiveTurnProgress({ message, language }: { message: any; language: AppLanguage }) {
+  const phases: Array<{ id: string; summary: string; tools: any[] }> = [];
+  const tools = new Map<string, any>((message.tools || []).map((event: any) => [event.id || event.callId, event]));
+  for (const event of message.timeline || []) {
+    if (event.type === 'progress') phases.push({ id: event.id, summary: event.text, tools: [] });
+    if (event.type === 'tool') {
+      if (!phases.length) phases.push({ id: 'initial', summary: activityTranslations[language].thinking, tools: [] });
+      phases.at(-1)!.tools.push(tools.get(event.id) || event);
+    }
+  }
+  if (!phases.length) phases.push({ id: 'current', summary: message.progress || activityTranslations[language].thinking, tools: message.tools || [] });
+  return <div className="chat-live-progress" aria-label={activityTranslations[language].thinking}>
+    {phases.map((phase, index) => <div key={phase.id} className="chat-progress-phase" data-active={index === phases.length - 1}>
+      {phase.tools.length ? <TurnActivity progress={phase.summary} tools={phase.tools} active={index === phases.length - 1} language={language} /> : <p className="chat-progress-label"><PyramidMark size={14} /><span>{phase.summary}</span></p>}
+    </div>)}
+  </div>;
 }
 
 function TurnActivity({ progress = '', timeline = [], tools = [], changes, active, language }: { progress?: string; timeline?: any[]; tools?: any[]; changes?: { additions: number; deletions: number; files: number; fileChanges?: Array<{ path: string; additions: number; deletions: number; status: string }> } | null; active: boolean; language: AppLanguage }) {
