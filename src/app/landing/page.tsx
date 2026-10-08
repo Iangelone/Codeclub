@@ -1,5 +1,6 @@
 import { Download, FolderGit2, Globe2, Sparkles } from 'lucide-react';
 
+/** Public download page; installer and repository links are the only external destinations. */
 const downloadUrl = 'https://github.com/Iangelone/Codeclub/releases/latest/download/Codeclub%20Setup.exe';
 const repositoryUrl = 'https://github.com/Iangelone/Codeclub';
 

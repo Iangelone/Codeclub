@@ -1,3 +1,4 @@
+/** Creates, selects, renames, and indexes local projects; project files stay behind the Electron bridge. */
 import { memo, useEffect, useRef, useState } from 'react';
 import { Folder } from 'lucide-react';
 import { activeChatStore } from '../lib/store';

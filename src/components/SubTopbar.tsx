@@ -1,5 +1,6 @@
 'use client';
 
+/** Project breadcrumb, panel navigation, update actions, and project-scoped recent search. */
 import { ArrowLeft, ArrowRight, ChevronRight, Download, FileText, House, MessageSquare, RefreshCw, Search } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Fragment, useEffect, useRef, useState } from 'react';

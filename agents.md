@@ -29,7 +29,7 @@ Codeclub is a local-first Windows desktop app for AI-assisted development. The r
 | Workspace | src/components/WorkspaceManager.tsx, ChatPanel.tsx, ChatInterface.tsx |
 | Extensions | src/components/ExtensionsPanel.tsx |
 | Engine | src/lib/engine/ |
-| Agent integration guide | docs/agent-stack.md |
+| Agent integration guide | docs/agent.md |
 | Projects | src/lib/projectManager.ts |
 | Runtime | src/lib/runtime.ts and electron/preload.cjs |
 | Native process | electron/main.ts |

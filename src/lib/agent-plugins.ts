@@ -1,3 +1,4 @@
+/** Renderer adapter: Electron discovers packages and owns stdio; this module exposes MCP tools and closes sessions. */
 import { nativeInvoke as invoke } from './runtime';
 import { jsonSchema } from 'ai';
 

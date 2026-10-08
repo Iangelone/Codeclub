@@ -1,6 +1,7 @@
 'use client';
 
 import { motion, useReducedMotion } from 'motion/react';
+/** Changes the shared orb palette and broadcasts it so every renderer stays in sync. */
 import { useAppLanguage } from '../../lib/i18n';
 import { useOrbPalette } from '../OrbPaletteProvider';
 import FluidOrb from './fluid-orb';

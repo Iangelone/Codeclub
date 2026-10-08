@@ -1,5 +1,6 @@
 'use client';
 
+/** Shared keyboard-accessible selector used by scheduled-task controls. */
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { useAppLanguage } from '../../lib/i18n';

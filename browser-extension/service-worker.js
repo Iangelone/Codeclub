@@ -1,3 +1,4 @@
+// Companion for installed Chromium browsers: reconnect to Electron over loopback and scope CDP access to requested tabs.
 const BRIDGE_PORTS = Array.from({ length: 11 }, (_, index) => 47832 + index);
 const MAX_SNAPSHOT_AGE = 60_000;
 const snapshots = new Map();
@@ -93,7 +94,7 @@ function observeExpression() {
       const name = el.getAttribute('aria-label') || el.labels?.[0]?.innerText || el.getAttribute('placeholder') || el.getAttribute('title') || el.innerText || (el.type === 'password' ? '' : el.value) || '';
       return { selector: selectorFor(el), tag: el.localName, role: el.getAttribute('role') || '', name: clean(name), text: clean(el.innerText), value: el.type === 'password' ? undefined : (typeof el.value === 'string' ? clean(el.value) : undefined), type: el.type || undefined, href: el.href || undefined, disabled: Boolean(el.disabled), bounds: { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) } };
     });
-    return { url: location.href, title: document.title, text: String(document.body?.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 12000), elements };
+    return { url: location.href, title: document.title, text: String(document.body?.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 12000), elements, media: Array.from(document.querySelectorAll('video,audio')).map(media => ({ paused: media.paused, muted: media.muted, volume: media.volume, currentTime: media.currentTime, ended: media.ended, readyState: media.readyState })) };
   })()`;
 }
 
@@ -106,7 +107,7 @@ async function state(tabId) {
   const snapshotId = crypto.randomUUID();
   snapshots.set(snapshotId, { tabId, createdAt: Date.now(), elements: value.elements || [] });
   for (const [id, snapshot] of snapshots) if (Date.now() - snapshot.createdAt > MAX_SNAPSHOT_AGE) snapshots.delete(id);
-  return { ok: true, snapshotId, tabId, url: value.url.slice(0, 2000), title: String(value.title || '').slice(0, 300), text: value.text, elements: value.elements };
+  return { ok: true, snapshotId, tabId, url: value.url.slice(0, 2000), title: String(value.title || '').slice(0, 300), text: value.text, elements: value.elements, media: value.media, media: Array.from(document.querySelectorAll('video,audio')).map(media => ({ paused: media.paused, muted: media.muted, volume: media.volume, currentTime: media.currentTime, ended: media.ended, readyState: media.readyState })) };
 }
 
 async function act(params) {

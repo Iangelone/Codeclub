@@ -1,4 +1,5 @@
 'use client';
+/** Composes the renderer shell and selects normal, floating, or scheduled-run mode from the URL. */
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import Topbar from '../components/Topbar';
@@ -75,7 +76,7 @@ export default function HomePage() {
       if (typeof saved?.leftOpen === 'boolean') setLeftOpen(saved.leftOpen);
       if (typeof saved?.rightOpen === 'boolean') setRightOpen(saved.rightOpen);
       if (typeof saved?.topbarOpen === 'boolean') setTopbarOpen(saved.topbarOpen);
-    } catch { /* Si la preferencia no es válida, se usan los valores iniciales. */ }
+    } catch { /* Invalid saved preferences fall back to the default layout. */ }
     const handleProjectSwitch = (event: Event) => {
       const detail = (event as CustomEvent<{ name?: string; path?: string }>).detail;
       setActiveProject(detail?.path ? { name: detail.name || 'Proyecto', path: detail.path } : { name: 'Inicio' });
@@ -88,7 +89,7 @@ export default function HomePage() {
       try {
         const current = JSON.parse(window.localStorage.getItem(LAYOUT_VISIBILITY_KEY) || '{}') as Record<string, unknown>;
         window.localStorage.setItem(LAYOUT_VISIBILITY_KEY, JSON.stringify({ ...current, ...next }));
-      } catch { /* La persistencia de preferencias es opcional. */ }
+      } catch { /* Layout preferences remain usable when storage is unavailable. */ }
     };
     const openRightSidebar = () => { setRightOpen(true); persistVisibility({ rightOpen: true }); };
     window.addEventListener('codeclub:project-switch', handleProjectSwitch);
@@ -100,9 +101,9 @@ export default function HomePage() {
       window.removeEventListener('codeclub:open-right-sidebar', openRightSidebar);
     };
   }, []);
-  const toggleLeft = () => setLeftOpen((open) => { const next = !open; try { window.localStorage.setItem(LAYOUT_VISIBILITY_KEY, JSON.stringify({ ...JSON.parse(window.localStorage.getItem(LAYOUT_VISIBILITY_KEY) || '{}'), leftOpen: next })); } catch { /* La persistencia de preferencias es opcional. */ } return next; });
-  const toggleRight = () => setRightOpen((open) => { const next = !open; try { window.localStorage.setItem(LAYOUT_VISIBILITY_KEY, JSON.stringify({ ...JSON.parse(window.localStorage.getItem(LAYOUT_VISIBILITY_KEY) || '{}'), rightOpen: next })); } catch { /* La persistencia de preferencias es opcional. */ } return next; });
-  const toggleTopbar = () => setTopbarOpen((open) => { const next = !open; try { window.localStorage.setItem(LAYOUT_VISIBILITY_KEY, JSON.stringify({ ...JSON.parse(window.localStorage.getItem(LAYOUT_VISIBILITY_KEY) || '{}'), topbarOpen: next })); } catch { /* La persistencia de preferencias es opcional. */ } return next; });
+  const toggleLeft = () => setLeftOpen((open) => { const next = !open; try { window.localStorage.setItem(LAYOUT_VISIBILITY_KEY, JSON.stringify({ ...JSON.parse(window.localStorage.getItem(LAYOUT_VISIBILITY_KEY) || '{}'), leftOpen: next })); } catch { /* Layout preferences remain usable when storage is unavailable. */ } return next; });
+  const toggleRight = () => setRightOpen((open) => { const next = !open; try { window.localStorage.setItem(LAYOUT_VISIBILITY_KEY, JSON.stringify({ ...JSON.parse(window.localStorage.getItem(LAYOUT_VISIBILITY_KEY) || '{}'), rightOpen: next })); } catch { /* Layout preferences remain usable when storage is unavailable. */ } return next; });
+  const toggleTopbar = () => setTopbarOpen((open) => { const next = !open; try { window.localStorage.setItem(LAYOUT_VISIBILITY_KEY, JSON.stringify({ ...JSON.parse(window.localStorage.getItem(LAYOUT_VISIBILITY_KEY) || '{}'), topbarOpen: next })); } catch { /* Layout preferences remain usable when storage is unavailable. */ } return next; });
   const fullscreenAnimation = useMemo(() => fullscreenMotion === 'enter'
     ? { scale: [0.985, 1], opacity: [0.92, 1] }
     : fullscreenMotion === 'exit'
@@ -117,8 +118,8 @@ export default function HomePage() {
   return <MotionConfig reducedMotion="user"><motion.div animate={fullscreenAnimation} transition={fullscreenTransition} className="relative isolate grid h-screen max-h-screen grid-rows-[34px_auto_minmax(0,1fr)] min-w-[320px] min-h-0 overflow-hidden bg-transparent text-(--codeclub-text) font-sans" data-fullscreen={isFullscreen}>
       <a className="codeclub-skip-link" href="#codeclub-main-content">{language === 'en' ? 'Skip to workspace' : 'Saltar al espacio de trabajo'}</a>
       <Topbar leftOpen={leftOpen} rightOpen={rightOpen} topbarOpen={topbarOpen} onToggleLeft={toggleLeft} onToggleRight={toggleRight} onToggleTopbar={toggleTopbar} />
-      {/* La barra cerrada no debe dejar controles invisibles sobre el workspace. */}
+      {/* A collapsed bar must not leave invisible controls over the workspace. */}
       <div className="relative z-50 min-h-0">{topbarOpen && <SubTopbar activeProject={activeProject} />}</div>
-      <WorkspaceLayout leftOpen={leftOpen} rightOpen={rightOpen} onToggleLeft={toggleLeft} />
+      <WorkspaceLayout leftOpen={leftOpen} rightOpen={rightOpen} onToggleLeft={toggleLeft} onRightVisibilityChange={setRightOpen} />
   </motion.div></MotionConfig>;
 }

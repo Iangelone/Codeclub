@@ -15,6 +15,7 @@
 .floating-peek-open { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
 .floating-peek-open:hover { background: color-mix(in srgb, var(--codeclub-accent) 14%, transparent); color: var(--codeclub-accent-bright); }
 .floating-peek-open:focus-visible { outline: 2px solid var(--codeclub-accent-bright); outline-offset: 2px; }
+/* Retracted keeps only the reopen control; compact hides history but leaves the composer usable. */
 .floating-shell.is-retracted { width: 80px; height: 36px; margin: 8px auto; padding: 4px 8px; border-radius: 20px; }
 .floating-shell.is-retracted .floating-toolbar, .floating-shell.is-retracted .floating-surface { display: none; }
 .floating-shell.is-retracted .floating-peek { display: flex; align-items: center; justify-content: space-between; width: 100%; color: #777; }

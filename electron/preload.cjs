@@ -1,3 +1,4 @@
+// Expose a narrow, app-specific API; renderer code never receives Node.js or raw ipcRenderer access.
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('codeclub', {
@@ -7,6 +8,11 @@ contextBridge.exposeInMainWorld('codeclub', {
     ipcRenderer.on('codeclub:terminal-output', listener);
     return () => ipcRenderer.removeListener('codeclub:terminal-output', listener);
   },
+  settingsGet: key => ipcRenderer.invoke('codeclub:settings-get', key),
+  settingsSet: (key, value) => ipcRenderer.invoke('codeclub:settings-set', key, value),
+  settingsRemove: key => ipcRenderer.invoke('codeclub:settings-remove', key),
+  globalChatUpsert: chat => ipcRenderer.invoke('codeclub:global-chat-upsert', chat),
+  onSettingsChanged: handler => { const listener = (_event, detail) => handler(detail); ipcRenderer.on('codeclub:settings-changed', listener); return () => ipcRenderer.removeListener('codeclub:settings-changed', listener); },
   listProjects: () => ipcRenderer.invoke('projects:list'),
   selectProjectFolder: () => ipcRenderer.invoke('projects:select-folder'),
   selectFiles: () => ipcRenderer.invoke('files:select'),

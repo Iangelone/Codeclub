@@ -1,4 +1,5 @@
 'use client';
+/** Isolated palette/orb preview route for visual tuning; the main workspace is not mounted here. */
 import OrbPaletteButton from '../../components/ui/OrbPaletteButton';
 
 export default function OrbPreviewPage() {

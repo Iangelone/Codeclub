@@ -5,19 +5,22 @@
 
 | Document | Answers |
 | --- | --- |
-| [Architecture](arquitectura.md) | How is the app put together? |
-| [Flows and events](flujos.md) | How do its parts communicate? |
-| [Persistence](persistencia.md) | Where are chats, tasks, and settings stored? |
-| [Terminal and browser](terminal-y-navegador.md) | How do the interactive tools work? |
-| [Floating chat](floating-chat.md) | How does the desktop widget share chats and controls with the main window? |
-| [Orbe fluido](orbe-fluid.md) | ¿Cómo se genera el orbe WebGL y cómo ajustar su patrón sin perder el aspecto original? |
-| [Chat history](revision-chat-historiales.md) | How are long conversations stored, paginated, and used as context? |
-| [AI catalog and routing](ai-catalog.md) | How are providers, models, Gateway routes, credentials and transport errors handled? |
-| [Motor del agente: resumen y límites](agent-stack.md) | ¿Qué usamos de AI SDK, Agent Plugins y LangChain, qué está probado y qué falta mejorar? |
-| [Scheduled tasks](scheduled-tasks.md) | How do automatic runs, persistence, cancellation, and verification work? |
-| [Prueba real de desarrollo](development-verification.md) | ¿Cómo verificar programación, tests, terminal y navegador con un modelo gratuito? |
-| [Windows computer control](computer-use.md) | How do native actions, UI Automation, and OCR work? |
-| [Development](desarrollo.md) | How do we run, verify, keep accessibility and publish? |
+| [Architecture](architecture.md) | How is the app put together? |
+| [Flows and events](flows.md) | How do its parts communicate? |
+| [Persistence](storage.md) | Where are chats, tasks, and settings stored? |
+| [Terminal and browser](workspace.md) | How do the interactive tools work? |
+| [Floating chat](widget.md) | How does the desktop widget share chats and controls with the main window? |
+| [Fluid orb](orb.md) | How is the WebGL orb generated, and how can its pattern be adjusted without losing its original look? |
+| [Browser style editor](styles.md) | How are selected page styles previewed, confirmed, and reverted? |
+| [Chat history](history.md) | How are long conversations stored, paginated, and used as context? |
+| [AI catalog and routing](catalog.md) | How are providers, models, Gateway routes, credentials and transport errors handled? |
+| [Agent engine: overview and limits](agent.md) | What do we use from AI SDK, Agent Plugins, and LangChain, what has been tested, and what remains to improve? |
+| [Scheduled tasks](schedule.md) | How do automatic runs, persistence, cancellation, and verification work? |
+| [Live development verification](verification.md) | How can coding, tests, the terminal, and browser be verified with a free model? |
+| [Windows computer control](computer.md) | How do native actions, UI Automation, and OCR work? |
+| [Development](development.md) | How do we run, verify, keep accessibility and publish? |
+| [Browser extension privacy](privacy.md) | What browser data can the extension access, and how is it used? |
+| [Browser extension listing](listing.md) | What store listing text and permission explanations are prepared? |
 
 ## Mental model
 

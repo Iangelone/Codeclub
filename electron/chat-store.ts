@@ -144,6 +144,7 @@ export class ChatStore {
       return total+1;
     });
   }
+  hasMessages(project: string, id: string) { return Boolean(this.db.prepare('SELECT 1 FROM messages WHERE scope=? AND id=? LIMIT 1').get(this.scope(project), id)); }
   async all(project:string,id:string) {
     await this.ensure(project,id);
     return this.db.prepare('SELECT payload FROM messages WHERE scope=? AND id=? ORDER BY seq').all(this.scope(project),id).map(row=>JSON.parse(String(row.payload)));

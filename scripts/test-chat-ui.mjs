@@ -34,8 +34,9 @@ try {
     if(request.url==='/style.css'){response.setHeader('content-type','text/css');response.end(stylesheet);return;}
     if(request.url?.startsWith('/v1')) {
       let body='';for await(const chunk of request)body+=chunk;
-      const data=JSON.parse(body||'{}');networkMessages=data.messages||[];
+      const data=JSON.parse(body||'{}');if (data.stream) networkMessages=data.messages||[];
       response.setHeader('access-control-allow-origin','*');
+      if(!data.stream) { response.setHeader('content-type','application/json');response.end(JSON.stringify({id:'summary',object:'chat.completion',model:'qa-model',choices:[{message:{role:'assistant',content:'Resumen QA del turno'},finish_reason:'stop',index:0}],usage:{prompt_tokens:10,completion_tokens:5,total_tokens:15}}));return;}
       if(data.stream) {
         response.setHeader('content-type','text/event-stream');
         const delta=(text,finish=null)=>response.write('data: '+JSON.stringify({id:'qa',object:'chat.completion.chunk',created:1,model:'qa-model',choices:[{index:0,delta:text?{content:text}:{},finish_reason:finish}]})+'\n\n');
@@ -87,7 +88,7 @@ try {
   await page.waitForTimeout(150);
   const open=id=>page.evaluate(chatId=>window.dispatchEvent(new CustomEvent('codeclub:qa:open-chat',{detail:{chatId,projectPath:'',name:chatId}})),id);
   await open('long');
-  await page.getByText('QA message 9999',{exact:true}).waitFor();
+  await page.locator('.chat-markdown').getByText('QA message 9999',{exact:true}).waitFor();
   await page.waitForTimeout(150);
   const mounted=await page.locator('.chat-turn').count();assert.ok(mounted<30,`Too many mounted turns: ${mounted}`);
   await page.locator('.messages-area[data-chat-transition="idle"]').waitFor();
@@ -129,7 +130,7 @@ try {
       if(window.qaRecording)requestAnimationFrame(sample);
     };requestAnimationFrame(sample);
   });
-  await open('slow');await open('fast');await page.getByText('FAST response',{exact:true}).waitFor();await page.waitForTimeout(300);
+  await open('slow');await open('fast');await page.locator('.chat-markdown').getByText('FAST response',{exact:true}).waitFor();await page.waitForTimeout(300);
   const firstHeaderGap=await page.locator('.chat-turn').first().evaluate(turn=>turn.querySelector('.chat-user-message').getBoundingClientRect().top-turn.querySelector('.chat-turn-time').getBoundingClientRect().bottom);
   assert.ok(firstHeaderGap>=7.5,'First message follows the same timestamp spacing');
   const bubbleColor=await page.locator('.chat-markdown-user').first().evaluate(element=>getComputedStyle(element).backgroundColor);
@@ -139,7 +140,7 @@ try {
   assert.ok(transitionFrames.some(frame=>frame.phase==='entering'),'New chat enters after loading');
   assert.ok(!transitionFrames.some(frame=>frame.text.includes('FAST response')&&frame.text.includes('QA message')),'Chats never overlap');
   assert.ok(!transitionFrames.some(frame=>frame.text.includes('FAST response')&&frame.opacity>0.1&&frame.bottom>10),'New chat is positioned before appearing');
-  assert.equal(await page.getByText('SLOW response',{exact:true}).count(),0,'Late history cannot replace the active chat');
+  assert.equal(await page.locator('.chat-markdown').getByText('SLOW response',{exact:true}).count(),0,'Late history cannot replace the active chat');
   await page.evaluate(()=>{
     window.qaLayoutFrames=[];window.qaRecordingLayout=true;
     const sample=()=>{
@@ -148,16 +149,16 @@ try {
       if(window.qaRecordingLayout)requestAnimationFrame(sample);
     };requestAnimationFrame(sample);
   });
-  await open('varied');await page.getByText('QA varied last',{exact:true}).waitFor();
+  await open('varied');await page.locator('.chat-markdown').getByText('QA varied last',{exact:true}).waitFor();
   await page.locator('.messages-area[data-chat-transition="idle"]').waitFor();
   await page.waitForTimeout(200);
   const layoutFrames=await page.evaluate(()=>{window.qaRecordingLayout=false;return window.qaLayoutFrames;});
   assert.ok(layoutFrames.length>3,'Sampled visible variable-height history');
   assert.ok(Math.max(...layoutFrames)-Math.min(...layoutFrames)<1,'Last turn stays in position throughout and after entry');
-  await open('long');await page.getByText('QA message 9999',{exact:true}).waitFor();
+  await open('long');await page.locator('.chat-markdown').getByText('QA message 9999',{exact:true}).waitFor();
   await page.locator('.messages-area[data-chat-transition="idle"]').waitFor();
   const input=page.locator('textarea').first();await input.fill('Hola QA');await input.press('Enter');
-  try{await page.getByText(/Respuesta QA\./).waitFor({timeout:10000});}catch(error){console.error('After send:',(await page.locator('body').innerText()).slice(-1800));console.error('Stored tail:',(await store.page('','long',undefined,2)).messages);throw error;}
+  try{await page.locator('.chat-markdown').getByText(/Respuesta QA\./).waitFor({timeout:10000});}catch(error){console.error('After send:',(await page.locator('body').innerText()).slice(-1800));console.error('Stored tail:',(await store.page('','long',undefined,2)).messages);throw error;}
   await page.waitForFunction(()=>document.querySelector('textarea')?.value==='');
   for(let attempt=0;attempt<100&&(await store.page('','long')).total!==10002;attempt++)await page.waitForTimeout(50);
   assert.equal((await store.page('','long')).total,10002,'Streaming saves only the two new messages');
@@ -165,11 +166,13 @@ try {
   assert.ok(networkMessages.length<100,'Provider receives bounded context');
   assert.ok(networkMessages.some(message=>typeof message.content==='string'&&message.content.includes('Hola QA')),'Latest prompt remains in context');
   assert.ok((await store.page('','long')).messages.at(-1).content.includes('Respuesta QA.'),'Final stream was persisted');
-  await open('retry');await page.getByText('QA message 9999',{exact:true}).waitFor();
+  assert.equal((await store.page('','long')).messages.at(-1).turnSummary,'Resumen QA del turno','AI summary is saved with the turn');
+  await page.getByTitle('Resumen QA del turno').waitFor();
+  await open('retry');await page.locator('.chat-markdown').getByText('QA message 9999',{exact:true}).waitFor();
   await page.locator('.messages-area[data-chat-transition="idle"]').waitFor();
   await page.getByRole('button',{name:'Más opciones de la respuesta'}).last().click();
   await page.getByRole('menuitem',{name:'Regenerar respuesta'}).click();
-  await page.getByText(/Respuesta QA\./).waitFor();
+  await page.locator('.chat-markdown').getByText(/Respuesta QA\./).waitFor();
   for(let attempt=0;attempt<100;attempt++){
     if((await store.page('','retry')).messages.at(-1)?.content.includes('Respuesta QA.'))break;
     await page.waitForTimeout(50);
@@ -196,7 +199,7 @@ try {
     await page.getByRole('textbox',{name:'Mensaje',exact:true}).fill('/proveedor');
     await page.getByRole('option',{name:'Proveedor Seleccionar proveedor'}).click();
     await page.getByRole('textbox',{name:'Buscar proveedor',exact:true}).fill(label);
-    await page.getByRole('option',{name:label+' proveedor',exact:true}).click();
+    await page.getByRole('option').filter({has:page.getByText(label,{exact:true})}).click();
   };
   await selectProvider('QA saved');
   await page.waitForFunction(()=>window.qaCredentialChecks.includes('qa-saved_api_key'));
@@ -226,7 +229,7 @@ try {
   await page.getByRole('textbox',{name:'Message',exact:true}).fill('/proveedor');
   await page.getByRole('option',{name:'Provider Select provider'}).click();
   await page.getByRole('textbox',{name:'Search provider',exact:true}).fill('QA missing');
-  await page.getByRole('option',{name:'QA missing provider',exact:true}).click();
+  await page.getByRole('option').filter({has:page.getByText('QA missing',{exact:true})}).click();
   await page.getByPlaceholder('Enter your credential for QA missing').waitFor();
   await page.getByPlaceholder('Enter your credential for QA missing').press('Escape');
   await page.getByPlaceholder(/Enter your credential/).waitFor({state:'hidden'});

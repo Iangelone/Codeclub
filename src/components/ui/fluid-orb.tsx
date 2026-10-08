@@ -13,7 +13,8 @@ export type FluidOrbProps = React.ComponentProps<'div'> & {
   themeTint?: boolean;
 };
 
-// Adaptado de Rare UI Fluid Orb: https://www.rareui.com/components/fluidorb
+// Adapted from Rare UI Fluid Orb: https://www.rareui.com/components/fluidorb
+// Keep the shader self-contained; palette updates arrive through component props.
 const VERTEX_SHADER = `
 attribute vec2 a_pos;
 void main() {

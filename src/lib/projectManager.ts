@@ -1,3 +1,4 @@
+/** Project metadata and global-chat index; project chat contents use Electron's ChatStore when available. */
 import { appConfigDir, fileExists as exists, makeDirectory as mkdir, readDesktopText as readTextFile, writeDesktopText as writeTextFile } from './runtime';
 import { getAppConfigFilePath, getProjectFilePath, getSetting, logPersistence, setSetting } from "./persistence.ts";
 

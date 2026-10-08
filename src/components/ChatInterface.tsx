@@ -1,6 +1,8 @@
+/** Owns composer and stream presentation; model steps use the shared engine, durable chat data uses storage APIs, and native I/O uses preload. */
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useChatHistory } from './use-chat-history';
+import { generateTurnSummary } from '../lib/turn-summary';
 import { buildChatContext } from '../lib/chat-context';
 import { sameSession, useSharedSessions, type SharedSession } from '../lib/shared-sessions';
 import { ArrowUp, Box, Braces, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Languages, LayoutTemplate, MessageSquare, Minimize2, Monitor, MoreHorizontal, Paperclip, Pencil, Play, Presentation, Radar, RotateCcw, Search, ScrollText, Square, Table2, Terminal, Folder, WandSparkles, X } from 'lucide-react';
@@ -35,7 +37,7 @@ import { appendGenerationUsage, type GenerationUsageRecord } from '../lib/usage'
 import { appendExecutionLog } from '../lib/execution-log';
 import { appendGlobalChatTranscript, getProjectChatPath, getProjectTranscriptPath, readGlobalChatHistory, readGlobalChats, readProjectIndex, readProjectMeta, writeGlobalChatHistory, writeGlobalChats, writeProjectMeta, type ProjectMeta } from '../lib/projectManager';
 import { codeclubExtensions, type CodeclubExtension } from '../lib/extensions';
-import { savedProviderTranslations, activityTranslations, aiCredentialTranslations, providerErrorTranslations, chatHistoryTranslations, chatActionTranslations, agentTextSelectionTranslations, LANGUAGE_STORAGE_KEY, rightSidebarTranslations, type AppLanguage, useAppLanguage } from '../lib/i18n';
+import { orbControlTranslations, savedProviderTranslations, activityTranslations, aiCredentialTranslations, providerErrorTranslations, chatHistoryTranslations, chatActionTranslations, agentTextSelectionTranslations, LANGUAGE_STORAGE_KEY, rightSidebarTranslations, type AppLanguage, useAppLanguage } from '../lib/i18n';
 import { connectAllAgentPluginMcp, loadAgentPlugins } from '../lib/agent-plugins';
 import OrbPaletteButton from './ui/OrbPaletteButton';
 import { ORB_PALETTES, useOrbPalette } from './OrbPaletteProvider';
@@ -163,6 +165,20 @@ const getVisibleUserContent = (message: any) => {
   if (typeof message?.displayContent === 'string') return message.displayContent;
   return String(message?.content || '').replace(/\n\nReferencia \d+: @[\s\S]*$/m, '').trim();
 };
+/** A compact local overview: no extra model call, also works with saved history. */
+const getTurnOverview = (user: any, assistants: any[], active: boolean, language: AppLanguage) => {
+  const savedSummary = [...assistants].reverse().find(message => message.turnSummary)?.turnSummary;
+  if (savedSummary) return String(savedSummary);
+  const request = user.role === 'user' && !user.hidden ? getVisibleUserContent(user) : '';
+  const response = [...assistants].reverse().find(message => message.content?.trim() && message.meta?.status !== 'error')?.content || '';
+  const source = active ? request : response || request;
+  const plain = String(source).replace(/```[\s\S]*?```/g, '').replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/<[^>]+>/g, '').replace(/^[\s#>*-]+/gm, '').replace(/[*_`~]/g, '').trim();
+  const firstLine = plain.split(/\n/).find(line => line.trim())?.trim() || '';
+  const sentence = firstLine.match(/^.*?[.!?](?:\s|$)/)?.[0]?.trim() || firstLine;
+  const overview = sentence || (user.attachments?.length ? activityTranslations[language].attached : activityTranslations[language].thinking);
+  return overview.length > 110 ? overview.slice(0, 107).trimEnd() + '…' : overview;
+};
+
 const readDesktopTextFile = async (path: string) => {
   const reader = (window as any).codeclub?.readTextFile;
   return reader ? String(await reader(path)) : readTextFile(path);
@@ -291,6 +307,7 @@ const formatToolExecutionFallback = (mode: AgentMode, specialist: AgentSpecialis
   return `Ejecución completada con evidencia real.\n\nModo: ${mode}\nEspecialista: ${specialist}\nTools usadas: ${completed.map((event) => event.name).join(', ')}\n\nResultados:\n${details}`;
 };
 
+/** Reused by main, split, and floating surfaces; callers provide project scope and panel-specific event names. */
 export default function ChatInterface({ catalog: baseCatalog, defaultProvider, defaultModel, panelId = 'left', eventPrefix = 'codeclub', selectedProject, blockedPanelState = 'blank', floating = false, onDraftChange, composerLeading }: ChatInterfaceProps) {
   const catalog = baseCatalog;
   const { palette } = useOrbPalette();
@@ -669,17 +686,11 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
   };
   useEffect(() => () => { chatLoadSequenceRef.current++; chatAnimations.stop(); }, [chatAnimations]);
   const turnIndexes = useMemo(() => {
-    if(floating){
-      // Keep full history for persistence/context; the widget shows the latest
-      // agent response only, including its live activity and pending questions.
-      const latest=messages.length-1;
-      return messages[latest]?.role==='assistant' && messages[latest-1]?.role==='user' ? [latest-1] : [];
+    if (floating) {
+      const lastUser = messages.findLastIndex(message => message.role === 'user');
+      return lastUser >= 0 ? [lastUser] : messages.length ? [0] : [];
     }
-    return messages.flatMap((message,index) => {
-    if(message.role!=='user')return [];
-    const assistant=messages[index+1];
-    return assistant?.role==='assistant'&&assistant.tools?.some((event:any)=>event.name==='askUser'&&event.answer)?[]:[index];
-    });
+    return messages.flatMap((message, index) => message.role === 'user' || index === 0 ? [index] : []);
   },[messages,floating]);
   const turnVirtualizer = useVirtualizer<HTMLDivElement,HTMLDivElement>({
     count:turnIndexes.length,
@@ -995,7 +1006,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     };
     window.addEventListener('codeclub:active-project', handleActiveProject);
 
-    // Fallback para cuando el panel se monta después del evento (ej. split mode o recarga)
+    // Recover the current project when this panel mounts after the project-change event.
     const selectedProject = document.querySelector<HTMLElement>('.project-card.is-selected');
     if (selectedProject) {
       const projectPath = selectedProject.dataset.path;
@@ -1109,14 +1120,14 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
       try {
         const openProjectIds = JSON.parse(window.localStorage.getItem('codeclub:open-projects') || 'null');
         if (Array.isArray(openProjectIds)) return normalized.filter((project: any) => openProjectIds.includes(project.id));
-      } catch { /* Si la lista está dañada, mostramos el índice completo. */ }
+      } catch { /* A damaged saved index falls back to the complete index. */ }
       return normalized;
     }
     const projects = await readProjectIndex();
     try {
       const openProjectIds = JSON.parse(window.localStorage.getItem('codeclub:open-projects') || 'null');
       if (Array.isArray(openProjectIds)) return projects.filter((project: any) => openProjectIds.includes(project.id));
-    } catch { /* Si la lista está dañada, mostramos el índice completo. */ }
+      } catch { /* A damaged saved index falls back to the complete index. */ }
     return projects;
   };
 
@@ -1249,8 +1260,10 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
   useEffect(() => {
     const chat = activeChatRef.current;
     if (isStreaming || !chat || chat.customName) return;
-    const lastMessage = [...messages].reverse().find((message) => typeof message?.content === 'string' && message.content.trim());
-    const rawTitle = lastMessage?.content?.trim();
+    // Paging through older turns must not rename the chat to an older summary.
+    if (historyWindow.range.current.start + messages.length < historyWindow.range.current.total) return;
+    const lastMessage = [...messages].reverse().find((message) => message.role === 'assistant' && typeof message.turnSummary === 'string' && message.turnSummary.trim());
+    const rawTitle = lastMessage?.turnSummary?.trim();
     if (!rawTitle) return;
     const title = rawTitle.length > 120 ? `${rawTitle.slice(0, 120)}...` : rawTitle;
     if (automaticTitleRef.current === `${chat.chatId}:${title}`) return;
@@ -1585,7 +1598,7 @@ const readWorkspaceSnapshot = async (projectPath: string): Promise<WorkspaceSnap
       try { snapshot.set(path, await invoke<string>('codeclub_read_file', { projectPath, path })); }
       catch { snapshot.set(path, null); }
     }));
-  } catch { /* El resumen es informativo y no debe bloquear el chat. */ }
+  } catch { /* Summary generation is optional and must not block the chat. */ }
   return snapshot;
 };
 
@@ -1735,7 +1748,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           requestBody = JSON.stringify(payload);
         }
       } catch {
-        // Dejá pasar cuerpos no JSON sin modificarlos.
+        // Pass non-JSON response bodies through unchanged.
       }
     }
     const fetchDebug = {
@@ -2077,6 +2090,11 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       const runMode: AgentMode = 'development';
       let routeSpecialist: AgentSpecialist = 'primary';
       let assistantContent = '';
+      const assistantBoundaries: number[] = [];
+      const assistantBubbles = (message: any) => {
+        const offsets = [...new Set([0, ...assistantBoundaries])].filter(offset => offset < message.content.length);
+        return offsets.length < 2 ? [message] : offsets.map((offset, index) => ({ ...message, historyIndex: userMessage.historyIndex + 1 + index, content: message.content.slice(offset, offsets[index + 1]).trim(), ...(index < offsets.length - 1 ? { tools: [], timeline: [], reasoning: '', progress: '', meta: undefined } : {}) }));
+      };
       let assistantReasoning = '';
       let assistantProgress = '';
       let assistantTools: any[] = [];
@@ -2087,7 +2105,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       const executionCallQueues = new Map<string, string[]>();
       let assistantUpdateFrame: number | null = null;
       const updateAssistantMessage = () => {
-        runtime.messages = [...newMessages, { role: 'assistant', content: assistantContent, reasoning: assistantReasoning, progress: assistantProgress, timeline: assistantTimeline, tools: assistantTools, agentName: 'Desarrollo' }];
+        runtime.messages = [...newMessages, ...assistantBubbles({ role: 'assistant', content: assistantContent, reasoning: assistantReasoning, progress: assistantProgress, timeline: assistantTimeline, tools: assistantTools, agentName: 'Desarrollo' })];
         if (isVisibleGeneration()) setMessages(runtime.messages);
         publishRuntime();
       };
@@ -2115,6 +2133,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       };
       const toolProjectPath = contextProjectPath || await invoke<string>('codeclub_get_system_root');
       const developmentTools = createTools({
+        chatId,
         projectPath: toolProjectPath,
         projectScoped: Boolean(contextProjectPath),
         recordToolEvent,
@@ -2224,13 +2243,14 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         'For substantial work, call reportProgress before starting and when moving to a new phase. Use one brief user-facing phrase in the user\'s language (for example, "Inspecting the project" or "Implementing the selected text actions"). These are progress updates, not chain-of-thought; never reveal private reasoning. Do not call it for routine short answers.',
         responseSaverEnabled ? 'Keep the final response concise and within a strict maximum of 500 characters. Preserve only the most useful facts and omit lengthy explanations.' : '',
       ].filter(Boolean).join(' ');
-      // Algunos proveedores compatibles rechazan response_format junto con tools.
-      // Los artifacts ya quedan validados y persistidos por sus tools; dejamos el
-      // JSON forzado solo para respuestas sin ejecución de tools.
+      // Some compatible providers reject response_format when tools are enabled.
+      // Artifact tools already validate and persist their output, so require JSON
+      // only for responses that do not execute tools.
       const structuredOutput = Object.keys(tools).length === 0 ? getArtifactOutputConfig(content) : null;
       let structuredArtifactOutput: any = null;
 
       const runAssistant = async (retryInstruction = '') => {
+        assistantBoundaries.length = 0;
         assistantContent = '';
         assistantReasoning = '';
         assistantTools = [];
@@ -2258,6 +2278,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           maxOutputTokens: responseSaverEnabled ? 160 : undefined,
           signal: abortController.signal,
           callbacks: {
+            onAssistantMessageStart: offset => { assistantBoundaries.push(offset); },
             onTextDelta: (content) => {
               if (!isCurrentGeneration()) return;
               assistantContent = responseSaverEnabled ? limitResponseLength(content) : content;
@@ -2424,15 +2445,16 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       if (responseSaverEnabled) assistantContent = limitResponseLength(assistantContent);
       if (!isCurrentGeneration() || abortController.signal.aborted) return;
       const changes = contextProjectPath ? summarizeWorkspaceDelta(beforeWorkspaceSnapshot, await readWorkspaceSnapshot(toolProjectPath)) : null;
-      const assistantMessage = { historyIndex: userMessage.historyIndex+1, role: 'assistant', content: assistantContent || 'La ejecución terminó sin texto final, pero las evidencias quedaron registradas.', progress: assistantProgress, timeline: assistantTimeline, tools: assistantTools, agentName: 'Desarrollo', meta: { provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt, status: 'completed', changes, usage: latestUsage ? { inputTokens: latestUsage.inputTokens, outputTokens: latestUsage.outputTokens, totalTokens: latestUsage.totalTokens, reasoningTokens: latestUsage.reasoningTokens } : null } };
+      const { summary: turnSummary } = await generateTurnSummary({ model: provider(selectedModelReference) as any, request: visibleContent || content, response: assistantContent, language, signal: abortController.signal, projectPath: contextProjectPath || '', chatId, providerId: currentProvider.id, modelId: currentModel.id });
+      if (!isCurrentGeneration()) return;
+      const assistantMessage = { turnSummary, historyIndex: userMessage.historyIndex+1, role: 'assistant', content: assistantContent || 'La ejecución terminó sin texto final, pero las evidencias quedaron registradas.', progress: assistantProgress, timeline: assistantTimeline, tools: assistantTools, agentName: 'Desarrollo', meta: { provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt, status: 'completed', changes, usage: latestUsage ? { inputTokens: latestUsage.inputTokens, outputTokens: latestUsage.outputTokens, totalTokens: latestUsage.totalTokens, reasoningTokens: latestUsage.reasoningTokens } : null } };
       if (assistantUpdateFrame !== null) {
         window.cancelAnimationFrame(assistantUpdateFrame);
         assistantUpdateFrame = null;
       }
-      // La respuesta ya se muestra progresivamente durante el stream. Al finalizar
-      // conservamos el contenido completo para evitar una burbuja vacíoa si la
-      // animación visual se interrumpe al cambiar de estado.
-      runtime.messages = [...newMessages, assistantMessage];
+      // The stream already displays the response progressively. Keep its final
+      // content so a state change cannot leave an empty bubble if animation stops.
+      runtime.messages = [...newMessages, ...assistantBubbles(assistantMessage)];
       if (isVisibleGeneration()) setMessages(runtime.messages);
       if (toolStateTimerRef.current) {
         clearTimeout(toolStateTimerRef.current);
@@ -2445,9 +2467,10 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         setActiveToolName('');
       }
       const persistencePromise = replaceHistory
-        ? writeChatJsonl([...newMessages, assistantMessage], chat)
-        : appendToJsonl(assistantMessage, chat);
+        ? writeChatJsonl([...newMessages, ...assistantBubbles(assistantMessage)], chat)
+        : (async () => { for (const bubble of assistantBubbles(assistantMessage)) await appendToJsonl(bubble, chat); })();
       await persistencePromise;
+      if (turnSummary) window.dispatchEvent(new CustomEvent('codeclub:rename-chat', { detail: { chatId: chat.chatId, projectPath: chat.projectPath, newName: turnSummary, automatic: true } }));
     } catch (error) {
       if (chatRuntimesRef.current.get(chatId)?.controller !== abortController) return;
       const wasCancelled = abortController.signal.aborted;
@@ -2856,7 +2879,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           return;
         }
       } catch {
-        // No era un artifact; continuamos con archivos nativos.
+        // This is not an artifact reference; continue with native project files.
       }
     }
     const droppedFiles = Array.from(event.dataTransfer.files || []) as (File & { path?: string })[];
@@ -3005,7 +3028,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           <button type="submit" aria-label={agentTextSelectionTranslations[language].addToChat} title={agentTextSelectionTranslations[language].addToChat}><ArrowUp size={16} strokeWidth={2} /></button>
         </form>}
       </div>, document.body)}
-      {/* Zona de mensajes */}
+      {/* Conversation messages */}
       {historyWindow.loading && <div role="status" className="text-center text-[11px] text-(--codeclub-text-muted)">{chatHistoryTranslations[language].loading}</div>}
       {historyWindow.error && <div role="alert" className="flex items-center justify-center gap-2 text-[11px] text-(--codeclub-text-muted)">{chatHistoryTranslations[language].failed}<button type="button" onClick={()=>{const chat=activeChatRef.current;if(chat)void historyWindow.open(chat);}} className="text-(--codeclub-accent-bright)">{chatHistoryTranslations[language].retry}</button></div>}
       {!floating && historyWindow.range.current.start+messages.length<historyWindow.range.current.total && <button type="button" title={chatHistoryTranslations[language].latest} aria-label={chatHistoryTranslations[language].latest} className="self-end rounded-full p-1 text-(--codeclub-text-muted) hover:bg-(--codeclub-hover)" onClick={()=>{const chat=activeChatRef.current;if(chat){shouldAutoScrollMessagesRef.current=true;void historyWindow.open(chat);}}}><ChevronDown size={16}/></button>}
@@ -3016,24 +3039,29 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         {turnVirtualizer.getVirtualItems().map((virtualTurn) => {
           const turnIndex=turnIndexes[virtualTurn.index];
           const turnMessage=messages[turnIndex];
-          if (turnMessage.role !== 'user') return null;
-          const assistantMessage = messages[turnIndex + 1]?.role === 'assistant' ? messages[turnIndex + 1] : null;
-          const resolvedAskUserTurn = assistantMessage?.tools?.some((event: any) => event.name === 'askUser' && event.answer);
+          const nextTurnIndex = turnIndexes[virtualTurn.index + 1] ?? messages.length;
+          const groupedMessages = messages.slice(turnIndex, nextTurnIndex);
+          const assistants = groupedMessages.filter(message => message.role === 'assistant');
+          const resolvedAskUserTurn = assistants.some(message => message.tools?.some((event: any) => event.name === 'askUser' && event.answer));
           if (resolvedAskUserTurn) return null;
-          const turnMessages = floating ? (assistantMessage ? [assistantMessage] : []) : assistantMessage ? [turnMessage, assistantMessage] : [turnMessage];
+          const orbInitiated = turnMessage.source === 'orb-trigger' || Boolean(activeChat?.chatId.startsWith('scheduled-') && (turnMessage.historyIndex ?? turnIndex) === 0 && assistants.some(message => message.agentName));
+          const turnMessages = (floating ? assistants : groupedMessages).filter(message => !message.hidden && !(orbInitiated && message === turnMessage && message.role === 'user'));
           const turnTime = formatChatTime(turnMessage.createdAt || turnMessage.timestamp, language);
-          const isProcessingTurn = Boolean(turnMessage && !turnMessage.hidden && isStreaming && agentState !== 'error' && assistantMessage && turnIndex + 1 === messages.length - 1);
-          const hasErrorTurn = assistantMessage?.meta?.status === 'error';
-          const isLastTurn = turnIndex >= messages.length - 2;
+          const isProcessingTurn = Boolean((!turnMessage.hidden || orbInitiated) && isStreaming && agentState !== 'error' && assistants.length && nextTurnIndex === messages.length);
+          const turnOverview = getTurnOverview(turnMessage, assistants, isProcessingTurn, language);
+          const orbOverview = `${assistants[0]?.agentName || activeChat?.name} · ${assistants.find(message => message.turnSummary)?.turnSummary || orbControlTranslations[language].initiatedChat}`;
+          const hasErrorTurn = assistants.some(message => message.meta?.status === 'error');
+          const isLastTurn = nextTurnIndex === messages.length;
           return <div ref={turnVirtualizer.measureElement} data-index={virtualTurn.index} className={`chat-turn ${isLastTurn ? 'is-last' : ''}`} key={virtualTurn.key} role="article" aria-label={`Intercambio ${(turnMessage.historyIndex??turnIndex) + 1}`} style={{ position:'absolute',top:0,left:0,width:'100%',transform:`translateY(${virtualTurn.start}px)`,display: 'flex', flexDirection: 'column', gap: '8px', paddingBottom: floating ? 0 : isLastTurn ? 8 : 24 }}>
             {!floating&&<span className="chat-turn-time" aria-label={`Hora ${turnTime}`}>
               <span>{turnTime}</span>
               {isProcessingTurn && <ProcessingStatusStateFixed startedAt={agentStartedAtRef.current || Date.now()} language={language} />}
               {hasErrorTurn && <span className="chat-turn-advice">{language === 'en' ? 'Check the selected provider and model.' : 'Revisá el proveedor y modelo seleccionados.'}</span>}
             </span>}
+            {!floating && <span className="block min-w-0 truncate text-[11px] text-(--codeclub-text-muted)" title={orbInitiated ? orbOverview : turnOverview}>{orbInitiated ? orbOverview : turnOverview}</span>}
             {turnMessages.map((turnItem, turnOffset) => {
               const m = turnItem;
-              const i = turnIndex + turnOffset + (floating ? 1 : 0);
+              const i = turnIndex + groupedMessages.indexOf(turnItem);
               const isLiveAssistant = m.role === 'assistant' && isStreaming && i === messages.length - 1;
               return <React.Fragment key={`${m.role}-${i}`}>
             {<motion.div initial={isLiveAssistant ? { opacity: 0.58 } : false} animate={{ opacity: 1 }} transition={{ duration: 0.2, ease: 'easeOut' }} className={`group/message ${m.role === 'assistant' ? 'chat-assistant-message' : 'chat-user-message'} ${m.meta?.status === 'error' ? 'chat-error-message' : ''}`} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '4px', maxWidth: m.role === 'user' ? '76%' : '100%', minWidth: 0 }}>
@@ -3054,7 +3082,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 </motion.div>
                 {m.role === 'assistant' && isStreaming && agentState !== 'error' && i === messages.length - 1 && !m.content && !m.timeline?.some((event: any) => event.type === 'tool') && <motion.span initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: 'easeOut' }} className="chat-thinking-label composer-action-shine" style={{ display: 'inline-block', fontSize: '13px' }}>{language === 'en' ? 'Thinking' : 'Pensando'}</motion.span>}
               </div>
-              {m.role === 'assistant' && <TurnActivity progress={m.progress} timeline={m.timeline} tools={m.tools} changes={m.meta?.changes} active={isLiveAssistant} language={language} />}
+              {m.role === 'assistant' && !activeChat?.chatId.startsWith('scheduled-') && turnMessage.source !== 'orb-trigger' && <TurnActivity progress={m.progress} timeline={m.timeline} tools={m.tools} changes={m.meta?.changes} active={isLiveAssistant} language={language} />}
               {m.role === 'assistant' && <AskUserCards tools={m.tools} onSelect={(answer, questionId) => void sendMessage(answer, messages, false, false, [], questionId)} onRespondInChat={() => {
                 setComposerDocked(true);
                 requestAnimationFrame(() => {
@@ -3562,6 +3590,7 @@ function FilePreview({ projectPath, file, preview = true, onChange }: { projectP
   return <CodeMirrorFileEditor path={file.path} content={file.content} onChange={onChange} />;
 }
 
+/** Project file pane embedded beside chat; references return to the composer through `codeclub:file-reference`. */
 function TabbedProjectView({ projectPath, projectName, initialSelectedPath = '', showFileTree, onToggleFileTree }: { projectPath?: string; projectName?: string; initialSelectedPath?: string; showFileTree: boolean; onToggleFileTree?: () => void }) {
   const language = useAppLanguage();
   const { palette } = useOrbPalette();
@@ -3665,7 +3694,7 @@ function TabbedProjectView({ projectPath, projectName, initialSelectedPath = '',
         void openFile(nativeFile.name, !tabBar?.contains(event.target as Node), nativeFile.path);
       }
     } catch {
-      // Ignorar datos de arrastre que no pertenecen al indexador.
+      // Ignore drag data that was not produced by the project indexer.
     }
   };
 

@@ -1,3 +1,4 @@
+/** Shared UI language catalog; language-change events synchronize mounted renderer windows. */
 import { useEffect, useState } from 'react';
 
 export type AppLanguage = 'es' | 'en';
@@ -201,8 +202,8 @@ export const sidebarTranslations = {
 } as const;
 
 export const orbControlTranslations = {
-  es: { play: 'Iniciar orbe', stop: 'Detener orbe', copyTrace: 'Copiar trazabilidad', copied: 'Trazabilidad copiada', off: 'Apagado', active: 'Activo', actionError: 'No se pudo completar la acción del orbe.' },
-  en: { play: 'Start orb', stop: 'Stop orb', copyTrace: 'Copy execution trace', copied: 'Trace copied', off: 'Off', active: 'Active', actionError: 'Could not complete the orb action.' },
+  es: { initiatedChat: 'Inició esta conversación', verifying: 'Verificando el resultado…', blocked: 'Bloqueado · revisá el chat', unverified: 'Sin verificar · revisá el chat', openChat: 'Abrir chat del orbe', queued: 'En cola…', connecting: 'Conectando con el modelo…', thinking: 'Pensando el próximo paso…', working: 'Ejecutando una herramienta…', waiting: 'Esperando el próximo ciclo', failed: 'El último ciclo falló · revisá la trazabilidad', interrupted: 'La última ejecución se interrumpió', tools: { externalBrowserList: 'Buscando navegadores conectados…', externalBrowserState: 'Leyendo la pestaña…', externalBrowserAction: 'Interactuando con la pestaña…', openBrowser: 'Abriendo una página…', getBrowserState: 'Revisando la página…', browserAction: 'Interactuando con la página…', readFile: 'Leyendo archivos…', searchText: 'Buscando en el proyecto…', listFiles: 'Explorando archivos…', runCommand: 'Ejecutando un comando…' }, play: 'Iniciar orbe', stop: 'Detener orbe', copyTrace: 'Copiar trazabilidad', copied: 'Trazabilidad copiada', off: 'Apagado', active: 'Activo', actionError: 'No se pudo completar la acción del orbe.' },
+  en: { initiatedChat: 'Started this conversation', verifying: 'Verifying the result…', blocked: 'Blocked · check the chat', unverified: 'Unverified · check the chat', openChat: 'Open orb chat', queued: 'Queued…', connecting: 'Connecting to the model…', thinking: 'Thinking about the next step…', working: 'Running a tool…', waiting: 'Waiting for the next cycle', failed: 'Last cycle failed · check the trace', interrupted: 'Last execution was interrupted', tools: { externalBrowserList: 'Finding connected browsers…', externalBrowserState: 'Reading the tab…', externalBrowserAction: 'Interacting with the tab…', openBrowser: 'Opening a page…', getBrowserState: 'Checking the page…', browserAction: 'Interacting with the page…', readFile: 'Reading files…', searchText: 'Searching the project…', listFiles: 'Exploring files…', runCommand: 'Running a command…' }, play: 'Start orb', stop: 'Stop orb', copyTrace: 'Copy execution trace', copied: 'Trace copied', off: 'Off', active: 'Active', actionError: 'Could not complete the orb action.' },
 } as const;
 
 export const orbsTranslations = {

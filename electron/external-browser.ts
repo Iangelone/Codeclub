@@ -1,3 +1,4 @@
+/** Controls Chromium tabs through loopback CDP or the signed companion extension. */
 import { randomUUID } from 'node:crypto';
 import type { BrowserExtensionBridge } from './browser-extension-bridge.js';
 
@@ -107,7 +108,7 @@ const stateExpression = `(() => {
     const label = el.getAttribute('aria-label') || el.labels?.[0]?.innerText || el.getAttribute('placeholder') || el.getAttribute('title') || el.innerText || (el.type === 'password' ? '' : el.value) || '';
     return { selector: selectorFor(el), tag: el.localName, role: el.getAttribute('role') || '', name: clean(label), text: clean(el.innerText), value: el.type === 'password' ? undefined : (typeof el.value === 'string' ? clean(el.value) : undefined), type: el.type || undefined, href: el.href || undefined, disabled: Boolean(el.disabled), bounds: { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) } };
   });
-  return { url: location.href, title: document.title, text: String(document.body?.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 12000), elements: controls };
+  return { url: location.href, title: document.title, text: String(document.body?.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 12000), elements: controls, media: Array.from(document.querySelectorAll('video,audio')).map(media => ({ paused: media.paused, muted: media.muted, volume: media.volume, currentTime: media.currentTime, ended: media.ended, readyState: media.readyState })) };
 })()`;
 
 export class ExternalBrowserControl {
@@ -163,7 +164,7 @@ export class ExternalBrowserControl {
         const id = randomUUID();
         const snapshot: BrowserSnapshot = { id, port, targetId, createdAt: Date.now(), elements: Array.isArray(value.elements) ? value.elements.slice(0, MAX_ELEMENTS) : [] };
         this.pruneSnapshots(); this.snapshots.set(id, snapshot);
-        return { ok: true, snapshotId: id, targetId, port, url: value.url.slice(0, 2000), title: String(value.title || '').slice(0, 300), text: String(value.text || '').slice(0, MAX_TEXT), elements: snapshot.elements };
+        return { ok: true, snapshotId: id, targetId, port, url: value.url.slice(0, 2000), title: String(value.title || '').slice(0, 300), text: String(value.text || '').slice(0, MAX_TEXT), elements: snapshot.elements, media: Array.isArray(value.media) ? value.media : [] };
       } finally { cdp.close(); }
     } catch (error) { return { ok: false, error: error instanceof Error ? error.message : 'No se pudo observar la pestaña.' }; }
   }

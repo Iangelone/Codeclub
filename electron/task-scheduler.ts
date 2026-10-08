@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-export type TaskRun = { id: string; chatId: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted'; startedAt: string; finishedAt?: string; error?: string };
+export type TaskRun = { id: string; chatId: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted' | 'blocked' | 'unverified'; startedAt: string; finishedAt?: string; error?: string };
 export type ScheduledTask = {
   id: string; name: string; prompt: string; projectPath: string; provider: string; model: string;
   interval: string; every: string; time: string; timeZone: string; weekday: number;
@@ -136,7 +136,8 @@ export class TaskScheduler {
         if (!task || !run) break;
         run.status = 'running'; run.startedAt = new Date(this.now()).toISOString(); task.lastRun = run.startedAt; this.persist();
         try { await this.execute(structuredClone(task), structuredClone(run)); run.status = 'completed'; }
-        catch (error) { run.status = error instanceof Error && error.message === 'TASK_CANCELLED' ? 'cancelled' : 'failed'; run.error = error instanceof Error && /^TASK_[A-Z_]+$/.test(error.message) ? error.message : 'TASK_EXECUTION_FAILED'; }
+        catch (error) { run.status = error instanceof Error && error.message === 'TASK_CANCELLED' ? 'cancelled' : error instanceof Error && error.message === 'TASK_BLOCKED' ? 'blocked' : error instanceof Error && error.message === 'TASK_UNVERIFIED' ? 'unverified' : 'failed'; run.error = error instanceof Error && /^TASK_[A-Z_]+$/.test(error.message) ? error.message : 'TASK_EXECUTION_FAILED'; }
+        if (task.autonomous && ['TASK_BLOCKED', 'TASK_UNVERIFIED', 'TASK_NO_PROGRESS', 'TASK_BUDGET_EXCEEDED', 'TASK_STEP_LIMIT'].includes(run.error || '')) { task.status = 'paused'; task.nextRun = undefined; }
         run.finishedAt = new Date(this.now()).toISOString(); this.persist(); this.finished(task, run);
       }
     } finally { this.draining = false; }

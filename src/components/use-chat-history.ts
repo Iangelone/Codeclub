@@ -1,4 +1,5 @@
 'use client';
+/** Loads complete turns into a bounded window and rejects stale pages when the active chat changes. */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { boundChatWindow } from '../lib/chat-window';
 

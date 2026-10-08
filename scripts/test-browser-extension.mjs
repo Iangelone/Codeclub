@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, cp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -10,8 +10,10 @@ import { BrowserExtensionBridge } from '../electron-dist/browser-extension-bridg
 import { ExternalBrowserControl } from '../electron-dist/external-browser.js';
 
 const project = process.cwd();
-const extension = path.join(project, 'browser-extension');
+const sourceExtension = path.join(project, 'browser-extension');
 const profile = await mkdtemp(path.join(tmpdir(), 'codeclub-extension-test-'));
+const extension = path.join(profile, 'extension');
+await cp(sourceExtension, extension, {recursive: true});
 const server = createServer((_request, response) => {
   response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
   response.end('<!doctype html><title>Companion extension test</title><main>Initial state</main><button id="change" onclick="document.querySelector(\'main\').textContent=\'Extension verified\'">Change</button><input id="entry" aria-label="Entry"><input type="password" value="secret never expose">');
@@ -20,6 +22,10 @@ await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const pagePort = server.address().port;
 const bridge = new BrowserExtensionBridge();
 assert.equal(await bridge.start(), true, 'The local browser extension bridge should start');
+// Keep the test companion connected to this bridge when a desktop app is already running.
+const fixturePort = bridge.server.address().port;
+const workerPath = path.join(extension, 'service-worker.js');
+await writeFile(workerPath, (await readFile(workerPath, 'utf8')).replace('const BRIDGE_PORTS = Array.from({ length: 11 }, (_, index) => 47832 + index);', `const BRIDGE_PORTS = [${fixturePort}];`));
 const chrome = spawn(chromium.executablePath(), [
   '--headless=new', '--no-first-run', '--no-default-browser-check', '--disable-background-networking',
   `--disable-extensions-except=${extension}`, `--load-extension=${extension}`,

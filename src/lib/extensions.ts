@@ -1,3 +1,4 @@
+/** Built-in slash-command instructions; plugin discovery and MCP connections are handled separately. */
 export type CodeclubExtension = {
   id: string;
   name: string;

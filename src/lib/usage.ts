@@ -1,3 +1,4 @@
+/** Stores per-generation token/cost records as JSONL, separated between global and project scopes. */
 import { appConfigDir, joinPath as join, fileExists as exists, makeDirectory as mkdir, readDesktopText as readTextFile, writeDesktopText as writeTextFile } from './runtime';
 import { getProjectFilePath } from './persistence';
 

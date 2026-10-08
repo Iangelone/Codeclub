@@ -1,3 +1,4 @@
+/** Owns the always-on-top floating renderer, persisted placement, and visibility/resize lifecycle. */
 import { app, BrowserWindow, ipcMain, screen } from 'electron';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';

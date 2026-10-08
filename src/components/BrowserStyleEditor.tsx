@@ -1,5 +1,6 @@
 'use client';
 
+/** Edits CSS/text on a selected live DOM node and tracks reversible preview changes. */
 import { useEffect, useState } from 'react';
 import { Check, SlidersHorizontal } from 'lucide-react';
 import { browserStyleTranslations, type AppLanguage } from '../lib/i18n';

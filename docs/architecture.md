@@ -5,7 +5,7 @@
 
 ## Layers
 
-The renderer uses Next.js, React, and Tailwind. Its shared engine uses LangGraph for step orchestration, LangChain for local tool validation/execution, and AI SDK for model transport and streaming. Electron and Node.js own IPC, the filesystem, processes, WebView, and PTYs. See the [agent stack summary](agent-stack.md) for active integrations, verification and limits; graph checkpoints are not configured.
+The renderer uses Next.js, React, and Tailwind. Its shared engine uses LangGraph for step orchestration, LangChain for local tool validation/execution, and AI SDK for model transport and streaming. Electron and Node.js own IPC, the filesystem, processes, WebView, and PTYs. See the [agent stack summary](agent.md) for active integrations, verification and limits; graph checkpoints are not configured.
 
 | File | Responsibility |
 | --- | --- |

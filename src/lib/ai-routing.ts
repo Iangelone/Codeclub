@@ -1,3 +1,4 @@
+/** Resolves direct-provider versus Gateway model IDs, availability, and credential keys as one route. */
 type ProviderRoute = { id?: string; gatewayOnly?: boolean };
 type ModelRoute = { id?: string; providerId?: string; gatewayId?: string; gatewayOnly?: boolean; gatewayAvailable?: boolean };
 

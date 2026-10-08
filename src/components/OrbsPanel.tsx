@@ -1,12 +1,14 @@
 'use client';
 
+/** Lists and edits autonomous or scheduled agents; run status and history are authoritative in Electron. */
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Copy, Play, Plus, Search, Square, X } from 'lucide-react';
+import { Check, Copy, Play, Plus, Search, Square, X, MessageSquare } from 'lucide-react';
 import { getSetting, setSetting } from '../lib/persistence';
 import { orbControlTranslations, orbsTranslations, useAppLanguage } from '../lib/i18n';
 import { readGlobalChatHistory } from '../lib/projectManager';
 import type { ScheduledTask } from '../lib/scheduled-tasks';
+import { useSharedSessions } from '../lib/shared-sessions';
 import { ORB_PALETTES } from './OrbPaletteProvider';
 import FluidOrb from './ui/fluid-orb';
 import { models, providers } from '../lib/ai-catalog';
@@ -94,6 +96,7 @@ export default function OrbsPanel() {
   const language = useAppLanguage();
   const text = orbsTranslations[language];
   const controls = orbControlTranslations[language];
+  const sessions = useSharedSessions();
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
   const [pendingActions, setPendingActions] = useState<Record<string, boolean>>({});
   const [copiedOrb, setCopiedOrb] = useState('');
@@ -227,7 +230,7 @@ export default function OrbsPanel() {
 
   const saveOrb = async (event: FormEvent) => {
     event.preventDefault();
-    if (!draft?.name.trim() || !draft.purpose.trim()) return;
+    if (step !== 2 || saving || !draft?.name.trim() || !draft.purpose.trim()) return;
     setSaving(true);
     setError('');
     const next = orbs.some((orb) => orb.id === draft.id)
@@ -290,15 +293,29 @@ export default function OrbsPanel() {
           const task = tasks.find((item) => item.id === `orb_${orb.id}`);
           const active = task?.status === 'active' || Boolean(task?.runs.some((run) => run.status === 'queued' || run.status === 'running'));
           const pending = Boolean(pendingActions[orb.id]);
+          const run = task?.runs.at(-1);
+          const session = run && sessions.find((item) => item.chatId === run.chatId && item.projectPath === '');
+          const toolStatus = session?.tool && controls.tools[session.tool as keyof typeof controls.tools];
+          const progress = session?.state === 'verifying' ? controls.verifying
+            : run?.status === 'blocked' ? controls.blocked
+            : run?.status === 'unverified' ? controls.unverified
+            : run?.status === 'failed' ? controls.failed
+            : run?.status === 'interrupted' ? controls.interrupted
+            : run?.status === 'queued' ? controls.queued
+            : run?.status === 'running' ? session?.state === 'connecting' ? controls.connecting
+              : session?.state === 'working' ? toolStatus || controls.working : controls.thinking
+            : controls.waiting;
+          const subtitle = active || ['blocked', 'unverified', 'failed'].includes(run?.status || '') ? progress : orb.purpose || text.noDescription;
           return <div key={orb.id} className={`flex min-h-[62px] w-full items-center gap-2 px-3.5 transition-colors hover:bg-[#191919] ${index < orbs.length - 1 ? 'border-b border-[#202020]' : ''}`}>
           <button type="button" onClick={() => openEditor({ ...orb })} className="flex min-w-0 flex-1 items-center gap-3 py-3 text-left focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={`${text.edit}: ${orb.name}`} title={`${orb.name} · ${active ? controls.active : controls.off}`}>
           <span className={`shrink-0 ${active ? '' : 'grayscale opacity-40'}`}><FluidOrb size={32} color={orb.color} active={active} themeTint={false} aria-hidden="true" /></span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-[12px] font-medium text-[#eeeeee]">{orb.name}</span>
-            <span className="mt-0.5 block truncate text-[11px] text-[#888888]">{orb.purpose || text.noDescription}</span>
+            <span role={active ? "status" : undefined} aria-live={active ? "polite" : undefined} title={subtitle} className="mt-0.5 block truncate text-[11px] text-[#888888]">{subtitle}</span>
           </span>
           </button>
           <div className="flex shrink-0 items-center gap-1">
+            <button type="button" disabled={!run} aria-label={controls.openChat} title={controls.openChat} onClick={() => { if (run) window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: { chatId: run.chatId, name: orb.name, customName: true, projectPath: '', projectName: 'Codeclub' } })); }} className="grid h-8 w-8 place-items-center text-[#999999] hover:bg-[#242424] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) disabled:opacity-30"><MessageSquare size={14} aria-hidden="true" /></button>
             <button type="button" onClick={() => void controlOrb(orb, 'play')} disabled={active || pending} aria-label={controls.play} title={controls.play} className="grid h-8 w-8 place-items-center text-[#999999] hover:bg-[#242424] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) disabled:opacity-30"><Play size={14} aria-hidden="true" /></button>
             <button type="button" onClick={() => void controlOrb(orb, 'stop')} disabled={!active || pending} aria-label={controls.stop} title={controls.stop} className="grid h-8 w-8 place-items-center text-[#999999] hover:bg-[#242424] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) disabled:opacity-30"><Square size={13} aria-hidden="true" /></button>
             <button type="button" onClick={() => void controlOrb(orb, 'copy')} disabled={!task?.runs.length || pending} aria-label={copiedOrb === orb.id ? controls.copied : controls.copyTrace} title={copiedOrb === orb.id ? controls.copied : controls.copyTrace} className="grid h-8 w-8 place-items-center text-[#999999] hover:bg-[#242424] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) disabled:opacity-30">{copiedOrb === orb.id ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}</button>
@@ -310,7 +327,7 @@ export default function OrbsPanel() {
     </div>
 
     {draft && typeof document !== 'undefined' && createPortal(<div className="fixed inset-0 z-[2147483647] grid place-items-center bg-black/65 p-4 backdrop-blur-[3px]" onMouseDown={(event) => { if (event.target === event.currentTarget) closeEditor(); }}>
-      <form role="dialog" aria-modal="true" aria-label={orbs.some((orb) => orb.id === draft.id) ? text.edit : text.create} onSubmit={(event) => void saveOrb(event)} className="relative flex max-h-[min(700px,90vh)] w-full max-w-[600px] flex-col overflow-hidden border border-[#303030] bg-[#141414] shadow-2xl shadow-black/60">
+      <form role="dialog" aria-modal="true" aria-label={orbs.some((orb) => orb.id === draft.id) ? text.edit : text.create} onSubmit={(event) => { event.preventDefault(); if (step === 1) { if (!credentialLoading) void continueToDesign(); } else void saveOrb(event); }} className="relative flex max-h-[min(700px,90vh)] w-full max-w-[600px] flex-col overflow-hidden border border-[#303030] bg-[#141414] shadow-2xl shadow-black/60">
         <button type="button" onClick={closeEditor} className="absolute right-3 top-3 z-10 grid h-9 w-9 place-items-center text-[#888888] hover:bg-[#242424] hover:text-[#eeeeee] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.close} title={text.close}><X size={15} aria-hidden="true" /></button>
         <nav aria-label={text.steps} className="flex items-center gap-2 border-b border-[#252525] px-5 py-3 pr-14 sm:px-6">
           <span aria-current={step === 1 ? 'step' : undefined} className={`text-[10px] ${step === 1 ? 'text-[#eeeeee]' : 'text-[#777777]'}`}>01&nbsp; {text.connection}</span>
@@ -345,10 +362,10 @@ export default function OrbsPanel() {
           <div className="flex shrink-0 justify-end gap-2">
             {step === 1 ? <>
               <button type="button" onClick={closeEditor} className="h-8 px-2 text-[11px] text-[#999999] hover:bg-[#222222] hover:text-[#eeeeee] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)">{text.cancel}</button>
-              <button type="button" onClick={() => void continueToDesign()} disabled={!selectedProvider || !selectedModel || credentialLoading} className="h-8 bg-[#292929] px-3 text-[11px] text-[#eeeeee] hover:bg-[#353535] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) disabled:cursor-not-allowed disabled:opacity-40">{text.continue}</button>
+              <button key="orb-continue" type="button" onClick={(event) => { event.preventDefault(); void continueToDesign(); }} disabled={!selectedProvider || !selectedModel || credentialLoading} className="h-8 bg-[#292929] px-3 text-[11px] text-[#eeeeee] hover:bg-[#353535] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) disabled:cursor-not-allowed disabled:opacity-40">{text.continue}</button>
             </> : <>
               <button type="button" onClick={() => { setFlowError(''); setStep(1); }} className="h-8 px-2 text-[11px] text-[#999999] hover:bg-[#222222] hover:text-[#eeeeee] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)">{text.back}</button>
-              <button type="submit" disabled={saving || !draft.name.trim() || !draft.purpose.trim()} className="h-8 bg-[#292929] px-3 text-[11px] text-[#eeeeee] hover:bg-[#353535] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) disabled:cursor-not-allowed disabled:opacity-40">{saving ? text.saving : text.save}</button>
+              <button key="orb-save" type="submit" disabled={saving || !draft.name.trim() || !draft.purpose.trim()} className="h-8 bg-[#292929] px-3 text-[11px] text-[#eeeeee] hover:bg-[#353535] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) disabled:cursor-not-allowed disabled:opacity-40">{saving ? text.saving : text.save}</button>
             </>}
           </div>
         </footer>

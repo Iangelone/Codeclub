@@ -1,4 +1,5 @@
 'use client';
+/** Subscribes renderer components to Electron-owned execution sessions and compares project/chat identity. */
 import { useEffect, useState } from 'react';
 export type SharedSession = { key: string; chatId: string; projectPath: string; projectName?: string; name?: string; state: string; tool: string; busy: boolean; startedAt: number; updatedAt: number; messages: any[]; approvals: any[]; localOwner?: boolean; external?: boolean; url?: string; runId: string };
 export const sameSession = (a: {chatId:string;projectPath:string}|null, b: {chatId:string;projectPath:string}) => Boolean(a && a.chatId===b.chatId && a.projectPath.replace(/\//g,'\\').replace(/\\+$/,'').toLowerCase()===b.projectPath.replace(/\//g,'\\').replace(/\\+$/,'').toLowerCase());

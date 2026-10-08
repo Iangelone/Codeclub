@@ -6,8 +6,8 @@ import { models, providers } from '../lib/ai-catalog';
 
 const defaultProvider = providers[0] ?? null;
 const defaultModel = defaultProvider ? (models.find((model: any) => model.providerId === defaultProvider.id) ?? null) : null;
-// ChatInterface filtra este catálogo por `type` para mostrar cada segundo nivel
-// del command menu. Mantenerlo plano evita que proveedor/modelo queden invisibles.
+// ChatInterface groups these entries by `type` in the command menu. Keep the
+// catalog flat so provider and model commands remain discoverable.
 const catalog = [
   ...providers.map((provider: any) => ({ ...provider, type: 'provider' })),
   ...models.map((model: any) => ({ ...model, type: 'model' })),

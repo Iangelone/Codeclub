@@ -1,3 +1,4 @@
+/** Manages built-in extensions and scoped Agent Plugin/skill/MCP entries through the native bridge. */
 import { useEffect, useMemo, useState } from 'react';
 import { Blocks, Box, Download, FileText, FileType2, Folder, Globe, LayoutTemplate, PlugZap, Presentation, Search, Table2, Trash2, WandSparkles } from 'lucide-react';
 import { getSetting, setSetting } from '../lib/persistence';

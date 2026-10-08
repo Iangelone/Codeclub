@@ -1,5 +1,6 @@
 'use client';
 
+/** Main workspace shell: coordinates project/chat-scoped panels, persisted layouts, browser, files, review, and terminals. */
 import { createElement, memo, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, Check, ChevronDown, Circle, CircleCheck, CirclePlus, Clock, CopyX, EllipsisVertical, ExternalLink, FileWarning, FolderOpen, FolderPen, FolderTree, Grid2X2, Heart, Home, Hourglass, Info, MessageSquare, MoreHorizontal, MousePointerClick, PanelLeft, Pencil, Play, Plus, Radius, RotateCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
@@ -34,6 +35,8 @@ type SidebarSection = 'new-chat' | 'projects' | 'orbs' | 'extensions';
 type ChatContextMenu = { chat: RecentChat; x: number; y: number };
 type RightPanelTab = 'files' | 'browser' | 'terminals';
 type RightPanelInstance = { instanceId: string; tab: RightPanelTab; label: string; iconUrl?: string; terminalId?: string };
+type RightChatView = { panels: RightPanelInstance[]; active: string; file: string; tree: boolean; width: number; open: boolean };
+const emptyRightView = (): RightChatView => ({ panels: [], active: '', file: '', tree: false, width: DEFAULT_RIGHT, open: false });
 type RightPanelContextMenu = { panel: RightPanelInstance; x: number; y: number };
 function GithubMark({ size = 16 }: { size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.05c-3.34.73-4.04-1.42-4.04-1.42-.55-1.39-1.33-1.76-1.33-1.76-1.09-.75.08-.74.08-.74 1.2.08 1.83 1.23 1.83 1.23 1.07 1.83 2.8 1.3 3.49.99.11-.77.42-1.3.76-1.6-2.67-.3-5.47-1.34-5.47-5.95 0-1.31.47-2.38 1.23-3.22-.12-.3-.53-1.53.12-3.18 0 0 1-.32 3.3 1.23a11.47 11.47 0 0 1 6 0c2.29-1.55 3.29-1.23 3.29-1.23.66 1.65.25 2.88.13 3.18.77.84 1.23 1.91 1.23 3.22 0 4.62-2.8 5.64-5.48 5.94.43.37.81 1.1.81 2.22v3.29c0 .32.22.69.83.57A12 12 0 0 0 12 .5Z"/></svg>;
@@ -74,7 +77,7 @@ function ResizeHandle({ side, value, maxValue, onStart, onKeyboardResize, langua
   </div>;
 }
 
-export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: { leftOpen: boolean; rightOpen: boolean; onToggleLeft: () => void }) {
+export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onRightVisibilityChange }: { leftOpen: boolean; rightOpen: boolean; onToggleLeft: () => void; onRightVisibilityChange: (open: boolean) => void }) {
   const language = useAppLanguage();
   const sessions = useSharedSessions();
   const sidebarText = sidebarTranslations[language];
@@ -89,15 +92,80 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
   const [chatsByProject, setChatsByProject] = useState<Record<string, RecentChat[]>>({});
   const [activeSection, setActiveSection] = useState<SidebarSection>('new-chat');
   const [activeChatId, setActiveChatId] = useState<string | undefined>();
+  const [seenCompletions, setSeenCompletions] = useState<Record<string, string>>({});
+  const [seenCompletionsReady, setSeenCompletionsReady] = useState(false);
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('codeclub:seen-chat-completions') || '{}');
+      if (stored && typeof stored === 'object' && !Array.isArray(stored)) setSeenCompletions(stored);
+    } catch { /* Invalid or unavailable local preferences. */ }
+    setSeenCompletionsReady(true);
+  }, []);
+  useEffect(() => {
+    if (!seenCompletionsReady || activeSection !== 'new-chat' || !activeChatId) return;
+    const session = sessions.find(item => !item.external && sameSession({chatId: activeChatId, projectPath: activeProjectPath || ''}, item));
+    if (!session || session.busy || session.state !== 'finished') return;
+    const completion = `${session.runId}:${session.startedAt}`;
+    setSeenCompletions(previous => previous[session.key] === completion ? previous : {...previous, [session.key]: completion});
+  }, [sessions, activeChatId, activeProjectPath, activeSection, seenCompletionsReady]);
+  useEffect(() => {
+    if (!seenCompletionsReady) return;
+    try { localStorage.setItem('codeclub:seen-chat-completions', JSON.stringify(seenCompletions)); } catch { /* Keep in-memory read state. */ }
+  }, [seenCompletions, seenCompletionsReady]);
   const [chatContextMenu, setChatContextMenu] = useState<ChatContextMenu | null>(null);
   const chatContextMenuRef = useRef<HTMLDivElement | null>(null);
   const [confirmClearHistory, setConfirmClearHistory] = useState(false);
   const [leftWidth, setLeftWidth] = useState(DEFAULT_LEFT);
-  const [rightWidth, setRightWidth] = useState(DEFAULT_RIGHT);
-  const [rightPanels, setRightPanels] = useState<RightPanelInstance[]>([]);
-  const [activeRightPanelId, setActiveRightPanelId] = useState('');
-  const [selectedRightFilePath, setSelectedRightFilePath] = useState('');
-  const [filesTreeVisible, setFilesTreeVisible] = useState(false);
+  // Keep layouts isolated per project/chat; restored terminal IDs are cleared because their processes cannot survive a restart.
+  const rightScope = JSON.stringify([activeProjectPath || '', activeChatId || 'draft']);
+  const [rightViews, setRightViews] = useState<Record<string, RightChatView>>({});
+  const [rightViewsReady, setRightViewsReady] = useState(false);
+  const rightView = rightViews[rightScope] || emptyRightView();
+  const restoringVisibility = useRef<boolean | null>(null);
+  const { panels: rightPanels, active: activeRightPanelId, file: selectedRightFilePath, tree: filesTreeVisible, width: rightWidth } = rightView;
+  const updateRightView = useCallback(<K extends keyof RightChatView,>(key: K, update: React.SetStateAction<RightChatView[K]>) => {
+    setRightViews(previous => { const view = previous[rightScope] || emptyRightView(); return { ...previous, [rightScope]: { ...view, [key]: typeof update === 'function' ? (update as (value: RightChatView[K]) => RightChatView[K])(view[key]) : update } }; });
+  }, [rightScope]);
+  const setRightPanels = useCallback((update: React.SetStateAction<RightPanelInstance[]>) => updateRightView('panels', update), [updateRightView]);
+  const setActiveRightPanelId = useCallback((update: React.SetStateAction<string>) => updateRightView('active', update), [updateRightView]);
+  const setSelectedRightFilePath = (value: string) => updateRightView('file', value);
+  const setFilesTreeVisible = (update: React.SetStateAction<boolean>) => updateRightView('tree', update);
+  const setRightWidth = (update: React.SetStateAction<number>) => updateRightView('width', update);
+  useEffect(() => {
+    if (!rightViewsReady) return;
+    const open = rightViews[rightScope]?.open ?? false;
+    restoringVisibility.current = open;
+    onRightVisibilityChange(open);
+  }, [rightScope, rightViewsReady, onRightVisibilityChange]);
+  useEffect(() => {
+    if (!rightViewsReady) return;
+    if (restoringVisibility.current !== null) {
+      if (restoringVisibility.current === rightOpen) restoringVisibility.current = null;
+      return;
+    }
+    updateRightView('open', rightOpen);
+  }, [rightOpen, rightScope, rightViewsReady, updateRightView]);
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('codeclub:right-chat-views') || '{}');
+      const restored: Record<string, RightChatView> = {};
+      for (const [key, value] of Object.entries(saved)) {
+        const view = value as RightChatView;
+        const context = JSON.parse(key);
+        if (!Array.isArray(context) || context.length !== 2 || !Array.isArray(view?.panels)) continue;
+        restored[key] = { ...emptyRightView(), ...view, panels: view.panels.filter(panel => ['files', 'browser', 'terminals'].includes(panel.tab) && typeof panel.instanceId === 'string').map(panel => ({ ...panel, terminalId: undefined })) };
+      }
+      setRightViews(previous => ({ ...restored, ...previous }));
+    } catch { /* Invalid saved layout starts empty. */ }
+    setRightViewsReady(true);
+  }, []);
+  useEffect(() => {
+    if (!rightViewsReady) return;
+    const timer = setTimeout(() => { try { localStorage.setItem('codeclub:right-chat-views', JSON.stringify(rightViews)); } catch { /* Layout remains usable when storage is full. */ } }, 200);
+    return () => clearTimeout(timer);
+  }, [rightViews, rightViewsReady]);
+  useEffect(() => { setRightMenuOpen(false); setRightContextMenu(null); setReviewModalOpen(false); rightPanelNavigation.current = { entries: [], index: -1, moving: false }; }, [rightScope]);
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
   const [rightMenuOpen, setRightMenuOpen] = useState(false);
   const rightMenuRef = useRef<HTMLDivElement | null>(null);
@@ -127,8 +195,8 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
   }, []);
 
   useEffect(() => {
-    setRightWidth((current) => Math.min(current, rightMaxWidth));
-  }, [rightMaxWidth]);
+    if (rightViewsReady) setRightWidth((current) => Math.min(current, rightMaxWidth));
+  }, [rightMaxWidth, rightScope, rightViewsReady]);
 
   useEffect(() => {
     if (!activeRightPanelId) return;
@@ -184,12 +252,11 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
     try {
       const saved = JSON.parse(localStorage.getItem('codeclub:sidebar-sizes') ?? '{}') as { left?: number; right?: number };
       if (typeof saved.left === 'number') setLeftWidth(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, saved.left)));
-      if (typeof saved.right === 'number') setRightWidth(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, saved.right)));
-    } catch { /* Usa los tamaños iniciales si no hay preferencias válidas. */ }
+    } catch { /* Invalid saved dimensions fall back to the initial panel sizes. */ }
     setSizesReady(true);
   }, []);
 
-  useEffect(() => { if (sizesReady) localStorage.setItem('codeclub:sidebar-sizes', JSON.stringify({ left: leftWidth, right: rightWidth })); }, [leftWidth, rightWidth, sizesReady]);
+  useEffect(() => { if (sizesReady) localStorage.setItem('codeclub:sidebar-sizes', JSON.stringify({ left: leftWidth })); }, [leftWidth, rightWidth, sizesReady]);
 
   useEffect(() => {
     if (!resizing) return undefined;
@@ -277,7 +344,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
         window.dispatchEvent(new CustomEvent('codeclub:project-selection-changed', { detail: { selected: true, projectPath: saved.path, projectName: saved.name || 'Proyecto' } }));
         window.dispatchEvent(new CustomEvent('codeclub:active-project', { detail: { projectPath: saved.path, projectName: saved.name || 'Proyecto' } }));
       }, 0);
-    } catch { /* Si no hay proyecto guardado, inicia en Codeclub. */ }
+    } catch { /* Start in the global Codeclub workspace when no project is saved. */ }
   }, []);
 
   useEffect(() => {
@@ -292,10 +359,14 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
     };
     void loadRecentChats();
     const refresh = () => void loadRecentChats();
+    const unsubscribe = (window as any).codeclub?.onTasksChanged?.(refresh);
+    const unsubscribeSettings = (window as any).codeclub?.onSettingsChanged?.((detail: { key: string }) => { if (detail.key === 'codeclub_global_chats') refresh(); });
     window.addEventListener('codeclub:global-chat-changed', refresh);
     window.addEventListener('codeclub:project-meta-changed', refresh);
     return () => {
       cancelled = true;
+      unsubscribe?.();
+      unsubscribeSettings?.();
       window.removeEventListener('codeclub:global-chat-changed', refresh);
       window.removeEventListener('codeclub:project-meta-changed', refresh);
     };
@@ -419,6 +490,13 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
     const showCreatedChat = (event: Event) => {
       const chatId = (event as CustomEvent<{ chatId?: string }>).detail?.chatId;
       if (!chatId) return;
+      const draftScope = JSON.stringify([activeProjectPath || '', 'draft']);
+      const chatScope = JSON.stringify([activeProjectPath || '', chatId]);
+      setRightViews(previous => {
+        if (!previous[draftScope] || previous[chatScope]) return previous;
+        const { [draftScope]: draft, ...rest } = previous;
+        return { ...rest, [chatScope]: draft };
+      });
       setActiveSection('new-chat');
       setActiveChatId(chatId);
     };
@@ -436,7 +514,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
       window.removeEventListener('codeclub:open-empty-chat', showEmptyChat);
       window.removeEventListener('codeclub:open-extensions', showExtensions);
     };
-  }, []);
+  }, [activeProjectPath]);
 
   const recentChats = chatsByProject[activeProjectId] ?? [];
 
@@ -514,21 +592,31 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
     const base = panelText[tab];
     const count = rightPanels.filter((panel) => panel.tab === tab).length + 1;
     rightPanelSequence.current += 1;
-    const panel = { instanceId: `${tab}-${rightPanelSequence.current}`, tab, label: tab === 'terminals' ? 'PowerShell' : tab === 'browser' ? `${base} ${count}` : base };
+    const panel = { instanceId: `${tab}-${crypto.randomUUID()}`, tab, label: tab === 'terminals' ? 'PowerShell' : tab === 'browser' ? `${base} ${count}` : base };
     setRightPanels((current) => [...current, panel]);
     setActiveRightPanelId(panel.instanceId);
     setRightMenuOpen(false);
   };
 
   useEffect(() => {
-    const openBrowser = () => {
+    const openBrowser = (event: Event) => {
+      const detail = (event as CustomEvent<{ chatId?: string; projectPath?: string }>).detail;
+      if (detail?.chatId) {
+        const scope = JSON.stringify([detail.projectPath || '', detail.chatId]);
+        setRightViews(previous => {
+          const view = previous[scope] || emptyRightView();
+          const browser = view.panels.find(panel => panel.tab === 'browser') || { instanceId: `browser-${crypto.randomUUID()}`, tab: 'browser' as const, label: panelText.browser };
+          return { ...previous, [scope]: { ...view, panels: view.panels.includes(browser) ? view.panels : [...view.panels, browser], active: browser.instanceId } };
+        });
+        return;
+      }
       const existing = rightPanels.find((panel) => panel.tab === 'browser');
       if (existing) {
         setActiveRightPanelId(existing.instanceId);
         return;
       }
       rightPanelSequence.current += 1;
-      const panel = { instanceId: `browser-${rightPanelSequence.current}`, tab: 'browser' as const, label: panelText.browser };
+      const panel = { instanceId: `browser-${crypto.randomUUID()}`, tab: 'browser' as const, label: panelText.browser };
       setRightPanels((current) => [...current, panel]);
       setActiveRightPanelId(panel.instanceId);
     };
@@ -540,20 +628,21 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
 
   useEffect(() => {
     const updateBrowserTab = (event: Event) => {
-      const detail = (event as CustomEvent<{ favicon?: string; title?: string; clearFavicon?: boolean }>).detail || {};
+      const detail = (event as CustomEvent<{ instanceId?: string; favicon?: string; title?: string; clearFavicon?: boolean }>).detail || {};
       if (!detail.favicon && !detail.title && !detail.clearFavicon) return;
-      setRightPanels((current) => current.map((panel) => panel.tab === 'browser' ? { ...panel, iconUrl: detail.clearFavicon ? undefined : detail.favicon || panel.iconUrl, label: detail.title?.trim() || panel.label } : panel));
+      setRightViews(previous => Object.fromEntries(Object.entries(previous).map(([scope, view]) => [scope, { ...view, panels: view.panels.map(panel => panel.tab === 'browser' && (detail.instanceId ? panel.instanceId === detail.instanceId : scope === rightScope && panel.instanceId === activeRightPanelId) ? { ...panel, iconUrl: detail.clearFavicon ? undefined : detail.favicon || panel.iconUrl, label: detail.title?.trim() || panel.label } : panel) }])));
+
     };
     window.addEventListener('codeclub:browser-tab-meta', updateBrowserTab);
     return () => window.removeEventListener('codeclub:browser-tab-meta', updateBrowserTab);
-  }, []);
+  }, [rightScope, activeRightPanelId]);
 
   useEffect(() => {
     const updateTerminalTab = (event: Event) => {
       const detail = (event as CustomEvent<{ instanceId: string; title: string }>).detail;
       if (!detail?.instanceId || !detail.title?.trim()) return;
-      setRightPanels((current) => current.map((panel) => panel.tab === 'terminals' && panel.instanceId === detail.instanceId && panel.label !== detail.title
-        ? { ...panel, label: detail.title } : panel));
+      setRightViews(previous => Object.fromEntries(Object.entries(previous).map(([scope, view]) => [scope, { ...view, panels: view.panels.map(panel => panel.tab === 'terminals' && panel.instanceId === detail.instanceId ? { ...panel, label: detail.title } : panel) }])));
+
     };
     window.addEventListener('codeclub:terminal-tab-meta', updateTerminalTab);
     return () => window.removeEventListener('codeclub:terminal-tab-meta', updateTerminalTab);
@@ -571,7 +660,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
         return;
       }
       rightPanelSequence.current += 1;
-      const panel = { instanceId: `files-${rightPanelSequence.current}`, tab: 'files' as const, label: panelText.files };
+      const panel = { instanceId: `files-${crypto.randomUUID()}`, tab: 'files' as const, label: panelText.files };
       setRightPanels((current) => [...current, panel]);
       setActiveRightPanelId(panel.instanceId);
     };
@@ -581,7 +670,17 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
 
   useEffect(() => {
     const openTerminalPanel = (event: Event) => {
-      const detail = (event as CustomEvent<{ terminalId?: string; projectPath?: string }>).detail || {};
+      const detail = (event as CustomEvent<{ terminalId?: string; projectPath?: string; chatId?: string }>).detail || {};
+      if (detail.chatId) {
+        const scope = JSON.stringify([detail.projectPath || '', detail.chatId]);
+        setRightViews(previous => {
+          const view = previous[scope] || emptyRightView();
+          const panel = view.panels.find(item => item.terminalId === detail.terminalId) || { instanceId: `terminals-${crypto.randomUUID()}`, tab: 'terminals' as const, label: 'PowerShell', terminalId: detail.terminalId };
+          return { ...previous, [scope]: { ...view, panels: view.panels.includes(panel) ? view.panels : [...view.panels, panel], active: panel.instanceId } };
+        });
+        if (scope === rightScope) window.dispatchEvent(new CustomEvent('codeclub:open-right-sidebar'));
+        return;
+      }
       if (detail.projectPath && detail.projectPath !== activeProjectPath) return;
       window.dispatchEvent(new CustomEvent('codeclub:open-right-sidebar'));
       const existing = detail.terminalId ? rightPanels.find((panel) => panel.terminalId === detail.terminalId) : rightPanels.find((panel) => panel.tab === 'terminals');
@@ -590,25 +689,22 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
         return;
       }
       rightPanelSequence.current += 1;
-      const panel = { instanceId: `terminals-${rightPanelSequence.current}`, tab: 'terminals' as const, label: 'PowerShell', terminalId: detail.terminalId };
+      const panel = { instanceId: `terminals-${crypto.randomUUID()}`, tab: 'terminals' as const, label: 'PowerShell', terminalId: detail.terminalId };
       setRightPanels((current) => [...current, panel]);
       setActiveRightPanelId(panel.instanceId);
     };
     window.addEventListener('codeclub:open-terminal-panel', openTerminalPanel);
     return () => window.removeEventListener('codeclub:open-terminal-panel', openTerminalPanel);
-  }, [activeProjectPath, panelText.terminals, rightPanels]);
+  }, [activeProjectPath, rightScope, panelText.terminals, rightPanels]);
 
   useEffect(() => {
     const closeTerminalPanel = (event: Event) => {
       const detail = (event as CustomEvent<{ terminalId?: string; projectPath?: string }>).detail || {};
-      if (detail.projectPath && detail.projectPath !== activeProjectPath) return;
       if (!detail.terminalId) return;
-      setRightPanels((current) => {
-        const panel = current.find((item) => item.terminalId === detail.terminalId);
-        if (!panel) return current;
-        setActiveRightPanelId((active) => active === panel.instanceId ? (current.find((item) => item.instanceId !== panel.instanceId)?.instanceId || '') : active);
-        return current.filter((item) => item.instanceId !== panel.instanceId);
-      });
+      setRightViews(current => Object.fromEntries(Object.entries(current).map(([scope, view]) => {
+        const panels = view.panels.filter(panel => panel.terminalId !== detail.terminalId);
+        return [scope, { ...view, panels, active: panels.some(panel => panel.instanceId === view.active) ? view.active : panels[0]?.instanceId || '' }];
+      })));
     };
     window.addEventListener('codeclub:terminal-closed', closeTerminalPanel);
     return () => window.removeEventListener('codeclub:terminal-closed', closeTerminalPanel);
@@ -625,7 +721,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
         return;
       }
       rightPanelSequence.current += 1;
-      const panel = { instanceId: `terminals-${rightPanelSequence.current}`, tab: 'terminals' as const, label: 'PowerShell' };
+      const panel = { instanceId: `terminals-${crypto.randomUUID()}`, tab: 'terminals' as const, label: 'PowerShell' };
       setRightPanels((current) => [...current, panel]);
       setActiveRightPanelId(panel.instanceId);
       window.setTimeout(() => window.dispatchEvent(new CustomEvent('codeclub:terminal-run-code', { detail })), 0);
@@ -651,7 +747,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
     };
     window.addEventListener('codeclub:execute-inline-code', runCodeInTerminal);
     return () => window.removeEventListener('codeclub:execute-inline-code', runCodeInTerminal);
-  }, [activeProjectPath, panelText.terminals, rightPanels]);
+  }, [activeProjectPath, rightScope, panelText.terminals, rightPanels]);
 
   const closeRightPanel = (instanceId: string) => {
     const index = rightPanels.findIndex((panel) => panel.instanceId === instanceId);
@@ -749,7 +845,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
             <SidebarItem active={false} icon={<MoreHorizontal />} label={sidebarText.devices} disabled onClick={() => {}} />
           </nav>
           <div className="mt-5 min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {recentChats.length > 0 && <div className="pb-3"><p className="px-1.5 text-[13px] font-semibold text-(--codeclub-text-muted)">{sidebarText.recent}</p><div className="mt-2 space-y-1">{recentChats.slice().reverse().map((chat) => <button key={chat.id} type="button" onContextMenu={(event) => { event.preventDefault(); setChatContextMenu({ chat, x: event.clientX, y: event.clientY }); }} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: { chatId: chat.id, name: chat.title, customName: chat.customName, projectId: activeProjectId, projectPath: chat.projectPath ?? activeProjectPath, projectName: chat.projectName ?? activeProjectName } }))} className={`flex w-full min-w-0 items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] text-(--codeclub-text-strong) ${activeChatId === chat.id ? 'bg-(--codeclub-acrylic-active)' : 'bg-transparent hover:bg-(--codeclub-hover)'}`}><span className="min-w-0 flex-1 truncate">{chat.title}</span><ChatSessionStatus session={sessions.find(session=>!session.external && sameSession({chatId:chat.id,projectPath:chat.projectPath ?? activeProjectPath ?? ''},session))} language={language} /></button>)}</div></div>}
+            {recentChats.length > 0 && <div className="pb-3"><p className="px-1.5 text-[13px] font-semibold text-(--codeclub-text-muted)">{sidebarText.recent}</p><div className="mt-2 space-y-1">{recentChats.slice().reverse().map((chat) => <button key={chat.id} type="button" onContextMenu={(event) => { event.preventDefault(); setChatContextMenu({ chat, x: event.clientX, y: event.clientY }); }} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: { chatId: chat.id, name: chat.title, customName: chat.customName, projectId: activeProjectId, projectPath: chat.projectPath ?? activeProjectPath, projectName: chat.projectName ?? activeProjectName } }))} className={`flex w-full min-w-0 items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] text-(--codeclub-text-strong) ${activeChatId === chat.id ? 'bg-(--codeclub-acrylic-active)' : 'bg-transparent hover:bg-(--codeclub-hover)'}`}><span className="min-w-0 flex-1 truncate">{chat.title}</span><ChatSessionStatus seenCompletions={seenCompletions} session={sessions.find(session=>!session.external && sameSession({chatId:chat.id,projectPath:chat.projectPath ?? activeProjectPath ?? ''},session))} language={language} /></button>)}</div></div>}
           </div>
           <div className="mt-auto border-t border-(--codeclub-border-soft) px-1.5 pt-3"><button type="button" onClick={() => void nativeInvoke('codeclub_open_external', { url: 'https://ko-fi.com/iangeldev' })} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12px] text-(--codeclub-text-muted) transition-colors hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={sidebarText.support} title={sidebarText.donation}><Heart size={15} strokeWidth={1.8} /><span>{sidebarText.support}</span></button></div>
         </div>
@@ -782,7 +878,8 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
             {rightPanels.find((panel) => panel.instanceId === activeRightPanelId)?.tab === 'files' && <button type="button" onClick={() => setFilesTreeVisible((visible) => !visible)} className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-transparent transition-colors hover:bg-white/[0.08] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${filesTreeVisible ? 'text-(--codeclub-text-strong)' : 'text-(--codeclub-text-muted)'}`} aria-label={filesTreeVisible ? panelText.toggleFileTreeHide : panelText.toggleFileTreeShow} aria-pressed={filesTreeVisible} title={filesTreeVisible ? panelText.toggleFileTreeHide : panelText.toggleFileTreeShow}><FolderOpen size={16} strokeWidth={1.8} aria-hidden="true" /></button>}
           </div>
           <div className="absolute inset-x-0 top-11 bottom-0 flex min-h-0 flex-col overflow-hidden">
-            {rightPanels.length === 0 ? <RightPanelEmptyState onSelect={openRightPanel} /> : rightPanels.map((panel) => <div key={panel.instanceId} className={`flex min-h-0 min-w-0 flex-1 flex-col ${activeRightPanelId === panel.instanceId ? 'flex' : 'hidden'}`}><RightSidebarContent panel={panel} projectName={activeProjectName} projectPath={activeProjectPath} selectedFilePath={selectedRightFilePath} filesTreeVisible={filesTreeVisible} onToggleFilesTree={() => setFilesTreeVisible((visible) => !visible)} visible={activeRightPanelId === panel.instanceId} /></div>)}
+            {rightPanels.length === 0 && <RightPanelEmptyState onSelect={openRightPanel} />}
+            {Object.entries(rightViews).flatMap(([scope, view]) => view.panels.map(panel => { const visible = scope === rightScope && view.active === panel.instanceId; const [projectPath] = JSON.parse(scope); return <div key={panel.instanceId} className={`min-h-0 min-w-0 flex-1 flex-col ${visible ? 'flex' : 'hidden'}`}><RightSidebarContent panel={panel} projectName={projectPath ? projectPath.split(/[\\/]/).pop() : 'Codeclub'} projectPath={projectPath} selectedFilePath={view.file} filesTreeVisible={view.tree} onToggleFilesTree={() => setFilesTreeVisible(value => !value)} visible={visible} chatId={JSON.parse(scope)[1] === 'draft' ? undefined : JSON.parse(scope)[1]} selected={view.active === panel.instanceId} /></div>; }))}
           </div>
         </div>
       </motion.aside>
@@ -1001,13 +1098,20 @@ const normalizeBrowserAddress = (value: string) => {
   }
 };
 
-export function BrowserPanel({ isolated = false }: { isolated?: boolean } = {}) {
+/** Integrated WebView; scoped agent events go to the matching chat/project, while legacy broadcasts reach only visible instances. */
+export function BrowserPanel({ isolated = false, visible = true, selected = true, chatId, projectPath = '', instanceId = 'isolated-browser' }: { isolated?: boolean; visible?: boolean; selected?: boolean; chatId?: string; projectPath?: string; instanceId?: string } = {}) {
   const language = useAppLanguage();
   const { palette } = useOrbPalette();
   const text = rightSidebarTranslations[language];
   const webviewRef = useRef<any>(null);
-  const [address, setAddress] = useState(DEFAULT_BROWSER_URL);
-  const [currentUrl, setCurrentUrl] = useState(DEFAULT_BROWSER_URL);
+  const visibleRef = useRef(visible); visibleRef.current = visible;
+  const selectedRef = useRef(selected); selectedRef.current = selected;
+  const acceptsBrowserEvent = (event: Event) => { const detail = (event as CustomEvent).detail; return isolated || (detail?.chatId ? selectedRef.current && detail.chatId === chatId && (detail.projectPath || '') === projectPath : visibleRef.current); };
+  const addressId = `codeclub-browser-address-${instanceId}`;
+  const initialUrl = typeof window !== 'undefined' && !isolated ? localStorage.getItem(`codeclub:browser-url:${instanceId}`) || DEFAULT_BROWSER_URL : DEFAULT_BROWSER_URL;
+  const [address, setAddress] = useState(initialUrl);
+  const [currentUrl, setCurrentUrl] = useState(initialUrl);
+  useEffect(() => { if (!isolated) localStorage.setItem(`codeclub:browser-url:${instanceId}`, currentUrl); }, [currentUrl, instanceId, isolated]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -1017,7 +1121,7 @@ export function BrowserPanel({ isolated = false }: { isolated?: boolean } = {}) 
   const closeAddressMenu = (blurInput = false) => {
     browserAddressFocusedRef.current = false;
     if (browserAddressMenuRef.current) browserAddressMenuRef.current.style.display = 'none';
-    if (blurInput) (document.getElementById('codeclub-browser-address') as HTMLInputElement | null)?.blur();
+    if (blurInput) (document.getElementById(addressId) as HTMLInputElement | null)?.blur();
   };
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedElement, setSelectedElement] = useState<BrowserElementSelection | null>(null);
@@ -1044,7 +1148,7 @@ export function BrowserPanel({ isolated = false }: { isolated?: boolean } = {}) 
     const entry = { url, title: title?.trim() || url.replace(/^https?:\/\//, '').replace(/\/$/, '') };
     setBrowserHistory((current) => {
       const next = [entry, ...current.filter((item) => item.url !== url)].slice(0, 20);
-      if (!isolated) localStorage.setItem('codeclub:browser-history', JSON.stringify(next));
+      if (!isolated) localStorage.setItem(`codeclub:browser-history:${instanceId}`,  JSON.stringify(next));
       return next;
     });
   };
@@ -1052,13 +1156,13 @@ export function BrowserPanel({ isolated = false }: { isolated?: boolean } = {}) 
   useEffect(() => {
     if (isolated) return;
     try {
-      const saved = JSON.parse(localStorage.getItem('codeclub:browser-history') || '[]');
+      const saved = JSON.parse(localStorage.getItem(`codeclub:browser-history:${instanceId}`) || '[]');
       if (Array.isArray(saved)) setBrowserHistory(saved.filter((item) => item?.url).slice(0, 20));
     } catch { /* ignore malformed local history */ }
   }, []);
 
   useEffect(() => {
-    const input = document.getElementById('codeclub-browser-address') as HTMLInputElement | null;
+    const input = document.getElementById(addressId) as HTMLInputElement | null;
     if (!input) return undefined;
     input.removeAttribute('list');
     const menu = document.createElement('div');
@@ -1084,7 +1188,7 @@ export function BrowserPanel({ isolated = false }: { isolated?: boolean } = {}) 
 
   useEffect(() => {
     const menu = browserAddressMenuRef.current;
-    const input = document.getElementById('codeclub-browser-address') as HTMLInputElement | null;
+    const input = document.getElementById(addressId) as HTMLInputElement | null;
     if (!menu || !input) return;
     const query = address.trim();
     const normalizedQuery = query.toLowerCase();
@@ -1262,7 +1366,7 @@ export function BrowserPanel({ isolated = false }: { isolated?: boolean } = {}) 
     void runPickerAction(`window.__codeclubRemoveCommentMarker?.(${JSON.stringify(selectedElement?.markerId || '')});`);
   };
 
-  const publishState = async () => {
+  const publishState = async (requestId?: string) => {
     const view = webviewRef.current;
     if (!view) return;
     try {
@@ -1287,14 +1391,14 @@ export function BrowserPanel({ isolated = false }: { isolated?: boolean } = {}) 
           options: element.tagName === 'SELECT' ? Array.from(element.options).map(option => ({ value: option.value, label: option.textContent.trim(), disabled: option.disabled, selected: option.selected })) : undefined,
           rect: (() => { const value = element.getBoundingClientRect(); return { x: Math.round(value.x), y: Math.round(value.y), width: Math.round(value.width), height: Math.round(value.height) }; })()
         }; });
-        return { snapshotId, title: document.title, text: document.body?.innerText?.slice(0, 12000) || '', elements };
+        return { snapshotId, title: document.title, text: document.body?.innerText?.slice(0, 12000) || '', elements, media: Array.from(document.querySelectorAll('video,audio')).map(media => ({ paused: media.paused, muted: media.muted, volume: media.volume, currentTime: media.currentTime, ended: media.ended, readyState: media.readyState })) };
       })()`);
       const state = { ok: true, url: view.getURL?.() || currentUrl, title: view.getTitle?.() || page.title, ...page };
-      window.dispatchEvent(new CustomEvent('codeclub:browser-state', { detail: state }));
+      window.dispatchEvent(new CustomEvent('codeclub:browser-state', { detail: { ...state, chatId, requestId } }));
       return state;
     } catch (error) {
       const state = { ok: false, url: currentUrl, error: String(error) };
-      window.dispatchEvent(new CustomEvent('codeclub:browser-state', { detail: state }));
+      window.dispatchEvent(new CustomEvent('codeclub:browser-state', { detail: { ...state, chatId, requestId } }));
       return state;
     }
   };
@@ -1316,7 +1420,7 @@ export function BrowserPanel({ isolated = false }: { isolated?: boolean } = {}) 
       const favicons = (event as Event & { favicons?: string[] }).favicons || [];
       let domain = '';
       try { domain = new URL(view.getURL?.() || currentUrl).hostname; } catch { /* invalid or empty URL */ }
-      window.dispatchEvent(new CustomEvent('codeclub:browser-tab-meta', { detail: { favicon: favicons[0], title: view.getTitle?.() || domain, clearFavicon: !favicons[0] } }));
+      window.dispatchEvent(new CustomEvent('codeclub:browser-tab-meta', { detail: { instanceId, favicon: favicons[0], title: view.getTitle?.() || domain, clearFavicon: !favicons[0] } }));
     };
     view.addEventListener('did-start-loading', start);
     view.addEventListener('did-stop-loading', stop);
@@ -1335,12 +1439,14 @@ export function BrowserPanel({ isolated = false }: { isolated?: boolean } = {}) 
   }, []);
 
   useEffect(() => {
-    const requestState = () => { void publishState(); };
+    const requestState = (event: Event) => { if (acceptsBrowserEvent(event)) void publishState((event as CustomEvent).detail?.requestId); };
     const navigate = (event: Event) => {
+      if (!acceptsBrowserEvent(event)) return;
       const value = normalizeBrowserAddress(String((event as CustomEvent<{ url?: string }>).detail?.url || ''));
       if (value) { setAddress(value); setCurrentUrl(value); }
     };
     const action = async (event: Event) => {
+      if (!acceptsBrowserEvent(event)) return;
       const view = webviewRef.current;
       const detail = (event as CustomEvent<{ type?: string; selector?: string; text?: string; key?: string; amount?: number }>).detail || {};
       if (!view) return;
@@ -1357,7 +1463,7 @@ export function BrowserPanel({ isolated = false }: { isolated?: boolean } = {}) 
       } catch (error) {
         result = { ok: false, error: String(error) };
       }
-      window.dispatchEvent(new CustomEvent('codeclub:browser-action-result', { detail: result }));
+      window.dispatchEvent(new CustomEvent('codeclub:browser-action-result', { detail: { ...result, chatId, requestId: (event as CustomEvent).detail?.requestId } }));
     };
     window.addEventListener('codeclub:browser-state-request', requestState);
     window.addEventListener('codeclub:browser-navigate', navigate);
@@ -1367,7 +1473,7 @@ export function BrowserPanel({ isolated = false }: { isolated?: boolean } = {}) 
       window.removeEventListener('codeclub:browser-navigate', navigate);
       window.removeEventListener('codeclub:browser-action', action);
     };
-  }, [currentUrl]);
+  }, [currentUrl, chatId, projectPath]);
 
   useEffect(() => {
     const view = webviewRef.current;
@@ -1434,7 +1540,7 @@ export function BrowserPanel({ isolated = false }: { isolated?: boolean } = {}) 
   return <div className="relative h-full min-h-0 bg-transparent text-[#e8eaed]">
     <div className="flex h-9 shrink-0 items-center gap-2 bg-transparent px-2.5" aria-label={text.browserControls}>{!currentUrl && !loadError && <div className="absolute top-9 right-0 bottom-0 left-0 z-[1] flex flex-col items-center justify-center gap-5 bg-[#202124]"><GlobeCheck aria-hidden="true" className="text-[#9aa0a6]" size={38} strokeWidth={1.7} /><form onSubmit={submitAddress} className="flex h-[52px] w-[min(520px,calc(100%-32px))] items-center gap-2 rounded-[14px] border border-[#3c4043] bg-[#1a1a1a] px-3 shadow-[0_8px_30px_#00000040] transition-colors hover:bg-[#1f1f1f] focus-within:border-[#5f6368]"><span className="grid h-8 w-8 shrink-0 place-items-center text-[24px] text-[#8a8a8a]">⌕</span><input autoFocus value={address} onChange={(event) => setAddress(event.target.value)} className="h-9 min-w-0 flex-1 bg-transparent px-2 text-[13px] text-[#e8eaed] outline-none placeholder:text-[#9a9a9a]" placeholder={text.browserAddressPlaceholder} aria-label={text.webAddress} /><button type="submit" aria-label={text.openUrl} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-transparent text-[24px] text-[#8a8a8a] hover:bg-white/[0.06] hover:text-[#f1f1f1]">↗</button></form></div>}
       <div className="flex shrink-0 items-center gap-0.5"><button type="button" onClick={() => webviewRef.current?.goBack?.()} className="grid h-7 w-7 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.back} title={text.back}><ArrowLeft size={16} /></button><button type="button" onClick={() => webviewRef.current?.goForward?.()} className="grid h-7 w-7 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.forward} title={text.forward}><ArrowRight size={16} /></button><button type="button" onClick={() => webviewRef.current?.reload?.()} className="grid h-7 w-7 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.reload} title={text.reload}><RotateCw size={16} className={loading ? 'animate-spin' : ''} /></button><button type="button" onClick={() => { setAddress(''); setCurrentUrl(DEFAULT_BROWSER_URL); setLoadError(''); setLoading(false); }} className="grid h-7 w-7 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.home} title={text.home}><Home size={15} /></button></div>
-      <form onSubmit={submitAddress} className="min-w-0 flex-1"><label className="sr-only" htmlFor="codeclub-browser-address">{text.webAddress}</label><input id="codeclub-browser-address" value={address.replace(/^https?:\/\//, '').replace(/\/$/, '')} onChange={(event) => setAddress(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); closeAddressMenu(); event.currentTarget.blur(); } else if (event.key === 'ArrowDown') { const firstRow = browserAddressMenuRef.current?.querySelector<HTMLButtonElement>('.codeclub-browser-history-row'); if (firstRow) { event.preventDefault(); firstRow.focus(); } } }} onFocus={(event) => event.currentTarget.select()} className="h-8 w-full bg-transparent text-center text-[17px] font-medium text-[#f1f3f4] outline-none placeholder:text-[#8a8a8a]" aria-label={text.webAddress} placeholder={text.browserAddressPlaceholder} /></form>
+      <form onSubmit={submitAddress} className="min-w-0 flex-1"><label className="sr-only" htmlFor={addressId}>{text.webAddress}</label><input id={addressId} value={address.replace(/^https?:\/\//, '').replace(/\/$/, '')} onChange={(event) => setAddress(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); closeAddressMenu(); event.currentTarget.blur(); } else if (event.key === 'ArrowDown') { const firstRow = browserAddressMenuRef.current?.querySelector<HTMLButtonElement>('.codeclub-browser-history-row'); if (firstRow) { event.preventDefault(); firstRow.focus(); } } }} onFocus={(event) => event.currentTarget.select()} className="h-8 w-full bg-transparent text-center text-[17px] font-medium text-[#f1f3f4] outline-none placeholder:text-[#8a8a8a]" aria-label={text.webAddress} placeholder={text.browserAddressPlaceholder} /></form>
       <div className="relative flex shrink-0 items-center gap-0.5"><button type="button" className={`grid h-7 w-7 place-items-center rounded-full hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${selectionMode ? 'bg-[#3d9bff22] text-[#8bc7ff]' : 'text-[#b8b8b8]'}`} aria-label={text.pickElement} title={text.pickElement} aria-pressed={selectionMode} onClick={() => selectionMode ? void clearPagePicker() : void startPagePicker()}><MousePointerClick size={17} /></button><button type="button" onClick={() => setMenuOpen((open) => !open)} className="grid h-7 w-7 place-items-center rounded-full text-[#b8b8b8] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.moreOptions} title={text.moreOptions} aria-expanded={menuOpen}><EllipsisVertical size={17} /></button>{menuOpen && <div className="absolute top-9 right-0 z-20 w-56 rounded-xl border border-white/[0.08] bg-[#2C2C2C]/95 p-1.5 shadow-xl backdrop-blur-xl"><button type="button" onClick={() => { webviewRef.current?.reload?.(); setMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[11px] whitespace-nowrap text-[#eeeeee] hover:bg-white/[0.08]"><RotateCw className="shrink-0 text-[#b8b8b8]" size={14} strokeWidth={1.8} aria-hidden="true" /><span className="min-w-0 truncate">{text.reload}</span></button><div className="mx-2 my-1 h-px bg-[#444444]" /><button type="button" onClick={() => { window.open(currentUrl, '_blank'); setMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[11px] whitespace-nowrap text-[#eeeeee] hover:bg-white/[0.08]"><ExternalLink className="shrink-0 text-[#b8b8b8]" size={14} strokeWidth={1.8} aria-hidden="true" /><span className="min-w-0 truncate">{text.openOutside}</span></button></div>}</div>
     </div>
     <div className="absolute top-9 right-0 bottom-0 left-0 overflow-hidden">{createElement('webview', viewProps)}</div>{selectedElement && <div className="absolute z-20 w-[min(360px,calc(100%-16px))]" style={{ left: `clamp(8px, ${selectedElement.x}px, calc(100% - 376px))`, top: styleEditorOpen ? `clamp(48px, ${selectedElement.y + 48}px, calc(100% - 328px))` : `clamp(48px, ${selectedElement.y + 48}px, calc(100% - 152px))`, ...(styleEditorOpen ? { height: "min(320px, calc(100% - 56px))" } : {}) }}>{styleEditorOpen ? <BrowserStyleEditor key={selectedElement.markerId} element={selectedElement} language={language} onCancel={cancelStyleChanges} onConfirm={addStyleChanges} onPreview={previewStyleChanges} /> : <form className="chat-selection-comment browser-selection-comment" onSubmit={(event) => { event.preventDefault(); addSelectedReference(); }}><button type="button" onClick={() => setStyleEditorOpen(true)} aria-label={browserStyleTranslations[language].edit} title={browserStyleTranslations[language].edit}><Pencil size={15} strokeWidth={1.8} aria-hidden="true" /></button><input ref={selectionCommentRef} type="text" value={selectionComment} onChange={(event) => setSelectionComment(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); discardSelectedReference(); } }} placeholder={agentTextSelectionTranslations[language].commentPlaceholder} aria-label={agentTextSelectionTranslations[language].commentPlaceholder} /><button type="submit" aria-label={agentTextSelectionTranslations[language].addToChat} title={agentTextSelectionTranslations[language].addToChat}><ArrowUp size={16} strokeWidth={2} /></button></form>}</div>}{loadError && <div className="absolute inset-0 z-10 grid place-items-center bg-[#202124] px-6 text-center"><div className="max-w-[360px]"><p className="m-0 text-[15px] font-medium text-[#f1f3f4]">{text.pageLoadError}</p><p className="mt-2 mb-0 break-words text-[12px] leading-5 text-[#a7a7a7]">{loadError}</p><p className="mt-1 mb-0 break-words text-[11px] text-[#777777]">{currentUrl}</p><button type="button" onClick={() => { setLoadError(''); setLoading(true); webviewRef.current?.reload?.(); }} className="mt-4 rounded-lg bg-white/[0.08] px-3 py-1.5 text-[11px] text-[#eeeeee] hover:bg-white/[0.14]">{text.retry}</button></div></div>}
@@ -1517,7 +1623,7 @@ function TerminalPanel({ projectPath, terminalId, instanceId, visible = true }: 
         fit.fit();
         const id = sessionIdRef.current;
         if (id) void nativeInvoke('codeclub_terminal_resize', { id, cols: terminal.cols, rows: terminal.rows }).catch(() => undefined);
-      } catch { /* El contenedor puede estar oculto durante el montaje. */ }
+      } catch { /* The container may be hidden while the panel is mounting. */ }
     };
     syncSizeRef.current = resize;
     resize();
@@ -1637,13 +1743,13 @@ function TerminalPanel({ projectPath, terminalId, instanceId, visible = true }: 
   return <div ref={containerRef} id="codeclub-terminal-panel" className="h-full min-h-0 w-full bg-(--paper) p-0" onClick={() => terminalRef.current?.focus()} aria-label={rightSidebarTranslations[language].terminalAria} />;
 }
 
-function ChatSessionStatus({ session, language }: { session?: SharedSession; language: AppLanguage }) {
+function ChatSessionStatus({ session, language, seenCompletions }: { session?: SharedSession; language: AppLanguage; seenCompletions: Record<string, string> }) {
   if (!session) return null;
   const text = activityTranslations[language];
   const pending = session.approvals.length > 0 || session.state === 'question';
   const failed = session.state === 'error' || session.state === 'interrupted';
   const state = pending ? 'attention' : failed ? 'error' : session.busy ? 'working' : session.state === 'finished' ? 'finished' : null;
-  if (!state) return null;
+  if (!state || (state === 'finished' && seenCompletions[session.key] === `${session.runId}:${session.startedAt}`)) return null;
   const Icon = state === 'attention' ? MessageSquare : state === 'error' ? X : state === 'working' ? Hourglass : Check;
   const label = state === 'attention' ? (session.approvals.length ? text.approval : text.question) : state === 'error' ? text.error : state === 'working' ? text.working : text.finished;
   return <span role="img" aria-label={label} title={label} data-chat-state={state} className={`inline-flex shrink-0 items-center ${state === 'attention' || state === 'error' ? 'text-(--codeclub-text-strong)' : 'text-(--codeclub-text-muted)'}`}><Icon size={13} strokeWidth={1.7} aria-hidden="true" /></span>;
@@ -1666,7 +1772,7 @@ function RightPanelEmptyState({ onSelect }: { onSelect: (tab: RightPanelTab) => 
   </section>;
 }
 
-function RightSidebarContent({ panel, projectName, projectPath, selectedFilePath, filesTreeVisible, onToggleFilesTree, visible }: { panel: RightPanelInstance; projectName: string; projectPath?: string; selectedFilePath?: string; filesTreeVisible: boolean; onToggleFilesTree: () => void; visible: boolean }) {
+function RightSidebarContent({ panel, projectName, projectPath, selectedFilePath, filesTreeVisible, onToggleFilesTree, visible, chatId, selected }: { chatId?: string; selected?: boolean; panel: RightPanelInstance; projectName: string; projectPath?: string; selectedFilePath?: string; filesTreeVisible: boolean; onToggleFilesTree: () => void; visible: boolean }) {
   const { tab } = panel;
   const language = useAppLanguage();
   const text = rightSidebarTranslations[language];
@@ -1678,7 +1784,7 @@ function RightSidebarContent({ panel, projectName, projectPath, selectedFilePath
     files: 'Explorá los archivos del proyecto activo.', browser: 'Abrí y controlá páginas dentro de Electron.', terminals: 'Gestioná terminales persistentes de la sesión.',
   };
   if (tab === 'files') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={text.files} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="h-full min-h-0 flex-1 overflow-hidden bg-(--paper) text-(--ink)">{projectPath ? <ProjectPanelView projectPath={projectPath} projectName={projectName} selectedPath={selectedFilePath} showFileTree={filesTreeVisible} onToggleFileTree={onToggleFilesTree} /> : <div className="flex h-full flex-col items-center justify-center px-5 text-center"><div><FolderPen size={28} strokeWidth={1.3} className="mx-auto text-(--codeclub-text-muted)" aria-hidden="true" /><p className="mt-3 mb-0 text-[12px] text-(--codeclub-text-strong)">{language === 'en' ? 'No active project' : 'Sin proyecto activo'}</p><p className="mt-1 mb-0 text-[11px] leading-5 text-(--codeclub-text-muted)">{language === 'en' ? 'Link a folder to explore its files.' : 'Vinculá una carpeta para explorar sus archivos.'}</p></div></div>}</motion.section>;
-  if (tab === 'browser') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="h-full min-h-0 flex-1 overflow-hidden bg-(--paper) text-(--ink)"><BrowserPanel /></motion.section>;
+  if (tab === 'browser') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="h-full min-h-0 flex-1 overflow-hidden bg-(--paper) text-(--ink)"><BrowserPanel visible={visible} selected={selected} chatId={chatId} projectPath={projectPath} instanceId={panel.instanceId} /></motion.section>;
   if (tab === 'terminals') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-hidden bg-(--paper) text-(--ink)"><TerminalPanel projectPath={projectPath} terminalId={panel.terminalId} instanceId={panel.instanceId} visible={visible} /></motion.section>;
   return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-auto bg-(--paper) px-3 py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
     <div className="mt-5 grid min-h-[180px] place-items-center rounded-xl bg-transparent px-5 text-center"><div><Icon size={28} strokeWidth={1.3} className="mx-auto text-(--codeclub-text-muted)" aria-hidden="true" /><p className="mt-3 mb-0 text-[12px] text-(--codeclub-text-strong)">{projectPath ? projectName : 'Sin proyecto activo'}</p><p className="mt-1 mb-0 text-[11px] leading-5 text-(--codeclub-text-muted)">{descriptions[tab]}</p></div></div>

@@ -1,5 +1,6 @@
 'use client';
 
+/** Compact renderer for the Electron-owned widget; conversation data remains in the shared app stores. */
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
 import { House, Bell, Plus, ChevronDown, GripHorizontal, Pin, PinOff, X } from 'lucide-react';
 import { motion, useAnimationControls, useReducedMotion } from 'motion/react';

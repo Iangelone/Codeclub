@@ -1,3 +1,4 @@
+/** Privileged desktop boundary: owns windows, filesystem, processes, and IPC handlers used by the renderer preload. */
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, safeStorage, screen, shell, Tray } from 'electron';
 import { runProjectCommand } from './run-command.js';
 import { TaskScheduler, type ScheduledTask, type TaskRun } from './task-scheduler.js';
@@ -6,6 +7,7 @@ import { ActivityIntegrations } from './activity-integrations.js';
 import { AgentRelay } from './agent-relay.js';
 import { promises as fs } from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import { SettingsStore } from './settings-store.js';
 import { ChatStore } from './chat-store.js';
 import { SessionHub, type SessionChat } from './session-hub.js';
 import { spawn } from 'node:child_process';
@@ -242,8 +244,8 @@ function destroyComputerOverlay() {
 
 function createComputerOverlay(language: string, paletteIndex = computerOverlayPaletteIndex) {
   for (const display of screen.getAllDisplays()) {
-    // bounds puede coincidir con el área de trabajo en algunas configuraciones de Windows;
-    // size conserva el tamaño completo del monitor, incluida la franja de la barra de tareas.
+    // Windows may report work-area dimensions as monitor bounds; `size` retains
+    // the full display dimensions, including the taskbar area.
     const bounds = { ...display.bounds, width: display.size.width, height: display.size.height };
     const overlay = new BrowserWindow({
       x: bounds.x,
@@ -361,7 +363,7 @@ async function listProjectFiles(projectPath: string, maxFiles: number) {
           try {
             const stat = await fs.stat(entryPath);
             result.push({ path: entryRelative.replaceAll(path.sep, '/'), kind: 'file', size: stat.size, modifiedAt: stat.mtimeMs });
-          } catch { /* Un archivo puede desaparecer mientras se indexa el proyecto. */ }
+          } catch { /* A file may disappear while the project is being indexed. */ }
         }
         if (result.length >= limit) break;
       }
@@ -420,7 +422,7 @@ async function startMcpSession(request: any) {
   const child = spawn(commandPath, (request.args || []).map((value: string) => replacePluginVariables(value, root, data)), { cwd, env, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, shell: process.platform === 'win32' && /\.(cmd|bat)$/i.test(commandPath) });
   const session: NativeMcpSession = { child, nextId: 1, pending: new Map() };
   const lines = createInterface({ input: child.stdout });
-  lines.on('line', (line) => { try { const value = JSON.parse(line); const pending = value.id == null ? undefined : session.pending.get(Number(value.id)); if (!pending) return; session.pending.delete(Number(value.id)); if (value.error) pending.reject(new Error(JSON.stringify(value.error))); else pending.resolve(value.result ?? null); } catch { /* MCP puede emitir logs en stdout; se ignoran. */ } });
+  lines.on('line', (line) => { try { const value = JSON.parse(line); const pending = value.id == null ? undefined : session.pending.get(Number(value.id)); if (!pending) return; session.pending.delete(Number(value.id)); if (value.error) pending.reject(new Error(JSON.stringify(value.error))); else pending.resolve(value.result ?? null); } catch { /* MCP servers may write non-protocol logs to stdout; ignore them. */ } });
   child.on('error', (error) => { for (const pending of session.pending.values()) pending.reject(error); session.pending.clear(); });
   const initialize = await mcpRequest(session, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'Codeclub', version: app.getVersion() } });
   void initialize;
@@ -909,7 +911,7 @@ function setupAutoUpdater() {
 }
 
 app.setAppUserModelId('com.codeclub.desktop');
-// Expone el árbol de accesibilidad de Chromium a UI Automation/Computer Use.
+// Expose Chromium's accessibility tree to Windows UI Automation and Computer Use.
 app.commandLine.appendSwitch('force-renderer-accessibility');
 const accessibilityDebugMode = !app.isPackaged && app.commandLine.hasSwitch('codeclub-a11y-debug');
 app.whenReady().then(async () => {
@@ -978,6 +980,25 @@ app.whenReady().then(async () => {
   ipcMain.handle('codeclub:session-open', (event, chat: SessionChat) => { requireAppSender(event);if(!chat?.chatId||typeof chat.projectPath!=='string')return;selectedSessionChat={chatId:chat.chatId,projectPath:chat.projectPath,name:chat.name,projectName:chat.projectName};showMainWindow(); });
   const chatStore = new ChatStore(app.getPath('userData'));
   chatStore.migrateGlobalSettings();
+  const settingsStore = new SettingsStore(path.join(app.getPath('userData'), 'settings.json'), key => {
+    for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('codeclub:settings-changed', { key });
+  });
+  ipcMain.handle('codeclub:settings-get', (event, key: string) => { requireAppSender(event); return settingsStore.get(key); });
+  ipcMain.handle('codeclub:settings-set', (event, key: string, value: unknown) => { requireAppSender(event); settingsStore.set(key, value); });
+  ipcMain.handle('codeclub:settings-remove', (event, key: string) => { requireAppSender(event); settingsStore.set(key, undefined, true); });
+  ipcMain.handle('codeclub:global-chat-upsert', (event, chat: { id: string; name: string; customName?: boolean }) => { requireAppSender(event); settingsStore.upsertGlobalChat(chat); });
+  // Recover orphaned orb conversations once, preserving explicitly deleted histories.
+  if (!settingsStore.get('codeclub_orb_chat_index_repaired_v1')) {
+    const indexed = settingsStore.get('codeclub_global_chats');
+    const known = new Set((Array.isArray(indexed) ? indexed : []).map((chat: any) => chat.id));
+    for (const task of taskScheduler.list('')) if (task.autonomous && task.id.startsWith('orb_')) {
+      for (const run of task.runs) if (!known.has(run.chatId) && chatStore.hasMessages('', run.chatId)) {
+        settingsStore.upsertGlobalChat({ id: run.chatId, name: task.name, customName: true }); known.add(run.chatId);
+      }
+    }
+    settingsStore.set('codeclub_orb_chat_index_repaired_v1', true);
+  }
+
   ipcMain.handle('chats:page', (_event, project: string, id: string, before?: number, limit?: number) => chatStore.page(project, id, before, limit));
   ipcMain.handle('chats:turn-page', (_event, project: string, id: string, before?: number, limit?: number, direction?: 'before'|'after') => chatStore.turnPage(project, id, before, limit, direction));
   ipcMain.handle('chats:context', (_event, project: string, id: string) => chatStore.context(project,id));

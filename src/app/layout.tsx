@@ -1,3 +1,4 @@
+/** Root renderer shell: shared styles, palette state, metadata, and the content security policy. */
 import './globals.css';
 import OrbPaletteProvider from '../components/OrbPaletteProvider';
 

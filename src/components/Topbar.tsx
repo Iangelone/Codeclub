@@ -1,5 +1,6 @@
 'use client';
 
+/** Keeps project tabs synchronized with project-switch events and forwards window controls through Electron's API. */
 import { useEffect, useState } from 'react';
 import { Command, Folder, FolderOpen, House, Minus, PanelLeft, PanelRight, PanelTop, Plus, Square, X } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -34,7 +35,7 @@ export default function Topbar({ leftOpen, rightOpen, topbarOpen, onToggleLeft, 
     try {
       const saved = JSON.parse(window.localStorage.getItem('codeclub:active-project') || 'null') as { id?: string } | null;
       if (saved?.id) setActiveProjectId(saved.id);
-    } catch { /* Si no hay proyecto persistido, queda seleccionado Inicio. */ }
+    } catch { /* Keep Home selected when no project has been persisted. */ }
     void (async () => {
       const existing = await (window as any).codeclub?.listProjects?.();
       if (!Array.isArray(existing)) return;
@@ -42,7 +43,7 @@ export default function Topbar({ leftOpen, rightOpen, topbarOpen, onToggleLeft, 
       try {
         const saved = JSON.parse(window.localStorage.getItem('codeclub:open-projects') || 'null');
         if (Array.isArray(saved)) openProjectIds = saved.filter((id): id is string => typeof id === 'string');
-      } catch { /* Si la lista no es válida, se migra desde los proyectos registrados. */ }
+      } catch { /* Rebuild an invalid saved list from the registered projects. */ }
       const openProjects = openProjectIds
         ? existing.filter((project: { id: string }) => openProjectIds!.includes(project.id))
         : existing;
@@ -99,7 +100,7 @@ export default function Topbar({ leftOpen, rightOpen, topbarOpen, onToggleLeft, 
       return next;
     });
     let persistedProjectId: string | undefined;
-    try { persistedProjectId = (JSON.parse(window.localStorage.getItem('codeclub:active-project') || 'null') as { id?: string } | null)?.id; } catch { /* Estado persistido inválido. */ }
+    try { persistedProjectId = (JSON.parse(window.localStorage.getItem('codeclub:active-project') || 'null') as { id?: string } | null)?.id; } catch { /* Ignore invalid persisted project state. */ }
     if (activeProjectId !== project.id && persistedProjectId !== project.id) return;
     window.localStorage.removeItem('codeclub:active-project');
     setActiveProjectId('home');

@@ -100,7 +100,7 @@
   --codeclub-accent: #3d9bff;
   --codeclub-accent-bright: #8bc7ff;
 
-  /* Tokens semánticos compartidos por la interfaz Nexo y Codeclub. */
+  /* Shared semantic tokens for the Nexo widget and Codeclub interface. */
   --nexo-paper: var(--paper);
   --nexo-card: var(--card);
   --nexo-soft: var(--soft);
@@ -112,7 +112,7 @@
   --nexo-orb-blue: #2d5fd6;
   --nexo-overlay: rgba(0, 0, 0, 0.38);
 
-  /* Alias para superficies heredadas que todavía usan nombres genéricos. */
+  /* Compatibility aliases for components that still use generic surface names. */
   --color-bg: var(--nexo-paper);
   --color-surface-1: var(--nexo-paper);
   --color-surface-2: var(--nexo-soft);
@@ -155,7 +155,7 @@ body[data-theme='light'] {
   background: linear-gradient(115deg, color-mix(in srgb, var(--nexo-orb-blue) 6%, #1c2028) 0%, color-mix(in srgb, var(--nexo-orb-blue) 6%, #1b202a) 52%, color-mix(in srgb, var(--nexo-orb-blue) 12%, #1d2535) 100%);
 }
 
-/* Paleta del marco del widget, limitada a las barras y la navegación lateral. */
+/* Widget frame palette, applied only to its bars and side navigation. */
 .codeclub-widget-chrome {
   --codeclub-acrylic-active: #252525;
   --codeclub-hover: #252525;
@@ -188,7 +188,7 @@ section[aria-label='Gestor de paneles'] {
   border-left: 1px solid var(--codeclub-border-faint);
 }
 
-/* Base visual del input: las futuras piezas de Nexo consumen estos tokens. */
+/* Shared input styling for the widget's current and future controls. */
 .chat-composer {
   color: var(--nexo-ink);
 }
@@ -322,7 +322,7 @@ section[aria-label='Gestor de paneles'] {
   .right-panel-launch-card svg { transition: none; }
 }
 
-/* Superficies principales: un único lenguaje de fondos para toda la app. */
+/* Main surfaces share one background hierarchy across the app. */
 .codeclub-conversation-surface {
   background: radial-gradient(ellipse at 30% 110%, var(--codeclub-chat-glow), transparent 55%), #111315;
   border-top-left-radius: 16px;
@@ -765,8 +765,8 @@ section[aria-label='Gestor de paneles'] {
   justify-content: flex-start;
 }
 
-/* Markdown del chat: Tailwind resetea listas y elementos semánticos, así que
-   el renderer necesita una superficie tipográfica propia y consistente. */
+/* Restore readable chat typography because Tailwind resets semantic elements
+   such as lists, headings, and paragraphs. */
 .chat-markdown > :first-child {
   margin-top: 0;
 }
@@ -1202,7 +1202,7 @@ section[aria-label='Gestor de paneles'] {
   font-size: 12px;
 }
 
-/* Tabs de la sidebar derecha: compactas, suaves y tipo pill. */
+/* Compact pill tabs for the right sidebar. */
 #codeclub-right-sidebar [role="tablist"] > div {
   height: 30px;
   border: 1px solid transparent;
@@ -1299,7 +1299,7 @@ section[aria-label="Espacio de trabajo"] > [role="menu"][aria-label="Menú del c
   content: '';
 }
 
-/* Cada panel abierto debe heredar la altura completa de la sidebar. */
+/* Open panels fill the full height of the right sidebar. */
 #codeclub-right-sidebar > div > div[role="tabpanel"],
 #codeclub-right-sidebar > div > div.flex-1.flex-col,
 #codeclub-right-sidebar [role="tabpanel"] {
@@ -1313,7 +1313,7 @@ section[aria-label="Espacio de trabajo"] > [role="menu"][aria-label="Menú del c
   height: 100%;
 }
 
-/* El navegador arranca vacío: no mostrar el empty-state heredado. */
+/* The browser starts on its own landing view, so hide the legacy empty state. */
 [aria-label="Controles del navegador"] > div.absolute {
   display: none !important;
 }
@@ -1382,7 +1382,7 @@ section[aria-label="Espacio de trabajo"] > [role="menu"][aria-label="Menú del c
   display: none !important;
 }
 
-/* Archivos y Revisar deben llenar el viewport interno de la sidebar. */
+/* Files and Review fill the sidebar's inner viewport. */
 [id^="right-panel-files"] > div[class*="items-center"] > div > svg {
   display: none;
 }
@@ -1663,7 +1663,7 @@ section[aria-label="Espacio de trabajo"] > [role="menu"][aria-label="Menú del c
   color: var(--ink);
 }
 
-/* Revisar ocupa todo el contenedor cuando se oculta la lista de cambios. */
+/* Review expands to the full container when the change list is hidden. */
 #right-panel-review {
   display: flex;
   flex-direction: column;
@@ -1715,7 +1715,7 @@ section[aria-label="Espacio de trabajo"] > [role="menu"][aria-label="Menú del c
   background: #171717;
 }
 
-/* Al ocultar la lista de cambios, solo queda el area principal. */
+/* When the change list is hidden, the main review area fills the available width. */
 #right-panel-review > section > div:last-child:has(> p) {
   display: none !important;
 }
@@ -1727,7 +1727,7 @@ section[aria-label="Espacio de trabajo"] > [role="menu"][aria-label="Menú del c
   cursor: pointer;
 }
 
-/* Todo control interactivo muestra el cursor correspondiente. */
+/* Interactive controls use the appropriate pointer cursor. */
 button:not(:disabled),
 [role="button"],
 [role="tab"] {

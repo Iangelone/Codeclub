@@ -42,7 +42,7 @@ After verification, push a `vX.Y.Z` tag. The release workflow builds on windows-
 - OneDrive can lock temporary files during local builds; use an output directory outside the project when needed.
 - GitHub Actions needs contents: write, already declared in the workflow. Never store tokens in the repository.
 
-> Devices remains disabled; Android QR connectivity has no active runtime. Scheduled tasks run while Codeclub is open; see [scheduled tasks](scheduled-tasks.md).
+> Devices remains disabled; Android QR connectivity has no active runtime. Scheduled tasks run while Codeclub is open; see [scheduled tasks](schedule.md).
 
 ## Change style
 

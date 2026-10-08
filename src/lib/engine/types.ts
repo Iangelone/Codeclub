@@ -1,3 +1,4 @@
+/** Shared contracts between the model loop, tool executors, and chat/scheduler callbacks. */
 export interface ToolEvent {
   id: string;
   name: string;
@@ -7,6 +8,7 @@ export interface ToolEvent {
 }
 
 export interface ToolContext {
+  chatId?: string;
   projectPath: string;
   projectScoped?: boolean;
   recordToolEvent: (name: string, input: any, output: any) => void;
@@ -18,6 +20,7 @@ export interface ToolContext {
 }
 
 export interface EngineCallbacks {
+  onAssistantMessageStart?: (offset: number) => void;
   onTextDelta: (content: string) => void;
   onReasoningDelta?: (content: string) => void;
   onToolCall?: () => void;
@@ -26,6 +29,7 @@ export interface EngineCallbacks {
   onStructuredOutput?: (output: any) => void | Promise<void>;
   onAbort?: (info: { steps: any[] }) => void | Promise<void>;
   onEnd?: (info: { steps: any[]; totalUsage?: any }) => void | Promise<void>;
+  onStepUsage?: (tokens: number) => void;
   onStepEnd?: (info: any) => void | Promise<void>;
   onToolExecutionStart?: (info: any) => void | Promise<void>;
   onToolExecutionEnd?: (info: any) => void | Promise<void>;

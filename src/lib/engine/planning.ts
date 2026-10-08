@@ -1,3 +1,4 @@
+/** Project-local plans and TODOs; serialize read-modify-write operations to avoid losing concurrent tool updates. */
 import { getProjectFilePath } from '../persistence';
 import { fileExists, makeDirectory, readDesktopText, writeDesktopText } from '../runtime';
 

@@ -63,13 +63,13 @@ const loadSettings = async (): Promise<Record<string, unknown>> => {
     const revision = settingsRevision;
     const pending = (async () => {
       let settings: Record<string, unknown> = {};
-      try { settings = parseSettings(window.localStorage.getItem(browserSettingsKey)); } catch { /* localStorage puede estar deshabilitado. */ }
+      try { settings = parseSettings(window.localStorage.getItem(browserSettingsKey)); } catch { /* Browser settings are optional when local storage is disabled. */ }
       const path = await getAppConfigFilePath(SETTINGS_FILE);
       if (path) {
         try {
           if (await exists(path)) settings = parseSettings(await readTextFile(path));
         } catch {
-          // Si el archivo de escritorio no está disponible, se conserva la copia del navegador.
+          // Keep the browser copy when the desktop settings file is unavailable.
         }
       }
       if (revision !== settingsRevision) return loadSettings();
@@ -90,11 +90,14 @@ export const getSetting = async <T>(key: string, fallback: T): Promise<T> => {
     if(typeof legacy==='string'&&legacy){await bridge.credentialSet(key,legacy);await removeSetting(key);return 'codeclub-native-credential' as T;}
     return fallback;
   }
+  const nativeSettings = (window as any).codeclub?.settingsGet;
+  if (nativeSettings) return (await nativeSettings(key)) ?? fallback;
   const settings = await loadSettings();
   return (settings[key] as T | undefined) ?? fallback;
 };
 
 const removeSetting = async (key: string) => {
+  if ((window as any).codeclub?.settingsRemove) { await (window as any).codeclub.settingsRemove(key); invalidateSettingsCache(); return; }
   const operation = settingsWriteQueue.then(async () => {
     const settings = { ...await loadSettings() };
     let browserSettings = {} as Record<string, unknown>;
@@ -113,12 +116,13 @@ export const setSetting = async (key: string, value: unknown) => {
   if(/^[a-z0-9][a-z0-9_.-]*_api_key$/i.test(key)&&(window as any).codeclub?.credentialSet) {
     await (window as any).codeclub.credentialSet(key,String(value||''));await removeSetting(key);return;
   }
+  if ((window as any).codeclub?.settingsSet) { await (window as any).codeclub.settingsSet(key, value); invalidateSettingsCache(); return; }
   const operation = settingsWriteQueue.then(async () => {
     const settings = { ...await loadSettings() };
     settings[key] = value;
     const configPath = await appConfigDir();
     if (configPath) {
-      try { window.localStorage.setItem(browserSettingsKey, JSON.stringify(settings)); } catch { /* El archivo de escritorio conserva los ajustes si localStorage está lleno. */ }
+      try { window.localStorage.setItem(browserSettingsKey, JSON.stringify(settings)); } catch { /* The desktop settings file remains authoritative if browser storage is full. */ }
       await mkdir(configPath);
       await writeTextFile(await getAppConfigFilePath(SETTINGS_FILE), JSON.stringify(settings));
     } else {

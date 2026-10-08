@@ -17,14 +17,15 @@ const catalog = `export const providers=[{id:'qa',label:'QA',api:location.origin
 const task = { id: 'test', name: 'QA task', prompt: 'Inspect sample.txt', projectPath: 'C:\\qa-project', provider: 'qa', model: 'qa-model', interval: 'Diario', every: '30 min', time: '08:00', timeZone: 'America/Argentina/Buenos_Aires', weekday: 1, status: 'active', notifications: 'Sin notificaciones', reasoning: 'Alto', runs: [] };
 const assignment = { task, run: { id: 'qa-run', chatId: 'scheduled-qa', status: 'running', startedAt: new Date().toISOString() } };
 try {
-  await writeFile(path.join(directory, 'runner.tsx'), `import React from 'react';import {createRoot} from 'react-dom/client';import Runner from ${JSON.stringify(path.join(repo, 'src/components/ScheduledTaskRunner.tsx'))};createRoot(document.getElementById('root')).render(<Runner/>);`);
-  await writeFile(path.join(directory, 'ui.tsx'), `import React from 'react';import {createRoot} from 'react-dom/client';import {ScheduledPanel} from ${JSON.stringify(path.join(repo, 'src/components/WorkspaceLayout.tsx'))};const root=createRoot(document.getElementById('root'));window.switchQAProject=path=>root.render(<ScheduledPanel projectPath={path}/>);window.switchQAProject('');`);
+  await writeFile(path.join(directory, 'runner.tsx'), `import React from 'react';import {createRoot} from 'react-dom/client';import OrbPaletteProvider from ${JSON.stringify(path.join(repo, 'src/components/OrbPaletteProvider.tsx'))};import Runner from ${JSON.stringify(path.join(repo, 'src/components/ScheduledTaskRunner.tsx'))};createRoot(document.getElementById('root')).render(<OrbPaletteProvider><Runner/></OrbPaletteProvider>);`);
+  await writeFile(path.join(directory, 'ui.tsx'), `import React from 'react';import {createRoot} from 'react-dom/client';import OrbPaletteProvider from ${JSON.stringify(path.join(repo, 'src/components/OrbPaletteProvider.tsx'))};import OrbsPanel from ${JSON.stringify(path.join(repo, 'src/components/OrbsPanel.tsx'))};createRoot(document.getElementById('root')).render(<OrbPaletteProvider><OrbsPanel/></OrbPaletteProvider>);`);
   for (const entry of ['runner', 'ui']) await build({ entryPoints: [path.join(directory, `${entry}.tsx`)], outfile: path.join(directory, `${entry}.js`), bundle: true, format: 'esm', platform: 'browser', target: 'es2022', nodePaths: [path.join(repo, 'node_modules')], define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'silent', plugins: [{ name: 'qa-catalog', setup(build) { build.onResolve({ filter: /ai-catalog$/ }, () => ({ path: 'qa-catalog', namespace: 'qa' })); build.onLoad({ filter: /.*/, namespace: 'qa' }, () => ({ contents: catalog, loader: 'js' })); } }] });
   server = createServer(async (request, response) => {
     if (request.url.endsWith('.js')) { response.setHeader('content-type', 'text/javascript'); response.end(await readFile(path.join(directory, request.url.slice(1)))); return; }
     if (request.url === '/v1/chat/completions') {
       let body = ''; for await (const chunk of request) body += chunk;
-      const payload = JSON.parse(body); requests.push(payload);
+      const payload = JSON.parse(body); if(payload.stream) requests.push(payload);
+      if (!payload.stream) { response.setHeader('content-type','application/json'); response.end(JSON.stringify({id:'summary',object:'chat.completion',model:'qa-model',choices:[{message:{role:'assistant',content:'Resumen de tarea QA'},index:0,finish_reason:'stop'}],usage:{prompt_tokens:5,completion_tokens:5,total_tokens:10}})); return; }
       if (scenario === 'http-error') { response.statusCode = 401; response.setHeader('content-type', 'application/json'); response.end(JSON.stringify({ error: { message: 'QA provider rejected request' } })); return; }
       if (scenario === 'cancel') { await new Promise(resolve => setTimeout(resolve, 500)); }
       response.setHeader('content-type', 'text/event-stream');
@@ -66,7 +67,7 @@ try {
   };
   for (scenario of ['read', 'missing-key', 'deny', 'approve', 'browser', 'cancel', 'http-error']) {
     requests.length = 0; messages.length = 0; writes.length = 0;
-    runner = await browser.newPage(); runner.on('pageerror', error => errors.push(error.message));
+    runner = await browser.newPage(); runner.on('pageerror', error => { errors.push(error.message); console.error('Runner UI:',error.message); }); runner.on('console',message=>{if(message.type()==='error')console.error('Runner:',message.text().slice(0,1200));});
     const finished = new Promise(resolve => { finish = resolve; });
     await runner.exposeFunction('qaBridge', async (method, args) => {
       if (method === 'taskAssignment') return assignment;
@@ -97,7 +98,7 @@ try {
     });
     await runner.addInitScript(bootstrap); await runner.goto(origin);
     let deadline;
-    const outcome = await Promise.race([finished, new Promise((_, reject) => { deadline = setTimeout(() => reject(new Error(`Runner timed out: ${scenario}`)), 15000); })]).finally(() => clearTimeout(deadline));
+    const outcome = await Promise.race([finished, new Promise((_, reject) => { deadline = setTimeout(() => reject(new Error(`Runner timed out: ${scenario}; requests=${requests.length}; messages=${messages.length}; errors=${errors.join("|")}`)), 15000); })]).finally(() => clearTimeout(deadline));
     if (['read', 'approve', 'browser'].includes(scenario)) {
       assert.equal(outcome, undefined);
       assert.equal(requests.length, scenario === 'browser' ? 3 : 2);
@@ -112,42 +113,33 @@ try {
   }
   const ui = await browser.newPage(); ui.on('pageerror', error => errors.push(error.message));
   const scheduler = new TaskScheduler(path.join(directory, 'ui-tasks.json'), async () => {}, () => { void ui.evaluate(() => window.qaTasksChanged?.()); });
-  files.set('/qa/projects/global/scheduled-tasks.json', JSON.stringify([{ ...task, id: 'legacy', name: 'Legacy task', projectPath: '', apiKey: 'legacy-fixture-secret' }]));
+  files.set('/qa/settings.json', JSON.stringify({codeclub_orbs:[{id:'qa-orb',name:'QA orb',purpose:'Inspect sample.txt',color:'#228FAD',providerId:'qa',modelId:'qa-model'}]}));
   await ui.exposeFunction('qaBridge', async (method, args) => {
     if (method === 'tasksList') { scopes.push(args[0]); return scheduler.list(args[0]); }
     if (method === 'tasksSave') return scheduler.save(...args);
-    if (method === 'tasksDelete') return scheduler.remove(...args);
     if (method === 'tasksRun') return scheduler.run(...args);
-    if (method === 'sessionOpen') return true;
+    if (method === 'tasksCancel') return true;
     return common(method, args);
   });
   await ui.addInitScript(bootstrap); await ui.goto(`${origin}/ui`);
-  await ui.getByText('Legacy task', { exact: true }).waitFor();
-  assert.ok(vaultWrites.some(args => args[0] === 'qa_api_key' && args[1] === 'legacy-fixture-secret'));
-  assert.equal(files.get('/qa/projects/global/scheduled-tasks.json').includes('legacy-fixture-secret'), false);
-  assert.equal((await readFile(path.join(directory, 'ui-tasks.json'), 'utf8')).includes('legacy-fixture-secret'), false);
-  scheduler.remove('', 'legacy');
-  await ui.getByText('No hay tareas programadas.', { exact: true }).waitFor();
-  await ui.getByLabel('Crear tarea personalizada').click();
-  await ui.getByLabel('Nombre de la tarea').fill('UI task');
-  await ui.getByLabel('Instrucción de la tarea').fill('Inspect the current project');
-  await ui.getByLabel('Guardar tarea', { exact: true }).click();
-  await ui.getByText('UI task', { exact: true }).waitFor();
-  assert.equal(scheduler.list('')[0].provider, 'qa'); assert.equal(scheduler.list('')[0].model, 'qa-model');
-  await ui.getByText('UI task', { exact: true }).click();
-  await ui.getByLabel('Ejecutar ahora').click();
-  await ui.getByText('Completada ·', { exact: false }).waitFor();
-  await ui.getByLabel('Pausar').click();
-  await ui.getByText('UI task', { exact: true }).waitFor(); assert.equal(scheduler.list('')[0].status, 'paused');
-  await ui.evaluate(() => { localStorage.setItem('codeclub-language', 'en'); window.dispatchEvent(new CustomEvent('codeclub:language-change', { detail: { language: 'en' } })); });
-  await ui.getByRole('heading', { name: 'Tasks', exact: true }).waitFor();
-  await ui.evaluate(() => window.switchQAProject('C:\\other'));
-  await ui.getByText('No scheduled tasks.', { exact: true }).waitFor(); assert.equal(scheduler.list('C:\\other').length, 0);
-  await ui.evaluate(() => window.switchQAProject(''));
-  await ui.getByText('UI task', { exact: true }).click();
-  await ui.getByLabel('Delete', { exact: true }).click();
-  await ui.getByText('No scheduled tasks.', { exact: true }).waitFor(); assert.equal(scheduler.list('').length, 0);
+  await ui.getByRole('button',{name:'Editar orbe: QA orb'}).click();
+  const dialog=ui.getByRole('dialog');
+  await dialog.getByRole('button',{name:'Continuar',exact:true}).click();
+  await dialog.getByLabel('Nombre',{exact:true}).waitFor();
+  assert.equal(await dialog.count(),1,'Continue must keep the edit dialog open');
+  await dialog.getByLabel('Nombre',{exact:true}).fill('QA orb edited');
+  await dialog.getByRole('button',{name:'Guardar orbe',exact:true}).click();
+  await ui.getByRole('button',{name:'Editar orbe: QA orb edited'}).waitFor();
+  assert.equal(JSON.parse(files.get('/qa/settings.json')).codeclub_orbs[0].name,'QA orb edited');
+  await ui.getByRole('button',{name:'Iniciar orbe',exact:true}).click();
+  await ui.waitForFunction(()=>document.querySelector('button[aria-label="Iniciar orbe"]')?.disabled);
+  assert.equal(scheduler.list('')[0].autonomous,true);
+  await ui.getByRole('button',{name:'Detener orbe',exact:true}).click();
+  await ui.waitForFunction(()=>!document.querySelector('button[aria-label="Iniciar orbe"]')?.disabled);
+  assert.equal(scheduler.list('')[0].status,'paused');
+  await ui.evaluate(()=>{localStorage.setItem('codeclub-language','en');window.dispatchEvent(new CustomEvent('codeclub:language-change',{detail:{language:'en'}}));});
+  await ui.getByRole('heading',{name:'Orbs',exact:true}).waitFor();
   scheduler.stop();
-  assert.deepEqual(errors, []); assert.ok(scopes.includes('C:\\other'));
-  console.log('Tasks: real SDK + mock provider, model/reasoning/credential routing, tools, approvals, cancellation, errors, result persistence, UI create/run/pause/delete, language and project switching passed.');
+  assert.deepEqual(errors, []); assert.ok(scopes.every(scope=>scope===''));
+  console.log('Tasks: real SDK + mock provider, model/reasoning/credential routing, tools, approvals, cancellation, errors, result persistence, orb edit steps/save/play/stop, language and global scope passed.');
 } finally { await browser?.close(); if (server) await new Promise(resolve => server.close(resolve)); await rm(directory, { recursive: true, force: true }); }

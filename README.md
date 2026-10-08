@@ -4,7 +4,7 @@
 
 Codeclub is a **local-first AI coding assistant for Windows** and a desktop **AI coding agent** workspace. Connect a compatible model provider, open a project, and ask the agent to understand your code, edit files, run commands, inspect a web page, or interact with open desktop apps.
 
-En español: una app de escritorio para **programar con IA en Windows**, con acceso a los archivos del proyecto, PowerShell, el navegador y aplicaciones abiertas.
+Codeclub supports both English and Spanish, with access to project files, PowerShell, the browser, and open Windows applications.
 
 <p align="center">
   <img src="docs/assets/installed-startup.png" alt="Codeclub Windows AI coding workspace home screen" width="1000">
@@ -72,14 +72,14 @@ To create the Windows installer:
 npm run package:win
 ```
 
-The installer is generated in `release/`. See [development and releases](docs/desarrollo.md) for the full workflow.
+The installer is generated in `release/`. See [development and releases](docs/development.md) for the full workflow.
 
 To connect an existing Chromium browser, open **Extensions → Codeclub Browser
 Control → Install**. Codeclub opens the browser's extension manager and the bundled
 extension folder; enable Developer mode, choose **Load unpacked**, and confirm the
 browser's permission prompt. Use **Uninstall** there to confirm removal. Edge,
 Chrome, Brave, Opera, and Vivaldi are supported. See
-[Computer Use on Windows](docs/computer-use.md) for the steps and permissions.
+[Computer Use on Windows](docs/computer.md) for the steps and permissions.
 
 ## How it works
 
@@ -89,16 +89,16 @@ The agent uses a multi-step tool loop, with LangGraph for orchestration, LangCha
 
 ## Project status
 
-Codeclub is in **early beta** and currently targets Windows. Scheduled tasks run while the app remains open. Computer Use depends on what each Windows application exposes through accessibility and OCR. The project documents active integrations, limitations, and verification in the [agent stack overview](docs/agent-stack.md).
+Codeclub is in **early beta** and currently targets Windows. Scheduled tasks run while the app remains open. Computer Use depends on what each Windows application exposes through accessibility and OCR. The project documents active integrations, limitations, and verification in the [agent stack overview](docs/agent.md).
 
 ## Documentation
 
-- [Architecture](docs/arquitectura.md)
-- [Agent stack, integrations, and limits](docs/agent-stack.md)
-- [Computer Use on Windows](docs/computer-use.md)
-- [Scheduled AI tasks](docs/scheduled-tasks.md)
-- [Terminal and browser](docs/terminal-y-navegador.md)
-- [Development and releases](docs/desarrollo.md)
+- [Architecture](docs/architecture.md)
+- [Agent stack, integrations, and limits](docs/agent.md)
+- [Computer Use on Windows](docs/computer.md)
+- [Scheduled AI tasks](docs/schedule.md)
+- [Terminal and browser](docs/workspace.md)
+- [Development and releases](docs/development.md)
 - [All documentation](docs/README.md)
 
 ## License and support

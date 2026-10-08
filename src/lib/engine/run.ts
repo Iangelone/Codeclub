@@ -1,3 +1,4 @@
+/** Shared model loop for chats, scheduled runs, and helper calls: LangGraph controls continuation while AI SDK streams each step. */
 import { asSchema, pruneMessages, smoothStream, stepCountIs, ToolLoopAgent, type ModelMessage } from 'ai';
 import { Annotation, END, START, StateGraph } from '@langchain/langgraph';
 import { tool as langchainTool } from 'langchain';
@@ -16,9 +17,10 @@ type RunStreamArgs = {
   signal?: AbortSignal;
   providerOptions?: Record<string, any>;
   maxSteps?: number;
+  maxTotalTokens?: number;
 };
 
-async function runStreamInternal({ model, system, messages, tools, structuredOutput, maxOutputTokens, contextWindow, callbacks, signal, providerOptions, maxSteps }: RunStreamArgs): Promise<string> {
+async function runStreamInternal({ model, system, messages, tools, structuredOutput, maxOutputTokens, contextWindow, callbacks, signal, providerOptions, maxSteps, maxTotalTokens }: RunStreamArgs): Promise<string> {
   let content = '';
   let reasoning = '';
   let streamError: unknown;
@@ -84,12 +86,13 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
         },
       });
 
-      // fullStream conserva texto, razonamiento y eventos de tools en un único flujo.
+      // `fullStream` carries text, reasoning, and tool events through one stream.
       for await (const chunk of result.fullStream as AsyncIterable<any>) {
         if (chunk.type === 'text-delta') {
           const delta = chunk.text ?? '';
           if (delta && !stepHasText) {
             if (content && !structuredOutput) content += '\n\n';
+            callbacks.onAssistantMessageStart?.(content.length);
             stepHasText = true;
           }
           content += delta;
@@ -141,10 +144,12 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
 
       const [usage, response, responseMessages, stepResults] = await Promise.all([result.usage, result.response, result.responseMessages, result.steps]);
       steps.push(...stepResults.map((step) => ({ ...step, stepNumber: state.stepCount, toolCalls: step.toolCalls, toolResults: step.toolResults })));
+      callbacks.onStepUsage?.(usage.totalTokens ?? (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0));
       totalUsage.inputTokens += usage.inputTokens ?? 0;
       totalUsage.outputTokens += usage.outputTokens ?? 0;
       totalUsage.totalTokens += usage.totalTokens ?? 0;
       totalUsage.reasoningTokens += usage.outputTokenDetails?.reasoningTokens ?? 0;
+      if (maxTotalTokens && totalUsage.totalTokens >= maxTotalTokens) throw new Error('TASK_BUDGET_EXCEEDED');
       responseModel = response.modelId;
       const last = stepResults.at(-1);
       // Only continue when every requested tool actually produced a result.

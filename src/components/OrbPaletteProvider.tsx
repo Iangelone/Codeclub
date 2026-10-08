@@ -65,9 +65,9 @@ export default function OrbPaletteProvider({ children }: { children: ReactNode }
   useEffect(() => {
     applyIndex(readStoredIndex());
 
-    // Emisor: OrbPaletteButton persiste el índice y despacha el evento local.
-    // Payload: { index: number }. Consumidores: este provider, en cada ventana renderer.
-    // También recibe cambios de otras pestañas por storage y de otras ventanas por IPC.
+    // OrbPaletteButton persists the selected index and dispatches this local event.
+    // Payload: { index: number }. Each renderer window listens through this provider;
+    // storage and IPC also synchronize changes from other tabs and windows.
     const onPaletteChange = (event: Event) => applyIndex((event as CustomEvent<{ index?: number }>).detail?.index);
     const onStorage = (event: StorageEvent) => {
       if (event.key === ORB_PALETTE_STORAGE_KEY) applyIndex(event.newValue);
@@ -89,7 +89,7 @@ export default function OrbPaletteProvider({ children }: { children: ReactNode }
     const nextIndex = (indexRef.current + 1) % ORB_PALETTES.length;
     indexRef.current = nextIndex;
     setIndex(nextIndex);
-    try { window.localStorage.setItem(ORB_PALETTE_STORAGE_KEY, String(nextIndex)); } catch { /* La sincronización nativa sigue disponible si falla el almacenamiento local. */ }
+    try { window.localStorage.setItem(ORB_PALETTE_STORAGE_KEY, String(nextIndex)); } catch { /* Native synchronization remains available when local storage fails. */ }
     window.dispatchEvent(new CustomEvent(ORB_PALETTE_EVENT, { detail: { index: nextIndex } }));
     (window as any).codeclub?.broadcastOrbPalette?.(nextIndex);
   }, []);

@@ -39,9 +39,9 @@ try {
     await page.goto(origin + '/' + query);
     await page.locator(`[data-qa-child="${query ? 'FloatingChat' : 'WorkspaceLayout'}"]`).waitFor({ state: 'attached' });
     await page.evaluate(() => window.qaFullscreen(true));
-    if (!query) await page.locator('main[data-fullscreen="true"]').waitFor({ state: 'attached' });
+    if (!query) await page.locator('[data-fullscreen="true"]').waitFor({ state: 'attached' });
     await page.evaluate(() => window.qaFullscreen(false));
-    if (!query) await page.locator('main[data-fullscreen="false"]').waitFor({ state: 'attached' });
+    if (!query) await page.locator('[data-fullscreen="false"]').waitFor({ state: 'attached' });
   }
   assert.deepEqual(errors, [], 'Initial loading and fullscreen updates preserve hook order');
   console.log(JSON.stringify({ passed: true, normalStartup: true, floatingStartup: true, fullscreenUpdates: true }));

@@ -1,3 +1,4 @@
+/** Minimal in-memory renderer pub/sub; durable or cross-window state belongs in persistence or Electron. */
 type Listener<T> = (val: T) => void;
 
 function createStore<T>(initialValue: T) {

@@ -1,3 +1,4 @@
+/** Tool catalog shared by chat and scheduled runs; native effects cross the Electron bridge. */
 import { nativeInvoke as invoke } from '../runtime';
 import { asSchema, jsonSchema as aiJsonSchema, tool } from 'ai';
 import type { ToolContext } from './types';
@@ -259,12 +260,12 @@ export function selectToolsForPrompt(toolset: Record<string, any>, _mode: 'devel
 
   const add = (...names: string[]) => names.forEach((name) => keys.add(name));
   const has = (...terms: string[]) => terms.some((term) => text.includes(term));
-  // Navegadores instalados y apps de escritorio usan Windows UI Automation/OCR;
-  // el browserAction separado solo controla el WebView integrado de Codeclub.
+  // Installed browsers and desktop apps use Windows UI Automation/OCR; the
+  // separate browserAction tool controls only Codeclub's embedded WebView.
   if (has('controlar la pc', 'control de pc', 'computadora', 'mouse', 'teclado', 'windows', 'notepad', 'bloc de notas', 'chatgpt', 'app de escritorio', 'aplicación de escritorio', 'aplicacion de escritorio', 'ocr', 'pantalla', 'accesibilidad', 'edge', 'microsoft edge', 'chrome', 'google chrome', 'chromium', 'firefox', 'safari', 'navegador externo', 'navegador abierto', 'pestaña abierta', 'pestañas abiertas')) add('computerListWindows', 'computerGetState', 'computerOcr', 'computerAction');
   if (has('captura de pantalla', 'screenshot')) add('computerScreenshot');
 
-  // Failsafe de escritura: el router IA sigue siendo la decisión principal.
+  // This write guard is a safety net; the AI router remains the primary decision-maker.
   if (has('editar', 'modific', 'crear', 'crea', 'creá', 'armar', 'armá', 'hacer', 'hacé', 'agregar', 'agrega', 'agregá', 'meter', 'mete', 'meté', 'carpeta', 'archivo', 'txt', 'escrib', 'implement', 'fix', 'correg', 'refactor', 'cambio')) add('writeFile');
   if (has('habilidad', 'skill', 'agent plugin')) add('createSkill');
   if (has('complemento', 'extension', 'plugin')) add('createExtension', 'deleteExtension');
@@ -453,8 +454,10 @@ export async function verifyToolExecutionWithAI({ model, prompt, goal, verificat
   return result || { completed: false, retry: true, reason: 'La IA verificadora no devolvió resultado.' };
 }
 
+/** Builds tools for the current scope; plugin file mutations validate scope through `requirePluginScope`. */
 export function createTools(ctx: ToolContext) {
   const { projectPath, projectScoped: activeProject = false, recordToolEvent, setAgentState, requestToolApproval, provider, modelId } = ctx;
+  const chatScope = { chatId: ctx.chatId, projectPath: activeProject ? projectPath : '' };
   type PluginScope = 'global' | 'project';
   const resolvePluginScope = (requested?: string): PluginScope => {
     if (requested === 'global') return 'global';
@@ -740,7 +743,7 @@ export function createTools(ctx: ToolContext) {
       }),
       execute: async ({ name, skillName: requestedSkillNameInput, description, instructions, version, author, license, homepage, scope: requestedScope }) => {
         setAgentState('running');
-        // El alcance se valida con requirePluginScope; un plugin global no necesita proyecto.
+        // `requirePluginScope` validates access; global plugins do not need a project.
         const scopeResult = requirePluginScope(requestedScope);
         if ('error' in scopeResult) return { ok: false, error: scopeResult.error };
         const scope = scopeResult.scope;
@@ -941,7 +944,7 @@ export function createTools(ctx: ToolContext) {
           if (!id) return { ok: false, error: 'Indicá el id de la terminal.' };
           if (action === 'snapshot') {
             const snapshot = await invoke<any>('codeclub_terminal_snapshot', { id });
-            window.dispatchEvent(new CustomEvent('codeclub:open-terminal-panel', { detail: { terminalId: id, projectPath } }));
+            window.dispatchEvent(new CustomEvent('codeclub:open-terminal-panel', { detail: { terminalId: id, ...chatScope } }));
             const output = { ok: true, id, info: snapshot.info, output: snapshot.output || '' };
             recordToolEvent('terminal', { action, id }, output);
             return output;
@@ -955,7 +958,7 @@ export function createTools(ctx: ToolContext) {
             return output;
           }
           const output = await invoke<any>(`codeclub_terminal_${action}`, { id });
-          if (action === 'delete') window.dispatchEvent(new CustomEvent('codeclub:terminal-closed', { detail: { terminalId: id, projectPath } }));
+          if (action === 'delete') window.dispatchEvent(new CustomEvent('codeclub:terminal-closed', { detail: { terminalId: id, ...chatScope } }));
           const result = { ok: true, id, info: output };
           recordToolEvent('terminal', { action, id }, result);
           return result;
@@ -982,7 +985,7 @@ export function createTools(ctx: ToolContext) {
           background: true,
           commandSent: Boolean(command),
         };
-        window.dispatchEvent(new CustomEvent('codeclub:open-terminal-panel', { detail: { terminalId: terminal.id, projectPath } }));
+        window.dispatchEvent(new CustomEvent('codeclub:open-terminal-panel', { detail: { terminalId: terminal.id, ...chatScope } }));
         recordToolEvent('terminal', { shell, command, name }, output);
         return output;
       },
@@ -1003,8 +1006,8 @@ export function createTools(ctx: ToolContext) {
           return output;
         }
         if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('codeclub:open-right-panel'));
-          window.setTimeout(() => window.dispatchEvent(new CustomEvent('codeclub:browser-navigate', { detail: { url: normalized } })), 0);
+          window.dispatchEvent(new CustomEvent('codeclub:open-right-panel', { detail: chatScope }));
+          window.setTimeout(() => window.dispatchEvent(new CustomEvent('codeclub:browser-navigate', { detail: { ...chatScope, url: normalized } })), 0);
         }
         const output = { ok: true, url: normalized, openedIn: 'Navegador' };
         recordToolEvent('openBrowser', { url: normalized }, output);
@@ -1016,13 +1019,14 @@ export function createTools(ctx: ToolContext) {
       inputSchema: jsonSchema({ type: 'object', properties: {}, additionalProperties: false }),
       execute: async () => {
         if (typeof window === 'undefined') return { ok: false, error: 'El navegador solo está disponible en la aplicación.' };
+        const requestId = crypto.randomUUID();
         const output = await new Promise<any>((resolve) => {
           let timer: number | undefined;
           const cleanup = () => { if (timer) window.clearTimeout(timer); window.removeEventListener('codeclub:browser-state', handleState); };
-          const handleState = (event: Event) => { cleanup(); const state = (event as CustomEvent).detail; resolve({ ok: state?.ok !== false, state }); };
-          window.addEventListener('codeclub:browser-state', handleState, { once: true });
+          const handleState = (event: Event) => { if ((event as CustomEvent).detail?.chatId !== ctx.chatId || (event as CustomEvent).detail?.requestId !== requestId) return; cleanup(); const state = (event as CustomEvent).detail; resolve({ ok: state?.ok !== false, state }); };
+          window.addEventListener('codeclub:browser-state', handleState);
           timer = window.setTimeout(() => { cleanup(); resolve({ ok: false, error: 'No se recibió el estado del navegador.' }); }, 5000);
-          window.dispatchEvent(new CustomEvent('codeclub:browser-state-request'));
+          window.dispatchEvent(new CustomEvent('codeclub:browser-state-request', { detail: { ...chatScope, requestId } }));
         });
         recordToolEvent('getBrowserState', {}, output);
         return output;
@@ -1044,13 +1048,14 @@ export function createTools(ctx: ToolContext) {
       }),
       execute: async (action) => {
         if (typeof window === 'undefined') return { ok: false, error: 'El navegador solo está disponible en la aplicación.' };
+        const requestId = crypto.randomUUID();
         const output = await new Promise<any>((resolve) => {
           let timer: number | undefined;
           const cleanup = () => { if (timer) window.clearTimeout(timer); window.removeEventListener('codeclub:browser-action-result', handleResult); };
-          const handleResult = (event: Event) => { cleanup(); resolve((event as CustomEvent).detail || { ok: false, error: 'Resultado vacíoo.' }); };
-          window.addEventListener('codeclub:browser-action-result', handleResult, { once: true });
+          const handleResult = (event: Event) => { if ((event as CustomEvent).detail?.chatId !== ctx.chatId || (event as CustomEvent).detail?.requestId !== requestId) return; cleanup(); resolve((event as CustomEvent).detail || { ok: false, error: 'Resultado vacíoo.' }); };
+          window.addEventListener('codeclub:browser-action-result', handleResult);
           timer = window.setTimeout(() => { cleanup(); resolve({ ok: false, error: 'No se recibió confirmación de la acción.' }); }, 5000);
-          window.dispatchEvent(new CustomEvent('codeclub:browser-action', { detail: action }));
+          window.dispatchEvent(new CustomEvent('codeclub:browser-action', { detail: { ...action, ...chatScope, requestId } }));
         });
         recordToolEvent('browserAction', action, output);
         return output;
@@ -1231,6 +1236,7 @@ export function createTools(ctx: ToolContext) {
   });
 }
 
+/** Parent agents coordinate children and artifacts; child tools are assignable, not directly executable by the parent. */
 export function createParentTools(ctx: ToolContext & { availableTools: Record<string, any>; artifactTools: Record<string, any>; projectScoped?: boolean }) {
   const { projectPath, projectScoped, recordToolEvent, setAgentState, requestToolApproval, provider, modelId, availableTools, artifactTools } = ctx;
   return wrapToolSet({
