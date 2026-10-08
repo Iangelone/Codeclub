@@ -10,6 +10,7 @@ export type FluidOrbProps = React.ComponentProps<'div'> & {
   shape?: 'circle' | 'rect';
   animateOnHover?: boolean;
   active?: boolean;
+  themeTint?: boolean;
 };
 
 // Adaptado de Rare UI Fluid Orb: https://www.rareui.com/components/fluidorb
@@ -129,6 +130,7 @@ export default function FluidOrb({
   shape = 'circle',
   animateOnHover = false,
   active = true,
+  themeTint = true,
   className,
   style,
   ...props
@@ -232,7 +234,7 @@ export default function FluidOrb({
     <motion.div
       className="h-full w-full"
       style={{ background: fallback ? `radial-gradient(circle at 32% 24%, #ffffff 0 24%, #a8c7ff 54%, ${color} 82%)` : 'transparent' }}
-      animate={{ filter: `hue-rotate(${palette.hue}deg)` }}
+      animate={{ filter: `hue-rotate(${themeTint ? palette.hue : 0}deg)` }}
       transition={reducedMotion ? { duration: 0 } : { duration: 0.48, ease: [0.22, 1, 0.36, 1] }}
     >
       <canvas ref={canvasRef} className="block h-full w-full" aria-hidden="true" />

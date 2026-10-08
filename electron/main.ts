@@ -942,7 +942,8 @@ app.whenReady().then(async () => {
     if (!run) return false;
     const command = sessionHub.command({ chatId: run.chatId, projectPath }, 'cancel');
     const worker = command && taskWorkers.get(command.owner);
-    if (worker) { worker.controller.abort(); worker.window.webContents.send('codeclub:session-command', command); }
+    if (worker?.task.autonomous) worker.complete('TASK_CANCELLED');
+    else if (worker) { worker.controller.abort(); worker.window.webContents.send('codeclub:session-command', command); }
     else for (const worker of taskWorkers.values()) if (worker.run.id === run.id) worker.complete('TASK_CANCELLED');
     return true;
   });

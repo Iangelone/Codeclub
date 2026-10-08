@@ -8,6 +8,7 @@ export type ScheduledTask = {
   interval: string; every: string; time: string; timeZone: string; weekday: number;
   status: 'active' | 'paused'; notifications: string; reasoning: string;
   language?: 'es' | 'en';
+  autonomous?: boolean;
   nextRun?: string; lastRun?: string; runs: TaskRun[];
   runAt?: string;
 };
@@ -74,6 +75,7 @@ export class TaskScheduler {
       interval: input.interval || 'Días hábiles', every: input.every || '30 min', time: input.time || '08:00', timeZone: input.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone, weekday: Number(input.weekday ?? 1),
       status: input.status === 'paused' ? 'paused' : 'active', notifications: ['Todas las ejecuciones', 'Solo errores', 'Sin notificaciones'].includes(input.notifications || '') ? input.notifications! : 'Todas las ejecuciones', reasoning: input.reasoning || 'Medio',
       language: input.language === 'en' ? 'en' : 'es',
+      autonomous: input.autonomous === true && input.id.startsWith('orb_'),
       runAt: input.runAt,
       runs: old?.runs || [], lastRun: old?.lastRun,
     };

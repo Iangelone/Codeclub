@@ -2,14 +2,14 @@
 
 import { createElement, memo, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, Check, ChevronDown, Circle, CircleCheck, CirclePlus, Clock, CopyX, EllipsisVertical, ExternalLink, FileWarning, FolderOpen, FolderPen, FolderTree, Grid2X2, Heart, Home, Hourglass, Info, MessageSquare, MoreHorizontal, MousePointerClick, PanelLeft, Pause, Pencil, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
+import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, Check, ChevronDown, Circle, CircleCheck, CirclePlus, Clock, CopyX, EllipsisVertical, ExternalLink, FileWarning, FolderOpen, FolderPen, FolderTree, Grid2X2, Heart, Home, Hourglass, Info, MessageSquare, MoreHorizontal, MousePointerClick, PanelLeft, Pencil, Play, Plus, Radius, RotateCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { GlobeCheck } from 'lucide-react';
 import { Terminal as XtermTerminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import ChatPanel from './ChatPanel';
-import ScheduledSelect from './ui/ScheduledSelect';
+import OrbsPanel from './OrbsPanel';
 import BrowserStyleEditor, { type BrowserElementSelection, type BrowserElementChanges } from './BrowserStyleEditor';
 import { createBrowserPickerScript, type BrowserMarkerOrder } from '../lib/browser-dom-picker';
 import { ProjectPanelView } from './ChatInterface';
@@ -17,11 +17,8 @@ import { useOrbPalette } from './OrbPaletteProvider';
 import OrbPaletteButton from './ui/OrbPaletteButton';
 import { readGlobalChats, readProjectMeta, writeGlobalChats, writeProjectMeta } from '../lib/projectManager';
 import { nativeInvoke, onTerminalOutput } from '../lib/runtime';
-import { getProjectSetting, getSetting, setProjectSetting, setSetting } from '../lib/persistence';
-import { models, providers } from '../lib/ai-catalog';
-import { credentialKeyFor, modelMatchesProvider, usesGateway } from '../lib/ai-routing';
-import { migrateScheduledTasks, type TaskRun } from '../lib/scheduled-tasks';
-import { activityTranslations, agentTextSelectionTranslations, browserStyleTranslations, rightSidebarTranslations, scheduledRuntimeTranslations, sidebarTranslations, useAppLanguage, type AppLanguage } from '../lib/i18n';
+import { getSetting, setSetting } from '../lib/persistence';
+import { activityTranslations, agentTextSelectionTranslations, browserStyleTranslations, rightSidebarTranslations, sidebarTranslations, useAppLanguage, type AppLanguage } from '../lib/i18n';
 import { sameSession, useSharedSessions, type SharedSession } from '../lib/shared-sessions';
 
 const MIN_WIDTH = 220;
@@ -33,25 +30,11 @@ const DEFAULT_RIGHT = 300;
 
 type Side = 'left' | 'right';
 type RecentChat = { id: string; title: string; customName?: boolean; projectPath?: string; projectName?: string };
-type SidebarSection = 'new-chat' | 'projects' | 'scheduled' | 'extensions';
+type SidebarSection = 'new-chat' | 'projects' | 'orbs' | 'extensions';
 type ChatContextMenu = { chat: RecentChat; x: number; y: number };
 type RightPanelTab = 'files' | 'browser' | 'terminals';
 type RightPanelInstance = { instanceId: string; tab: RightPanelTab; label: string; iconUrl?: string; terminalId?: string };
 type RightPanelContextMenu = { panel: RightPanelInstance; x: number; y: number };
-type ScheduledTask = { id: string; name: string; prompt: string; schedule: string; repeat: string; interval: string; every: string; time: string; status: 'active' | 'paused'; executionTarget: string; provider: string; model: string; apiKey: string; project: string; reasoning: string; notifications: string; lastRun?: string; nextRun?: string; timeZone?: string; weekday?: number; runs?: TaskRun[]; runAt?: string };
-
-const defaultScheduledProvider = providers[0]?.label || 'Proveedor actual';
-const defaultScheduledModel = models.find((model: any) => model.providerId === providers[0]?.id)?.label || models[0]?.label || 'Modelo actual';
-const findProvider = (value: string) => providers.find((provider: any) => provider.id === value || provider.label === value);
-const findModel = (value: string, providerId?: string) => models.find((model: any) => (model.id === value || model.gatewayId === value || model.label === value) && (!providerId || providerId === 'custom' || modelMatchesProvider(model, { id: providerId })));
-const normalizeTaskModel = (value: string, providerValue: string) => findModel(value, findProvider(providerValue)?.id)?.label || value;
-const scheduledTimeOptions = Array.from({ length: 48 }, (_, index) => { const hour = Math.floor(index / 2); const minute = index % 2 ? '30' : '00'; const suffix = hour < 12 ? 'a. m.' : 'p. m.'; const displayHour = hour % 12 || 12; return { value: `${String(hour).padStart(2, '0')}:${minute}`, label: `${displayHour}:${minute} ${suffix}` }; });
-
-function ScheduledTimeSelect({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  const selected = scheduledTimeOptions.find((option) => option.value === value) || scheduledTimeOptions[16];
-  return <ScheduledSelect value={selected.label} options={scheduledTimeOptions.map((option) => option.label)} label="Hora" onChange={(label) => { const option = scheduledTimeOptions.find((item) => item.label === label); if (option) onChange(option.value); }} />;
-}
-
 function GithubMark({ size = 16 }: { size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.05c-3.34.73-4.04-1.42-4.04-1.42-.55-1.39-1.33-1.76-1.33-1.76-1.09-.75.08-.74.08-.74 1.2.08 1.83 1.23 1.83 1.23 1.07 1.83 2.8 1.3 3.49.99.11-.77.42-1.3.76-1.6-2.67-.3-5.47-1.34-5.47-5.95 0-1.31.47-2.38 1.23-3.22-.12-.3-.53-1.53.12-3.18 0 0 1-.32 3.3 1.23a11.47 11.47 0 0 1 6 0c2.29-1.55 3.29-1.23 3.29-1.23.66 1.65.25 2.88.13 3.18.77.84 1.23 1.91 1.23 3.22 0 4.62-2.8 5.64-5.48 5.94.43.37.81 1.1.81 2.22v3.29c0 .32.22.69.83.57A12 12 0 0 0 12 .5Z"/></svg>;
 }
@@ -761,7 +744,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
           {projectNameError && <p role="alert" className="mx-1.5 mt-1 mb-0 text-[11px] leading-4 text-red-300">{projectNameError}</p>}
           <nav className="mt-4 space-y-0.5" aria-label={sidebarText.mainNavigation}>
             <SidebarItem active={activeSection === 'new-chat' && !activeChatId} icon={<CirclePlus />} label={sidebarText.newChat} onClick={() => selectSidebarSection('new-chat')} />
-            <SidebarItem active={activeSection === 'scheduled'} icon={<Clock />} label={sidebarText.tasks} onClick={() => selectSidebarSection('scheduled')} />
+            <SidebarItem active={activeSection === 'orbs'} icon={<Radius />} label={sidebarText.orbs} onClick={() => selectSidebarSection('orbs')} />
             <SidebarItem active={activeSection === 'extensions'} icon={<Grid2X2 />} label={sidebarText.extensions} onClick={() => selectSidebarSection('extensions')} />
             <SidebarItem active={false} icon={<MoreHorizontal />} label={sidebarText.devices} disabled onClick={() => {}} />
           </nav>
@@ -776,7 +759,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
       {leftOpen && <ResizeHandle side="left" value={leftWidth} maxValue={MAX_WIDTH} onStart={startResize('left')} onKeyboardResize={setLeftWidth} language={language} />}
 
       <div data-main-panel={activeSection} className="codeclub-conversation-surface flex min-h-0 min-w-0 flex-1 overflow-hidden">
-          <PanelManager activeSection={activeSection} projectPath={activeProjectPath} projectId={activeProjectId} />
+          <PanelManager activeSection={activeSection} />
 
       {rightOpen && <ResizeHandle side="right" value={rightWidth} maxValue={rightMaxWidth} onStart={startResize('right')} onKeyboardResize={setRightWidth} language={language} />}
       <motion.aside id="codeclub-right-sidebar" animate={{ width: rightOpen ? rightWidth : 0, opacity: rightOpen ? 1 : 0 }} transition={resizing ? { duration: 0 } : { type: 'spring', stiffness: 340, damping: 30 }} className={`codeclub-panel-edge flex h-full min-h-0 shrink-0 flex-col bg-transparent ${rightOpen ? 'pointer-events-auto overflow-visible' : 'pointer-events-none overflow-hidden'}`} aria-label={panelText.rightPanel} aria-hidden={!rightOpen} inert={!rightOpen}>
@@ -809,11 +792,11 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft }: {
   </section>;
 }
 
-const PanelManager = memo(function PanelManager({ activeSection, projectPath, projectId }: { activeSection: SidebarSection; projectPath?: string; projectId: string }) {
+const PanelManager = memo(function PanelManager({ activeSection }: { activeSection: SidebarSection }) {
   const language = useAppLanguage();
   const chatVisible = activeSection === 'new-chat' || activeSection === 'extensions';
   const synapseVisible = activeSection === 'projects';
-  const scheduledVisible = activeSection === 'scheduled';
+  const orbsVisible = activeSection === 'orbs';
   useEffect(() => {
     window.dispatchEvent(new CustomEvent('codeclub:chat-panel-visibility', { detail: { visible: chatVisible } }));
   }, [chatVisible]);
@@ -821,7 +804,7 @@ const PanelManager = memo(function PanelManager({ activeSection, projectPath, pr
     <div className={`codeclub-panel-shell h-full w-full ${chatVisible ? 'overflow-visible' : 'overflow-hidden'} bg-(--codeclub-center)`}>
       <div className={`h-full min-h-0 min-w-0 ${chatVisible ? 'block' : 'hidden'}`} aria-hidden={!chatVisible} inert={!chatVisible}><ChatPanel /></div>
       {synapseVisible && <div className="relative z-10 h-full min-h-0 min-w-0"><SynapsePanel /></div>}
-      {scheduledVisible && <div className="relative z-10 h-full min-h-0 min-w-0"><ScheduledPanel projectPath={projectPath} /></div>}
+      {orbsVisible && <div className="relative z-10 h-full min-h-0 min-w-0"><OrbsPanel /></div>}
     </div>
   </main>;
 });
@@ -835,174 +818,6 @@ function SynapsePanel() {
         <h1 className="m-0 text-[28px] font-normal tracking-[-0.04em] text-(--codeclub-text-strong)">{text.title}</h1>
         <p className="mt-1.5 text-[14px] text-(--codeclub-text-muted)">{text.description}</p>
       </header>
-    </div>
-  </section>;
-}
-
-export function ScheduledPanel({ projectPath }: { projectPath?: string }) {
-  const language = useAppLanguage();
-  const runtimeText = scheduledRuntimeTranslations[language];
-  const text = language === 'en' ? { title: 'Tasks', description: 'Automate tasks and reminders to run when you need them.', search: 'Search scheduled tasks', state: 'Task status', all: 'All', active: 'Active', paused: 'Paused', create: 'Create custom task', recent: 'Recent', next: 'Next run pending', noTasks: 'No scheduled tasks.' } : { title: 'Tareas', description: 'Automatizá tareas y recordatorios para que se ejecuten cuando los necesites.', search: 'Buscar tareas programadas', state: 'Estado de tareas programadas', all: 'Todas', active: 'Activadas', paused: 'En pausa', create: 'Crear tarea personalizada', recent: 'Recientes', next: 'Próxima ejecución pendiente', noTasks: 'No hay tareas programadas.' };
-  const [tasks, setTasks] = useState<ScheduledTask[]>([]);
-  const [scheduledDefaults, setScheduledDefaults] = useState({ provider: defaultScheduledProvider, model: defaultScheduledModel, apiKey: '' });
-  const [scheduledReady, setScheduledReady] = useState(false);
-  const [draftTask, setDraftTask] = useState<ScheduledTask | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'all' | 'active' | 'paused'>('all');
-  const [query, setQuery] = useState('');
-  const [error, setError] = useState('');
-  const [pending, setPending] = useState(false);
-  const loadedScope = useRef<string | null>(null);
-  useEffect(() => {
-    let active = true;
-    let revision = 0;
-    if (loadedScope.current !== (projectPath || '')) {
-      loadedScope.current = projectPath || '';
-      setScheduledReady(false); setTasks([]); setSelectedId(null); setDraftTask(null); setError('');
-    }
-    const api = (window as any).codeclub;
-    const refresh = async () => {
-      const version = ++revision;
-      try {
-        await migrateScheduledTasks();
-        const saved = await api.tasksList(projectPath || '');
-        const drafts = await getProjectSetting<any[]>(projectPath, 'scheduled-tasks', []);
-        if (!active || version !== revision) return;
-        setTasks([...saved, ...drafts.filter(task => !saved.some((item: any) => item.id === task.id))].map((task: any) => ({ ...task, name: task.name || '', prompt: task.prompt || '', provider: task.provider || '', model: task.model || '', interval: task.interval || 'Días hábiles', every: task.every || '30 min', time: task.time || '08:00', status: task.status || 'paused', apiKey: '', repeat: task.interval, executionTarget: 'Chat nuevo', project: projectPath || 'Ninguno', schedule: `${task.interval === 'Personalizado' ? task.every : `${runtimeText.intervals[task.interval as keyof typeof runtimeText.intervals] || task.interval} · ${task.interval === 'Una vez' && task.runAt ? new Date(task.runAt).toLocaleString(language === 'en' ? 'en-US' : 'es-AR', { timeZone: task.timeZone }) : task.time}`} · ${task.timeZone || ''}` })));
-        setScheduledReady(true);
-      } catch { if (active) setError(runtimeText.loadError); }
-    };
-    void refresh();
-    const unsubscribe = api?.onTasksChanged?.(refresh);
-    void Promise.all([getSetting<string>('codeclub_last_provider_id', providers[0]?.id || ''), getSetting<string>('codeclub_last_model_id', models[0]?.id || '')]).then(async ([providerId, modelId]) => {
-      const provider = findProvider(providerId) || providers[0];
-      const model = findModel(modelId, provider?.id) || models.find(item => provider && modelMatchesProvider(item, provider));
-      const apiKey = provider ? await getSetting<string>(credentialKeyFor(provider, model), '') : '';
-      if (active) setScheduledDefaults({ provider: provider?.label || defaultScheduledProvider, model: model?.label || defaultScheduledModel, apiKey });
-    });
-    return () => { active = false; unsubscribe?.(); };
-  }, [projectPath, language]);
-  const perform = async (operation: () => Promise<unknown>) => {
-    setError(''); setPending(true);
-    try { await operation(); return true; }
-    catch { setError(runtimeText.actionError); return false; }
-    finally { setPending(false); }
-  };
-  const visibleTasks = tasks.filter((task) => (filter === 'all' || task.status === filter) && `${task.name} ${task.prompt}`.toLowerCase().includes(query.toLowerCase()));
-  const createCustomTask = () => {
-    const task: ScheduledTask = { id: `custom-${Date.now()}`, name: 'Nueva tarea', prompt: '', schedule: 'Días hábiles a las 8:00 a.m.', repeat: 'Días hábiles', interval: 'Días hábiles', every: '30 min', time: '08:00', status: 'active', executionTarget: 'Chat nuevo', ...scheduledDefaults, project: projectPath ? 'Proyecto activo' : 'Ninguno', reasoning: 'Medio', notifications: 'Todas las ejecuciones' };
-    setDraftTask(task);
-    setSelectedId(null);
-  };
-  const updateTask = async (next: ScheduledTask) => {
-    const ok = await perform(async () => {
-      const provider = findProvider(next.provider);
-      const model = findModel(next.model, provider?.id);
-      if (!provider || !model) throw new Error('TASK_MODEL_UNAVAILABLE');
-      if (next.apiKey && next.apiKey !== 'codeclub-native-credential') await setSetting(credentialKeyFor(provider, model), next.apiKey);
-      await (window as any).codeclub.tasksSave(projectPath || '', { ...next, apiKey: undefined, language, provider: provider.id, model: usesGateway(provider, model) ? model.gatewayId : model.id });
-      const drafts = await getProjectSetting<any[]>(projectPath, 'scheduled-tasks', []);
-      if (drafts.some(task => task.id === next.id)) await setProjectSetting(projectPath, 'scheduled-tasks', drafts.filter(task => task.id !== next.id));
-    });
-    if (ok) { setDraftTask(null); setSelectedId(null); }
-  };
-  const runTask = (task: ScheduledTask) => { void perform(async () => {
-    const provider = findProvider(task.provider); const model = findModel(task.model, provider?.id);
-    if (!provider || !model) throw new Error('TASK_MODEL_UNAVAILABLE');
-    if (task.apiKey && task.apiKey !== 'codeclub-native-credential') await setSetting(credentialKeyFor(provider, model), task.apiKey);
-    await (window as any).codeclub.tasksSave(projectPath || '', { ...task, apiKey: undefined, language, provider: provider.id, model: usesGateway(provider, model) ? model.gatewayId : model.id });
-    await (window as any).codeclub.tasksRun(projectPath || '', task.id);
-  }); };
-  const deleteTask = (id: string) => { void perform(async () => {
-    if (tasks.find(task => task.id === id)?.runs) await (window as any).codeclub.tasksDelete(projectPath || '', id);
-    const drafts = await getProjectSetting<any[]>(projectPath, 'scheduled-tasks', []);
-    if (drafts.some(task => task.id === id)) { await setProjectSetting(projectPath, 'scheduled-tasks', drafts.filter(task => task.id !== id)); setTasks(current => current.filter(task => task.id !== id)); }
-    setSelectedId(null);
-  }); };
-  const selected = draftTask || tasks.find((task) => task.id === selectedId) || null;
-
-  if (selected) return <ScheduledTaskDetail key={selected.id} task={selected} error={error} pending={pending} onBack={() => { setDraftTask(null); setSelectedId(null); }} onSave={updateTask} onRun={runTask} onDelete={() => draftTask ? setDraftTask(null) : deleteTask(selected.id)} />;
-
-  return <section id="codeclub-scheduled-panel" className="h-full min-h-0 overflow-y-auto bg-(--codeclub-center) [scrollbar-color:#444444_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#444444] [&::-webkit-scrollbar-thumb:hover]:bg-[#666666]" aria-label={text.title}>
-    <div className="mx-auto min-w-0 w-full max-w-[1040px] px-6 py-7 lg:px-8">
-      {error && <p role="alert" className="mb-4 text-sm text-red-300">{error}</p>}
-      <header className="mb-6">
-        <h1 className="m-0 text-[28px] font-normal tracking-[-0.04em] text-(--codeclub-text-strong)">{text.title}</h1>
-        <p className="mt-1.5 text-[14px] text-(--codeclub-text-muted)">{text.description}</p>
-        <p className="mt-2 text-[12px] text-[#777777]">{runtimeText.availability}</p>
-      </header>
-      <div className="relative flex h-9 items-center rounded-full border border-[#454545] bg-[#292929] px-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] focus-within:border-[#666666]">
-        <Search size={17} className="mr-2 shrink-0 text-[#999999]" aria-hidden="true" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={text.search} aria-label={text.search} className="min-w-0 flex-1 bg-transparent text-[14px] text-(--codeclub-text-strong) outline-none placeholder:text-[#929292]" />
-      </div>
-      <div className="mt-8 flex items-center gap-1 border-b border-white/[0.06] pb-3" role="group" aria-label={text.state}>
-        {([{ id: 'all', label: text.all }, { id: 'active', label: text.active }, { id: 'paused', label: text.paused }] as const).map((item) => <button key={item.id} type="button" aria-pressed={filter === item.id} onClick={() => setFilter(item.id)} className={`rounded-lg px-3 py-1.5 text-[13px] transition-colors ${filter === item.id ? 'bg-[#2d2d2d] text-[#eeeeee]' : 'text-[#888888] hover:bg-white/[0.05] hover:text-[#cccccc]'}`}>{item.label}</button>)}
-        <button type="button" onClick={createCustomTask} disabled={!scheduledReady || pending} className="ml-auto grid h-7 w-7 place-items-center rounded-lg text-[#999999] transition-colors hover:bg-white/[0.08] hover:text-[#eeeeee]" aria-label={text.create} title={text.create}><Plus size={16} strokeWidth={1.8} /></button>
-      </div>
-      {visibleTasks.length > 0 && <section className="mt-7" aria-label={text.title}>
-        <h2 className="m-0 text-[15px] font-medium text-[#888888]">{text.recent}</h2>
-        <div className="mt-3 divide-y divide-white/[0.06]">{visibleTasks.map((task) => <button key={task.id} type="button" onClick={() => setSelectedId(task.id)} className="group flex w-full items-center gap-2.5 rounded-lg px-2 py-2.5 text-left transition-colors hover:bg-white/[0.035]"><span className="grid h-6 w-6 shrink-0 place-items-center text-[#858585]">{task.status === 'active' ? <CircleCheck size={17} strokeWidth={1.6} /> : <Circle size={17} strokeWidth={1.6} />}</span><span className="min-w-0 flex-1"><span className="block truncate text-[14px] text-[#cfcfcf]">{task.name}</span><span className="mt-0.5 block truncate text-[12px] text-[#858585]">{task.schedule} · {task.runs?.at(-1)?.status === 'running' ? runtimeText.states.running : task.status === 'active' && task.nextRun ? new Date(task.nextRun).toLocaleString(language === 'en' ? 'en-US' : 'es-AR', { timeZone: task.timeZone }) : text.paused}</span></span><MoreHorizontal size={16} className="shrink-0 text-[#777777] opacity-0 transition-opacity group-hover:opacity-100" /></button>)}</div>
-      </section>}
-      {!scheduledReady && !error && <p role="status" className="mt-8 text-sm text-[#777777]">{runtimeText.loading}</p>}
-      {scheduledReady && visibleTasks.length === 0 && <p className="mt-8 px-2 text-[13px] text-[#777777]">{text.noTasks}</p>}
-    </div>
-  </section>;
-}
-
-function ScheduledTaskDetail({ task, error, pending, onBack, onSave, onRun, onDelete }: { task: ScheduledTask; error: string; pending: boolean; onBack: () => void; onSave: (task: ScheduledTask) => void; onRun: (task: ScheduledTask) => void; onDelete: () => void }) {
-  const language = useAppLanguage();
-  const runtimeText = scheduledRuntimeTranslations[language];
-  const text = language === 'en' ? { task: 'Task', back: 'Tasks', pause: 'Pause', activate: 'Activate', run: 'Run now', save: 'Save task', delete: 'Delete', close: 'Close', details: 'Details', provider: 'Provider', model: 'Model', frequency: 'Frequency', interval: 'Interval', daily: 'Daily', weekdays: 'Weekdays', weekly: 'Weekly', custom: 'Custom', every: 'Every', at: 'At', notifications: 'Notifications', allRuns: 'All runs', errors: 'Errors only', none: 'No notifications', last: 'Last run', never: 'never' } : { task: 'Tarea', back: 'Tareas', pause: 'Pausar', activate: 'Activar', run: 'Ejecutar ahora', save: 'Guardar tarea', delete: 'Eliminar', close: 'Cerrar', details: 'Detalles', provider: 'Proveedor', model: 'Modelo', frequency: 'Frecuencia', interval: 'Intervalo', daily: 'Diario', weekdays: 'Días hábiles', weekly: 'Semanal', custom: 'Personalizado', every: 'Cada', at: 'A las', notifications: 'Notificaciones', allRuns: 'Todas las ejecuciones', errors: 'Solo errores', none: 'Sin notificaciones', last: 'Última ejecución', never: 'nunca' };
-  const [draft, setDraft] = useState(() => ({ ...task, provider: findProvider(task.provider)?.label || task.provider, model: normalizeTaskModel(task.model, task.provider) }));
-  useEffect(() => { if (task.runs) setDraft(current => ({ ...current, status: task.status })); }, [task.status]);
-  const set = <K extends keyof ScheduledTask>(key: K, value: ScheduledTask[K]) => setDraft((current) => ({ ...current, [key]: value }));
-  const providerOptions = Array.from(new Set(providers.map((provider: any) => provider.label || provider.id).filter(Boolean)));
-  const selectedProvider = findProvider(draft.provider);
-  const modelOptions = Array.from(new Set(models.filter((model: any) => selectedProvider && (selectedProvider.id === 'custom' || modelMatchesProvider(model, selectedProvider))).map((model: any) => model.label || model.id).filter(Boolean)));
-  const updateModelSelection = (key: 'provider' | 'model', value: string) => {
-    const previousModel = findModel(draft.model, selectedProvider?.id);
-    const nextProvider = key === 'provider' ? findProvider(value) : selectedProvider;
-    const nextModel = key === 'provider' ? models.find(model => nextProvider && modelMatchesProvider(model, nextProvider)) : findModel(value, nextProvider?.id);
-    set(key, value);
-    if (key === 'provider') set('model', nextModel?.label || nextModel?.id || '');
-    if (nextProvider && (key === 'provider' || !selectedProvider || credentialKeyFor(nextProvider, nextModel) !== credentialKeyFor(selectedProvider, previousModel))) {
-      void getSetting<string>(credentialKeyFor(nextProvider, nextModel), '').then(apiKey => set('apiKey', apiKey));
-    }
-  };
-  useEffect(() => {
-    let active = true;
-    const provider = findProvider(task.provider);
-    const model = findModel(task.model, provider?.id);
-    if (provider) void getSetting<string>(credentialKeyFor(provider, model), '').then(apiKey => { if (active) setDraft(current => ({ ...current, apiKey })); });
-    return () => { active = false; };
-  }, [task.id]);
-  const intervalLabels: Record<string, string> = { Diario: text.daily, 'Días hábiles': text.weekdays, Semanal: text.weekly, Personalizado: text.custom, 'Una vez': runtimeText.once };
-  const notificationLabels: Record<string, string> = { 'Todas las ejecuciones': text.allRuns, 'Solo errores': text.errors, 'Sin notificaciones': text.none };
-  const canonicalValue = (labels: Record<string, string>, value: string) => Object.entries(labels).find(([, label]) => label === value)?.[0] || value;
-  return <section className="h-full min-h-0 overflow-y-auto bg-(--codeclub-center) [scrollbar-color:#444444_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#444444] [&::-webkit-scrollbar-thumb:hover]:bg-[#666666]" aria-label={`${text.task}: ${draft.name}`}>
-    <div className="mx-auto min-w-0 w-full max-w-[1040px] px-6 py-6 lg:px-8">
-      {error && <p role="alert" className="mb-4 text-sm text-red-300">{error}</p>}
-      <div className="flex items-center justify-between"><button type="button" onClick={onBack} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[13px] text-[#999999] hover:bg-white/[0.05] hover:text-[#eeeeee]"><ArrowLeft size={15} />{text.back}</button><div className="flex items-center gap-1"><button type="button" onClick={() => { const next = { ...draft, status: draft.status === 'active' ? 'paused' as const : 'active' as const }; if (task.runs) onSave(next); else setDraft(next); }} disabled={pending} className="grid h-8 w-8 place-items-center rounded-lg text-[#999999] hover:bg-white/[0.06] hover:text-[#eeeeee]" title={draft.status === 'active' ? text.pause : text.activate} aria-label={draft.status === 'active' ? text.pause : text.activate}>{draft.status === 'active' ? <Pause size={16} /> : <Play size={16} />}</button><button type="button" onClick={() => onRun(draft)} disabled={pending || !task.runs || task.runs.some(run => ['running', 'queued'].includes(run.status))} className="grid h-8 w-8 place-items-center rounded-lg text-[#999999] hover:bg-white/[0.06] hover:text-[#eeeeee]" title={text.run} aria-label={text.run}><Play size={16} /></button><button type="button" onClick={() => onSave(draft)} disabled={pending || !draft.name.trim() || !draft.prompt.trim()} className="grid h-8 w-8 place-items-center rounded-lg text-[#999999] hover:bg-[#1f3d57] hover:text-[#8bc7ff]" title={text.save} aria-label={text.save}><CircleCheck size={17} /></button><button type="button" onClick={onDelete} disabled={pending || task.runs?.some(run => run.status === 'running')} className="grid h-8 w-8 place-items-center rounded-lg text-[#999999] hover:bg-[#562b2b] hover:text-[#ffb4b4]" title={text.delete} aria-label={text.delete}><Trash2 size={16} /></button><button type="button" onClick={onBack} className="grid h-8 w-8 place-items-center rounded-lg text-[#999999] hover:bg-white/[0.06] hover:text-[#eeeeee]" title={text.close} aria-label={text.close}><X size={17} /></button></div></div>
-      <div className="mt-7"><input value={draft.name} onChange={(event) => set('name', event.target.value)} className="w-full bg-transparent text-[28px] font-normal tracking-[-0.04em] text-[#eeeeee] outline-none" aria-label={language === 'en' ? 'Task name' : 'Nombre de la tarea'} /><p className="mt-2 text-[12px] text-[#777777]">ID: {draft.id} · {text.last}: {task.lastRun || text.never}</p></div>
-      <textarea value={draft.prompt} onChange={(event) => set('prompt', event.target.value)} rows={3} className="mt-8 w-full resize-none rounded-2xl border border-[#414141] bg-[#252525] px-5 py-4 text-[16px] leading-6 text-[#dddddd] outline-none focus:border-[#666666]" aria-label={language === 'en' ? 'Task instructions' : 'Instrucción de la tarea'} />
-      <div className="mt-8"><h2 className="mb-3 text-[16px] font-normal text-[#888888]">{text.details} <Info size={15} className="ml-1 inline-block align-[-2px]" /></h2><div className="overflow-visible rounded-2xl border border-white/[0.08] bg-[#242424]">{[[text.provider, 'provider', providerOptions, true], ['API key', 'apiKey', [], false], [text.model, 'model', modelOptions.length ? modelOptions : (draft.model ? [draft.model] : []), true]].map(([label, key, options, searchable]) => <label key={String(label)} className="flex min-h-[56px] items-center justify-between gap-4 border-b border-white/[0.08] px-5 last:border-b-0"><span className="text-[15px] text-[#dddddd]">{label}</span>{key === 'apiKey' ? <input type="password" value={draft.apiKey==='codeclub-native-credential'?'':draft.apiKey} onChange={(event) => set('apiKey', event.target.value)} placeholder={draft.apiKey==='codeclub-native-credential'?(language==='en'?'Credential configured':'Credencial configurada'):'API key'} className="min-w-0 max-w-[65%] bg-transparent text-right text-[15px] text-[#dddddd] outline-none placeholder:text-[#777777]" autoComplete="off" /> : <ScheduledSelect value={String(draft[key as keyof ScheduledTask])} options={options as string[]} label={String(label)} searchable={Boolean(searchable)} optionSearchText={(option) => { if (key === 'provider') return String(findProvider(option)?.id || ''); const model = findModel(option, selectedProvider?.id); return [model?.id, model?.providerName, model?.description].filter(Boolean).join(' '); }} onChange={(value) => updateModelSelection(key as 'provider' | 'model', value)} />}</label>)}</div></div>
-      <div className="mt-8"><h2 className="mb-3 text-[16px] font-normal text-[#888888]">{text.frequency}</h2><div className="overflow-visible rounded-2xl border border-white/[0.08] bg-[#242424]"><label className="flex min-h-[56px] items-center justify-between gap-4 border-b border-white/[0.08] px-5"><span className="text-[15px] text-[#dddddd]">{text.interval}</span><ScheduledSelect value={intervalLabels[draft.interval] || draft.interval} options={[text.daily, text.weekdays, text.weekly, text.custom, runtimeText.once]} label={text.interval} onChange={(value) => set('interval', canonicalValue(intervalLabels, value))} /></label>{draft.interval === 'Personalizado' && <label className="flex min-h-[56px] items-center justify-between gap-4 border-b border-white/[0.08] px-5"><span className="text-[15px] text-[#dddddd]">{text.every}</span><ScheduledSelect value={draft.every} options={['15 min', '30 min', language === 'en' ? '1 hour' : '1 hora', language === 'en' ? '2 hours' : '2 horas', language === 'en' ? '1 day' : '1 día']} label={text.every} onChange={(value) => set('every', value)} /></label>}{!['Personalizado', 'Una vez'].includes(draft.interval) && <label className="flex min-h-[56px] items-center justify-between gap-4 border-b border-white/[0.08] px-5"><span className="text-[15px] text-[#dddddd]">{text.at}</span><ScheduledTimeSelect value={draft.time} onChange={(value) => set('time', value)} /></label>}<label className="flex min-h-[56px] items-center justify-between gap-4 px-5"><span className="text-[15px] text-[#dddddd]">{text.notifications}</span><ScheduledSelect value={notificationLabels[draft.notifications] || draft.notifications} options={[text.allRuns, text.errors, text.none]} label={text.notifications} onChange={(value) => set('notifications', canonicalValue(notificationLabels, value))} /></label></div></div>
-      <div className="mt-5 space-y-3 rounded-2xl border border-[#2b2b2b] bg-[#191919] p-5">
-        {draft.interval === 'Una vez' && <label className="flex items-center justify-between gap-4 text-[14px] text-[#dddddd]"><span>{runtimeText.runAt}</span><input type="datetime-local" aria-label={runtimeText.runAt} value={draft.runAt ? new Date(Date.parse(draft.runAt) - new Date(draft.runAt).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''} onChange={event => set('runAt', event.target.value ? new Date(event.target.value).toISOString() : '')} className="min-w-0 max-w-[65%] bg-transparent text-right outline-none" /></label>}
-        <label className="flex items-center justify-between gap-4 text-[14px] text-[#dddddd]"><span>{runtimeText.timeZone}</span><input value={draft.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone} onChange={event => set('timeZone', event.target.value)} aria-label={runtimeText.timeZone} className="min-w-0 max-w-[65%] bg-transparent text-right outline-none" /></label>
-        {draft.interval === 'Semanal' && <label className="flex items-center justify-between gap-4 text-[14px] text-[#dddddd]"><span>{runtimeText.weekday}</span><ScheduledSelect value={runtimeText.days[draft.weekday ?? 1]} options={[...runtimeText.days]} label={runtimeText.weekday} onChange={value => set('weekday', runtimeText.days.indexOf(value as never))} /></label>}
-        {findModel(draft.model, findProvider(draft.provider)?.id)?.reasoning && <label className="flex items-center justify-between gap-4 text-[14px] text-[#dddddd]"><span>{runtimeText.reasoning}</span><ScheduledSelect value={runtimeText.efforts[['Bajo', 'Medio', 'Alto'].indexOf(draft.reasoning)] || runtimeText.efforts[1]} options={[...runtimeText.efforts]} label={runtimeText.reasoning} onChange={value => set('reasoning', ['Bajo', 'Medio', 'Alto'][runtimeText.efforts.indexOf(value as never)])} /></label>}
-        {task.nextRun && <p className="text-[12px] text-[#999999]">{runtimeText.next}: {new Date(task.nextRun).toLocaleString(language === 'en' ? 'en-US' : 'es-AR', { timeZone: task.timeZone })}</p>}
-      </div>
-      <section className="mt-8" aria-label={runtimeText.history}>
-        <h2 className="mb-3 text-[16px] text-[#999999]">{runtimeText.history}</h2>
-        {!task.runs?.length && <p className="text-sm text-[#777777]">{runtimeText.noRuns}</p>}
-        {[...(task.runs || [])].reverse().map(run => <div key={run.id} className="flex items-center gap-3 border-b border-[#202020] py-3 text-[13px]">
-          <div className="min-w-0 flex-1"><p className="text-[#dddddd]">{runtimeText.states[run.status]} · {new Date(run.startedAt).toLocaleString(language === 'en' ? 'en-US' : 'es-AR')}</p>{run.error && <p className="mt-1 text-[#999999]">{runtimeText.errors[run.error as keyof typeof runtimeText.errors] || runtimeText.errors.TASK_EXECUTION_FAILED}</p>}</div>
-          {['running', 'queued'].includes(run.status) && <button type="button" onClick={() => { void (window as any).codeclub.tasksCancel((task as any).projectPath || '', task.id); }} className="rounded-lg px-2 py-1 text-[#999999] hover:bg-[#202020]" title={runtimeText.cancel} aria-label={runtimeText.cancel}><X size={15} /></button>}
-          <button type="button" disabled={run.status === 'queued'} onClick={() => { void (window as any).codeclub.sessionOpen({ chatId: run.chatId, projectPath: (task as any).projectPath || '', name: task.name }); }} className="rounded-lg px-2 py-1 text-[#8bc7ff] hover:bg-[#202020]">{runtimeText.result}</button>
-        </div>)}
-      </section>
-      <div className="pb-8" />
     </div>
   </section>;
 }
