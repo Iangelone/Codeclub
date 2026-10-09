@@ -1,7 +1,7 @@
 {
   "name": "codeclub-desktop",
   "version": "1.1.0",
-  "description": "Local-first desktop IDE for building software with AI agents.",
+  "description": "Windows AI coding agent for project files, PowerShell, browser tabs, and desktop apps.",
   "author": "Iangelone",
   "private": true,
   "type": "module",
