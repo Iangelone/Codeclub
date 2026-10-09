@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import Topbar from '../components/Topbar';
-import SubTopbar from '../components/SubTopbar';
 import WorkspaceLayout from '../components/WorkspaceLayout';
 import FloatingChat from '../components/FloatingChat';
 import ScheduledTaskRunner from '../components/ScheduledTaskRunner';
@@ -68,42 +67,26 @@ export default function HomePage() {
   }, []);
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(false);
-  const [topbarOpen, setTopbarOpen] = useState(true);
-  const [activeProject, setActiveProject] = useState<{ name: string; path?: string }>({ name: 'Inicio' });
   useEffect(() => {
     try {
-      const saved = JSON.parse(window.localStorage.getItem(LAYOUT_VISIBILITY_KEY) || 'null') as { leftOpen?: boolean; rightOpen?: boolean; topbarOpen?: boolean } | null;
+      const saved = JSON.parse(window.localStorage.getItem(LAYOUT_VISIBILITY_KEY) || 'null') as { leftOpen?: boolean; rightOpen?: boolean } | null;
       if (typeof saved?.leftOpen === 'boolean') setLeftOpen(saved.leftOpen);
       if (typeof saved?.rightOpen === 'boolean') setRightOpen(saved.rightOpen);
-      if (typeof saved?.topbarOpen === 'boolean') setTopbarOpen(saved.topbarOpen);
     } catch { /* Invalid saved preferences fall back to the default layout. */ }
-    const handleProjectSwitch = (event: Event) => {
-      const detail = (event as CustomEvent<{ name?: string; path?: string }>).detail;
-      setActiveProject(detail?.path ? { name: detail.name || 'Proyecto', path: detail.path } : { name: 'Inicio' });
-    };
-    const handleRestoredProject = (event: Event) => {
-      const detail = (event as CustomEvent<{ projectName?: string; projectPath?: string }>).detail;
-      setActiveProject(detail?.projectPath ? { name: detail.projectName || 'Proyecto', path: detail.projectPath } : { name: 'Inicio' });
-    };
-    const persistVisibility = (next: { leftOpen?: boolean; rightOpen?: boolean; topbarOpen?: boolean }) => {
+    const persistVisibility = (next: { leftOpen?: boolean; rightOpen?: boolean }) => {
       try {
         const current = JSON.parse(window.localStorage.getItem(LAYOUT_VISIBILITY_KEY) || '{}') as Record<string, unknown>;
         window.localStorage.setItem(LAYOUT_VISIBILITY_KEY, JSON.stringify({ ...current, ...next }));
       } catch { /* Layout preferences remain usable when storage is unavailable. */ }
     };
     const openRightSidebar = () => { setRightOpen(true); persistVisibility({ rightOpen: true }); };
-    window.addEventListener('codeclub:project-switch', handleProjectSwitch);
-    window.addEventListener('codeclub:active-project', handleRestoredProject);
     window.addEventListener('codeclub:open-right-sidebar', openRightSidebar);
     return () => {
-      window.removeEventListener('codeclub:project-switch', handleProjectSwitch);
-      window.removeEventListener('codeclub:active-project', handleRestoredProject);
       window.removeEventListener('codeclub:open-right-sidebar', openRightSidebar);
     };
   }, []);
   const toggleLeft = () => setLeftOpen((open) => { const next = !open; try { window.localStorage.setItem(LAYOUT_VISIBILITY_KEY, JSON.stringify({ ...JSON.parse(window.localStorage.getItem(LAYOUT_VISIBILITY_KEY) || '{}'), leftOpen: next })); } catch { /* Layout preferences remain usable when storage is unavailable. */ } return next; });
   const toggleRight = () => setRightOpen((open) => { const next = !open; try { window.localStorage.setItem(LAYOUT_VISIBILITY_KEY, JSON.stringify({ ...JSON.parse(window.localStorage.getItem(LAYOUT_VISIBILITY_KEY) || '{}'), rightOpen: next })); } catch { /* Layout preferences remain usable when storage is unavailable. */ } return next; });
-  const toggleTopbar = () => setTopbarOpen((open) => { const next = !open; try { window.localStorage.setItem(LAYOUT_VISIBILITY_KEY, JSON.stringify({ ...JSON.parse(window.localStorage.getItem(LAYOUT_VISIBILITY_KEY) || '{}'), topbarOpen: next })); } catch { /* Layout preferences remain usable when storage is unavailable. */ } return next; });
   const fullscreenAnimation = useMemo(() => fullscreenMotion === 'enter'
     ? { scale: [0.985, 1], opacity: [0.92, 1] }
     : fullscreenMotion === 'exit'
@@ -115,11 +98,9 @@ export default function HomePage() {
   if (floating === null) return null;
   if (scheduledRunner) return <ScheduledTaskRunner />;
   if (floating) return <MotionConfig reducedMotion="user"><FloatingChat /></MotionConfig>;
-  return <MotionConfig reducedMotion="user"><motion.div animate={fullscreenAnimation} transition={fullscreenTransition} className="relative isolate grid h-screen max-h-screen grid-rows-[34px_auto_minmax(0,1fr)] min-w-[320px] min-h-0 overflow-hidden bg-transparent text-(--codeclub-text) font-sans" data-fullscreen={isFullscreen}>
+  return <MotionConfig reducedMotion="user"><motion.div animate={fullscreenAnimation} transition={fullscreenTransition} className="relative isolate grid h-screen max-h-screen grid-rows-[34px_minmax(0,1fr)] min-w-[320px] min-h-0 overflow-hidden bg-transparent text-(--codeclub-text) font-sans" data-fullscreen={isFullscreen}>
       <a className="codeclub-skip-link" href="#codeclub-main-content">{language === 'en' ? 'Skip to workspace' : 'Saltar al espacio de trabajo'}</a>
-      <Topbar leftOpen={leftOpen} rightOpen={rightOpen} topbarOpen={topbarOpen} onToggleLeft={toggleLeft} onToggleRight={toggleRight} onToggleTopbar={toggleTopbar} />
-      {/* A collapsed bar must not leave invisible controls over the workspace. */}
-      <div className="relative z-50 min-h-0">{topbarOpen && <SubTopbar activeProject={activeProject} />}</div>
+      <Topbar leftOpen={leftOpen} rightOpen={rightOpen} onToggleLeft={toggleLeft} onToggleRight={toggleRight} />
       <WorkspaceLayout leftOpen={leftOpen} rightOpen={rightOpen} onToggleLeft={toggleLeft} onRightVisibilityChange={setRightOpen} />
   </motion.div></MotionConfig>;
 }

@@ -42,7 +42,7 @@ try {
     if (!localStorage.getItem('qa:initialized')) {
       localStorage.setItem('qa:initialized', 'true');
       localStorage.setItem('codeclub:active-project', JSON.stringify(project));
-      localStorage.setItem('codeclub:layout-visibility', JSON.stringify({ leftOpen: true, rightOpen: true, topbarOpen: false }));
+      localStorage.setItem('codeclub:layout-visibility', JSON.stringify({ leftOpen: true, rightOpen: true }));
     }
     window.qa = { reloads: 0, renames: 0, emptyChats: 0 };
     window.addEventListener('codeclub:open-empty-chat', () => { window.qa.emptyChats++; });

@@ -24,9 +24,6 @@
 @keyframes codeclub-orb-pulse { 50% { filter: drop-shadow(0 0 4px color-mix(in srgb, var(--codeclub-accent) 50%, transparent)); } }
 .floating-surface .chat-interface-container { flex: 1; height: auto; min-height: 0; max-width: none; padding: 0 10px 10px; }
 .floating-surface .messages-area { padding: 12px 6px 14px; }
-.floating-surface .chat-turn { padding-left: 14px; }
-.floating-surface .chat-turn::before { top: 2px; bottom: 2px; left: 0; background: #2b2b2b; }
-.floating-surface .timeline-hidden .chat-turn { padding-left: 0; }
 .floating-surface .chat-markdown { font-size: 13px; line-height: 1.65; }
 .floating-surface .chat-markdown > :first-child { margin-top: 0; }
 .floating-surface .chat-markdown pre { max-width: 100%; overflow-x: auto; }

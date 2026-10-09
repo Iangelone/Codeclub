@@ -18,7 +18,7 @@ try {
     name: 'isolate-native-children',
     setup(builder) {
       // Exercise the real page's hooks; child native integrations are separate tests.
-      builder.onResolve({ filter: /components\/(Topbar|SubTopbar|WorkspaceLayout|FloatingChat)$/ }, args => ({ path: args.path.split('/').at(-1), namespace: 'qa-child' }));
+      builder.onResolve({ filter: /components\/(Topbar|WorkspaceLayout|FloatingChat)$/ }, args => ({ path: args.path.split('/').at(-1), namespace: 'qa-child' }));
       builder.onLoad({ filter: /.*/, namespace: 'qa-child' }, args => ({ contents: `import React from 'react';export default function Child(){return <div data-qa-child="${args.path}"/>}`, loader: 'jsx', resolveDir: repo }));
     },
   }] });

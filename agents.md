@@ -25,7 +25,7 @@ Codeclub is a local-first Windows desktop app for AI-assisted development. The r
 | Area | Main files |
 | --- | --- |
 | App shell | src/app/page.tsx, src/app/layout.tsx, src/app/globals.css |
-| Layout | src/components/Topbar.tsx, SubTopbar.tsx, WorkspaceLayout.tsx |
+| Layout | src/components/Topbar.tsx, WorkspaceLayout.tsx |
 | Workspace | src/components/WorkspaceManager.tsx, ChatPanel.tsx, ChatInterface.tsx |
 | Extensions | src/components/ExtensionsPanel.tsx |
 | Engine | src/lib/engine/ |

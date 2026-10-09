@@ -1,33 +1,9 @@
 .chat-turn {
   position: relative;
-  padding-left: 24px;
-}
-
-.chat-turn::before {
-  position: absolute;
-  top: 24px;
-  bottom: 0;
-  left: 7px;
-  width: 1px;
-  background: #2b2b2b;
-  content: '';
-  pointer-events: none;
-}
-
-.chat-turn.is-last::before {
-  bottom: 0;
 }
 
 .chat-turn > .chat-user-message + .chat-assistant-message {
   margin-top: 8px;
-}
-
-.timeline-hidden .chat-turn::before {
-  display: none;
-}
-
-.timeline-hidden .chat-turn {
-  padding-left: 0;
 }
 
 .turn-activity {
@@ -323,7 +299,4 @@
   overflow-wrap: anywhere;
 }
 
-@container (max-width: 480px) {
-  .chat-turn { padding-left: 0; }
-  .chat-turn::before { display: none; }
-}
+

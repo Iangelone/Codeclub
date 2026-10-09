@@ -5,7 +5,7 @@ import { useChatHistory } from './use-chat-history';
 import { generateTurnSummary } from '../lib/turn-summary';
 import { buildChatContext } from '../lib/chat-context';
 import { sameSession, useSharedSessions, type SharedSession } from '../lib/shared-sessions';
-import { ArrowUp, BookOpen, BookPlus, Box, Braces, Orbit, PackagePlus, PlugZap, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Languages, LayoutTemplate, MessageSquare, Minimize2, Monitor, MoreHorizontal, Paperclip, Pencil, Play, Presentation, Radar, RotateCcw, Search, ScrollText, Square, Table2, Terminal, Folder, WandSparkles, X } from 'lucide-react';
+import { ArrowUp, BookOpen, BookPlus, Box, Braces, Orbit, PackagePlus, PlugZap, Check, ChevronDown, ChevronRight, Code2, Copy, Eye, FileCode2, FileText, FileType2, Folders as FolderOpen, Globe, KeyRound, Languages, LayoutTemplate, MessageSquare, Monitor, MoreHorizontal, Paperclip, Pencil, Play, Presentation, Radar, RotateCcw, Search, ScrollText, Square, Table2, Terminal, Folder, WandSparkles, X } from 'lucide-react';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -47,7 +47,6 @@ import { ORB_PALETTES, useOrbPalette } from './OrbPaletteProvider';
 import { credentialKeyFor, credentialTargetFor, modelIdFor, modelMatchesProvider, usesGateway } from '../lib/ai-routing';
 
 const formatProcessingDuration = (durationMs: number) => durationMs >= 60000 ? `${(durationMs / 60000).toFixed(1)}min` : `${Math.max(0, Math.round(durationMs / 1000))}s`;
-const limitResponseLength = (content: string, maxLength = 500) => content.length > maxLength ? `${content.slice(0, maxLength - 1).trimEnd()}…` : content;
 const getBrowserReferenceFavicon = (reference: { title: string; url?: string }) => {
   try {
     if (!reference.url && reference.title.toLowerCase().includes('google')) return 'https://www.google.com/favicon.ico';
@@ -443,8 +442,6 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
   const visualAnimationRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const [composerDocked, setComposerDocked] = useState(true);
-  const [timelineVisible, setTimelineVisible] = useState(true);
-  const [responseSaverEnabled, setResponseSaverEnabled] = useState(false);
   const composerDockedRef = useRef(false);
 
   useEffect(() => {
@@ -753,13 +750,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     composerDockedRef.current = composerDocked;
   }, [composerDocked]);
 
-  useEffect(() => {
-    void getSetting('codeclub_timeline_visible', true).then((value) => setTimelineVisible(value !== false));
-  }, []);
 
-  useEffect(() => {
-    void getSetting('codeclub_response_saver', false).then((value) => setResponseSaverEnabled(value === true));
-  }, []);
 
   useEffect(() => {
     lastSelectedProjectRef.current = selectedProject ? { projectPath: selectedProject.projectPath, projectName: selectedProject.projectName || 'Proyecto' } : null;
@@ -1225,8 +1216,6 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     { id: 'proyecto', label: projectsSlashLabel, description: chatText.slash.projectDescription, aliases: ['proyecto', 'proyectos', 'project', 'projects'], type: 'command', icon: Folder },
     { id: 'habilidad', label: chatText.slash.skill, description: chatText.slash.skillDescription, aliases: ['habilidad', 'skill'], type: 'command', icon: WandSparkles },
     { id: 'idioma', label: language === 'en' ? 'Language' : 'Idioma', description: language === 'en' ? 'Change language' : 'Cambiar idioma', aliases: ['idioma', 'language', 'lang'], type: 'command', icon: Languages },
-    { id: 'timeline', label: timelineVisible ? (language === 'en' ? 'Hide timeline' : 'Ocultar línea vertical') : (language === 'en' ? 'Show timeline' : 'Mostrar línea vertical'), description: language === 'en' ? 'Show or hide the chat timeline line' : 'Mostrar u ocultar la línea vertical del chat', aliases: ['timeline', 'línea', 'linea', 'vertical'], type: 'command', icon: Eye },
-    { id: 'ahorro', label: responseSaverEnabled ? (language === 'en' ? 'Disable response saving' : 'Desactivar ahorro de respuestas') : (language === 'en' ? 'Save response length' : 'Ahorrar respuestas'), description: language === 'en' ? 'Limit responses to 500 characters' : 'Limitar respuestas a 500 caracteres', aliases: ['ahorro', 'compactar', 'breve', 'conciso'], type: 'command', icon: Minimize2 },
     ...(isDevelopmentBuild ? [{ id: 'desarrollo', label: language === 'en' ? 'Development' : 'Desarrollo', description: language === 'en' ? 'Insert a development prompt' : 'Inyectar un prompt de desarrollo', aliases: ['desarrollo', 'desarrollar', 'development', 'develop'], type: 'command' as const, icon: Code2 }] : []),
     { id: 'overlay', label: computerUseActive ? (language === 'en' ? 'Disable Computer Use overlay' : 'Desactivar overlay de Computer Use') : (language === 'en' ? 'Enable Computer Use overlay' : 'Activar overlay de Computer Use'), description: language === 'en' ? 'Show or hide the PC control overlay' : 'Mostrar u ocultar el overlay de control de PC', aliases: ['overlay', 'overlay-pc', 'computer-overlay'], type: 'command', icon: Monitor },
     ...skillOptions.map(skill => ({ ...skill, type: 'skill', label: skill.name, aliases: [skill.name.toLowerCase(), 'skill', 'habilidad'], icon: BookOpen })),
@@ -1349,30 +1338,6 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
         setInput('');
         setSearchQuery('');
         openCommandMenu('language');
-        return;
-      }
-      if (item.id === 'timeline') {
-        const nextVisible = !timelineVisible;
-        setTimelineVisible(nextVisible);
-        void setSetting('codeclub_timeline_visible', nextVisible);
-        setInput('');
-        setSearchQuery('');
-        setMenuOpen(false);
-        setCommandKind('');
-        chatInputRef.current?.focus();
-        return;
-      }
-      if (item.id === 'ahorro') {
-        setResponseSaverEnabled((current) => {
-          const next = !current;
-          void setSetting('codeclub_response_saver', next);
-          return next;
-        });
-        setInput('');
-        setSearchQuery('');
-        setMenuOpen(false);
-        setCommandKind('');
-        chatInputRef.current?.focus();
         return;
       }
       if (item.id === 'desarrollo') {
@@ -2273,7 +2238,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         'For substantial work, call reportProgress before starting and when moving to a new phase. Use one brief user-facing phrase in the user\'s language (for example, "Inspecting the project" or "Implementing the selected text actions"). These are progress updates, not chain-of-thought; never reveal private reasoning. Do not call it for routine short answers.',
         activeExtensions.length ? `The user selected these built-in extensions for this session: ${activeExtensions.map(extension => `${extension.name}: ${extension.instruction}`).join('\n')}` : '',
         'Codeclub resource management: discover exact targets with listResources. Use createExtension/createSkill/createMcpServer for new packages; editPluginResource for existing manifests or skills; deleteSkill removes only a skill; manageMcpServer updates/removes only the named server; manageOrb handles global orbs. Preserve unrelated resources and scopes. Built-in resources are read-only; create a personal copy when needed. Selected references identify targets but are not requests to mutate them.',
-        responseSaverEnabled ? 'Keep the final response concise and within a strict maximum of 500 characters. Preserve only the most useful facts and omit lengthy explanations.' : '',
       ].filter(Boolean).join(' ');
       // Some compatible providers reject response_format when tools are enabled.
       // Artifact tools already validate and persist their output, so require JSON
@@ -2307,13 +2271,12 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           })),
           tools,
           structuredOutput,
-          maxOutputTokens: responseSaverEnabled ? 160 : undefined,
           signal: abortController.signal,
           callbacks: {
             onAssistantMessageStart: offset => { assistantBoundaries.push(offset); },
             onTextDelta: (content) => {
               if (!isCurrentGeneration()) return;
-              assistantContent = responseSaverEnabled ? limitResponseLength(content) : content;
+              assistantContent = content;
               scheduleAssistantMessageUpdate();
             },
             onReasoningDelta: (content) => {
@@ -2480,7 +2443,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         if (continuationActions.includes('merge') || continuationActions.includes('stop')) swarmOpen = false;
       }
 
-      if (responseSaverEnabled) assistantContent = limitResponseLength(assistantContent);
       if (!isCurrentGeneration() || abortController.signal.aborted) return;
       const changes = contextProjectPath ? summarizeWorkspaceDelta(beforeWorkspaceSnapshot, await readWorkspaceSnapshot(toolProjectPath)) : null;
       const { summary: turnSummary } = await generateTurnSummary({ model: provider(selectedModelReference) as any, request: visibleContent || content, response: assistantContent, language, signal: abortController.signal, projectPath: contextProjectPath || '', chatId, providerId: currentProvider.id, modelId: currentModel.id });
@@ -2682,16 +2644,6 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           },
         },
       }));
-      setInput('');
-      return;
-    }
-
-    if (/^\/(ahorro|compactar)$/i.test(input.trim())) {
-      setResponseSaverEnabled((current) => {
-        const next = !current;
-        void setSetting('codeclub_response_saver', next);
-        return next;
-      });
       setInput('');
       return;
     }
@@ -3055,7 +3007,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
   }
 
   return (
-    <div ref={chatPanelRef} role="region" aria-label={`Chat${activeChat?.name ? `: ${activeChat.name}` : ''}`} className={`chat-interface-container @container mx-auto flex h-full w-full max-w-[760px] min-w-0 flex-col ${floating ? 'gap-0' : 'gap-4'} overflow-visible px-3 pb-5 ${timelineVisible ? '' : 'timeline-hidden'}`} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleComposerDrop}>
+    <div ref={chatPanelRef} role="region" aria-label={`Chat${activeChat?.name ? `: ${activeChat.name}` : ''}`} className={`chat-interface-container @container mx-auto flex h-full w-full max-w-[760px] min-w-0 flex-col ${floating ? 'gap-0' : 'gap-4'} overflow-visible px-3 pb-5`} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleComposerDrop}>
       {agentTextSelection && createPortal(<div className="chat-selection-toolbar-wrap" style={{ top: agentTextSelection.top, left: agentTextSelection.left, '--selection-accent': palette.accent } as React.CSSProperties} onPointerDown={(event) => event.preventDefault()}>
         {!selectionCommentOpen && <div className="chat-selection-toolbar" role="toolbar" aria-label={agentTextSelectionTranslations[language].toolbar}>
           <button type="button" onClick={() => { setSelectionCommentOpen(true); setSelectionComment(''); }}>{agentTextSelectionTranslations[language].addToChat}</button>

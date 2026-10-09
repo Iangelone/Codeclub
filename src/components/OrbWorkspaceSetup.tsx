@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, Globe, Laptop, Monitor } from 'lucide-react';
+import { Check, Laptop, Monitor } from 'lucide-react';
 import { orbWorkspaceTranslations, useAppLanguage } from '../lib/i18n';
+import FluidOrb from './ui/fluid-orb';
 
 /** First step of orb creation: a separate browser, with optional access to this device. */
 export default function OrbWorkspaceSetup({ onContinue }: { onContinue: (allowComputer: boolean) => void }) {
@@ -10,19 +11,8 @@ export default function OrbWorkspaceSetup({ onContinue }: { onContinue: (allowCo
   const [allowComputer, setAllowComputer] = useState(false);
   return <div className="flex min-h-full w-full items-center justify-center bg-[#161616] px-5 py-7">
     <div className="w-full max-w-[320px]">
-      <div aria-hidden="true" className="relative mx-auto mb-6 w-[205px] max-w-full pb-5">
-        <div className="rounded-[15px] border border-[#d4dce6] bg-[#a7b5c9] p-3 shadow-lg">
-          <div className="overflow-hidden rounded border border-[#8f9daf] bg-[#f6f8fa] text-[#718093]">
-            <div className="flex h-4 items-center gap-1 bg-[#dce4ec] px-2"><span className="h-1 w-1 rounded-full bg-[#94a2b4]" /><span className="h-1 w-1 rounded-full bg-[#94a2b4]" /><span className="h-1 w-1 rounded-full bg-[#94a2b4]" /></div>
-            <div className="flex h-5 items-center gap-2 border-b border-[#e4e8ed] px-2"><Globe size={8} /><div className="h-2 flex-1 rounded-full bg-white" /></div>
-            <div className="flex h-[100px] flex-col items-center justify-center gap-2">
-              <span className="text-[9px] font-medium">Codeclub</span>
-              <div className="grid h-8 w-8 place-items-center rounded-full bg-[#dcecff]"><span className="h-4 w-4 rounded-full bg-[#8bc7ff]" /></div>
-              <div className="grid grid-cols-4 gap-2">{Array.from({ length: 8 }, (_, index) => <span key={index} className="h-2.5 w-2.5 rounded bg-[#e1e7ef]" />)}</div>
-            </div>
-          </div>
-        </div>
-        <div className="absolute bottom-0 left-1/2 flex h-7 -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-b-[15px] bg-[#a7b5c9] px-3 text-[9px] text-white"><Monitor size={14} />{text.workspace}</div>
+      <div aria-hidden="true" className="mx-auto mb-6 flex h-[182px] w-[205px] max-w-full items-center justify-center">
+        <FluidOrb size={182} active animateOnHover={false} />
       </div>
       <h1 className="m-0 text-center text-[20px] font-semibold leading-6 tracking-tight text-[#eeeeee]">{text.title}</h1>
       <p className="mt-1.5 text-center text-[12px] leading-4 text-[#aaaaaa]">{text.description}</p>
