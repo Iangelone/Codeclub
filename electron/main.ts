@@ -308,7 +308,7 @@ const ignoredDirectories = new Set(['.git', 'node_modules', '.next', 'out', 'ele
 const projectFile = (projectPath: string, relativePath: string) => {
   const rootPath = path.resolve(projectPath);
   const targetPath = path.resolve(rootPath, relativePath || '.');
-  if (targetPath !== rootPath && !targetPath.startsWith(`${rootPath}${path.sep}`)) throw new Error('La ruta queda fuera del proyecto.');
+  if (!isInsidePath(rootPath, targetPath)) throw new Error('La ruta queda fuera del proyecto.');
   return targetPath;
 };
 

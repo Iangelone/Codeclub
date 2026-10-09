@@ -1,5 +1,10 @@
 /* Restore readable chat typography because Tailwind resets semantic elements
    such as lists, headings, and paragraphs. */
+.chat-markdown-assistant {
+  font-size: 15px;
+  line-height: 1.65;
+}
+
 .chat-markdown > :first-child,
 .chat-markdown > div > :first-child {
   margin-top: 0;

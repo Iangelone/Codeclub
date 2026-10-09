@@ -65,7 +65,14 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
       const overhead = contextBytes(system) + contextBytes(JSON.stringify(Object.entries(currentTools).map(([name, tool]) => ({ name, description: tool.description, schema: activeSchemas.get(name) })))) + Math.min(maxOutputTokens || 4096, Math.floor(budget / 4));
       const cost = (items: ModelMessage[]) => overhead + items.reduce((sum, message) => sum + messageContextCost(message), 0);
       if (cost(preparedMessages) <= budget) return { messages: preparedMessages, contextStats: browserContext.stats };
-      const compacted = pruneMessages({ messages: preparedMessages, reasoning: 'all', toolCalls: 'before-last-3-messages', emptyMessages: 'remove' });
+      let compacted = pruneMessages({ messages: preparedMessages, reasoning: 'all', toolCalls: 'before-last-3-messages', emptyMessages: 'remove' });
+      // Discovered tool schemas also consume context. Preserve the latest request
+      // and its tool chain while dropping older complete turns when necessary.
+      while (cost(compacted) > budget) {
+        const nextUser = compacted.findIndex((message, index) => index > 0 && message.role === 'user');
+        if (nextUser < 0) break;
+        compacted = compacted.slice(nextUser);
+      }
       if (cost(compacted) > budget) throw new Error('CHAT_MESSAGE_TOO_LARGE');
       return { messages: compacted, contextStats: browserContext.stats };
     })
@@ -129,7 +136,7 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
           } else if (chunk.type === 'tool-call' || chunk.type === 'tool-input-start') {
             requestedTool = true;
             callbacks.onToolCall?.();
-          } else if (chunk.type === 'tool-result') {
+          } else if (chunk.type === 'tool-result' || chunk.type === 'tool-error') {
             callbacks.onToolResult?.();
           } else if (chunk.type === 'error') {
             streamError ??= chunk.error;
@@ -227,7 +234,7 @@ export async function adaptLangChainTools(tools: Record<string, any>): Promise<R
         const executable = langchainTool((arguments_: any) => {
           options?.abortSignal?.throwIfAborted();
           return definition.execute(arguments_, options);
-        }, { name, description: definition.description || name, schema: schema as any });
+        }, { name, description: definition.description || name, schema: schema as any, verboseParsingErrors: true });
         return executable.invoke(input as any, { signal: options?.abortSignal });
       },
     };

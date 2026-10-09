@@ -140,6 +140,22 @@ body {
   background: transparent;
   color: var(--ink);
   color-scheme: dark;
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-size: 14px;
+}
+
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
 }
 
 html.theme-light,

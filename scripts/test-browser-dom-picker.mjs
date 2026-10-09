@@ -101,8 +101,8 @@ try {
   // Exercise the real React editor against the same guest runtime, including validation and resize.
   await page.setContent('<button id="target" style="width:120px;color:rgb(10,20,30)">Original text</button><div id="codeclub-right-sidebar" style="position:fixed;top:80px;left:20px;width:360px;height:320px"></div>');
   const editorSelection = await select();
-  const stylesheet = await readFile('src/app/globals.css', 'utf8');
-  await page.addStyleTag({ content: '*{box-sizing:border-box}' + stylesheet.slice(stylesheet.indexOf('.browser-style-editor {'), stylesheet.indexOf('.browser-reference-remove {')) });
+  const stylesheet = await readFile('src/styles/previews-and-browser-editor.css', 'utf8');
+  await page.addStyleTag({ content: '*{box-sizing:border-box}' + stylesheet });
   const editorBundle = await build({ stdin: { contents: `
     import React from 'react';
     import { createRoot } from 'react-dom/client';

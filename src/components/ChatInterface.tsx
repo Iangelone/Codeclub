@@ -2387,10 +2387,10 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               const eventKey = queuedKeys.shift() || '';
               if (queuedKeys.length) executionCallQueues.set(queueKey, queuedKeys); else executionCallQueues.delete(queueKey);
               if (eventKey) {
-                const output = toolOutput?.type === 'tool-result' ? toolResult : { ok: false, error: 'TOOL_EXECUTION_FAILED', errorType: toolOutput?.error?.name || 'Error' };
+                const output = toolOutput?.type === 'tool-result' ? toolResult : { ok: false, error: String(toolOutput?.error?.message || toolOutput?.error || 'TOOL_EXECUTION_FAILED').slice(0, 4000), errorType: toolOutput?.error?.name || 'Error' };
                 assistantTools = assistantTools.map((event) => event.callId === eventKey ? { ...event, output, durationMs: toolExecutionMs } : event);
                 const toolEvent = assistantTools.find((event) => event.callId === eventKey);
-                if (toolEvent) assistantTimeline = assistantTimeline.map((event) => event.id === toolEvent.id ? { ...event, status: toolStatus, output: toolOutput, durationMs: toolExecutionMs } : event);
+                if (toolEvent) assistantTimeline = assistantTimeline.map((event) => event.id === toolEvent.id ? { ...event, status: toolStatus, output, durationMs: toolExecutionMs } : event);
               }
               updateAssistantMessage();
               void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'tool.execution.end', input: { callId: eventKey || `${sourceCallId}:unmatched`, sourceCallId, toolCallId: toolCall?.toolCallId, toolName: toolCall?.toolName }, output: { durationMs: toolExecutionMs, status: toolStatus } });

@@ -66,8 +66,11 @@ const invalidModel = new MockLanguageModelV3({ doStream: [
   stream([{ ...call('invalid'), input: '{"value":"invalid"}' }], 'tool-calls'),
   stream([call('corrected')], 'tool-calls'), stream(text, 'stop'),
 ] });
-assert.equal(await runStream({ model: invalidModel, system: 'Fixture', messages: [{ role: 'user', content: 'Recover from invalid arguments' }], tools, callbacks: { onTextDelta: () => {} } }), 'Verified.');
+let settledTools = 0;
+assert.equal(await runStream({ model: invalidModel, system: 'Fixture', messages: [{ role: 'user', content: 'Recover from invalid arguments' }], tools, callbacks: { onTextDelta: () => {}, onToolResult: () => { settledTools++; } } }), 'Verified.');
+assert.equal(settledTools, 2, 'Both rejected and successful tools clear the running state');
 assert.equal(invalidModel.doStreamCalls.length, 3, 'Tool errors must reach the next model step so it can correct its arguments');
+assert.match(JSON.stringify(invalidModel.doStreamCalls[1].prompt), /Details:/, 'Schema errors must explain the rejected constraint to the model');
 assert.equal(effects, 2, 'Only the corrected call may perform the effect');
 effects = 1;
 

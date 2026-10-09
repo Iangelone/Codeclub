@@ -30,6 +30,7 @@ try {
   const stylesheet=(await Promise.all(styles.map(file=>readFile(path.join(cssDirectory,file),'utf8')))).join('\n');
   files.set('/qa/settings.json',JSON.stringify({codeclub_last_provider_id:'qa',codeclub_last_model_id:'qa-model',codeclub_api_key_qa:'fixture-only',codeclub_orbs:[{id:'qa-orb',name:'Orbe QA',purpose:'QA only',color:'#2d5fd6',providerId:'qa',modelId:'qa-model'}]}));
   server=createServer(async (request,response)=>{
+    if(['/fonts/InterVariable.woff2','/fonts/InterVariable-Italic.woff2'].includes(request.url)){response.setHeader('content-type','font/woff2');response.end(await readFile(path.join(repo,'public',request.url)));return;}
     if(request.url==='/app.js'){response.setHeader('content-type','text/javascript');response.end(await readFile(bundle));return;}
     if(request.url==='/style.css'){response.setHeader('content-type','text/css');response.end(stylesheet);return;}
     if(request.url?.startsWith('/v1')) {
@@ -95,6 +96,9 @@ try {
   await page.addInitScript(()=>{const bridge={};for(const method of ['invoke','chatTurns','chatPage','chatContext','chatSaveTail','chatAppend','chatSearch','chatTranscript','chatAll','fileExists','readTextFile','writeTextFile','joinPath','appConfigDir','appCacheDir','makeDirectory'])bridge[method]=(...args)=>window.qaBridge({method,args});window.codeclub=bridge;});
   await page.goto(`http://127.0.0.1:${server.address().port}`);
   await page.waitForSelector('#root > div > div');
+  await page.evaluate(()=>document.fonts.ready);
+  assert.ok(await page.evaluate(()=>document.fonts.check('14px Inter')),'Bundled Inter loads locally');
+  assert.ok((await page.locator('body').evaluate(element=>getComputedStyle(element).fontFamily)).includes('Inter'),'The app shares the global typography');
   await page.waitForTimeout(150);
   const open=id=>page.evaluate(chatId=>window.dispatchEvent(new CustomEvent('codeclub:qa:open-chat',{detail:{chatId,projectPath:'',name:chatId}})),id);
   await open('long');
@@ -102,6 +106,7 @@ try {
   await page.waitForTimeout(150);
   const mounted=await page.locator('.chat-turn').count();assert.ok(mounted<30,`Too many mounted turns: ${mounted}`);
   await page.locator('.messages-area[data-chat-transition="idle"]').waitFor();
+  const bottom=await page.locator('.messages-area').evaluate(area=>area.scrollHeight-area.scrollTop-area.clientHeight);assert.ok(bottom<10,'Opened chat is pinned to its latest turn');
   const spacing=await page.evaluate(()=>{
     const area=document.querySelector('.messages-area').getBoundingClientRect();
     const composer=document.querySelector('.chat-composer').getBoundingClientRect();
@@ -128,7 +133,6 @@ try {
   }));
   assert.ok(turnSpacing.every(turn=>turn.headerGap>=7.5),'Every timestamp sits above its bubble');
   assert.ok(turnSpacing.every(turn=>turn.nextGap===null||turn.nextGap>=15.5),'Actions are separated from the next timestamp');
-  const bottom=await page.locator('.messages-area').evaluate(area=>area.scrollHeight-area.scrollTop-area.clientHeight);assert.ok(bottom<10,'Opened chat is pinned to its latest turn');
   await page.locator('.messages-area').evaluate(area=>{area.scrollTop=0;});
   await page.waitForTimeout(250);
   const firstIndex=await page.locator('.chat-turn').first().getAttribute('aria-label');assert.ok(Number(firstIndex.match(/\d+/)[0])<9971,'Older turns load when scrolling up');

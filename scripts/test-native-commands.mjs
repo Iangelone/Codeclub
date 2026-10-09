@@ -19,6 +19,17 @@ try {
   app = await electron.launch({ args: [wrapper], env });
   const page = await app.firstWindow();
   await page.waitForFunction(() => window.codeclub?.invoke);
+  const fileInvoke = (command, args) => page.evaluate(({ command, args, project }) => window.codeclub.invoke(command, { projectPath: project, ...args }), { command, args, project });
+  await fileInvoke('codeclub_write_file', { path: 'nested/example.txt', content: 'fixture content' });
+  assert.equal(await fileInvoke('codeclub_read_file', { path: 'nested/example.txt' }), 'fixture content');
+  if (process.platform === 'win32') {
+    assert.equal(await fileInvoke('codeclub_read_file', { path: path.join(project, 'nested/example.txt').toUpperCase() }), 'fixture content', 'Windows containment accepts alternate path casing');
+  }
+  for (const file of ['../outside.txt', path.join(directory, 'outside.txt'), '/home/user/project/customers_orders.db']) {
+    await assert.rejects(fileInvoke('codeclub_read_file', { path: file }), /fuera del proyecto/);
+    await assert.rejects(fileInvoke('codeclub_write_file', { path: file, content: 'blocked' }), /fuera del proyecto/);
+  }
+  await assert.rejects(readFile(path.join(directory, 'outside.txt')), { code: 'ENOENT' });
   const invoke = request => page.evaluate(({ request, project }) => window.codeclub.invoke('codeclub_run_command', { projectPath: project, request }), { request, project });
   const success = await invoke({ command: process.execPath, args: ['-e', 'console.log(process.argv[1])', 'literal $value; & text'] });
   assert.equal(success.ok, true);
@@ -48,7 +59,7 @@ try {
   const until = Date.now() + 5000;
   while (Date.now() < until) { try { process.kill(detachedPid, 0); } catch { break; } await new Promise(resolve => setTimeout(resolve, 100)); }
   assert.throws(() => process.kill(detachedPid, 0), 'Background child must stop even after parent exit');
-  console.log('Native commands: literal arguments, Windows shims, exit codes, timeout and descendant cleanup passed.');
+  console.log('Native commands: project read/write, Windows path casing, traversal rejection, literal arguments, shims, exit codes, timeout and descendant cleanup passed.');
 } finally {
   for (const pid of fixturePids) { try { process.kill(pid); } catch {} }
   await app?.close();

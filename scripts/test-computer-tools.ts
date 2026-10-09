@@ -20,16 +20,19 @@ test('dynamic tool execution preserves native failures and redacts desktop audit
 test('aborting an SDK tool call cancels the native desktop host through dynamic access', async () => {
   const calls: string[] = [];
   let finish!: (result: unknown) => void;
+  let started!: () => void;
+  const nativeStarted = new Promise<void>(resolve => { started = resolve; });
   (globalThis as any).window = { codeclub: { invoke: async (command: string) => {
     calls.push(command);
     if (command === 'codeclub_computer_stop') { finish({ ok: false, error: 'Cancelled' }); return { ok: true }; }
-    return new Promise((resolve) => { finish = resolve; });
+    return new Promise((resolve) => { finish = resolve; started(); });
   } } };
   try {
     const tools = createTools({ projectPath: '', recordToolEvent: () => {}, setAgentState: () => {}, requestToolApproval: async () => true });
     const dynamic = createDynamicToolAccess(tools) as any;
     const abort = new AbortController();
     const result = dynamic.executeTool.execute({ name: 'computerGetState', input: {} }, { toolCallId: 'test', messages: [], abortSignal: abort.signal });
+    await nativeStarted;
     abort.abort();
     assert.equal((await result).ok, false);
     assert.deepEqual(calls, ['codeclub_computer_get_state', 'codeclub_computer_stop']);

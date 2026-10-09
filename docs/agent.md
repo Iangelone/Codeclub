@@ -53,6 +53,8 @@ No checkpointer is configured: graph state exists only during a run. History and
 
 ## AI SDK: what we use
 
+The [October 9 tool audit](tool-audit.md) records execution and path corrections, regression tests, and their limits. Intelligent UI has been removed from the chat.
+
 In [run.ts](../src/lib/engine/run.ts), AI SDK controls one model/tool step inside each graph node. `instructions` sets the system instructions, and `fullStream` delivers text, reasoning, and events. The engine uses step, tool, and usage callbacks, along with `AbortSignal`, `smoothStream`, and structured output where appropriate. It keeps global step numbering and publishes usage/completion once per run.
 
 The `prepare` node checks the context budget, and `pruneMessages` removes old reasoning and results. The estimate uses UTF-8 bytes, not an exact tokenizer. Chat requests up to 128 steps, scheduled tasks 32, and auxiliary calls use 8 by default. The model may finish earlier; reaching the limit does not prove the goal is complete. Tool errors also return to the model so it can correct arguments without replaying prior side effects. [Chat history](history.md) explains the recent window, SQLite, excerpts, and historical search.

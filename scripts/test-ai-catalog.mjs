@@ -22,7 +22,8 @@ try {
   const addedProvider = providers.find(item => item.id === 'new-provider');
   const first = models.find(item => item.gatewayId === 'new-provider/first');
 
-  assert.equal(models.length, 4, 'No duplicate shared model or unsupported modality');
+  assert.equal(models.filter(item => item.providerId !== 'google').length, 4, 'No duplicate shared model or unsupported modality');
+  assert.equal(models.filter(item => item.providerId === 'google').length, 1, 'Missing Google metadata supplies one direct fallback');
   assert.equal(original.api, 'https://direct.example/v1');
   assert.equal(shared.label, 'Shared direct', 'Keep direct metadata and route');
   assert.equal(usesGateway(original, shared), false);
@@ -37,7 +38,8 @@ try {
   assert.deepEqual(added.gatewayCost,{input:0,output:0},'Free pricing comes from Gateway metadata');
   assert.equal(added.contextWindow,32000);
   assert.equal(shared.gatewayCost,null,'Missing pricing must not imply a free model');
-  assert.equal(modelMatchesProvider(added, original), true, 'New Gateway model remains in the existing provider selector');
+  assert.equal(modelMatchesProvider(added, original), false, 'Gateway-only models stay out of the direct provider selector');
+  assert.equal(modelMatchesProvider(added, gateway), true, 'Gateway-only models remain selectable through Gateway');
   assert.equal(usesGateway(original, added), true);
   assert.equal(credentialKeyFor(original, added), 'ai_gateway_api_key');
   assert.equal(credentialTargetFor(original, added).label, 'Vercel AI Gateway');
@@ -51,15 +53,15 @@ try {
     ? { ok: true, json: async () => structuredClone(directData) }
     : { ok: false, status: 503 };
   const fallback = await import('../src/lib/ai-catalog.ts?gateway-unavailable-test');
-  assert.equal(fallback.models.length, 2, 'Gateway outage keeps direct providers and models');
+  assert.equal(fallback.models.filter(item => item.providerId !== 'google').length, 2, 'Gateway outage keeps direct providers and models');
   assert.equal(fallback.providers.find(item => item.id === 'original').api, original.api);
 
   globalThis.fetch = async url => String(url).includes('models.dev')
     ? { ok: false, status: 503 }
     : { ok: true, json: async () => structuredClone(gatewayData) };
   const gatewayOnly = await import('../src/lib/ai-catalog.ts?direct-unavailable-test');
-  assert.equal(gatewayOnly.models.length, 3, 'Direct catalog outage keeps Gateway available');
+  assert.equal(gatewayOnly.models.filter(item => item.providerId !== 'google').length, 3, 'Direct catalog outage keeps Gateway available');
   assert.equal(gatewayOnly.providers.find(item => item.id === 'original').gatewayOnly, true);
-  assert.equal(usesGateway(gatewayOnly.providers.find(item => item.id === 'original'), gatewayOnly.models[0]), true);
+  assert.equal(usesGateway(gatewayOnly.providers.find(item => item.id === 'original'), gatewayOnly.models.find(item => item.gatewayId === 'original/shared')), true);
   console.log('AI catalog routing, credentials, deduplication and independent fallback: OK');
 } finally { globalThis.fetch = realFetch; }

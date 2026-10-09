@@ -1,4 +1,4 @@
-.floating-shell { height: calc(100vh - 16px); margin: 8px; padding: 6px; display: flex; flex-direction: column; border: 1px solid #202020; border-radius: 24px; background: #080808; color: #dedede; overflow: hidden; font-family: 'Segoe UI', sans-serif; box-shadow: 0 4px 12px #0006; }
+.floating-shell { height: calc(100vh - 16px); margin: 8px; padding: 6px; display: flex; flex-direction: column; border: 1px solid #202020; border-radius: 24px; background: #080808; color: #dedede; overflow: hidden; font-family: var(--font-sans); box-shadow: 0 4px 12px #0006; }
 .floating-toolbar { display: flex; align-items: center; gap: 4px; height: 36px; flex-shrink: 0; padding: 0 4px 8px; }
 .floating-toolbar nav { display: flex; align-items: center; gap: 3px; }
 .floating-toolbar button, .floating-chat-options button { display: flex; align-items: center; justify-content: center; gap: 7px; border: 0; background: transparent; color: #999; height: 26px; min-width: 26px; border-radius: 16px; cursor: pointer; }
