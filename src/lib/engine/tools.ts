@@ -405,10 +405,11 @@ export function createDynamicToolAccess(availableTools: Record<string, any>, rec
           const nextStep = name === 'computerAction' && input?.action === 'focus'
             ? 'Inspeccioná state devuelto por computerAction. Usá snapshotId/ref; si falta el control, computerOcr. Una acción enviada no demuestra que se completó la tarea.'
             : undefined;
-          const output = { ok: result?.ok !== false, tool: name, durationMs: Math.round(performance.now() - startedAt), result, ...(nextStep ? { nextStep } : {}) };
+          const output = { ok: result?.ok !== false && result?.isError !== true, tool: name, durationMs: Math.round(performance.now() - startedAt), result, ...(nextStep ? { nextStep } : {}) };
           recordToolEvent?.('executeTool', name.startsWith('computer') ? { name } : { name, input: input || {} }, name.startsWith('computer') ? { ok: output.ok, tool: name, durationMs: output.durationMs } : output);
           return output;
         } catch (error) {
+          if (options?.abortSignal?.aborted || (error instanceof Error && error.name === 'AbortError')) throw error;
           const output = { ok: false, tool: name, durationMs: Math.round(performance.now() - startedAt), error: String(error) };
           recordToolEvent?.('executeTool', name.startsWith('computer') ? { name } : { name, input: input || {} }, output);
           return output;

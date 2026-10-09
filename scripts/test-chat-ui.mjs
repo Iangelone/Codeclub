@@ -21,6 +21,7 @@ try {
   await store.saveTail('','retry',0,rows.map((row,index)=>index===9998?{...row,content:'QA tall retry '+ 'paragraph '.repeat(400)}:row));
   await store.saveTail('','slow',0,[{role:'user',content:'SLOW user'},{role:'assistant',content:'SLOW response'}]);
   await store.saveTail('','fast',0,[{role:'user',content:'FAST user'},{role:'assistant',content:'FAST response'}]);
+  await store.saveTail('', 'stalled-image', 0, [{ role: 'user', content: 'Pending image fixture' }, { role: 'assistant', content: '![Pending fixture](/qa-stalled.png)' }]);
   await store.saveTail('','varied',0,rows.map((row,index)=>({...row,content:index===9999?'QA varied last':index%2===1?`QA varied ${index}\n\n${'Paragraph with different wrapping and line height. '.repeat(index%7*12+1)}`:row.content})));
   const entry=path.join(directory,'entry.tsx'),bundle=path.join(directory,'app.js');
   await writeFile(entry,`import React from 'react';import {createRoot} from 'react-dom/client';import OrbPaletteProvider from ${JSON.stringify(path.join(repo,'src/components/OrbPaletteProvider.tsx'))};import ChatInterface from ${JSON.stringify(path.join(repo,'src/components/ChatInterface.tsx'))};const provider={id:'qa',label:'QA',api:location.origin+'/v1',type:'provider',requiresApiKey:false};const model={id:'qa-model',label:'QA model',providerId:'qa',type:'model',contextWindow:32768};const saved={...provider,id:'qa-saved',label:'QA saved',requiresApiKey:true};const missing={...saved,id:'qa-missing',label:'QA missing'};const gateway={id:'ai-gateway',label:'QA Gateway',type:'provider'};const extra=[saved,missing,gateway,{...model,id:'saved-model',label:'Saved model',providerId:saved.id},{...model,id:'missing-model',label:'Missing model',providerId:missing.id},{...model,id:'gateway-model',label:'Gateway model',gatewayId:'qa/gateway-model',providerId:'qa',gatewayAvailable:true,gatewayOnly:true}];createRoot(document.getElementById('root')!).render(<div style={{height:'100vh',background:'var(--codeclub-chat-background)'}}><OrbPaletteProvider><ChatInterface catalog={[provider,model,...extra]} defaultProvider={provider} defaultModel={model} eventPrefix="codeclub:qa"/></OrbPaletteProvider></div>);`);
@@ -310,6 +311,12 @@ try {
   await page.getByRole('option',{name:/Crear orbe/}).waitFor();
   await page.getByRole('textbox',{name:'Mensaje',exact:true}).fill('');
   assert.deepEqual(pageErrors,[]);
+  let pendingImageRoute;
+  await page.route('**/qa-stalled.png', route => { pendingImageRoute = route; });
+  await open('stalled-image');
+  await page.waitForFunction(() => document.querySelector('.messages-area[data-chat-transition="idle"] img[alt="Pending fixture"]'), undefined, { timeout: 6000 });
+  assert.equal(await page.getByAltText('Pending fixture').evaluate(image => image.complete), false, 'Chat reveals while an image remains stalled');
+  await pendingImageRoute?.abort();
   console.log(JSON.stringify({passed:true,fixtureMessages:10000,mountedTurns:mounted,providerMessages:networkMessages.length,raceProtected:true,streamPersisted:true,sequentialTransitions:true,stableEntry:true}));
 }finally{
   await browser?.close();await new Promise(resolve=>server?server.close(resolve):resolve());store.close();

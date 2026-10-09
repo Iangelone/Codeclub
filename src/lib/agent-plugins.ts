@@ -96,10 +96,11 @@ export async function connectAgentPluginMcp(plugin: AgentPlugin) {
           ? { type: 'sse', url: server.url, headers: server.headers }
           : { type: 'http', url: server.url, headers: server.headers },
       } as any);
+      // Register cleanup before discovery, which may fail after connecting.
+      closeCallbacks.push(() => client.close());
       const serverTools = await client.tools();
       const prefix = `mcp_${plugin.id}_${serverName}`.replace(/[^a-zA-Z0-9_]/g, '_');
       Object.entries(serverTools).forEach(([name, tool]) => { tools[`${prefix}_${name}`] = tool; });
-      closeCallbacks.push(() => client.close());
     } catch (error) {
       console.warn(`No se pudo conectar MCP del plugin ${plugin.name}/${serverName}:`, error);
     }

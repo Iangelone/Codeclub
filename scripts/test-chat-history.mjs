@@ -40,6 +40,12 @@ try {
   const older=await store.turnPage(project,'long',turns.start,15);
   const newer=await store.turnPage(project,'long',older.start+older.messages.length,15,'after');
   assert.equal(newer.start,turns.start);assert.equal(newer.messages.length,turns.messages.length);
+  for (const cursor of [NaN, Infinity, -Infinity]) {
+    const page = await store.turnPage(project, 'long', cursor, NaN);
+    assert.equal(page.start, turns.start);
+    assert.equal(page.messages.length, turns.messages.length);
+    assert.equal((await store.turnPage(project, 'long', cursor, NaN, 'after')).messages.length, 0);
+  }
   assert.equal((await store.page(project.toUpperCase(),'long')).total,10000,'Windows project casing shares history');
   assert.equal((await store.page('','long')).total,0,'Global scope stays separate');
   const appendStarted=performance.now();

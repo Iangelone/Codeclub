@@ -12,6 +12,18 @@ const gatewayData = { data: [
 ] };
 
 try {
+  const started = [];
+  let releaseDirect;
+  globalThis.fetch = async (url, options) => {
+    assert(options.signal instanceof AbortSignal, 'Catalog requests have a deadline');
+    started.push(String(url));
+    if (String(url).includes('models.dev')) return new Promise(resolve => { releaseDirect = () => resolve({ ok: true, json: async () => structuredClone(directData) }); });
+    assert.equal(started.length, 2, 'Gateway starts before the direct catalog completes');
+    releaseDirect();
+    return { ok: true, json: async () => structuredClone(gatewayData) };
+  };
+  await import('../src/lib/ai-catalog.ts?concurrent-test');
+  assert.equal(started.length, 2);
   globalThis.fetch = async url => ({ ok: true, json: async () => String(url).includes('models.dev') ? structuredClone(directData) : structuredClone(gatewayData) });
   const { providers, models } = await import('../src/lib/ai-catalog.ts?catalog-test');
   const original = providers.find(item => item.id === 'original');

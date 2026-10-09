@@ -57,5 +57,17 @@ try {
   scheduler.tick(); assert.equal(calls.length, 5);
   assert.equal(scheduler.list('')[0].status, 'paused'); assert.equal(scheduler.list('')[0].nextRun, undefined);
   scheduler.stop();
+  scheduler.save('', { ...base, id: 'orb_edit', autonomous: true });
+  scheduler.run('', 'orb_edit');
+  scheduler.start();
+  assert.equal(calls.length, 6);
+  scheduler.save('', { ...base, id: 'orb_edit', name: 'Edited during execution', autonomous: true });
+  releases[5].reject(new Error('TASK_NO_PROGRESS')); await flush();
+  const edited = scheduler.list('').find(task => task.id === 'orb_edit');
+  assert.equal(edited.name, 'Edited during execution');
+  assert.equal(edited.status, 'paused', 'Failure pauses the persisted edited task');
+  assert.equal(edited.nextRun, undefined);
+  assert.equal(edited.runs.at(-1).status, 'failed');
+  scheduler.stop();
   console.log('Scheduler: calendar, DST, scopes, validation, credential exclusion, serialization, deduplication, edits, catch-up, cancellation and restart passed.');
 } finally { await rm(directory, { recursive: true, force: true }); }

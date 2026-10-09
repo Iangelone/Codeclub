@@ -1,5 +1,5 @@
 /** Stores per-generation token/cost records as JSONL, separated between global and project scopes. */
-import { appConfigDir, joinPath as join, fileExists as exists, makeDirectory as mkdir, readDesktopText as readTextFile, writeDesktopText as writeTextFile } from './runtime';
+import { appConfigDir, joinPath as join, fileExists as exists, makeDirectory as mkdir, readDesktopText as readTextFile, appendDesktopLog } from './runtime';
 import { getProjectFilePath } from './persistence';
 
 export interface GenerationUsageRecord {
@@ -32,8 +32,7 @@ export const appendGenerationUsage = async (record: GenerationUsageRecord) => {
     const path = await usagePath(record.projectPath);
     const parent = path.slice(0, Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/')));
     if (parent) await mkdir(parent, { recursive: true });
-    const previous = (await exists(path)) ? await readTextFile(path) : '';
-    await writeTextFile(path, `${previous}${JSON.stringify(record)}\n`);
+    await appendDesktopLog(path, `${JSON.stringify(record)}\n`);
     if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('codeclub:usage-updated', { detail: { projectPath: record.projectPath } }));
   });
   usageWriteQueue = operation.catch(() => undefined);

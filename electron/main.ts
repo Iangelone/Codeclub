@@ -12,7 +12,7 @@ import { SettingsStore } from './settings-store.js';
 import { ChatStore } from './chat-store.js';
 import { SessionHub, type SessionChat } from './session-hub.js';
 import { spawn } from 'node:child_process';
-import { createInterface } from 'node:readline';
+import { createMcpSession } from './mcp-session.js';
 import { userInfo } from 'node:os';
 import { stripVTControlCharacters } from 'node:util';
 import path from 'node:path';
@@ -129,7 +129,7 @@ let lastComputerContext: Record<string, unknown> | null = null;
 type AutoUpdateState = { state: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'; version?: string; percent?: number; error?: string };
 let autoUpdateState: AutoUpdateState = { state: 'idle' };
 const activeCommands = new Set<() => void>();
-type NativeMcpSession = { child: ReturnType<typeof spawn>; nextId: number; pending: Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }> };
+type NativeMcpSession = ReturnType<typeof createMcpSession>;
 const nativeMcpSessions = new Map<string, NativeMcpSession>();
 type NativeTerminal = { child: pty.IPty; info: any; buffer: string; bufferOffset: number };
 const nativeTerminals = new Map<string, NativeTerminal>();
@@ -403,37 +403,33 @@ async function searchProjectText(projectPath: string, query: string, maxMatches:
 }
 
 const replacePluginVariables = (value: string, root: string, data: string) => String(value || '').replaceAll('${PLUGIN_ROOT}', root).replaceAll('${PLUGIN_DATA}', data);
-function mcpRequest(session: NativeMcpSession, method: string, params: Record<string, unknown>) {
-  const id = session.nextId++;
-  return new Promise<any>((resolve, reject) => {
-    session.pending.set(id, { resolve, reject });
-    if (!session.child.stdin || session.child.stdin.destroyed) { session.pending.delete(id); reject(new Error('MCP no tiene stdin disponible.')); return; }
-    session.child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
-  });
-}
-
 async function startMcpSession(request: any) {
-  const root = path.resolve(String(request.pluginRoot));
-  const data = path.resolve(String(request.pluginData));
-  await fs.mkdir(data, { recursive: true });
-  const command = String(request.command || '');
-  const commandPath = command.startsWith('./') ? path.resolve(root, command.slice(2)) : command;
-  if (command.startsWith('./') && !commandPath.startsWith(root)) throw new Error('command escapa del plugin.');
+  const root = await fs.realpath(path.resolve(String(request.pluginRoot)));
+  const dataPath = path.resolve(String(request.pluginData));
+  await fs.mkdir(dataPath, { recursive: true });
+  const data = await fs.realpath(dataPath);
+  const command = replacePluginVariables(request.command || '', root, data);
+  if (!command) throw new Error('MCP requiere un comando.');
+  let commandPath = command;
+  if (/^\.([\\/])/.test(command)) {
+    commandPath = await fs.realpath(path.resolve(root, command));
+    if (!isInsidePath(root, commandPath)) throw new Error('command escapa del plugin.');
+  }
   const cwd = path.resolve(replacePluginVariables(request.cwd || root, root, data));
-  if (!cwd.startsWith(root) && !cwd.startsWith(data)) throw new Error('cwd escapa del plugin o de PLUGIN_DATA.');
-  const env = { ...process.env, ...(request.env || {}), PLUGIN_ROOT: root, PLUGIN_DATA: data } as NodeJS.ProcessEnv;
-  const child = spawn(commandPath, (request.args || []).map((value: string) => replacePluginVariables(value, root, data)), { cwd, env, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, shell: process.platform === 'win32' && /\.(cmd|bat)$/i.test(commandPath) });
-  const session: NativeMcpSession = { child, nextId: 1, pending: new Map() };
-  const lines = createInterface({ input: child.stdout });
-  lines.on('line', (line) => { try { const value = JSON.parse(line); const pending = value.id == null ? undefined : session.pending.get(Number(value.id)); if (!pending) return; session.pending.delete(Number(value.id)); if (value.error) pending.reject(new Error(JSON.stringify(value.error))); else pending.resolve(value.result ?? null); } catch { /* MCP servers may write non-protocol logs to stdout; ignore them. */ } });
-  child.on('error', (error) => { for (const pending of session.pending.values()) pending.reject(error); session.pending.clear(); });
-  const initialize = await mcpRequest(session, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'Codeclub', version: app.getVersion() } });
-  void initialize;
-  child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
-  const tools = await mcpRequest(session, 'tools/list', {});
-  const sessionId = `mcp-${String(request.name || 'server')}-${Date.now()}`;
-  nativeMcpSessions.set(sessionId, session);
-  return { sessionId, tools: tools?.tools || [] };
+  const realCwd = await fs.realpath(cwd);
+  if ((!isInsidePath(root, cwd) && !isInsidePath(data, cwd)) || (!isInsidePath(root, realCwd) && !isInsidePath(data, realCwd))) throw new Error('cwd escapa del plugin o de PLUGIN_DATA.');
+  const env = { ...process.env, ...Object.fromEntries(Object.entries(request.env || {}).map(([key, value]) => [key, replacePluginVariables(String(value), root, data)])), PLUGIN_ROOT: root, PLUGIN_DATA: data } as NodeJS.ProcessEnv;
+  const child = spawn(commandPath, (request.args || []).map((value: string) => replacePluginVariables(value, root, data)), { cwd: realCwd, env, stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true, shell: process.platform === 'win32' && /\.(cmd|bat)$/i.test(commandPath) });
+  const session = createMcpSession(child);
+  try {
+    await session.request('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'Codeclub', version: app.getVersion() } }, 15000);
+    child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
+    const tools = await session.request('tools/list', {}, 15000);
+    const sessionId = `mcp-${randomUUID()}`;
+    nativeMcpSessions.set(sessionId, session);
+    child.once('exit', () => nativeMcpSessions.delete(sessionId));
+    return { sessionId, tools: tools?.tools || [] };
+  } catch (error) { session.close(); throw error; }
 }
 
 type PluginScope = 'global' | 'project';
@@ -674,11 +670,11 @@ async function invokeNativeCommand(command: string, args: any = {}, signal?: Abo
       const request = args.request || {};
       const session = nativeMcpSessions.get(request.sessionId);
       if (!session) throw new Error('Sesión MCP inexistente.');
-      return mcpRequest(session, 'tools/call', { name: request.name, arguments: request.arguments || {} });
+      return session.request('tools/call', { name: request.name, arguments: request.arguments || {} });
     }
     case 'codeclub_mcp_stdio_close': {
       const session = nativeMcpSessions.get(String(args.sessionId));
-      if (session) { session.child.kill(); nativeMcpSessions.delete(String(args.sessionId)); }
+      if (session) { session.close(); nativeMcpSessions.delete(String(args.sessionId)); }
       return null;
     }
     case 'codeclub_agent_plugin_data': {
@@ -1070,6 +1066,21 @@ app.whenReady().then(async () => {
   ipcMain.handle('files:exists', async (_event, filePath: string) => { try { await fs.access(filePath); return true; } catch { return false; } });
   ipcMain.handle('files:mkdir', async (_event, directory: string) => { await fs.mkdir(directory, { recursive: true }); return true; });
   ipcMain.handle('files:write-text', async (_event, filePath: string, content: string) => { await fs.mkdir(path.dirname(filePath), { recursive: true }); await fs.writeFile(filePath, String(content ?? ''), 'utf8'); return true; });
+  const logWrites = new Map<string, Promise<void>>();
+  ipcMain.handle('codeclub:append-log', async (event, filePath: string, content: string) => {
+    requireAppSender(event);
+    if (typeof filePath !== 'string' || typeof content !== 'string' || !['execution.jsonl', 'usage.jsonl', 'persistence-log.jsonl'].includes(path.basename(filePath))) throw new Error('INVALID_LOG');
+    const target = await resolveProjectFile(app.getPath('userData'), filePath, true);
+    const key = target.toLowerCase();
+    const operation = (logWrites.get(key) || Promise.resolve()).catch(() => undefined).then(async () => {
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      const checked = await resolveProjectFile(app.getPath('userData'), target, true);
+      await fs.appendFile(checked, content, 'utf8');
+    });
+    logWrites.set(key, operation);
+    try { await operation; } finally { if (logWrites.get(key) === operation) logWrites.delete(key); }
+    return true;
+  });
   ipcMain.handle('files:remove', async (_event, filePath: string) => { await fs.rm(filePath, { recursive: true, force: true }); return true; });
   ipcMain.handle('path:join', (_event, parts: string[]) => path.join(...(Array.isArray(parts) ? parts : [])));
   ipcMain.handle('path:app-config', () => app.getPath('userData'));
@@ -1182,5 +1193,5 @@ app.whenReady().then(async () => {
   app.on('activate', showMainWindow);
 });
 
-app.on('before-quit', () => { isQuitting = true; for (const stop of activeCommands) stop(); taskScheduler?.stop(); for (const worker of taskWorkers.values()) worker.complete('TASK_INTERRUPTED'); floatingChat?.destroy(); desktopControl.stop(); destroyComputerOverlay(); tray?.destroy(); });
+app.on('before-quit', () => { isQuitting = true; for (const stop of activeCommands) stop(); for (const session of nativeMcpSessions.values()) session.close(); nativeMcpSessions.clear(); taskScheduler?.stop(); for (const worker of taskWorkers.values()) worker.complete('TASK_INTERRUPTED'); floatingChat?.destroy(); desktopControl.stop(); destroyComputerOverlay(); tray?.destroy(); });
 app.on('window-all-closed', () => { /* La app permanece disponible en la bandeja. */ });

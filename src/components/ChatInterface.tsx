@@ -876,6 +876,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     }
     if (target !== `${chat.projectPath || ''}:${chat.chatId}`) return;
     let frame = 0;
+    const settleStartedAt = performance.now();
     let stableFrames = 0;
     let previousHeight = -1;
     let previousTop = -1;
@@ -898,7 +899,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
       previousTop = area.scrollTop;
       previousViewport = area.clientHeight;
       previousLastTop = lastTop;
-      if (stableFrames >= 4) {
+      if (stableFrames >= 4 || performance.now() - settleStartedAt >= 2000) {
         shouldAutoScrollMessagesRef.current = true;
         pendingChatScrollRef.current = null;
         reveal();
@@ -1022,17 +1023,20 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     if (workspaceMode === 'blank' && activeProject) {
       const loadMeta = async () => {
         try {
-          setProjectMeta(await readProjectMeta(activeProject.projectPath) as any);
+          const meta = await readProjectMeta(activeProject.projectPath);
+          if (!cancelled) setProjectMeta(meta as any);
         } catch (e) {
           console.error(e);
-          setProjectMeta(null);
+          if (!cancelled) setProjectMeta(null);
         }
       };
       loadMeta();
-    }
+    } else setProjectMeta(null);
+    return () => { cancelled = true; };
   }, [workspaceMode, activeProject]);
 
   useEffect(() => {
@@ -1056,10 +1060,13 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
   }, [eventPrefix]);
 
   useEffect(() => {
-    const restore = () => { void Promise.all([
+    let cancelled = false;
+    let request = 0;
+    const restore = () => { const version = ++request; void Promise.all([
       getSetting('codeclub_last_provider_id', ''),
       getSetting('codeclub_last_model_id', ''),
     ]).then(([savedProviderId, savedModelId]) => {
+      if (cancelled || version !== request) return;
       const savedProvider = savedProviderId ? catalog.find((item) => item.type === 'provider' && item.id === savedProviderId) : null;
       const activeProvider = savedProvider || defaultProvider;
       const savedModel = savedModelId ? catalog.find((item) => item.type === 'model' && (item.gatewayId === savedModelId || item.id === savedModelId) && modelMatchesProvider(item, activeProvider)) : null;
@@ -1067,10 +1074,10 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
       setCurrentProvider(activeProvider);
       setCurrentModel(savedModel || providerModel || (activeProvider.id === 'custom' ? defaultModel : null));
       setSettingsReady(true);
-    }); };
+    }).catch(() => { if (!cancelled && version === request) setSettingsReady(true); }); };
     restore();
     window.addEventListener('codeclub:settings-changed', restore);
-    return () => window.removeEventListener('codeclub:settings-changed', restore);
+    return () => { cancelled = true; window.removeEventListener('codeclub:settings-changed', restore); };
   }, [catalog, defaultProvider, defaultModel]);
 
   useEffect(() => {

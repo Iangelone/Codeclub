@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('codeclub', {
   fileExists: (filePath) => ipcRenderer.invoke('files:exists', filePath),
   makeDirectory: (directory) => ipcRenderer.invoke('files:mkdir', directory),
   writeTextFile: (filePath, content) => ipcRenderer.invoke('files:write-text', filePath, content),
+  appendLog: (filePath, content) => ipcRenderer.invoke('codeclub:append-log', filePath, content),
   removeFile: (filePath) => ipcRenderer.invoke('files:remove', filePath),
   joinPath: (...parts) => ipcRenderer.invoke('path:join', parts),
   appConfigDir: () => ipcRenderer.invoke('path:app-config'),

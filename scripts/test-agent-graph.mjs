@@ -35,6 +35,15 @@ for (const input of ['{invalid', '[]', 'null', '{}', { content: 42 }, { content:
   assert.equal(rejected.ok, false);
 }
 assert.equal(dynamicEffects, 1, 'Dynamic dispatch must validate nested arguments before effects');
+const mcpAccess = createDynamicToolAccess({ mcp_failure: tool({
+  inputSchema: jsonSchema({ type: 'object', properties: {} }),
+  execute: async () => ({ isError: true, content: [{ type: 'text', text: 'MCP tool failed' }] }),
+}) });
+const mcpFailure = await mcpAccess.executeTool.execute({ name: 'mcp_failure', input: {} }, {});
+assert.equal(mcpFailure.ok, false, 'MCP isError must propagate through dynamic dispatch');
+const cancelledDispatch = new AbortController(); cancelledDispatch.abort();
+await assert.rejects(dynamic.executeTool.execute({ name: 'write', input: { content: 'cancelled' } }, { abortSignal: cancelledDispatch.signal }));
+assert.equal(dynamicEffects, 1, 'Cancellation must reject without effects');
 const text = [{ type: 'text-start', id: 'answer' }, { type: 'text-delta', id: 'answer', delta: 'Verified.' }, { type: 'text-end', id: 'answer' }];
 const model = new MockLanguageModelV3({ doStream: [stream([call('one')], 'tool-calls'), stream(text, 'stop')] });
 const steps = [], deltas = [], endings = [], usages = [], modelCalls = [];
@@ -194,3 +203,10 @@ assert.equal(compactToolSchemas(catalog, new Map([['change', { type: 'string' }]
 await dynamicAdapted.executeTool.execute({ name: 'write', input: { content: 'again' } }, {});
 assert.equal(dynamicEffects, 2, 'Definition reuse must never cache effects');
 console.log('Tool discovery promotion and schema compaction passed.');
+
+const invalidLimit = new MockLanguageModelV3({ doStream: () => stream([call(`finite-${effects}`)], 'tool-calls') });
+await runStream({ model: invalidLimit, system: 'Fixture', messages: [{ role: 'user', content: 'Bound invalid limits' }], tools, maxSteps: NaN, callbacks: { onTextDelta: () => {} } });
+assert.equal(invalidLimit.doStreamCalls.length, 8, 'Nonfinite limits use the bounded default');
+const invalidWindow = new MockLanguageModelV3();
+await assert.rejects(runStream({ model: invalidWindow, system: 'Fixture', messages: [{ role: 'user', content: 'x'.repeat(30000) }], tools: {}, contextWindow: Infinity, callbacks: { onTextDelta: () => {} } }), /CHAT_MESSAGE_TOO_LARGE/);
+assert.equal(invalidWindow.doStreamCalls.length, 0, 'Nonfinite context metadata cannot disable the budget');

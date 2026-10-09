@@ -350,12 +350,14 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
 
   useEffect(() => {
     let cancelled = false;
+    let request = 0;
     const loadRecentChats = async () => {
+      const version = ++request;
       try {
         const chats = activeProjectPath
           ? ((await readProjectMeta(activeProjectPath))?.chats || []).map((chat) => ({ id: chat.id, title: chat.name, customName: chat.customName, projectPath: activeProjectPath, projectName: activeProjectName }))
           : (await readGlobalChats()).map((chat) => ({ id: chat.id, title: chat.name, customName: chat.customName, projectPath: '', projectName: 'Sin proyecto' }));
-        if (!cancelled) setChatsByProject((current) => ({ ...current, [activeProjectId]: chats }));
+        if (!cancelled && version === request) setChatsByProject((current) => ({ ...current, [activeProjectId]: chats }));
       } catch (error) { console.warn('No se pudieron cargar los chats recientes', error); }
     };
     void loadRecentChats();

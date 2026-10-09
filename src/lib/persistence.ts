@@ -1,4 +1,4 @@
-import { appCacheDir, appConfigDir, fileExists as exists, joinPath as join, makeDirectory as mkdir, readDesktopText as readTextFile, writeDesktopText as writeTextFile } from './runtime';
+import { appCacheDir, appConfigDir, fileExists as exists, joinPath as join, makeDirectory as mkdir, readDesktopText as readTextFile, writeDesktopText as writeTextFile, appendDesktopLog } from './runtime';
 
 const PERSISTENCE_LOG = "persistence-log.jsonl";
 const SETTINGS_FILE = "settings.json";
@@ -35,8 +35,7 @@ export const logPersistence = async (action: string, status: string, detail: Rec
     const cachePath = await appCacheDir();
     const logPath = await getAppCacheFilePath(PERSISTENCE_LOG);
     await mkdir(cachePath, { recursive: true });
-    const previous = (await exists(logPath)) ? await readTextFile(logPath) : "";
-    await writeTextFile(logPath, `${previous}${JSON.stringify(entry)}\n`);
+    await appendDesktopLog(logPath, `${JSON.stringify(entry)}\n`);
   } catch (error) {
     console.error("[codeclub:persist] log failed", error);
   }

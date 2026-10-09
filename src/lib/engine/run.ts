@@ -30,7 +30,7 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
   const steps: any[] = [];
   const totalUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0, reasoningTokens: 0 };
   let responseModel: string | undefined;
-  const limit = Math.max(1, Math.min(128, Math.floor(maxSteps ?? 8)));
+  const limit = Math.max(1, Math.min(128, Math.floor(Number.isFinite(maxSteps) ? maxSteps! : 8)));
   const adaptedTools = await adaptLangChainTools(tools);
   const activeSchemas = new Map<string, unknown>();
   const State = Annotation.Root({
@@ -61,7 +61,8 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
       browserContext.stats.beforeBytes = new TextEncoder().encode(JSON.stringify(state.messages)).length;
       browserContext.stats.schemasCompacted = catalogContext.schemasCompacted;
       const preparedMessages = browserContext.messages;
-      const budget = Math.max(1024, Math.floor((contextWindow || 32768) * 0.75));
+      const windowSize = Number.isFinite(contextWindow) && contextWindow! > 0 ? contextWindow! : 32768;
+      const budget = Math.max(1024, Math.floor(windowSize * 0.75));
       const overhead = contextBytes(system) + contextBytes(JSON.stringify(Object.entries(currentTools).map(([name, tool]) => ({ name, description: tool.description, schema: activeSchemas.get(name) })))) + Math.min(maxOutputTokens || 4096, Math.floor(budget / 4));
       const cost = (items: ModelMessage[]) => overhead + items.reduce((sum, message) => sum + messageContextCost(message), 0);
       if (cost(preparedMessages) <= budget) return { messages: preparedMessages, contextStats: browserContext.stats };
@@ -182,7 +183,7 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
         callbacks.onStepUsage?.(usage.totalTokens ?? (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0));
         totalUsage.inputTokens += usage.inputTokens ?? 0;
         totalUsage.outputTokens += usage.outputTokens ?? 0;
-        totalUsage.totalTokens += usage.totalTokens ?? 0;
+        totalUsage.totalTokens += usage.totalTokens ?? (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
         totalUsage.reasoningTokens += usage.outputTokenDetails?.reasoningTokens ?? 0;
         if (maxTotalTokens && totalUsage.totalTokens >= maxTotalTokens) throw new Error('TASK_BUDGET_EXCEEDED');
         responseModel = response.modelId;

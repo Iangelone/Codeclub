@@ -1,5 +1,5 @@
 /** Manages built-in extensions and scoped Agent Plugin/skill/MCP entries through the native bridge. */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Blocks, Box, Download, FileText, FileType2, Folder, Globe, LayoutTemplate, PlugZap, Presentation, Search, Table2, Trash2, WandSparkles } from 'lucide-react';
 import { getSetting, setSetting } from '../lib/persistence';
 import { browserExtensionTranslations, extensionActionTranslations, useAppLanguage, type AppLanguage } from '../lib/i18n';
@@ -37,6 +37,7 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
   const [browserNotice, setBrowserNotice] = useState('');
   const [browserError, setBrowserError] = useState('');
   const projectPath = selectedProject?.projectPath || '';
+  const refreshVersion = useRef(0);
   const pluginExtensions = useMemo<ExtensionItem[]>(() => plugins.map((plugin) => ({
     id: `plugin:${plugin.id}`,
     name: plugin.name,
@@ -65,14 +66,17 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
     : { title: 'Extensiones', description: 'Administrá extensiones, skills y MCP por alcance.', extensions: 'Extensiones', skills: 'Skills', search: 'Buscar', list: 'Extensiones disponibles', empty: 'No se encontraron extensiones.', noSkills: 'No se encontraron archivos SKILL.md.', noMcp: 'No hay servidores MCP conectados.', project: 'Proyecto activo', noProject: 'Sin proyecto activo: solo se muestran elementos globales.', categories: 'Categorías de extensiones', skillsList: 'Habilidades disponibles', mcpList: 'Servidores MCP', deletePlugin: 'Eliminar plugin', disable: 'Desactivar', enable: 'Activar' };
 
   const refresh = () => {
+    const version = ++refreshVersion.current;
     void Promise.all(builtInExtensions.map(async (extension) => [extension.id, await getSetting(`codeclub_extension_enabled_${extension.id}`, 'true') !== 'false'] as const))
-      .then((entries) => setEnabled(Object.fromEntries(entries)));
+      .then((entries) => { if (version === refreshVersion.current) setEnabled(Object.fromEntries(entries)); })
+      .catch(() => { /* Preserve the last known settings when storage is unavailable. */ });
     void loadAgentPlugins(projectPath).then((discovered) => {
+      if (version !== refreshVersion.current) return;
       setPlugins(discovered || []);
       setSkills((discovered || []).flatMap((plugin) => plugin.skills.map((skill) => ({ id: `${plugin.id}:${skill.id}`, name: skill.name, description: skill.description, source: plugin.name, scope: skill.scope }))));
       const pluginServers = (discovered || []).flatMap((plugin) => Object.entries(plugin.mcpServers || {}).map(([name, server]) => ({ id: `${plugin.id}:${name}`, name: `${plugin.name} · ${name}`, url: server.url || `${server.type} · ${server.command || ''}`, scope: plugin.scope })));
       setMcpServers(pluginServers);
-    }).catch(() => { setSkills([]); setPlugins([]); setMcpServers([]); });
+    }).catch(() => { if (version === refreshVersion.current) { setSkills([]); setPlugins([]); setMcpServers([]); } });
   };
 
   const refreshBrowserManagers = () => {
@@ -103,7 +107,7 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
     const browserRefresh = window.setInterval(refreshBrowserManagers, 3000);
     const events = ['codeclub:extensions-changed', 'codeclub:skills-changed', 'codeclub:mcp-changed'];
     events.forEach((event) => window.addEventListener(event, refresh));
-    return () => { window.clearInterval(browserRefresh); events.forEach((event) => window.removeEventListener(event, refresh)); };
+    return () => { refreshVersion.current++; window.clearInterval(browserRefresh); events.forEach((event) => window.removeEventListener(event, refresh)); };
   }, [projectPath]);
 
   useEffect(() => {

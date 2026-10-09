@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { _electron as electron } from '@playwright/test';
 import { createServer } from 'node:http';
-import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, symlink, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 const directory = await mkdtemp(path.join(tmpdir(), 'codeclub-native-command-'));
@@ -19,6 +19,42 @@ try {
   app = await electron.launch({ args: [wrapper], env });
   const page = await app.firstWindow();
   await page.waitForFunction(() => window.codeclub?.invoke);
+  const logPath = path.join(directory, 'profile', 'execution.jsonl');
+  await page.evaluate(async logPath => {
+    await Promise.all(Array.from({ length: 100 }, (_, index) => window.codeclub.appendLog(logPath, JSON.stringify({ index }) + '\n')));
+  }, logPath);
+  const entries = (await readFile(logPath, 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.equal(entries.length, 100);
+  assert.equal(new Set(entries.map(entry => entry.index)).size, 100);
+  await assert.rejects(page.evaluate(filePath => window.codeclub.appendLog(filePath, 'blocked'), path.join(directory, 'execution.jsonl')));
+  await assert.rejects(page.evaluate(filePath => window.codeclub.appendLog(filePath, 'blocked'), path.join(directory, 'profile', 'settings.json')));
+  const pluginData = path.join(directory, 'plugin-data');
+  await mkdir(pluginData);
+  const mcpFixture = path.join(project, 'mcp-fixture.cjs');
+  await writeFile(mcpFixture, `
+    require('node:readline').createInterface({input:process.stdin}).on('line',line=>{
+      const request=JSON.parse(line); if(request.id===undefined)return;
+      const result=request.method==='initialize'?{protocolVersion:'2025-06-18',capabilities:{tools:{}},serverInfo:{name:'fixture',version:'1'}}:request.method==='tools/list'?{tools:[{name:'echo',inputSchema:{type:'object'}}]}:{env:process.env.FIXTURE_PATH,cwd:process.cwd()};
+      console.log(JSON.stringify({jsonrpc:'2.0',id:request.id,result}));
+    });
+  `);
+  const mcpRequest = { pluginRoot: project, pluginData, command: process.execPath, args: ['${PLUGIN_ROOT}/mcp-fixture.cjs'], env: { FIXTURE_PATH: '${PLUGIN_DATA}/fixture' } };
+  const native = (command, args) => page.evaluate(({ command, args }) => window.codeclub.invoke(command, args), { command, args });
+  const mcp = await native('codeclub_mcp_stdio_start', { request: mcpRequest });
+  try {
+    assert.equal(mcp.tools[0].name, 'echo');
+    const echo = await native('codeclub_mcp_stdio_call', { request: { sessionId: mcp.sessionId, name: 'echo' } });
+    assert.equal(path.normalize(echo.env), path.join(pluginData, 'fixture'), 'MCP env expands PLUGIN_DATA');
+    assert.equal(path.normalize(echo.cwd).toLowerCase(), project.toLowerCase());
+  } finally { await native('codeclub_mcp_stdio_close', { sessionId: mcp.sessionId }); }
+  await assert.rejects(native('codeclub_mcp_stdio_call', { request: { sessionId: mcp.sessionId, name: 'echo' } }));
+  const sibling = project + '-sibling';
+  await mkdir(sibling);
+  await writeFile(path.join(sibling, 'server.cjs'), 'process.exit(0)');
+  await assert.rejects(native('codeclub_mcp_stdio_start', { request: { ...mcpRequest, cwd: sibling } }), /escapa/);
+  await assert.rejects(native('codeclub_mcp_stdio_start', { request: { ...mcpRequest, command: './../project-sibling/server.cjs' } }), /escapa/);
+  await symlink(sibling, path.join(project, 'escape'), 'junction');
+  await assert.rejects(native('codeclub_mcp_stdio_start', { request: { ...mcpRequest, cwd: path.join(project, 'escape') } }), /escapa/);
   const fileInvoke = (command, args) => page.evaluate(({ command, args, project }) => window.codeclub.invoke(command, { projectPath: project, ...args }), { command, args, project });
   await fileInvoke('codeclub_write_file', { path: 'nested/example.txt', content: 'fixture content' });
   assert.equal(await fileInvoke('codeclub_read_file', { path: 'nested/example.txt' }), 'fixture content');

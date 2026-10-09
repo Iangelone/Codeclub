@@ -34,7 +34,7 @@ test('aborting an SDK tool call cancels the native desktop host through dynamic 
     const result = dynamic.executeTool.execute({ name: 'computerGetState', input: {} }, { toolCallId: 'test', messages: [], abortSignal: abort.signal });
     await nativeStarted;
     abort.abort();
-    assert.equal((await result).ok, false);
+    await assert.rejects(result, { name: 'AbortError' });
     assert.deepEqual(calls, ['codeclub_computer_get_state', 'codeclub_computer_stop']);
   } finally { delete (globalThis as any).window; }
 });

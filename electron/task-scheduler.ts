@@ -86,7 +86,8 @@ export class TaskScheduler {
     const sameSchedule = old && ['interval', 'every', 'time', 'timeZone', 'weekday', 'runAt'].every(field => old[field as keyof ScheduledTask] === task[field as keyof ScheduledTask]);
     task.nextRun = task.status === 'active' ? (sameSchedule && old.status === 'active' ? old.nextRun || next : next) : undefined;
     if (task.status === 'paused') for (const run of task.runs) if (run.status === 'queued') { run.status = 'cancelled'; run.finishedAt = new Date(this.now()).toISOString(); }
-    if (old) this.tasks[this.tasks.indexOf(old)] = task; else this.tasks.push(task);
+    // drain owns this object while execute awaits; keep edits and completion on it.
+    if (old) Object.assign(old, task); else this.tasks.push(task);
     this.persist();
     return structuredClone(task);
   }
@@ -124,8 +125,8 @@ export class TaskScheduler {
     }
     void this.drain();
   }
-  start() { this.stopped = false; this.timer = setInterval(() => this.tick(), 15000); this.tick(); }
-  stop() { this.stopped = true; if (this.timer) clearInterval(this.timer); }
+  start() { this.stopped = false; if (!this.timer) this.timer = setInterval(() => this.tick(), 15000); this.tick(); }
+  stop() { this.stopped = true; if (this.timer) clearInterval(this.timer); this.timer = undefined; }
   private async drain() {
     if (this.draining || this.stopped) return;
     this.draining = true;

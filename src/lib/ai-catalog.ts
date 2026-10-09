@@ -5,10 +5,20 @@
 let fetchedProviders: any[] = [];
 let fetchedModels: any[] = [];
 
+// Both sources are independent. Bound startup even when a server stalls its body.
+const fetchCatalog = async (url: string, label: string) => {
+  const response = await fetch(url, { signal: AbortSignal.timeout(12000) });
+  if (!response.ok) throw new Error(`${label}: HTTP ${response.status}`);
+  return response.json();
+};
+const [directCatalog, gatewayCatalog] = await Promise.allSettled([
+  fetchCatalog('https://models.dev/catalog.json?type=all', 'models.dev catalog'),
+  fetchCatalog('https://ai-gateway.vercel.sh/v1/models', 'AI Gateway catalog'),
+]);
+
 try {
-  const providersRes = await fetch("https://models.dev/catalog.json?type=all");
-  if (!providersRes.ok) throw new Error(`models.dev catalog: HTTP ${providersRes.status}`);
-  const apiData = await providersRes.json() as { providers?: Record<string, any> };
+  if (directCatalog.status === 'rejected') throw directCatalog.reason;
+  const apiData = directCatalog.value as { providers?: Record<string, any> };
   const providerEntries = Object.entries(apiData.providers || {});
 
   // Map each provider entry — id, label, api base URL, doc URL, short label for UI.
@@ -99,10 +109,9 @@ if (!fetchedModels.some((model) => model.providerId === 'google')) {
 }
 
 try {
-  const gatewayResponse = await fetch('https://ai-gateway.vercel.sh/v1/models');
-  if (!gatewayResponse.ok) throw new Error(`AI Gateway catalog: HTTP ${gatewayResponse.status}`);
+  if (gatewayCatalog.status === 'rejected') throw gatewayCatalog.reason;
   {
-    const gatewayData = await gatewayResponse.json() as { data?: Array<{ id?: string; owned_by?: string; name?: string; description?: string; type?: string; tags?: string[]; context_window?: number; pricing?: { input?: string; output?: string } }> };
+    const gatewayData = gatewayCatalog.value as { data?: Array<{ id?: string; owned_by?: string; name?: string; description?: string; type?: string; tags?: string[]; context_window?: number; pricing?: { input?: string; output?: string } }> };
     for (const entry of gatewayData.data || []) {
       // The chat engine accepts language models; embedding/image/audio models
       // require other SDK APIs and must not become selectable chat models.

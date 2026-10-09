@@ -100,18 +100,19 @@ export class ChatStore {
     await this.ensure(project,id);
     const scope=this.scope(project);
     const total=Number(this.db.prepare('SELECT total FROM chats WHERE scope=? AND id=?').get(scope,id)!.total);
-    const turnLimit=Math.max(1,Math.min(200,Math.floor(limit)));
+    const turnLimit=Number.isFinite(limit)?Math.max(1,Math.min(200,Math.floor(limit))):15;
+    const cursor=typeof before==='number'&&Number.isFinite(before)?Math.floor(before):total;
     let start:number;
     let end:number;
     if(direction==='after') {
-      start=Math.max(0,Math.min(total,Math.floor(before ?? total)));
+      start=Math.max(0,Math.min(total,cursor));
       const lastTurn=this.db.prepare("SELECT seq FROM messages WHERE scope=? AND id=? AND seq>=? AND json_extract(payload,'$.role')='user' ORDER BY seq LIMIT 1 OFFSET ?").get(scope,id,start,turnLimit-1);
       if(lastTurn) {
         const nextTurn=this.db.prepare("SELECT seq FROM messages WHERE scope=? AND id=? AND seq>? AND json_extract(payload,'$.role')='user' ORDER BY seq LIMIT 1").get(scope,id,Number(lastTurn.seq));
         end=nextTurn?Number(nextTurn.seq):total;
       } else end=total;
     } else {
-      end=before===undefined?total:Math.max(0,Math.min(total,Math.floor(before)));
+      end=Math.max(0,Math.min(total,cursor));
       const firstTurn=this.db.prepare("SELECT seq FROM messages WHERE scope=? AND id=? AND seq<? AND json_extract(payload,'$.role')='user' ORDER BY seq DESC LIMIT 1 OFFSET ?").get(scope,id,end,turnLimit-1);
       start=firstTurn?Number(firstTurn.seq):0;
     }

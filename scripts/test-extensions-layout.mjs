@@ -13,7 +13,7 @@ let browser, server;
 try {
   const entry = path.join(directory, 'entry.tsx');
   const bundle = path.join(directory, 'app.js');
-  await writeFile(entry, `import React from 'react';import {createRoot} from 'react-dom/client';import ExtensionsPanel from ${JSON.stringify(path.join(repo,'src/components/ExtensionsPanel.tsx'))};createRoot(document.getElementById('root')!).render(<ExtensionsPanel selectedProject={{projectPath:'C:/projects/Very long project name for responsive layout'}}/>);`);
+  await writeFile(entry, `import React,{useState} from 'react';import {createRoot} from 'react-dom/client';import ExtensionsPanel from ${JSON.stringify(path.join(repo,'src/components/ExtensionsPanel.tsx'))};function Fixture(){const [projectPath,setProjectPath]=useState('C:/projects/Very long project name for responsive layout');window.qaSelectProject=setProjectPath;return <ExtensionsPanel selectedProject={{projectPath}}/>;}createRoot(document.getElementById('root')!).render(<Fixture/>);`);
   await build({entryPoints:[entry],outfile:bundle,bundle:true,format:'esm',platform:'browser',target:'es2022',nodePaths:[path.join(repo,'node_modules')],define:{'process.env.NODE_ENV':'"production"'},logLevel:'silent'});
   const cssRoot = path.join(repo,'out/_next/static/chunks');
   const css = (await Promise.all((await readdir(cssRoot)).filter(file=>file.endsWith('.css')).map(file=>readFile(path.join(cssRoot,file),'utf8')))).join('\n');
@@ -33,7 +33,10 @@ try {
     window.codeclub = {invoke:async (command,args) => {
       if(command === 'codeclub_browser_extension_info') return {browsers:[{id:'edge',name:'Microsoft Edge',installed:true,connected:false},{id:'chrome',name:'Google Chrome',installed:true,connected:true}]};
       if(command === 'codeclub_browser_extension_manage') {window.qaActions.push(args);return true;}
-      if(command === 'codeclub_list_agent_plugins') return [{id:'qa',name:'Very long plugin source name for layout',description:'Plugin description',scope:'project',skills:[{id:'qa-skill',name:'Responsive skill',description:'Skill description',scope:'project'}],mcpServers:{qa:{type:'stdio',command:'qa'}}}];
+      if(command === 'codeclub_list_agent_plugins') {
+        if(args.projectPath === 'slow') { window.qaSlowStarted = true; await new Promise(resolve => { window.qaReleaseSlow = resolve; }); }
+        return [{id:'qa',name:args.projectPath === 'slow' ? 'Stale plugin' : args.projectPath === 'fast' ? 'Current plugin' : 'Very long plugin source name for layout',description:'Plugin description',scope:'project',skills:[{id:'qa-skill',name:'Responsive skill',description:'Skill description',scope:'project'}],mcpServers:{qa:{type:'stdio',command:'qa'}}}];
+      }
       return null;
     }};
   });
@@ -71,6 +74,13 @@ try {
   await page.getByRole('tab').first().click();
   await page.getByRole('button',{name:'Install: Microsoft Edge',exact:true}).click();
   assert.deepEqual(await page.evaluate(()=>window.qaActions),[{browser:'edge',action:'install'}]);
+  await page.evaluate(() => window.qaSelectProject('slow'));
+  await page.waitForFunction(() => window.qaSlowStarted);
+  await page.evaluate(() => window.qaSelectProject('fast'));
+  await page.getByText('Current plugin', { exact: true }).waitFor();
+  await page.evaluate(() => window.qaReleaseSlow());
+  await page.waitForTimeout(100);
+  assert.equal(await page.getByText('Stale plugin', { exact: true }).count(), 0, 'Late plugin results cannot replace the active project');
   if(process.env.CODECLUB_QA_SCREENSHOT) {
     await page.evaluate(()=>document.documentElement.style.setProperty('--panel-width','320px'));
     await page.locator('#codeclub-extensions-panel').screenshot({path:process.env.CODECLUB_QA_SCREENSHOT});

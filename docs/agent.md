@@ -76,9 +76,9 @@ The client connects stdio, Streamable HTTP, and legacy SSE, preserves `PLUGIN_DA
 Gaps against the checklist:
 
 - The loader does not strictly validate `$schema`, required fields, matching versions, or closed manifest/MCP schemas. `warnings` is returned empty, and several errors are silently skipped.
-- Stdio command/cwd checks use string prefixes. Resolved path boundaries, including symlinks, still need validation. Placeholder expansion applies to args/cwd but not `env` values.
+- Stdio relative commands and cwd now validate resolved path boundaries, including junctions; placeholders expand in command, args, cwd and env. Native regression fixtures cover sibling/traversal rejection, junction rejection and env expansion.
 - The client has no explicit URL/header validation or cross-origin redirect policy. That policy must be checked before claiming conformance.
-- `mcpRequest` has no timeout; process exit does not explicitly reject every pending request. Negotiation and lifecycle failures need dedicated tests.
+- Stdio initialization and discovery have 15-second deadlines; calls have a 120-second deadline. Process exit, stdout closure, write failures and explicit close reject pending requests. Initialization failure closes the process. A timed-out tool may still have acted; timeout is not evidence of success or permission to replay a mutation. Protocol negotiation and complete remote transport conformance remain unverified.
 
 Transport, placeholder, and isolation rules are covered by [MCP runtime](https://agent-plugins.org/client-implementers/mcp-runtime). These gaps were identified through code review; this review did not run real MCP servers across all three transports.
 
@@ -109,7 +109,7 @@ On October 4, 2026, a real development cycle also completed in Salieri using a f
 
 1. **Complete idempotency:** after removing full-flow replay, classify failures and record durable tool-run IDs.
 2. **Share instructions and verification:** load project rules in chat/tasks and require evidence before marking a goal complete.
-3. **Close plugin compatibility gaps:** local schemas, resolved path boundaries, env, redirects, timeouts, and MCP tests for each transport.
+3. **Close plugin compatibility gaps:** manifest schemas, redirects, protocol negotiation and MCP conformance tests for each transport.
 4. **Measure quality:** build reproducible tasks for reading, changes, tests, browser work, and recovery; measure success, cost, and duration per dynamically selected model.
 5. **Extend long-running work when measurements justify it:** per-step checkpoints, better context summaries, and delegation with clear scopes and budgets.
 

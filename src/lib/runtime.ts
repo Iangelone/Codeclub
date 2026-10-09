@@ -24,6 +24,12 @@ export const makeDirectory = async (path: string, _options?: { recursive?: boole
 export const readDesktopBytes = async (path: string) => desktop()?.readFile ? new Uint8Array(await desktop().readFile(path)) : new Uint8Array();
 export const readDesktopText = async (path: string) => desktop()?.readTextFile ? String(await desktop().readTextFile(path)) : '';
 export const writeDesktopText = async (path: string, content: string) => desktop()?.writeTextFile ? desktop().writeTextFile(path, content) : undefined;
+/** Native appends serialize across renderers; keep older bridges usable until restart. */
+export const appendDesktopLog = async (path: string, content: string) => {
+  if (desktop()?.appendLog) return desktop().appendLog(path, content);
+  const previous = await fileExists(path) ? await readDesktopText(path) : '';
+  return writeDesktopText(path, previous + content);
+};
 export const removeDesktopFile = async (path: string) => desktop()?.removeFile ? desktop().removeFile(path) : undefined;
 export const selectDesktopFiles = async () => desktop()?.selectFiles ? (await desktop().selectFiles()) : [];
 export const desktopFileUrl = (path: string) => path.startsWith('file://') || path.startsWith('data:') ? path : `file:///${path.replace(/\\/g, '/').replace(/^\/+/, '')}`;
