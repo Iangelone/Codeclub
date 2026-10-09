@@ -2,6 +2,12 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
+import { getSetting, setSetting } from '../lib/persistence';
+
+export const ORB_SHAPES = ['circle', 'cloud', 'triangle', 'square'] as const;
+export type OrbShape = (typeof ORB_SHAPES)[number];
+const ORB_SHAPE_SETTING = 'codeclub_orb_shape';
+const normalizeShape = (value: unknown): OrbShape => ORB_SHAPES.includes(value as OrbShape) ? value as OrbShape : 'circle';
 
 export const ORB_PALETTE_STORAGE_KEY = 'codeclub:orb-palette-index';
 export const ORB_PALETTE_EVENT = 'codeclub:orb-palette-change';
@@ -24,6 +30,8 @@ type OrbPaletteContextValue = {
   palette: OrbPalette;
   nextPalette: OrbPalette;
   cyclePalette: () => void;
+  shape: OrbShape;
+  cycleShape: () => void;
 };
 
 const OrbPaletteContext = createContext<OrbPaletteContextValue | null>(null);
@@ -54,6 +62,28 @@ export function useOrbPalette() {
 export default function OrbPaletteProvider({ children }: { children: ReactNode }) {
   const [index, setIndex] = useState(0);
   const indexRef = useRef(0);
+  const [shape, setShape] = useState<OrbShape>('circle');
+  const shapeRef = useRef<OrbShape>('circle');
+  useEffect(() => {
+    let mounted = true;
+    let revision = 0;
+    const refresh = async () => {
+      const request = ++revision;
+      const value = await getSetting(ORB_SHAPE_SETTING, 'circle').catch(() => 'circle');
+      if (mounted && request === revision) { shapeRef.current = normalizeShape(value); setShape(shapeRef.current); }
+    };
+    void refresh();
+    // settingsSet broadcasts { key } through preload to all renderer windows.
+    // This provider consumes orb-shape changes and removes its subscription on cleanup.
+    const unsubscribe = (window as any).codeclub?.onSettingsChanged?.((detail: { key: string }) => { if (detail.key === ORB_SHAPE_SETTING) void refresh(); });
+    return () => { mounted = false; unsubscribe?.(); };
+  }, []);
+  const cycleShape = useCallback(() => {
+    const next = ORB_SHAPES[(ORB_SHAPES.indexOf(shapeRef.current) + 1) % ORB_SHAPES.length];
+    shapeRef.current = next;
+    setShape(next);
+    void setSetting(ORB_SHAPE_SETTING, next).catch(() => undefined);
+  }, []);
   const reducedMotion = useReducedMotion();
 
   const applyIndex = useCallback((value: unknown) => {
@@ -100,7 +130,7 @@ export default function OrbPaletteProvider({ children }: { children: ReactNode }
     ? { duration: 0 }
     : { duration: 0.48, ease: [0.22, 1, 0.36, 1] as const };
 
-  return <OrbPaletteContext.Provider value={{ palette, nextPalette, cyclePalette }}>
+  return <OrbPaletteContext.Provider value={{ palette, nextPalette, cyclePalette, shape, cycleShape }}>
     <motion.div
       className="contents"
       initial={false}

@@ -2,6 +2,8 @@
 
 Each dynamic tool catalog owns its discovered definitions. After searchTools returns, the next model step exposes those tools with their actual input schemas. executeTool remains available for the full catalog; names come from the catalog itself.
 
+Connected MCP tools use this same catalog in chats and scheduled runs. Their definitions are omitted from the initial model tool set; searchTools exposes only the matching page of tools. executeTool does not embed the complete catalog of names in its schema. MCP connections and catalog discovery still happen at run startup, and connections close when the run ends.
+
 Schemas and validation adapters are resolved once per session. Actions and mutable observations are never cached. Existing browser context compaction reuses observations while preserving current selectors and values.
 
 Only identical schemas in searchTools results are replaced with schemaInToolDefinition when the callable definition is present. Original audit results stay intact. Model call context metrics include schemasCompacted. Existing step and token budgets are unchanged.

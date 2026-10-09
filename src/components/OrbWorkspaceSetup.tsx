@@ -4,16 +4,18 @@ import { useState } from 'react';
 import { Check, Laptop, Monitor } from 'lucide-react';
 import { orbWorkspaceTranslations, useAppLanguage } from '../lib/i18n';
 import FluidOrb from './ui/fluid-orb';
+import { useOrbPalette } from './OrbPaletteProvider';
 
 /** First step of orb creation: a separate browser, with optional access to this device. */
 export default function OrbWorkspaceSetup({ onContinue }: { onContinue: (allowComputer: boolean) => void }) {
   const text = orbWorkspaceTranslations[useAppLanguage()];
+  const { cycleShape } = useOrbPalette();
   const [allowComputer, setAllowComputer] = useState(false);
   return <div className="flex min-h-full w-full items-center justify-center bg-[#161616] px-5 py-7">
     <div className="w-full max-w-[320px]">
-      <div aria-hidden="true" className="mx-auto mb-6 flex h-[182px] w-[205px] max-w-full items-center justify-center">
-        <FluidOrb size={182} active animateOnHover={false} />
-      </div>
+      <button type="button" onClick={cycleShape} aria-label={text.changeShape} title={text.changeShape} className="mx-auto mb-6 flex h-[182px] w-[205px] max-w-full items-center justify-center rounded-xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-(--codeclub-accent)">
+        <FluidOrb size={182} active animateOnHover={false} aria-hidden="true" />
+      </button>
       <h1 className="m-0 text-center text-[20px] font-semibold leading-6 tracking-tight text-[#eeeeee]">{text.title}</h1>
       <p className="mt-1.5 text-center text-[12px] leading-4 text-[#aaaaaa]">{text.description}</p>
       <div className="mt-5 space-y-2.5">

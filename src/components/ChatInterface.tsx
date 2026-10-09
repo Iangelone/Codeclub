@@ -2174,7 +2174,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       const dynamicToolAccess = createDynamicToolAccess(availableToolset, recordToolEvent, { plugins: loadedPlugins, searchChatContext });
       const artifactNames = ['createPlan', 'updatePlan', 'todo', 'getTaskStatus', 'switchProject'];
       const artifactTools = Object.fromEntries(artifactNames.filter((name) => selectedToolset[name]).map((name) => [name, selectedToolset[name]]));
-      tools = { ...dynamicToolAccess, ...artifactTools, ...externalMcpTools };
+      // MCP definitions stay in the searchable catalog and become callable only after discovery.
+      tools = { ...dynamicToolAccess, ...artifactTools };
       const routedToolset = tools;
       window.dispatchEvent(new CustomEvent('codeclub:agent-route', { detail: { mode: runMode, specialist: routeSpecialist, confidence: 1, reason: 'Una única IA ejecuta directamente las tools necesarias.' } }));
       try {

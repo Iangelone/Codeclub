@@ -2,12 +2,31 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import { useOrbPalette } from '../OrbPaletteProvider';
+import { useOrbPalette, type OrbShape } from '../OrbPaletteProvider';
+
+// A smooth five-lobed silhouette, normalized so every orb size uses the same shape.
+const CLOUD_CLIP = `polygon(${Array.from({ length: 96 }, (_, index) => {
+  const angle = index / 96 * Math.PI * 2;
+  const radius = 43 + 5 * Math.cos(5 * angle + Math.PI / 2);
+  return `${50 + radius * Math.cos(angle)}% ${50 + radius * Math.sin(angle)}%`;
+}).join(', ')})`;
+
+// Sample rounded corners once; percentage coordinates keep small and large orbs identical.
+const TRIANGLE_CLIP = `polygon(${[
+  [[46, 10], [50, 2], [54, 10]],
+  [[93, 85], [98, 94], [88, 94]],
+  [[12, 94], [2, 94], [7, 85]],
+].flatMap(([start, control, end]) => Array.from({ length: 17 }, (_, index) => {
+  const t = index / 16;
+  const x = (1 - t) ** 2 * start[0] + 2 * (1 - t) * t * control[0] + t ** 2 * end[0];
+  const y = (1 - t) ** 2 * start[1] + 2 * (1 - t) * t * control[1] + t ** 2 * end[1];
+  return `${x}% ${y}%`;
+})).join(', ')})`;
 
 export type FluidOrbProps = React.ComponentProps<'div'> & {
   size?: number;
   color?: string;
-  shape?: 'circle' | 'rect';
+  shape?: OrbShape | 'rect';
   animateOnHover?: boolean;
   active?: boolean;
   themeTint?: boolean;
@@ -128,7 +147,7 @@ function compileShader(gl: WebGLRenderingContext, type: number, source: string) 
 export default function FluidOrb({
   size = 240,
   color = '#2D5FD6',
-  shape = 'circle',
+  shape: requestedShape,
   animateOnHover = false,
   active = true,
   themeTint = true,
@@ -139,7 +158,8 @@ export default function FluidOrb({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [hovered, setHovered] = useState(false);
   const [fallback, setFallback] = useState(false);
-  const { palette } = useOrbPalette();
+  const { palette, shape: sharedShape } = useOrbPalette();
+  const shape = requestedShape ?? sharedShape;
   const reducedMotion = useReducedMotion();
 
   useEffect(() => {
@@ -193,7 +213,7 @@ export default function FluidOrb({
     gl.viewport(0, 0, pixels, pixels);
     gl.uniform2f(resolution, pixels, pixels);
     gl.uniform3f(uniformColor, ...hexToRgb(color));
-    gl.uniform1f(uniformShape, shape === 'rect' ? 1 : 0);
+    gl.uniform1f(uniformShape, shape === 'circle' ? 0 : 1);
 
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     let visible = !document.hidden;
@@ -226,8 +246,9 @@ export default function FluidOrb({
 
   return <div
     data-slot="fluid-orb"
+    data-orb-shape={shape}
     className={`relative overflow-hidden ${shape === 'circle' ? 'rounded-full' : ''} ${className || ''}`}
-    style={{ width: size, height: size, ...style }}
+    style={{ width: size, height: size, clipPath: shape === 'cloud' ? CLOUD_CLIP : shape === 'triangle' ? TRIANGLE_CLIP : undefined, borderRadius: shape === 'square' ? '12%' : undefined, ...style }}
     onPointerEnter={() => { if (animateOnHover) setHovered(true); }}
     onPointerLeave={() => { if (animateOnHover) setHovered(false); }}
     {...props}

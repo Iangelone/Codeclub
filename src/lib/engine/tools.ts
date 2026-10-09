@@ -349,7 +349,7 @@ export function createDynamicToolAccess(availableTools: Record<string, any>, rec
   };
   const access = wrapToolSet({
     searchTools: tool({
-      description: 'Search available Codeclub tools and return compact descriptions plus exact input schemas. Use this before executeTool when a capability or parameter is uncertain; never invent tool names or inputs.',
+      description: 'Search available Codeclub and connected MCP tools and return compact descriptions plus exact input schemas. Use this before executeTool when a capability or parameter is uncertain; never invent tool names or inputs.',
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
@@ -386,7 +386,7 @@ export function createDynamicToolAccess(availableTools: Record<string, any>, rec
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
-          name: { type: 'string', ...(definitions.size ? { enum: [...definitions.keys()] } : {}), description: 'Exact available tool name. Use searchTools to discover its schema when needed.' },
+          name: { type: 'string', description: 'Exact available tool name returned by searchTools. Discover its schema before execution.' },
           input: { anyOf: [{ type: 'object' }, { type: 'string' }], description: 'Arguments matching the discovered schema. Prefer an object; a JSON-encoded object is also accepted.' },
         },
         required: ['name'],

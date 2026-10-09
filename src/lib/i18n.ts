@@ -194,11 +194,13 @@ export const agentTextSelectionTranslations = {
 
 export const sidebarTranslations = {
   es: {
+    downloadLatestRelease: 'Descargar la última versión de Codeclub', downloadReleaseError: 'No se pudo abrir la descarga. Volvé a intentarlo.',
     tasks: 'Tareas', newTask: 'Nueva tarea', noTasks: 'Sin tareas programadas', pinned: 'Fijados', humanReview: 'Revisión humana', blocked: 'Bloqueados', personal: 'Personal', pinChat: 'Fijar chat', unpinChat: 'Desfijar chat', noChats: 'Sin chats', pinError: 'No se pudo guardar el chat fijado.', home: 'Inicio', chat: 'Chat', projects: 'Proyectos', agents: 'Agentes', extensions: 'Extensiones', chats: 'Chats', settings: 'Ajustes', orbs: 'Orbes', devices: 'Varios', recent: 'Recientes', support: 'Apoyar Codeclub',
     projectName: 'Nombre del proyecto', renameProject: 'Cambiar nombre del proyecto', saveProjectName: 'Guardar nombre del proyecto', renameProjectError: 'No se pudo cambiar el nombre del proyecto.', newFile: 'Nuevo archivo', newFolder: 'Nueva carpeta', ready: 'Listo para revisión', workspace: 'Espacio de trabajo', leftSidebar: 'Barra lateral izquierda', mainNavigation: 'Navegación principal', chatMenu: 'Menú del chat', donation: 'Hacer una donación',
     couldNotCreate: 'No se pudo crear', newChat: 'Nuevo chat', yourOrb: 'Tu orbe', createNew: 'Crear nuevo...', open: 'Abrir', close: 'Cerrar', rename: 'Renombrar', delete: 'Eliminar', clearChats: 'Limpiar chats', clearHistory: 'Limpiar historial', clearProjectChats: 'Limpiar todos los chats de este proyecto', newName: 'Nuevo nombre', deleteElement: 'Eliminar elemento', selectFolder: 'Seleccionar carpeta para el proyecto',
   },
   en: {
+    downloadLatestRelease: 'Download the latest Codeclub release', downloadReleaseError: 'Could not open the download. Please try again.',
     tasks: 'Tasks', newTask: 'New task', noTasks: 'No scheduled tasks', pinned: 'Pinned', humanReview: 'Human review', blocked: 'Blocked', personal: 'Personal', pinChat: 'Pin chat', unpinChat: 'Unpin chat', noChats: 'No chats', pinError: 'Could not save the pinned chat.', home: 'Home', chat: 'Chat', projects: 'Projects', agents: 'Agents', extensions: 'Extensions', chats: 'Chats', settings: 'Settings', orbs: 'Orbs', devices: 'Miscellaneous', recent: 'Recent', support: 'Support Codeclub',
     projectName: 'Project name', renameProject: 'Rename project', saveProjectName: 'Save project name', renameProjectError: 'Could not rename the project.', newFile: 'New file', newFolder: 'New folder', ready: 'Ready for review', workspace: 'Workspace', leftSidebar: 'Left sidebar', mainNavigation: 'Main navigation', chatMenu: 'Chat menu', donation: 'Make a donation',
     couldNotCreate: 'Could not create', newChat: 'New chat', yourOrb: 'Your orb', createNew: 'Create new...', open: 'Open', close: 'Close', rename: 'Rename', delete: 'Delete', clearChats: 'Clear chats', clearHistory: 'Clear history', clearProjectChats: 'Clear all chats from this project', newName: 'New name', deleteElement: 'Delete item', selectFolder: 'Select folder for project',
@@ -221,8 +223,8 @@ export const taskDetailsTranslations = {
 } as const;
 
 export const orbWorkspaceTranslations = {
-  es: { title: 'Elegí dónde puede trabajar tu orbe', description: 'Tu orbe tiene un navegador separado para trabajar. También podés darle acceso a este equipo.', workspace: 'Espacio de tu orbe', workspaceDescription: 'Un navegador separado para investigar y trabajar en la web.', thisComputer: 'Este equipo', computerDescription: 'Acceder a archivos y trabajar con tus aplicaciones.', continue: 'Continuar' },
-  en: { title: 'Choose where your orb can work', description: 'Your orb has a separate browser for work. You can also give it access to this computer.', workspace: 'Your orb’s workspace', workspaceDescription: 'A separate browser for research and work on the web.', thisComputer: 'This computer', computerDescription: 'Access files and work with your applications.', continue: 'Continue' },
+  es: { changeShape: 'Cambiar forma de todos los orbes', title: 'Elegí dónde puede trabajar tu orbe', description: 'Tu orbe tiene un navegador separado para trabajar. También podés darle acceso a este equipo.', workspace: 'Espacio de tu orbe', workspaceDescription: 'Un navegador separado para investigar y trabajar en la web.', thisComputer: 'Este equipo', computerDescription: 'Acceder a archivos y trabajar con tus aplicaciones.', continue: 'Continuar' },
+  en: { changeShape: 'Change the shape of all orbs', title: 'Choose where your orb can work', description: 'Your orb has a separate browser for work. You can also give it access to this computer.', workspace: 'Your orb’s workspace', workspaceDescription: 'A separate browser for research and work on the web.', thisComputer: 'This computer', computerDescription: 'Access files and work with your applications.', continue: 'Continue' },
 } as const;
 
 export const orbsTranslations = {

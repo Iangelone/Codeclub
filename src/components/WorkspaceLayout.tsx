@@ -3,7 +3,7 @@
 /** Main workspace shell: coordinates project/chat-scoped panels, persisted layouts, browser, files, review, and terminals. */
 import { createElement, memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, Check, ChevronDown, Circle, CircleCheck, Clock, CopyX, EllipsisVertical, ExternalLink, FileWarning, FolderOpen, FolderPen, FolderTree, Grid2X2, Heart, Home, Hourglass, Info, MessageSquare, MoreHorizontal, MousePointerClick, PanelLeft, Pencil, Pin, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
+import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, Check, ChevronDown, Circle, CircleCheck, Clock, CopyX, Download, EllipsisVertical, ExternalLink, FileWarning, FolderOpen, FolderPen, FolderTree, Grid2X2, Heart, Home, Hourglass, Info, MessageSquare, MoreHorizontal, MousePointerClick, PanelLeft, Pencil, Pin, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { GlobeCheck } from 'lucide-react';
 import { Terminal as XtermTerminal } from '@xterm/xterm';
@@ -90,6 +90,16 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
   const language = useAppLanguage();
   const sessions = useSharedSessions();
   const sidebarText = sidebarTranslations[language];
+  const [openingDownload, setOpeningDownload] = useState(false);
+  const [downloadError, setDownloadError] = useState('');
+  const downloadLatestRelease = async () => {
+    setOpeningDownload(true);
+    setDownloadError('');
+    try {
+      await nativeInvoke('codeclub_open_external', { url: 'https://github.com/Iangelone/Codeclub/releases/latest/download/Codeclub%20Setup.exe' });
+    } catch { setDownloadError(sidebarText.downloadReleaseError); }
+    finally { setOpeningDownload(false); }
+  };
   const panelText = rightSidebarTranslations[language];
   const [activeProjectId, setActiveProjectId] = useState('home');
   const [activeProjectName, setActiveProjectName] = useState('Home');
@@ -988,7 +998,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
           <RailItem active={activeSection === 'extensions'} icon={<Grid2X2 />} label={sidebarText.extensions} onClick={() => selectSidebarSection('extensions')} />
           <div className="my-1 h-px w-8 bg-(--codeclub-border-soft)" aria-hidden="true" />
           <RailItem active={false} icon={<MoreHorizontal />} label={sidebarText.devices} disabled onClick={() => {}} />
-          <button type="button" onClick={onToggleLeft} className="mt-auto grid h-9 w-9 place-items-center rounded-lg text-(--codeclub-text-muted) transition-colors hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={leftOpen ? (language === 'en' ? 'Hide chat list' : 'Ocultar lista de chats') : (language === 'en' ? 'Show chat list' : 'Mostrar lista de chats')} title={leftOpen ? (language === 'en' ? 'Hide chat list' : 'Ocultar lista de chats') : (language === 'en' ? 'Show chat list' : 'Mostrar lista de chats')} aria-pressed={leftOpen}><PanelLeft size={16} aria-hidden="true" /></button>
+          <button type="button" onClick={() => void downloadLatestRelease()} disabled={openingDownload} className="mt-auto grid h-9 w-9 place-items-center rounded-lg text-(--codeclub-text-muted) transition-colors hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong) disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={sidebarText.downloadLatestRelease} title={downloadError || sidebarText.downloadLatestRelease}><Download size={16} aria-hidden="true" /></button>
         </nav>
         <motion.div animate={{ width: leftOpen ? leftWidth - 68 : 0, opacity: leftOpen ? 1 : 0 }} transition={resizing ? { duration: 0 } : { type: 'spring', stiffness: 340, damping: 30 }} className="flex min-h-0 shrink-0 flex-col overflow-hidden" aria-hidden={!leftOpen} inert={!leftOpen}>
         <div className="flex min-h-0 flex-1 flex-col px-2.5 py-2.5 text-(--codeclub-text)">
@@ -1022,7 +1032,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
                 {sidebarTasks.length ? sidebarTasks.map(task => { const key = JSON.stringify([task.projectPath, task.id]); return <button key={key} type="button" onClick={() => { setSelectedTaskKey(key); selectSidebarSection('tasks'); }} title={task.name} aria-current={activeSection === 'tasks' && selectedTaskKey === key ? 'page' : undefined} className={`flex h-8 w-full min-w-0 items-center gap-2 rounded-lg px-1.5 text-left text-[13px] text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${activeSection === 'tasks' && selectedTaskKey === key ? 'bg-(--codeclub-acrylic-active)' : 'hover:bg-(--codeclub-hover)'}`}><Clock size={15} className="shrink-0 text-(--codeclub-text-muted)" aria-hidden="true" /><span className="truncate">{task.name}</span></button>; }) : <p className="px-2.5 py-1 text-[11px] text-(--codeclub-text-muted)">{sidebarText.noTasks}</p>}
               </SidebarCategory>
               <SidebarChatGroup key="personal" id="personal" title={sidebarText.chats} chats={projectSidebarChats} renderChat={renderSidebarChat} emptyText={sidebarText.noChats} />
-              {sidebarOrbs.length > 0 && <SidebarCategory key="orbs" id="orbs" title={sidebarText.orbs} initiallyOpen>{sidebarOrbs.map((orb) => <button key={orb.id} type="button" onClick={() => { setActiveSection('orbs'); setActiveOrbId(orb.id); setActiveChatId(undefined); }} className={`flex h-8 w-full min-w-0 items-center gap-2 rounded-lg px-1.5 text-left text-[13px] text-(--codeclub-text-strong) ${activeSection === 'orbs' && activeOrbId === orb.id ? 'bg-(--codeclub-acrylic-active)' : 'bg-transparent hover:bg-(--codeclub-hover)'}`} title={orb.name}><span className="grid h-5 w-5 shrink-0 place-items-center rounded-full" style={{ backgroundColor: orb.color }}><span className="h-2 w-2 rounded-full bg-black/30" aria-hidden="true" /></span><span className="min-w-0 flex-1 truncate">{orb.name}</span></button>)}</SidebarCategory>}
+              {sidebarOrbs.length > 0 && <SidebarCategory key="orbs" id="orbs" title={sidebarText.orbs} initiallyOpen>{sidebarOrbs.map((orb) => <button key={orb.id} type="button" onClick={() => { setActiveSection('orbs'); setActiveOrbId(orb.id); setActiveChatId(undefined); }} className={`flex h-8 w-full min-w-0 items-center gap-2 rounded-lg px-1.5 text-left text-[13px] text-(--codeclub-text-strong) ${activeSection === 'orbs' && activeOrbId === orb.id ? 'bg-(--codeclub-acrylic-active)' : 'bg-transparent hover:bg-(--codeclub-hover)'}`} title={orb.name}><FluidOrb size={20} color={orb.color} themeTint={false} active={activeOrbId === orb.id} className="shrink-0" aria-hidden="true" /><span className="min-w-0 flex-1 truncate">{orb.name}</span></button>)}</SidebarCategory>}
             </div>
             <div className="mt-auto border-t border-(--codeclub-border-soft) px-1.5 pt-3"><button type="button" onClick={() => void nativeInvoke('codeclub_open_external', { url: 'https://ko-fi.com/iangeldev' })} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12px] text-(--codeclub-text-muted) transition-colors hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={sidebarText.support} title={sidebarText.donation}><Heart size={15} strokeWidth={1.8} /><span>{sidebarText.support}</span></button></div>
           </>}
