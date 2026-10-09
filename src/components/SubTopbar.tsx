@@ -1,7 +1,7 @@
 'use client';
 
 /** Project breadcrumb, panel navigation, update actions, and project-scoped recent search. */
-import { ArrowLeft, ArrowRight, ChevronRight, Download, FileText, House, MessageSquare, RefreshCw, Search } from 'lucide-react';
+import { ChevronRight, Download, FileText, House, MessageSquare, RefreshCw, Search } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { rightSidebarTranslations, useAppLanguage } from '../lib/i18n';
@@ -21,7 +21,6 @@ export default function SubTopbar({ activeProject }: { activeProject: { name: st
   const [collapsed, setCollapsed] = useState(false);
   const [updateVersion, setUpdateVersion] = useState('');
   const [updateDownloaded, setUpdateDownloaded] = useState(false);
-  const [navigation, setNavigation] = useState({ leftBack: false, leftForward: false, rightBack: false, rightForward: false });
   const [searchQuery, setSearchQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchLoading, setSearchLoading] = useState(true);
@@ -42,24 +41,6 @@ export default function SubTopbar({ activeProject }: { activeProject: { name: st
     if (breadcrumbRef.current) observer.observe(breadcrumbRef.current);
     return () => observer.disconnect();
   }, [breadcrumb.join('|')]);
-  useEffect(() => {
-    const updateRightNavigation = (event: Event) => {
-      const detail = (event as CustomEvent<{ back?: boolean; forward?: boolean }>).detail;
-      setNavigation((current) => ({ ...current, rightBack: Boolean(detail?.back), rightForward: Boolean(detail?.forward) }));
-    };
-    const updateLeftNavigation = (event: Event) => {
-      const detail = (event as CustomEvent<{ back?: boolean; forward?: boolean }>).detail;
-      setNavigation((current) => ({ ...current, leftBack: Boolean(detail?.back), leftForward: Boolean(detail?.forward) }));
-    };
-    window.addEventListener('codeclub:right-panel-navigation-state', updateRightNavigation);
-    window.addEventListener('codeclub:left-panel-navigation-state', updateLeftNavigation);
-    window.dispatchEvent(new CustomEvent('codeclub:right-panel-navigation-request'));
-    window.dispatchEvent(new CustomEvent('codeclub:left-panel-navigation-request'));
-    return () => {
-      window.removeEventListener('codeclub:right-panel-navigation-state', updateRightNavigation);
-      window.removeEventListener('codeclub:left-panel-navigation-state', updateLeftNavigation);
-    };
-  }, []);
   useEffect(() => {
     let cancelled = false;
     const loadSearchIndex = async () => {
@@ -156,8 +137,6 @@ export default function SubTopbar({ activeProject }: { activeProject: { name: st
     : item.id ? openSearchChat({ id: item.id, name: item.name }) : undefined;
   return <div className="codeclub-widget-chrome flex h-11 min-w-0 items-center gap-2 px-3 text-(--codeclub-text)" role="toolbar" aria-label={text.rightPanel}>
     <div className="flex shrink-0 items-center gap-1">
-      <motion.button type="button" disabled={!navigation.leftBack && !navigation.rightBack} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:right-panel-back'))} className={`${controlClass} disabled:cursor-not-allowed disabled:opacity-35`} whileHover={navigation.leftBack || navigation.rightBack ? { scale: 1.06 } : undefined} whileTap={navigation.leftBack || navigation.rightBack ? { scale: 0.92 } : undefined} transition={{ type: 'spring', stiffness: 420, damping: 26 }} aria-label={text.back} title={text.back}><ArrowLeft size={18} strokeWidth={1.7} /></motion.button>
-      <motion.button type="button" disabled={!navigation.leftForward && !navigation.rightForward} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:right-panel-forward'))} className={`${controlClass} disabled:cursor-not-allowed disabled:opacity-35`} whileHover={navigation.leftForward || navigation.rightForward ? { scale: 1.06 } : undefined} whileTap={navigation.leftForward || navigation.rightForward ? { scale: 0.92 } : undefined} transition={{ type: 'spring', stiffness: 420, damping: 26 }} aria-label={text.forward} title={text.forward}><ArrowRight size={18} strokeWidth={1.7} /></motion.button>
       <motion.button type="button" onClick={() => { const api = (window as any).codeclub; if (updateDownloaded) void api?.installUpdate?.(); else void api?.checkForUpdates?.(); }} className={`${controlClass} ${updateVersion ? 'text-white hover:text-white' : ''}`} whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.92 }} transition={{ type: 'spring', stiffness: 420, damping: 26 }} aria-label={updateDownloaded ? (language === 'en' ? `Restart to update to ${updateVersion}` : `Reiniciar para actualizar a ${updateVersion}`) : updateVersion ? (language === 'en' ? `Update available: ${updateVersion}` : `Actualización disponible: ${updateVersion}`) : (language === 'en' ? 'Check for updates' : 'Buscar actualizaciones')} title={updateDownloaded ? (language === 'en' ? `Restart to update to ${updateVersion}` : `Reiniciar para actualizar a ${updateVersion}`) : updateVersion ? (language === 'en' ? `Update available: ${updateVersion}` : `Actualización disponible: ${updateVersion}`) : (language === 'en' ? 'Check for updates' : 'Buscar actualizaciones')}><Download size={18} strokeWidth={1.7} /></motion.button>
       <motion.button type="button" onClick={() => void (window as any).codeclub?.reloadApp?.()} className={controlClass} whileHover={{ scale: 1.06 }} whileTap={{ scale: 0.92 }} transition={{ type: 'spring', stiffness: 420, damping: 26 }} aria-label={text.reload} title={text.reload}><RefreshCw size={18} strokeWidth={1.7} /></motion.button>
     </div>

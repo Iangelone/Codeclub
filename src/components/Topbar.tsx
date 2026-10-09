@@ -1,125 +1,41 @@
 'use client';
 
-/** Keeps project tabs synchronized with project-switch events and forwards window controls through Electron's API. */
+/** Navigation, layout toggles, and native window controls. */
 import { useEffect, useState } from 'react';
-import { Command, Folder, FolderOpen, House, Minus, PanelLeft, PanelRight, PanelTop, Plus, Square, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Command, Minus, PanelLeft, PanelRight, PanelTop, Square, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { topbarTranslations, useAppLanguage } from '../lib/i18n';
 
-const projectTabId = (id: string) => `codeclub-project-tab-${encodeURIComponent(id)}`;
 
 export default function Topbar({ leftOpen, rightOpen, topbarOpen, onToggleLeft, onToggleRight, onToggleTopbar }: { leftOpen: boolean; rightOpen: boolean; topbarOpen: boolean; onToggleLeft: () => void; onToggleRight: () => void; onToggleTopbar: () => void }) {
   const language = useAppLanguage();
   const t = topbarTranslations[language];
-  const [projects, setProjects] = useState<Array<{ id: string; name: string; path: string }>>([]);
-  const [activeProjectId, setActiveProjectId] = useState('home');
   const [chatPanelVisible, setChatPanelVisible] = useState(true);
   const [slashMenuActive, setSlashMenuActive] = useState(false);
+  const [panelNavigation, setPanelNavigation] = useState({ back: false, forward: false });
   const noDragStyle = { WebkitAppRegion: 'no-drag' } as React.CSSProperties;
   useEffect(() => {
     const handleChatPanelVisibility = (event: Event) => setChatPanelVisible((event as CustomEvent<{ visible?: boolean }>).detail?.visible === true);
     const handleSlashMenuState = (event: Event) => setSlashMenuActive((event as CustomEvent<{ active?: boolean }>).detail?.active === true);
+    const handlePanelNavigation = (event: Event) => {
+      const detail = (event as CustomEvent<{ back?: boolean; forward?: boolean }>).detail;
+      setPanelNavigation({ back: Boolean(detail?.back), forward: Boolean(detail?.forward) });
+    };
     window.addEventListener('codeclub:chat-panel-visibility', handleChatPanelVisibility);
     window.addEventListener('codeclub:slash-menu-state', handleSlashMenuState);
+    window.addEventListener('codeclub:right-panel-navigation-state', handlePanelNavigation);
+    window.dispatchEvent(new CustomEvent('codeclub:right-panel-navigation-request'));
     return () => {
       window.removeEventListener('codeclub:chat-panel-visibility', handleChatPanelVisibility);
       window.removeEventListener('codeclub:slash-menu-state', handleSlashMenuState);
+      window.removeEventListener('codeclub:right-panel-navigation-state', handlePanelNavigation);
     };
   }, []);
-  const persistOpenProjects = (nextProjects: Array<{ id: string; name: string; path: string }>) => {
-    window.localStorage.setItem('codeclub:open-projects', JSON.stringify(nextProjects.map((project) => project.id)));
-    window.dispatchEvent(new CustomEvent('codeclub:open-projects-changed'));
-  };
   const nativeWindow = (action: 'windowMinimize' | 'windowMaximize' | 'windowClose') => { const api = (window as any).codeclub; if (!api?.[action]) { console.error(`Electron bridge no disponible: ${action}`); return; } void Promise.resolve(api[action]()).catch((error) => console.error(`Falló ${action}`, error)); };
-  useEffect(() => {
-    try {
-      const saved = JSON.parse(window.localStorage.getItem('codeclub:active-project') || 'null') as { id?: string } | null;
-      if (saved?.id) setActiveProjectId(saved.id);
-    } catch { /* Keep Home selected when no project has been persisted. */ }
-    void (async () => {
-      const existing = await (window as any).codeclub?.listProjects?.();
-      if (!Array.isArray(existing)) return;
-      let openProjectIds: string[] | null = null;
-      try {
-        const saved = JSON.parse(window.localStorage.getItem('codeclub:open-projects') || 'null');
-        if (Array.isArray(saved)) openProjectIds = saved.filter((id): id is string => typeof id === 'string');
-      } catch { /* Rebuild an invalid saved list from the registered projects. */ }
-      const openProjects = openProjectIds
-        ? existing.filter((project: { id: string }) => openProjectIds!.includes(project.id))
-        : existing;
-      setProjects(openProjects);
-      if (!openProjectIds) persistOpenProjects(openProjects);
-    })();
-  }, []);
-  useEffect(() => { const handleProjectRenamed = (event: Event) => { const project = (event as CustomEvent<{ id?: string; name?: string; path?: string }>).detail; if (!project?.id || !project.name) return; setProjects((current) => current.map((item) => item.id === project.id ? { ...item, name: project.name!, path: project.path ?? item.path } : item)); }; window.addEventListener('codeclub:project-renamed', handleProjectRenamed); return () => window.removeEventListener('codeclub:project-renamed', handleProjectRenamed); }, []);
-  useEffect(() => {
-    const handleProjectSwitch = (event: Event) => {
-      const project = (event as CustomEvent<{ id?: string; name?: string; path?: string }>).detail;
-      if (!project?.id) return;
-      setActiveProjectId(project.id);
-      if (project.id === 'home' || !project.path) return;
-      const projectId = project.id as string;
-      const projectName = project.name || projectId;
-      const projectPath = project.path as string;
-      setProjects((current) => current.some((item) => item.id === projectId)
-        ? current.map((item) => item.id === projectId ? { ...item, name: projectName, path: projectPath || item.path } : item)
-        : [...current, { id: projectId, name: projectName, path: projectPath }]);
-      try {
-        const openProjectIds = JSON.parse(window.localStorage.getItem('codeclub:open-projects') || '[]') as unknown;
-        const nextIds = Array.isArray(openProjectIds) ? openProjectIds.filter((id): id is string => typeof id === 'string' && id !== projectId) : [];
-        window.localStorage.setItem('codeclub:open-projects', JSON.stringify([...nextIds, projectId]));
-      } catch { window.localStorage.setItem('codeclub:open-projects', JSON.stringify([projectId])); }
-    };
-    window.addEventListener('codeclub:project-switch', handleProjectSwitch);
-    return () => window.removeEventListener('codeclub:project-switch', handleProjectSwitch);
-  }, []);
-  const addProject = async () => {
-    const api = (window as any).codeclub;
-    if (!api?.selectProjectFolder) { console.error('Electron bridge codeclub no disponible'); return; }
-    let project;
-    try { project = await api.selectProjectFolder(); } catch (error) { console.error('No se pudo seleccionar la carpeta del proyecto', error); return; }
-    if (!project) return;
-    const selectedProject = project as { id: string; name: string; path: string };
-    setProjects((current) => {
-      const next = [...current.filter((item) => item.id !== selectedProject.id), selectedProject];
-      persistOpenProjects(next);
-      return next;
-    });
-    setActiveProjectId(selectedProject.id);
-    window.dispatchEvent(new CustomEvent('codeclub:project-switch', { detail: selectedProject }));
-  };
-  const selectProject = async (project: { id: string; name: string; path: string }) => {
-    setActiveProjectId(project.id);
-    await (window as any).codeclub?.switchProject?.(project.id);
-    window.dispatchEvent(new CustomEvent('codeclub:project-switch', { detail: project }));
-  };
-  const closeProject = (project: { id: string; name: string; path: string }) => {
-    setProjects((current) => {
-      const next = current.filter((item) => item.id !== project.id);
-      persistOpenProjects(next);
-      return next;
-    });
-    let persistedProjectId: string | undefined;
-    try { persistedProjectId = (JSON.parse(window.localStorage.getItem('codeclub:active-project') || 'null') as { id?: string } | null)?.id; } catch { /* Ignore invalid persisted project state. */ }
-    if (activeProjectId !== project.id && persistedProjectId !== project.id) return;
-    window.localStorage.removeItem('codeclub:active-project');
-    setActiveProjectId('home');
-    window.dispatchEvent(new CustomEvent('codeclub:project-switch', { detail: { id: 'home', name: 'Codeclub' } }));
-  };
   return <header role="banner" aria-label="Codeclub" className="codeclub-widget-chrome relative z-[100] col-span-full flex h-[34px] min-w-0 items-center select-none">
-    <div className="flex h-full items-center gap-1 pl-2" role="toolbar" aria-orientation="horizontal" aria-label={t.projectTab} onKeyDown={(event) => {
-      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-      const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button[id^="codeclub-project-tab-"]'));
-      const currentIndex = tabs.indexOf(document.activeElement as HTMLButtonElement);
-      if (currentIndex < 0 || tabs.length === 0) return;
-      event.preventDefault();
-      const nextIndex = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (currentIndex + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
-      tabs[nextIndex]?.focus();
-      tabs[nextIndex]?.click();
-    }}>
-      <motion.button id={projectTabId('home')} type="button" aria-pressed={activeProjectId === 'home'} tabIndex={activeProjectId === 'home' ? 0 : -1} title={t.home} style={noDragStyle} onClick={() => { setActiveProjectId('home'); window.dispatchEvent(new CustomEvent('codeclub:project-switch', { detail: { id: 'home', name: 'Codeclub' } })); }} animate={{ scale: activeProjectId === 'home' ? 1 : 0.97, opacity: activeProjectId === 'home' ? 1 : 0.72 }} whileHover={{ scale: activeProjectId === 'home' ? 1.03 : 1 }} whileTap={{ scale: 0.96 }} transition={{ type: 'spring', stiffness: 420, damping: 26 }} className={`flex h-[28px] w-fit items-center gap-1.5 rounded-lg border px-2.5 !text-[12px] leading-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--codeclub-accent) ${activeProjectId === 'home' ? 'border-(--codeclub-border-soft) bg-(--codeclub-acrylic-active) text-(--codeclub-text-strong) shadow-(--codeclub-shadow-soft)' : 'border-transparent bg-transparent text-(--codeclub-text-muted) hover:bg-(--codeclub-hover)'}`}><House size={15} aria-hidden="true" className="shrink-0" /><span>{t.home}</span></motion.button>
-      {projects.map((project) => <motion.div key={project.id} role="presentation" animate={{ scale: activeProjectId === project.id ? 1 : 0.97, opacity: activeProjectId === project.id ? 1 : 0.72 }} whileHover={{ scale: activeProjectId === project.id ? 1.03 : 1 }} transition={{ type: 'spring', stiffness: 420, damping: 26 }} className={`group flex h-[28px] max-w-[220px] items-center rounded-lg border !text-[12px] leading-none ${activeProjectId === project.id ? 'border-(--codeclub-border-soft) bg-(--codeclub-acrylic-active) text-(--codeclub-text-strong) shadow-(--codeclub-shadow-soft)' : 'border-transparent bg-transparent text-(--codeclub-text-muted) hover:bg-(--codeclub-hover)'}`}><button id={projectTabId(project.id)} type="button" title={`${t.open} ${t.projects.toLowerCase()} ${project.name}`} style={noDragStyle} onClick={() => void selectProject(project)} className="flex h-full min-w-0 items-center gap-1.5 rounded-l-lg border-0 bg-transparent px-2.5 text-inherit focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--codeclub-accent)" aria-pressed={activeProjectId === project.id} tabIndex={activeProjectId === project.id ? 0 : -1}>{activeProjectId === project.id ? <FolderOpen size={15} aria-hidden="true" className="shrink-0" /> : <Folder size={15} aria-hidden="true" className="shrink-0" />}<span className="truncate">{project.name}</span></button><button type="button" onClick={() => void closeProject(project)} style={noDragStyle} className={`mr-1 grid h-5 w-5 shrink-0 place-items-center rounded-md border-0 bg-transparent text-(--codeclub-text-muted) transition-opacity hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--codeclub-accent) ${activeProjectId === project.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'}`} aria-label={`${t.close} ${t.projects.toLowerCase()} ${project.name}`} title={`${t.close} ${t.projects.toLowerCase()} ${project.name}`}><X size={13} aria-hidden="true" /></button></motion.div>)}
-      <button type="button" style={noDragStyle} onClick={() => void addProject()} className="grid h-7 w-7 place-items-center rounded-md border-0 bg-transparent text-(--codeclub-text) hover:bg-(--codeclub-hover) focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--codeclub-accent)" aria-label={t.addProject} title={t.linkFolder}><Plus size={17} aria-hidden="true" /></button>
+    <div className="flex h-full items-center gap-1 pl-2" role="toolbar" aria-orientation="horizontal" aria-label={t.windowControls}>
+      <motion.button type="button" disabled={!panelNavigation.back} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:right-panel-back'))} title={t.back} aria-label={t.back} className="grid h-7 w-7 shrink-0 place-items-center rounded-md border-0 bg-transparent text-(--codeclub-icon) transition-colors hover:bg-transparent hover:text-(--codeclub-text-strong) disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--codeclub-accent)" whileHover={panelNavigation.back ? { scale: 1.06 } : undefined} whileTap={panelNavigation.back ? { scale: 0.92 } : undefined} transition={{ type: 'spring', stiffness: 420, damping: 26 }}><ArrowLeft size={17} strokeWidth={1.7} aria-hidden="true" /></motion.button>
+      <motion.button type="button" disabled={!panelNavigation.forward} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:right-panel-forward'))} title={t.forward} aria-label={t.forward} className="grid h-7 w-7 shrink-0 place-items-center rounded-md border-0 bg-transparent text-(--codeclub-icon) transition-colors hover:bg-transparent hover:text-(--codeclub-text-strong) disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--codeclub-accent)" whileHover={panelNavigation.forward ? { scale: 1.06 } : undefined} whileTap={panelNavigation.forward ? { scale: 0.92 } : undefined} transition={{ type: 'spring', stiffness: 420, damping: 26 }}><ArrowRight size={17} strokeWidth={1.7} aria-hidden="true" /></motion.button>
     </div>
     <div className="min-w-0 flex-1" />
     <nav className="mr-2 flex h-full items-center gap-1" aria-label={t.panels} style={noDragStyle}>

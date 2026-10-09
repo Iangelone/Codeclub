@@ -25,6 +25,22 @@
 }
 
 
+.codeclub-file-dialog,
+.codeclub-file-dialog * {
+  scrollbar-width: none;
+}
+
+.codeclub-file-dialog::-webkit-scrollbar,
+.codeclub-file-dialog *::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.codeclub-file-dialog [role="tree"] button {
+  border-radius: 12px;
+}
+
 .file-tabs-scrollbar {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--codeclub-accent) 30%, #3a3a3a) transparent;

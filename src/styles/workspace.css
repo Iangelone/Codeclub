@@ -86,6 +86,38 @@
   padding-inline: clamp(12px, 4cqi, 32px);
 }
 
+/* The left customization pane follows the compact chat sidebar rhythm, while the main extension view keeps its larger page spacing. */
+#codeclub-extensions-sidebar > .extensions-panel-content {
+  padding: 0 6px;
+}
+
+#codeclub-extensions-sidebar .extensions-toolbar {
+  margin-top: 16px;
+  gap: 0;
+}
+
+#codeclub-extensions-sidebar .extensions-toolbar nav {
+  gap: 2px;
+}
+
+#codeclub-extensions-sidebar .extensions-category {
+  height: 32px;
+  min-height: 32px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+#codeclub-extensions-sidebar > .extensions-panel-content > h2 {
+  margin: 16px 0 4px;
+  padding-inline: 0;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+#codeclub-extensions-sidebar .extensions-panel-content > section[aria-label] {
+  gap: 2px;
+}
+
 .extensions-browser-managers {
   overflow-wrap: anywhere;
 }

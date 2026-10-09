@@ -9,6 +9,7 @@ export type ScheduledTask = {
   status: 'active' | 'paused'; notifications: string; reasoning: string;
   language?: 'es' | 'en';
   autonomous?: boolean;
+  allowComputer?: boolean;
   nextRun?: string; lastRun?: string; runs: TaskRun[];
   runAt?: string;
 };
@@ -76,6 +77,7 @@ export class TaskScheduler {
       status: input.status === 'paused' ? 'paused' : 'active', notifications: ['Todas las ejecuciones', 'Solo errores', 'Sin notificaciones'].includes(input.notifications || '') ? input.notifications! : 'Todas las ejecuciones', reasoning: input.reasoning || 'Medio',
       language: input.language === 'en' ? 'en' : 'es',
       autonomous: input.autonomous === true && input.id.startsWith('orb_'),
+      allowComputer: input.allowComputer ?? old?.allowComputer ?? true,
       runAt: input.runAt,
       runs: old?.runs || [], lastRun: old?.lastRun,
     };

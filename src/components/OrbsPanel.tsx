@@ -12,6 +12,7 @@ import type { ScheduledTask } from '../lib/scheduled-tasks';
 import { useSharedSessions } from '../lib/shared-sessions';
 import { ORB_PALETTES } from './OrbPaletteProvider';
 import FluidOrb from './ui/fluid-orb';
+import OrbWorkspaceSetup from './OrbWorkspaceSetup';
 import { models, providers } from '../lib/ai-catalog';
 import { credentialKeyFor, modelIdFor, modelMatchesProvider, usesGateway } from '../lib/ai-routing';
 
@@ -93,7 +94,7 @@ function CatalogPicker({ id, label, value, items, placeholder, noResults, autoFo
   </div>;
 }
 
-export default function OrbsPanel() {
+export default function OrbsPanel({ createMode = false, onCreated }: { createMode?: boolean; onCreated?: (id: string) => void }) {
   const language = useAppLanguage();
   const text = orbsTranslations[language];
   const controls = orbControlTranslations[language];
@@ -135,7 +136,7 @@ export default function OrbsPanel() {
     try {
       if (!api?.tasksList) throw new Error('ORB_RUNTIME_UNAVAILABLE');
       if (action === 'play') {
-        await api.tasksSave('', { id: taskId, name: orb.name, prompt: orb.purpose, provider: orb.providerId, model: orb.modelId, autonomous: true, status: 'active', interval: 'Personalizado', every: '30 min', notifications: 'Solo errores', language });
+        await api.tasksSave('', { id: taskId, name: orb.name, prompt: orb.purpose, provider: orb.providerId, model: orb.modelId, allowComputer: orb.allowComputer !== false, autonomous: true, status: 'active', interval: 'Personalizado', every: '30 min', notifications: 'Solo errores', language });
         await api.tasksRun('', taskId);
       } else if (action === 'stop') {
         const currentTasks: ScheduledTask[] = await api.tasksList('');
@@ -205,6 +206,7 @@ export default function OrbsPanel() {
     requestAnimationFrame(() => openerRef.current?.focus());
   };
 
+
   const selectedProvider = (providers.find((provider) => provider.id === draft?.providerId) || defaultProvider) as CatalogOption | undefined;
   const selectedModel = (draft && selectedProvider ? models.find((model) => modelMatchesProvider(model, selectedProvider) && modelIdFor(selectedProvider, model) === draft.modelId) : null) as CatalogOption | null;
   const requiresCredential = Boolean(selectedProvider && selectedModel && selectedProvider.id !== 'custom' && (usesGateway(selectedProvider, selectedModel) || selectedProvider.requiresApiKey !== false));
@@ -267,9 +269,10 @@ export default function OrbsPanel() {
       await setSetting(STORAGE_KEY, next);
       window.dispatchEvent(new CustomEvent('codeclub:orbs-changed'));
       const task = tasks.find((item) => item.id === `orb_${draft.id}`);
-      if (task) await (window as any).codeclub.tasksSave('', { ...task, name: draft.name.trim(), prompt: draft.purpose.trim(), provider: draft.providerId, model: draft.modelId, language });
+      if (task) await (window as any).codeclub.tasksSave('', { ...task, name: draft.name.trim(), prompt: draft.purpose.trim(), provider: draft.providerId, model: draft.modelId, allowComputer: draft.allowComputer !== false, language });
       setOrbs(next);
       closeEditor();
+      onCreated?.(draft.id);
     } catch {
       setError(text.saveError);
     } finally {
@@ -301,7 +304,7 @@ export default function OrbsPanel() {
   };
 
   return <section className="h-full min-h-0 overflow-y-auto bg-(--codeclub-center) [scrollbar-color:#444444_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#444444]" aria-label={text.title}>
-    <div className="mx-auto flex min-h-full min-w-0 w-full max-w-[1040px] flex-col px-6 py-7 lg:px-8">
+    {createMode ? <OrbWorkspaceSetup onContinue={allowComputer => openEditor({ ...emptyOrb(), allowComputer })} /> : <div className="mx-auto flex min-h-full min-w-0 w-full max-w-[1040px] flex-col px-6 py-7 lg:px-8">
       <header className="flex items-start gap-4">
         <div className="min-w-0 flex-1">
           <h1 className="m-0 text-[28px] font-normal tracking-[-0.04em] text-(--codeclub-text-strong)">{text.title}</h1>
@@ -353,7 +356,7 @@ export default function OrbsPanel() {
         })}
       </div>}
       {controlError && <p role="alert" className="mt-3 text-[11px] text-red-300">{controlError}</p>}
-    </div>
+    </div>}
 
     {draft && typeof document !== 'undefined' && createPortal(<div className="fixed inset-0 z-[2147483647] grid place-items-center bg-black/65 p-4 backdrop-blur-[3px]" onMouseDown={(event) => { if (event.target === event.currentTarget) closeEditor(); }}>
       <form role="dialog" aria-modal="true" aria-label={orbs.some((orb) => orb.id === draft.id) ? text.edit : text.create} onSubmit={(event) => { event.preventDefault(); if (step === 1) { if (!credentialLoading) void continueToDesign(); } else void saveOrb(event); }} className="relative flex max-h-[min(700px,90vh)] w-full max-w-[600px] flex-col overflow-hidden border border-[#303030] bg-[#141414] shadow-2xl shadow-black/60">
