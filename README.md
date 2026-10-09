@@ -74,12 +74,9 @@ npm run package:win
 
 The installer is generated in `release/`. See [development and releases](docs/development.md) for the full workflow.
 
-To connect an existing Chromium browser, open **Extensions → Codeclub Browser
-Control → Install**. Codeclub opens the browser's extension manager and the bundled
-extension folder; enable Developer mode, choose **Load unpacked**, and confirm the
-browser's permission prompt. Use **Uninstall** there to confirm removal. Edge,
-Chrome, Brave, Opera, and Vivaldi are supported. See
-[Computer Use on Windows](docs/computer.md) for the steps and permissions.
+To connect an existing Chromium browser, open **Extensions → Codeclub Browser Control → Install**. Edge opens the Add-ons listing; other detected Chromium browsers use **Developer mode → Load unpacked**. For development, load the repository's `browser-extension` folder unpacked and reload it after changes. Keep Codeclub running for normal use. Source fixes are not automatically delivered to store installations.
+
+See [Browser Control: setup, troubleshooting, and agent contracts](docs/browser-control.md) for tab groups, permissions, visibility requirements, and direct debugging without provider calls.
 
 ## How it works
 
@@ -95,6 +92,7 @@ Codeclub is in **early beta** and currently targets Windows. Scheduled tasks run
 
 - [Architecture](docs/architecture.md)
 - [Agent stack, integrations, and limits](docs/agent.md)
+- [Browser Control: user and agent guide](docs/browser-control.md)
 - [Computer Use on Windows](docs/computer.md)
 - [Scheduled AI tasks](docs/schedule.md)
 - [Terminal and browser](docs/workspace.md)

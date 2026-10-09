@@ -41,7 +41,7 @@ try {
 
   const initial = await control.getState({ port: cdpPort, targetId: tab.targetId });
   assert.equal(initial.ok, true, initial.error);
-  const navigated = await control.action({ port: cdpPort, targetId: tab.targetId, snapshotId: initial.snapshotId, action: 'navigate', text: `http://127.0.0.1:${pagePort}/` });
+  const navigated = await control.action({ port: cdpPort, targetId: tab.targetId, action: 'navigate', text: `http://127.0.0.1:${pagePort}/` });
   assert.equal(navigated.ok, true, navigated.error);
   const before = navigated.state;
   assert.equal(before.ok, true, before.error);

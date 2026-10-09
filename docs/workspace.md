@@ -12,9 +12,13 @@ Terminal tabs start as `PowerShell` and use the latest submitted command echoed 
 
 It includes PowerShell in the project directory, keyboard input, history, arrows and Ctrl+C, ANSI output, scrolling, visual fitting with @xterm/addon-fit, and cleanup when a tab closes.
 
+Agent terminal reads use incremental offsets by default; `full:true` rereads the retained buffer. `command` submits Enter automatically, while `data` sends literal input. See [agent terminal output](terminal-agent-output.md) for raw offsets, truncation, and plain-text normalization.
+
 ## Browser
 
 BrowserPanel uses an Electron webview. Its toolbar provides back and forward, reload and home, an address bar, element selection, and a menu to open outside Codeclub.
+
+External browser tabs use the separate companion or loopback CDP tools. See [Browser Control](browser-control.md) for installation, tab groups, snapshot rules, visibility recovery, and verification. Embedded and external keyboard/select behavior must not be assumed identical.
 
 ## DOM selection and comments
 

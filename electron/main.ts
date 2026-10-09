@@ -1,6 +1,7 @@
 /** Privileged desktop boundary: owns windows, filesystem, processes, and IPC handlers used by the renderer preload. */
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, safeStorage, screen, shell, Tray } from 'electron';
 import { runProjectCommand } from './run-command.js';
+import { readProjectGit } from './git-read.js';
 import { TaskScheduler, type ScheduledTask, type TaskRun } from './task-scheduler.js';
 import { CredentialVault } from './credential-vault.js';
 import { ActivityIntegrations } from './activity-integrations.js';
@@ -13,12 +14,14 @@ import { SessionHub, type SessionChat } from './session-hub.js';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { userInfo } from 'node:os';
+import { stripVTControlCharacters } from 'node:util';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as pty from 'node-pty';
 import electronUpdater from 'electron-updater';
 import { createComputerUse } from './computer-use.js';
 import { createExternalBrowserControl } from './external-browser.js';
+import { EDGE_EXTENSION_ID, edgeExtensionPage } from './browser-extension-config.js';
 import { createBrowserExtensionBridge } from './browser-extension-bridge.js';
 import { createFloatingChat } from './floating-chat.js';
 const { autoUpdater } = electronUpdater;
@@ -604,16 +607,21 @@ async function invokeNativeCommand(command: string, args: any = {}, signal?: Abo
     }
     case 'codeclub_get_app_version': return app.getVersion();
     case 'codeclub_browser_extension_info': {
+      // A socket hello alone does not prove that the companion can serve requests.
+      const connections = await Promise.all(browserExtensionBridge.list().map(async client => {
+        try { await browserExtensionBridge.tabs(client.browserId); return client; } catch { return null; }
+      }));
       const browsers = await Promise.all((Object.keys(browserExtensionManagers) as BrowserExtensionManagerId[]).map(async id => ({
         id,
         name: browserExtensionManagers[id].name,
         installed: Boolean(await findBrowserExecutable(id)),
-        connected: browserExtensionBridge.list().some(client => {
+        connected: connections.some(client => {
+          if (!client) return false;
           const name = client.name.toLowerCase();
           return id === 'edge' ? name.includes('edge') : id === 'chrome' ? name.includes('chrome') : id === 'brave' ? name.includes('brave') : id === 'opera' ? name.includes('opera') : name.includes('vivaldi');
         }),
       })));
-      return { browsers, extensionId: 'pomkkenhcjkfjdabdhogladflacafopd' };
+      return { browsers, extensionId: EDGE_EXTENSION_ID };
     }
     case 'codeclub_browser_extension_manage': {
       if (process.platform !== 'win32') throw new Error('El instalador de extensiones está disponible en Windows.');
@@ -623,9 +631,10 @@ async function invokeNativeCommand(command: string, args: any = {}, signal?: Abo
       const browser = browserExtensionManagers[id];
       const executable = await findBrowserExecutable(id);
       if (!executable) throw new Error(`${browser.name} no está instalado en este equipo.`);
-      const extensionPath = args.action === 'install' ? await prepareBrowserExtension() : undefined;
+      const extensionPath = args.action === 'install' && id !== 'edge' ? await prepareBrowserExtension() : undefined;
+      const targetUrl = id === 'edge' ? edgeExtensionPage(args.action as 'install' | 'uninstall') : browser.page;
       await new Promise<void>((resolve, reject) => {
-        const child = spawn(executable, [browser.page], { detached: true, stdio: 'ignore', windowsHide: false });
+        const child = spawn(executable, [targetUrl], { detached: true, stdio: 'ignore', windowsHide: false });
         child.once('error', reject);
         child.once('spawn', () => { child.unref(); resolve(); });
       });
@@ -635,6 +644,7 @@ async function invokeNativeCommand(command: string, args: any = {}, signal?: Abo
       }
       return { ok: true, browser: id, action: args.action === 'install' ? 'install' : 'uninstall', extensionPath };
     }
+    case 'codeclub_git_read': return readProjectGit(await resolveProjectFile(String(args.projectPath || ''), '.'), args, signal);
     case 'codeclub_list_files': return listProjectFiles(String(args.projectPath || ''), Number(args.maxFiles) || 400);
     case 'codeclub_path_kind': {
       const target = await resolveProjectFile(String(args.projectPath || ''), String(args.path || '.'));
@@ -725,13 +735,15 @@ async function invokeNativeCommand(command: string, args: any = {}, signal?: Abo
       const session = nativeTerminals.get(String(args.id));
       if (!session) throw new Error('Terminal no encontrada.');
       const nextOffset = session.bufferOffset + session.buffer.length;
+      // AI reads a plain log; the visible terminal keeps its original VT stream.
+      const format = (output: string) => args.plainText === true ? stripVTControlCharacters(output).replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n') : output;
       if (Number.isFinite(Number(args.offset))) {
         const offset = Math.max(0, Math.floor(Number(args.offset)));
         const truncated = offset < session.bufferOffset;
         const start = truncated ? 0 : Math.min(session.buffer.length, offset - session.bufferOffset);
-        return { info: session.info, output: session.buffer.slice(start), offset: nextOffset, truncated };
+        return { info: session.info, output: format(session.buffer.slice(start)), offset: nextOffset, truncated };
       }
-      return { info: session.info, output: session.buffer, offset: nextOffset, truncated: false };
+      return { info: session.info, output: format(session.buffer), offset: nextOffset, truncated: false };
     }
     case 'codeclub_terminal_write': {
       const session = nativeTerminals.get(String(args.id));
@@ -772,6 +784,7 @@ async function invokeNativeCommand(command: string, args: any = {}, signal?: Abo
     case 'codeclub_computer_stop': desktopControl.stop(); return { ok: true };
     case 'codeclub_external_browser_list': return externalBrowserControl.list(args.request || {});
     case 'codeclub_external_browser_state': return externalBrowserControl.getState(args.request || {});
+    case 'codeclub_external_browser_tabs': return externalBrowserControl.manageTabs(args.request || {});
     case 'codeclub_external_browser_action': return externalBrowserControl.action(args.request || {});
     case 'codeclub_http_fetch': {
       const request = args.request || {};
@@ -1084,7 +1097,7 @@ app.whenReady().then(async () => {
     if (worker) {
       if (worker.controller.signal.aborted && payload.command !== 'codeclub_http_abort') throw new Error('TASK_CANCELLED');
       if (payload.command.startsWith('codeclub_terminal_') && !['codeclub_terminal_create', 'codeclub_terminal_list'].includes(payload.command) && !worker.terminals.has(String(payload.args?.id))) throw new Error('TASK_TERMINAL_MISMATCH');
-      const workspaceCommands = ['codeclub_list_files', 'codeclub_read_file', 'codeclub_search_text', 'codeclub_write_file', 'codeclub_run_command'];
+      const workspaceCommands = ['codeclub_git_read', 'codeclub_list_files', 'codeclub_read_file', 'codeclub_search_text', 'codeclub_write_file', 'codeclub_run_command'];
       const requestedProject = workspaceCommands.includes(payload.command) ? String(payload.args?.projectPath || '') : String((payload.args?.request as any)?.projectPath || payload.args?.projectPath || '');
       if (requestedProject || workspaceCommands.includes(payload.command)) {
         const expected = worker.task.projectPath || (process.platform === 'win32' ? `${process.env.SystemDrive || 'C:'}\\` : '/');

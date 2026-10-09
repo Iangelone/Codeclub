@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Blocks, Box, Download, FileText, FileType2, Folder, Globe, LayoutTemplate, PlugZap, Presentation, Search, Table2, Trash2, WandSparkles } from 'lucide-react';
 import { getSetting, setSetting } from '../lib/persistence';
-import { extensionActionTranslations, useAppLanguage, type AppLanguage } from '../lib/i18n';
+import { browserExtensionTranslations, extensionActionTranslations, useAppLanguage, type AppLanguage } from '../lib/i18n';
 import { loadAgentPlugins, type AgentPlugin } from '../lib/agent-plugins';
 import { nativeInvoke as invoke } from '../lib/runtime';
 
@@ -25,6 +25,7 @@ const scopeLabel = (scope: Scope, language: AppLanguage) => scope === 'global' ?
 export default function ExtensionsPanel({ selectedProject }: { selectedProject?: { projectPath: string } | null }) {
   const language = useAppLanguage();
   const actions = extensionActionTranslations[language];
+  const browserText = browserExtensionTranslations[language];
   const [tab, setTab] = useState<'extensions' | 'skills' | 'mcp'>('extensions');
   const [query, setQuery] = useState('');
   const [enabled, setEnabled] = useState<Record<string, boolean>>({});
@@ -87,9 +88,7 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
     setBrowserNotice('');
     try {
       await invoke('codeclub_browser_extension_manage', { browser: browser.id, action });
-      setBrowserNotice(action === 'install'
-        ? (language === 'en' ? `Choose “Load unpacked” in ${browser.name}, then select the opened Codeclub Browser Control folder.` : `En ${browser.name}, elegí «Cargar descomprimida» y seleccioná la carpeta Codeclub Browser Control que se abrió.`)
-        : (language === 'en' ? `Remove Codeclub Browser Control from the extensions page in ${browser.name}.` : `Confirmá «Quitar» Codeclub Browser Control en la página de extensiones de ${browser.name}.`));
+      setBrowserNotice(action === 'install' ? (browser.id === 'edge' ? browserText.edgeInstall : browserText.manualInstall) : browserText.uninstall);
       refreshBrowserManagers();
     } catch (error) {
       setBrowserError(error instanceof Error ? error.message : (language === 'en' ? 'Could not open browser extension settings.' : 'No se pudo abrir la configuración de extensiones.'));
@@ -178,7 +177,7 @@ export default function ExtensionsPanel({ selectedProject }: { selectedProject?:
                   </div>
                 </div>)}
                 {browserManagers.filter((browser) => browser.installed).length === 0 && <p className="m-0 py-2 text-[12px] text-[#888888]">{language === 'en' ? 'No supported browser was detected. Supports Edge, Chrome, Brave, Opera, and Vivaldi.' : 'No se detectó un navegador compatible. Compatible con Edge, Chrome, Brave, Opera y Vivaldi.'}</p>}
-                <p className="m-0 pt-1 text-[11px] leading-5 text-[#777777]">{language === 'en' ? 'Install opens the browser’s extension page and the extension folder. The browser requires you to load it and approve its permissions. Uninstall opens the page so you can confirm removal.' : 'Instalar abre la página de extensiones y la carpeta. El navegador requiere que la cargues y aceptes sus permisos. Desinstalar abre esa página para que confirmes la eliminación.'}</p>
+                <p className="m-0 pt-1 text-[11px] leading-5 text-[#777777]">{browserText.help}</p>
                 {browserNotice && <p role="status" className="m-0 text-[11px] leading-5 text-[#8bc7ff]">{browserNotice}</p>}
                 {browserError && <p role="alert" className="m-0 text-[11px] leading-5 text-[#ff8a8a]">{browserError}</p>}
               </div>

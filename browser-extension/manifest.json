@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Codeclub Browser Control",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Connects Codeclub to browser tabs so its agent can inspect visible page content and interact when you ask.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4iaKZbaq2n8cEkYdXjWADQv3KQA1GvmT7YGGJ5svY4TE55syW8/JMfFub9EpiUTOYc7SRcqvMHiswXs6Fh0uLKfWi8tmDiE6Ajb5bsiL/FyySBGa28ZxlMcrlrdCSf9Qn23TFz0sNdsH3bScoQ8c1dZuWzIHr+xWmEBywA9xxJ8HntHzcj1+oHP+y1ObM5xYPDjm8Zr7a0JyQHtGTJ0K/RT+gC79fZTNeWqKnO5vT/55UcZ0LQUAkAAvTXVsVhC76y8AY6t72cTrPyl0247t+VjphLFjA8LBsCvAYVCjyWejvcSYU7hYQdzGPoyb7gsk8Hqj/hG/2bctyx/k4XBqYQIDAQAB",
-  "permissions": ["debugger", "tabs"],
+  "permissions": ["debugger", "tabs", "tabGroups", "alarms"],
   "host_permissions": [
     "http://127.0.0.1:47832/*", "http://127.0.0.1:47833/*", "http://127.0.0.1:47834/*",
     "http://127.0.0.1:47835/*", "http://127.0.0.1:47836/*", "http://127.0.0.1:47837/*",

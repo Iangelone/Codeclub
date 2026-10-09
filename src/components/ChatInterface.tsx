@@ -35,9 +35,10 @@ import { runStream } from '../lib/engine/run';
 import { getProjectFilePath, getSetting, logPersistence, setSetting } from '../lib/persistence';
 import { appendGenerationUsage, type GenerationUsageRecord } from '../lib/usage';
 import { appendExecutionLog } from '../lib/execution-log';
+import { parseGitFiles, parseGitStatus } from '../lib/git-output';
 import { appendGlobalChatTranscript, getProjectChatPath, getProjectTranscriptPath, readGlobalChatHistory, readGlobalChats, readProjectIndex, readProjectMeta, writeGlobalChatHistory, writeGlobalChats, writeProjectMeta, type ProjectMeta } from '../lib/projectManager';
 import { chatResources, ORBS_STORAGE_KEY, parseOrbs, type ChatResource } from '../lib/chat-resources';
-import { resourceMenuTranslations } from '../lib/i18n';
+import { resourceMenuTranslations, toolConsoleTranslations } from '../lib/i18n';
 import { codeclubExtensions, type CodeclubExtension } from '../lib/extensions';
 import { orbControlTranslations, savedProviderTranslations, activityTranslations, aiCredentialTranslations, providerErrorTranslations, chatHistoryTranslations, chatActionTranslations, agentTextSelectionTranslations, LANGUAGE_STORAGE_KEY, rightSidebarTranslations, type AppLanguage, useAppLanguage } from '../lib/i18n';
 import { connectAllAgentPluginMcp, loadAgentPlugins } from '../lib/agent-plugins';
@@ -1600,13 +1601,15 @@ const readWorkspaceSnapshot = async (projectPath: string): Promise<WorkspaceSnap
   const snapshot: WorkspaceSnapshot = new Map();
   try {
     const [filesResult, statusResult] = await Promise.all([
-      invoke<{ code?: number | null; stdout: string }>('codeclub_run_command', { projectPath, request: { command: 'git', args: ['ls-files', '-co', '--exclude-standard'] } }),
-      invoke<{ code?: number | null; stdout: string }>('codeclub_run_command', { projectPath, request: { command: 'git', args: ['status', '--short', '--untracked-files=all'] } }),
+      invoke<{ code?: number | null; stdout: string }>('codeclub_git_read', { projectPath, operation: 'files' }),
+      invoke<{ code?: number | null; stdout: string }>('codeclub_git_read', { projectPath, operation: 'status' }),
     ]);
     if (filesResult.code !== 0 && statusResult.code !== 0) return snapshot;
-    const trackedPaths = filesResult.stdout.split(/\r?\n/).filter(Boolean);
-    const changedPaths = statusResult.stdout.split(/\r?\n/).filter(Boolean).map((line) => line.slice(3).trim()).filter(Boolean);
-    const paths = [...new Set([...trackedPaths, ...changedPaths])];
+    const trackedPaths = parseGitFiles(filesResult.stdout);
+    const statusFiles = parseGitStatus(statusResult.stdout);
+    const changedPaths = statusFiles.filter(file => !file.code.includes('D')).map(file => file.path);
+    const deletedPaths = new Set(statusFiles.filter(file => file.code.includes('D') && !changedPaths.includes(file.path)).map(file => file.path));
+    const paths = [...new Set([...trackedPaths, ...changedPaths])].filter(path => !deletedPaths.has(path));
     await Promise.all(paths.map(async (path) => {
       try { snapshot.set(path, await invoke<string>('codeclub_read_file', { projectPath, path })); }
       catch { snapshot.set(path, null); }
@@ -2109,7 +2112,9 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       const assistantBoundaries: number[] = [];
       const assistantBubbles = (message: any) => {
         const offsets = [...new Set([0, ...assistantBoundaries])].filter(offset => offset < message.content.length);
-        return offsets.length < 2 ? [message] : offsets.map((offset, index) => ({ ...message, historyIndex: userMessage.historyIndex + 1 + index, content: message.content.slice(offset, offsets[index + 1]).trim(), ...(index < offsets.length - 1 ? { tools: [], timeline: [], reasoning: '', progress: '', meta: undefined } : {}) }));
+        return offsets.length < 2 ? [message] : offsets.map((offset, index) => ({ ...message, content: message.content.slice(offset, offsets[index + 1]).trim(), ...(index < offsets.length - 1 ? { tools: [], timeline: [], reasoning: '', progress: '', meta: undefined } : {}) }))
+          .filter((bubble, index, bubbles) => index === bubbles.length - 1 || bubble.content.length > 0)
+          .map((bubble, index) => ({ ...bubble, historyIndex: userMessage.historyIndex + 1 + index }));
       };
       let assistantReasoning = '';
       let assistantProgress = '';
@@ -2117,11 +2122,12 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       let assistantTimeline: any[] = [];
       let executionStartedAt = Date.now();
       let latestUsage: any = null;
+      let modelCalls: any[] = [];
       let executionSequence = 0;
       const executionCallQueues = new Map<string, string[]>();
       let assistantUpdateFrame: number | null = null;
       const updateAssistantMessage = () => {
-        runtime.messages = [...newMessages, ...assistantBubbles({ role: 'assistant', content: assistantContent, reasoning: assistantReasoning, progress: assistantProgress, timeline: assistantTimeline, tools: assistantTools, agentName: 'Desarrollo' })];
+        runtime.messages = [...newMessages, ...assistantBubbles({ role: 'assistant', content: assistantContent, reasoning: assistantReasoning, progress: assistantProgress, timeline: assistantTimeline, tools: assistantTools, agentName: 'Desarrollo', meta: { modelCalls } })];
         if (isVisibleGeneration()) setMessages(runtime.messages);
         publishRuntime();
       };
@@ -2329,6 +2335,12 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               publishRuntime();
               if (isVisibleGeneration()) setActiveToolName('');
             },
+            onModelCall: (metrics) => {
+              if (!isCurrentGeneration()) return;
+              modelCalls = [...modelCalls.filter(call => call.callId !== metrics.callId), metrics];
+              void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: `generation.model.${metrics.status}`, input: { callId: metrics.callId, stepNumber: metrics.stepNumber, attempt: metrics.attempt }, output: metrics });
+              updateAssistantMessage();
+            },
             onStepEnd: ({ stepNumber, finishReason, toolCalls, usage, performance }) => {
               if (!isCurrentGeneration()) return;
               void appendExecutionLog({
@@ -2336,7 +2348,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                 chatId: chat?.chatId,
                 tool: 'generation.step',
                 input: { stepNumber, tools: (toolCalls || []).map((toolCall: any) => toolCall.toolName) },
-                output: { finishReason, usage, performance: { stepTimeMs: performance?.stepTimeMs, responseTimeMs: performance?.responseTimeMs, outputTokensPerSecond: performance?.outputTokensPerSecond } },
+                output: { finishReason, usage, performance: { stepTimeMs: performance?.stepTimeMs, responseTimeMs: performance?.responseTimeMs, timeToFirstOutputMs: performance?.timeToFirstOutputMs, toolExecutionMs: performance?.toolExecutionMs, outputTokensPerSecond: performance?.outputTokensPerSecond } },
               });
             },
             onToolExecutionStart: ({ callId, toolCall }) => {
@@ -2466,7 +2478,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       const changes = contextProjectPath ? summarizeWorkspaceDelta(beforeWorkspaceSnapshot, await readWorkspaceSnapshot(toolProjectPath)) : null;
       const { summary: turnSummary } = await generateTurnSummary({ model: provider(selectedModelReference) as any, request: visibleContent || content, response: assistantContent, language, signal: abortController.signal, projectPath: contextProjectPath || '', chatId, providerId: currentProvider.id, modelId: currentModel.id });
       if (!isCurrentGeneration()) return;
-      const assistantMessage = { turnSummary, historyIndex: userMessage.historyIndex+1, role: 'assistant', content: assistantContent || 'La ejecución terminó sin texto final, pero las evidencias quedaron registradas.', progress: assistantProgress, timeline: assistantTimeline, tools: assistantTools, agentName: 'Desarrollo', meta: { provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt, status: 'completed', changes, usage: latestUsage ? { inputTokens: latestUsage.inputTokens, outputTokens: latestUsage.outputTokens, totalTokens: latestUsage.totalTokens, reasoningTokens: latestUsage.reasoningTokens } : null } };
+      const assistantMessage = { turnSummary, historyIndex: userMessage.historyIndex+1, role: 'assistant', content: assistantContent || 'La ejecución terminó sin texto final, pero las evidencias quedaron registradas.', progress: assistantProgress, timeline: assistantTimeline, tools: assistantTools, agentName: 'Desarrollo', meta: { modelCalls, provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt, status: 'completed', changes, usage: latestUsage ? { inputTokens: latestUsage.inputTokens, outputTokens: latestUsage.outputTokens, totalTokens: latestUsage.totalTokens, reasoningTokens: latestUsage.reasoningTokens } : null } };
       if (assistantUpdateFrame !== null) {
         window.cancelAnimationFrame(assistantUpdateFrame);
         assistantUpdateFrame = null;
@@ -2512,6 +2524,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
             ...last,
             content: last.content || userFacingError,
             meta: {
+              ...last.meta,
               provider: currentProvider?.label || currentProvider?.id || 'Proveedor',
               model: currentModel?.label || currentModel?.id || 'Modelo',
               durationMs: Date.now() - generationStartedAt,
@@ -3068,7 +3081,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           const orbInitiated = turnMessage.source === 'orb-trigger' || Boolean(activeChat?.chatId.startsWith('scheduled-') && (turnMessage.historyIndex ?? turnIndex) === 0 && assistants.some(message => message.agentName));
           const liveTurn = isStreaming && nextTurnIndex === messages.length;
           const finalAssistant = assistants.at(-1);
-          const turnMessages = (floating ? assistants : groupedMessages).filter(message => !message.hidden && !(orbInitiated && message === turnMessage && message.role === 'user') && (liveTurn || message.role !== 'assistant' || message === finalAssistant));
+          const turnMessages = (floating ? assistants : groupedMessages).filter(message => !message.hidden && !(orbInitiated && message === turnMessage && message.role === 'user') && (message.role !== 'assistant' || message === finalAssistant || Boolean(String(message.displayContent || message.content || '').trim())) && (liveTurn || message.role !== 'assistant' || message === finalAssistant));
           const turnTime = formatChatTime(turnMessage.createdAt || turnMessage.timestamp, language);
           const isProcessingTurn = Boolean((!turnMessage.hidden || orbInitiated) && isStreaming && agentState !== 'error' && assistants.length && nextTurnIndex === messages.length);
           const hasErrorTurn = assistants.some(message => message.meta?.status === 'error');
@@ -3430,6 +3443,34 @@ function parseCsv(content: string): string[][] {
 }
 
 const activityValue = (value: unknown, fallback = '') => String(value ?? fallback).replace(/\s+/g, ' ').trim().slice(0, 90);
+function activityToolInput(event: any): Record<string, any> {
+  let input = event.name === 'executeTool' ? event.input?.input ?? event.input?.arguments ?? {} : event.input ?? {};
+  if (typeof input === 'string') {
+    try { input = JSON.parse(input); } catch { return { input }; }
+  }
+  return input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+}
+
+function activityToolOutput(value: any): any {
+  // Timeline entries retain the SDK envelope; live tool entries already contain its output.
+  for (let depth = 0; depth < 8 && value && typeof value === 'object'; depth += 1) {
+    if (value.type === 'tool-result' && 'output' in value) value = value.output;
+    else if (value.tool && 'result' in value) value = value.result;
+    else break;
+  }
+  return value;
+}
+
+function activityConsoleText(value: unknown, truncatedLabel: string): string {
+  if (value === undefined || value === null) return '';
+  let text: string;
+  try {
+    text = typeof value === 'string' ? value : JSON.stringify(value, (key, item) => /^(api[_-]?key|authorization|password|secret|access[_-]?token|refresh[_-]?token)$/i.test(key) ? '[redacted]' : item, 2);
+  } catch { text = String(value); }
+  const limit = 24000;
+  return text.length > limit ? `${text.slice(0, limit)}\n… ${truncatedLabel}` : text;
+}
+
 function toolActivityLabel(name: string, input: Record<string, any>, language: AppLanguage, completed = false) {
   const english = language === 'en';
   const path = activityValue(input?.path || input?.filePath);
@@ -3556,7 +3597,7 @@ function LiveTurnProgress({ message, language }: { message: any; language: AppLa
   if (!phases.length) phases.push({ id: 'current', summary: message.progress || activityTranslations[language].thinking, tools: message.tools || [] });
   return <div className="chat-live-progress" aria-label={activityTranslations[language].thinking}>
     {phases.map((phase, index) => <div key={phase.id} className="chat-progress-phase" data-active={index === phases.length - 1}>
-      {phase.tools.length ? <TurnActivity progress={phase.summary} tools={phase.tools} active={index === phases.length - 1} language={language} /> : <p className="chat-progress-label"><PyramidMark size={14} /><span>{phase.summary}</span></p>}
+      {phase.tools.length ? <TurnActivity progress={phase.summary} tools={phase.tools} active={index === phases.length - 1} language={language} /> : <p className="chat-progress-label"><span>{phase.summary}</span></p>}
     </div>)}
   </div>;
 }
@@ -3570,26 +3611,26 @@ function TurnActivity({ progress = '', timeline = [], tools = [], changes, activ
     ? (english ? 'Working…' : 'Trabajando…')
     : (english ? `Activity · ${events.length + fileChanges.length} steps` : `Actividad · ${events.length + fileChanges.length} pasos`));
   const changedPathsByWrite = new Set(events.filter((event) => event.name === 'writeFile').map((event) => event.input?.path));
-  const commandOutput = (event: any) => event.output?.stdout ?? event.output?.output?.stdout ?? event.output?.result?.stdout ?? '';
+  const consoleText = toolConsoleTranslations[language];
   return <details className="turn-activity">
     <summary className="turn-activity-summary">
-      <PyramidMark size={14} />
       <span>{summary}</span>
       <ChevronDown size={14} className="turn-activity-chevron" aria-hidden="true" />
     </summary>
     <div className="turn-activity-list">
       {events.map((event, index) => {
         const name = event.name === 'executeTool' ? event.input?.name || event.name : event.name;
-        const input = event.name === 'executeTool' ? { ...event.input, ...(event.input?.arguments || {}) } : event.input || {};
+        const input = activityToolInput(event);
+        const output = activityToolOutput(event.output);
         const isRunning = event.output?.status === 'running' || event.status === 'running';
-        const isFailed = event.output?.ok === false || event.output?.error || event.output?.code > 0 || event.status === 'error';
-        const label = name === 'runCommand' ? (english ? 'Command executed' : 'Comando ejecutado') : name === 'writeFile' ? (english ? 'Edited' : 'Editó') : toolActivityLabel(name, input, language, !isRunning && !isFailed);
+        const isFailed = event.output?.ok === false || output?.ok === false || output?.error || output?.code > 0 || event.status === 'error';
+        const label = name.startsWith('externalBrowser') ? `${name} · ${isRunning ? consoleText.running : isFailed ? consoleText.failed : consoleText.done}` : name === 'runCommand' ? (english ? 'Command executed' : 'Comando ejecutado') : name === 'writeFile' ? (english ? 'Edited' : 'Editó') : toolActivityLabel(name, input, language, !isRunning && !isFailed);
         const pathChange = name === 'writeFile' ? fileChanges.find((item) => item.path === input.path) : null;
         const pathLabel = String(input.path || input.filePath || input.command || input.url || input.title || input.specialist || '');
         const command = [input.command, ...(Array.isArray(input.args) ? input.args : [])].filter(Boolean).join(' ');
-        const stdout = commandOutput(event);
-        const stderr = event.output?.stderr ?? event.output?.output?.stderr ?? event.output?.result?.stderr ?? '';
-        const exitCode = event.output?.code ?? event.output?.output?.code ?? event.output?.result?.code;
+        const stdout = output?.stdout ?? '';
+        const stderr = output?.stderr ?? output?.error ?? '';
+        const exitCode = output?.code;
         const isCommand = name === 'runCommand';
         const changedCount = pathChange ? <span className="turn-activity-delta"><span>+{pathChange.additions}</span><span>−{pathChange.deletions}</span></span> : null;
         return <details className="turn-activity-item" key={event.id || event.callId || `${name}-${index}`}>
@@ -3609,6 +3650,13 @@ function TurnActivity({ progress = '', timeline = [], tools = [], changes, activ
             </div>}
             {!isCommand && pathChange && <div className="turn-activity-file-delta"><FileCode2 size={13} /><span>{input.path}</span><span className="turn-activity-delta"><span>+{pathChange.additions}</span><span>−{pathChange.deletions}</span></span></div>}
             {!isCommand && !pathChange && pathLabel && <div className="turn-activity-raw-detail">{pathLabel}</div>}
+            {!isCommand && <div className="turn-command-card turn-tool-console" role="region" aria-label={`${consoleText.title} · ${name}`}>
+              <div className="turn-command-heading"><Terminal size={13} /><span>{name}</span><span className={isFailed ? 'turn-command-error' : ''}>{isRunning ? consoleText.running : isFailed ? consoleText.failed : consoleText.done}</span></div>
+              <div className="turn-tool-console-label">{consoleText.input}</div>
+              <pre className="turn-command-output">{activityConsoleText(input, consoleText.truncated)}</pre>
+              <div className="turn-tool-console-label">{consoleText.output}</div>
+              <pre className={`turn-command-output ${isFailed ? 'turn-command-stderr' : ''}`}>{isRunning ? consoleText.waiting : activityConsoleText(output, consoleText.truncated) || consoleText.empty}</pre>
+            </div>}
             {typeof event.durationMs === 'number' && <div className="turn-activity-duration">{(event.durationMs / 1000).toFixed(1)}s</div>}
           </div>
         </details>;

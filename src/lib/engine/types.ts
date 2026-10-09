@@ -19,7 +19,27 @@ export interface ToolContext {
   providerId?: string;
 }
 
+export interface ModelCallMetrics {
+  callId: string;
+  stepNumber: number;
+  attempt: number;
+  status: 'started' | 'completed' | 'error' | 'aborted' | 'retrying';
+  startedAt: string;
+  durationMs?: number;
+  timeToFirstOutputMs?: number;
+  responseTimeMs?: number;
+  toolExecutionMs?: Record<string, number>;
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  cachedInputTokens?: number;
+  errorName?: string;
+  retryDelayMs?: number;
+  context: { beforeBytes: number; afterBytes: number; snapshotsCompacted: number; historicalSnapshots: number; schemasCompacted?: number };
+}
+
 export interface EngineCallbacks {
+  onModelCall?: (metrics: ModelCallMetrics) => void | Promise<void>;
   onAssistantMessageStart?: (offset: number) => void;
   onTextDelta: (content: string) => void;
   onReasoningDelta?: (content: string) => void;

@@ -17,6 +17,13 @@
 | [Agent engine: overview and limits](agent.md) | What do we use from AI SDK, Agent Plugins, and LangChain, what has been tested, and what remains to improve? |
 | [Scheduled tasks](schedule.md) | How do automatic runs, persistence, cancellation, and verification work? |
 | [Live development verification](verification.md) | How can coding, tests, the terminal, and browser be verified with a free model? |
+| [Browser Control: users and agents](browser-control.md) | How do I install, debug, and safely use external tab and group tools? |
+| [Extension development and publishing](browser-extension-development.md) | How is the companion packaged, released, maintained, and ported to other browsers? |
+| [Tool discovery](tool-discovery.md) | How are callable schemas discovered and reused? |
+| [Browser context and metrics](browser-context.md) | How are duplicate observations compacted and model calls measured? |
+| [Agent terminal output](terminal-agent-output.md) | How do incremental reads and command submission work? |
+| [Git paths](git-paths.md) | How are Unicode and renamed paths parsed safely? |
+| [October 8 tool audit](tool-audit-2026-10-08.md) | What was reviewed, tested, fixed, and left unverified? |
 | [Windows computer control](computer.md) | How do native actions, UI Automation, and OCR work? |
 | [Development](development.md) | How do we run, verify, keep accessibility and publish? |
 | [Browser extension privacy](privacy.md) | What browser data can the extension access, and how is it used? |

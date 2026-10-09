@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { WebSocketServer, WebSocket, type RawData } from 'ws';
 
-const EXTENSION_ID = 'pomkkenhcjkfjdabdhogladflacafopd';
-const EXTENSION_ORIGIN = `chrome-extension://${EXTENSION_ID}`;
+import { companionOriginAllowed } from './browser-extension-config.js';
+
 const BRIDGE_PORTS = Array.from({ length: 11 }, (_, index) => 47832 + index);
 type Pending = { resolve: (value: any) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> };
-type Client = { id: string; socket: WebSocket; browser: string; pending: Map<string, Pending> };
+type Client = { id: string; extensionId: string; socket: WebSocket; browser: string; pending: Map<string, Pending> };
 
 /** Loopback bridge accepting only the signed Codeclub browser companion extension. */
 export class BrowserExtensionBridge {
@@ -22,11 +22,11 @@ export class BrowserExtensionBridge {
           const server = new WebSocketServer({
             host: '127.0.0.1', port, path: '/codeclub-browser', maxPayload: 1_100_000,
             perMessageDeflate: false,
-            verifyClient: (info: { origin: string }) => info.origin === EXTENSION_ORIGIN,
+            verifyClient: (info: { origin: string }) => companionOriginAllowed(info.origin),
           });
           server.once('listening', () => { this.server = server; resolve(true); });
           server.once('error', () => { server.close(); resolve(false); });
-          server.on('connection', socket => this.accept(socket));
+          server.on('connection', (socket, request) => this.accept(socket, new URL(request.headers.origin!).hostname));
         });
         if (started) return true;
       }
@@ -44,7 +44,7 @@ export class BrowserExtensionBridge {
   }
 
   list() {
-    return [...this.clients.values()].filter(client => client.browser).map(client => ({ browserId: `extension:${client.id}`, connection: 'extension', name: client.browser, targets: [] as Array<{ targetId: string; title: string; url: string; active: boolean; windowId: number }> }));
+    return [...this.clients.values()].filter(client => client.browser).map(client => ({ browserId: `extension:${client.id}`, extensionId: client.extensionId, connection: 'extension', name: client.browser, targets: [] as Array<{ targetId: string; title: string; url: string; active: boolean; windowId: number }> }));
   }
 
   async tabs(browserId: string) {
@@ -53,12 +53,14 @@ export class BrowserExtensionBridge {
     return result.tabs.map((tab: any) => ({ targetId: String(tab.tabId), title: String(tab.title || '').slice(0, 300), url: String(tab.url || '').slice(0, 2000), active: Boolean(tab.active), windowId: Number(tab.windowId) }));
   }
 
+  manageTabs(browserId: string, request: Record<string, unknown>) { return this.call(browserId, 'manageTabs', request); }
+
   state(browserId: string, targetId: string) { return this.call(browserId, 'getState', { tabId: Number(targetId) }); }
   action(browserId: string, request: Record<string, unknown>) { return this.call(browserId, 'action', { ...request, tabId: Number(request.targetId) }); }
 
-  private accept(socket: WebSocket) {
+  private accept(socket: WebSocket, extensionId: string) {
     const id = randomUUID();
-    const client: Client = { id, socket, browser: '', pending: new Map() };
+    const client: Client = { id, extensionId, socket, browser: '', pending: new Map() };
     this.clients.set(id, client);
     socket.on('message', (data: RawData) => {
       let message: any;

@@ -15,6 +15,7 @@ import { runStream } from '../lib/engine/run';
 import { loadAgentPlugins, connectAllAgentPluginMcp } from '../lib/agent-plugins';
 import { readGlobalChats, writeGlobalChats, readProjectMeta, writeProjectMeta } from '../lib/projectManager';
 import { appendGenerationUsage } from '../lib/usage';
+import { appendExecutionLog } from '../lib/execution-log';
 import { BrowserPanel } from './WorkspaceLayout';
 
 /** One isolated renderer per run. Native ownership supplies the assignment, never the URL. */
@@ -155,7 +156,7 @@ async function execute() {
       if (attempt) { content = ''; reasoning = ''; boundaries.length = 0; }
     content = await runStream({ model: provider(modelIdFor(selectedProvider, selectedModel)), contextWindow: selectedModel.contextWindow, system: instructions.join('\n\n'), messages: [{ role: 'user', content: task.prompt + (feedback ? '\nVerification feedback: ' + feedback : '') }], tools, signal: controller.signal, maxSteps: 32, maxTotalTokens: autonomous ? 60000 : undefined,
       providerOptions: selectedModel.reasoning && selectedProvider.id !== 'google' ? { [usesGateway(selectedProvider, selectedModel) ? selectedModel.providerId : selectedProvider.id]: { reasoningEffort: effort } } : undefined,
-      callbacks: { onStepEnd: () => { if (autonomous && ++spentSteps > 32) throw new Error('TASK_STEP_LIMIT'); }, onStepUsage: consumeTokens, onAssistantMessageStart: offset => boundaries.push(offset), onTextDelta: value => { content = value; void publish(); }, onReasoningDelta: value => { reasoning = value; }, onEnd: ({ steps }) => { if (steps.at(-1)?.finishReason === 'tool-calls') failure ||= 'TASK_STEP_LIMIT'; }, onUsage: async usage => { await appendGenerationUsage({ id: crypto.randomUUID(), at: new Date().toISOString(), projectPath: task.projectPath, chatId: run.chatId, mode: 'scheduled', provider: selectedProvider.id, model: selectedModel.id, inputTokens: usage.inputTokens ?? null, outputTokens: usage.outputTokens ?? null, totalTokens: usage.totalTokens ?? null, reasoningTokens: usage.reasoningTokens ?? null, durationMs: usage.durationMs, status: 'completed' }); } }
+      callbacks: { onModelCall: metrics => { void appendExecutionLog({ projectPath: task.projectPath, chatId: run.chatId, tool: `generation.model.${metrics.status}`, input: { callId: metrics.callId, stepNumber: metrics.stepNumber, attempt: metrics.attempt }, output: metrics }); }, onStepEnd: () => { if (autonomous && ++spentSteps > 32) throw new Error('TASK_STEP_LIMIT'); }, onStepUsage: consumeTokens, onAssistantMessageStart: offset => boundaries.push(offset), onTextDelta: value => { content = value; void publish(); }, onReasoningDelta: value => { reasoning = value; }, onEnd: ({ steps }) => { if (steps.at(-1)?.finishReason === 'tool-calls') failure ||= 'TASK_STEP_LIMIT'; }, onUsage: async usage => { await appendGenerationUsage({ id: crypto.randomUUID(), at: new Date().toISOString(), projectPath: task.projectPath, chatId: run.chatId, mode: 'scheduled', provider: selectedProvider.id, model: selectedModel.id, inputTokens: usage.inputTokens ?? null, outputTokens: usage.outputTokens ?? null, totalTokens: usage.totalTokens ?? null, reasoningTokens: usage.reasoningTokens ?? null, durationMs: usage.durationMs, status: 'completed' }); } }
     });
 
       if (failure) throw new Error(failure);

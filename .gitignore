@@ -9,6 +9,8 @@ dist/
 dist-ssr/
 release/
 release-test/
+browser-extension.crx
+browser-extension.pem
 .astro/
 .whatsapp-debug-session/
 bun.lockb

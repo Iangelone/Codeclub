@@ -6,7 +6,7 @@ Codeclub Browser Control connects a Chromium-based browser to the Codeclub deskt
 
 ## What the extension can access
 
-The extension requests the browser's `debugger` and `tabs` permissions. When Codeclub asks it to inspect or operate a selected tab, it can read that tab's URL, title, visible page text, and interactive controls, and can perform requested navigation, clicks, typing, key presses, or scrolling. It omits password input values. It does not read cookies or browser storage.
+The extension requests `debugger` for page inspection/input, `tabs` for tab discovery and management, `tabGroups` for group operations, and `alarms` for local reconnection wake-ups. Loopback host permissions allow its connection to Codeclub. When Codeclub asks it to inspect or operate a selected tab, it can read that tab's URL, title, visible page text, and interactive controls, and can perform requested navigation, clicks, typing, key presses, or scrolling. It can also create, activate, reorder, pin/mute, reload, close, group, and ungroup explicitly selected tabs and update group names, colors, and collapsed state. It omits password input values. It does not read cookies or browser storage.
 
 The extension does not continuously collect page contents or send them to an extension vendor server. It keeps temporary tab snapshots in memory and removes them after use or expiry. Its network connection is restricted to the local Codeclub app.
 

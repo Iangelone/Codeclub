@@ -95,7 +95,8 @@ export function createResourceTools(ctx: ToolContext) {
           if (!await approve('manageMcpServer', { action, pluginId, scope, serverName }, `Eliminar MCP ${serverName} de ${pluginId} (${scope})`)) return { ok: false, cancelled: true };
           delete config.mcpServers[serverName];
         } else {
-          const patch = JSON.parse(configJson || '{}');
+          if (!configJson?.trim()) throw new Error('update requiere configJson con los campos a modificar.');
+          const patch = JSON.parse(configJson);
           if (!patch || Array.isArray(patch) || typeof patch !== 'object') throw new Error('El parche MCP debe ser un objeto JSON.');
           const next = { ...config.mcpServers[serverName], ...patch };
           if (!['stdio', 'streamable-http', 'sse'].includes(next.type) || (next.type === 'stdio' ? !next.command : !next.url)) throw new Error('Configuración MCP inválida.');
@@ -115,6 +116,7 @@ export function createResourceTools(ctx: ToolContext) {
         const orbs = parseOrbs(await getSetting(ORBS_STORAGE_KEY, []));
         if (input.action === 'list') return { orbs };
         const old = orbs.find(orb => orb.id === input.id);
+        if (input.action === 'create' && old) throw new Error('El id ya existe. Usá update para modificar el orbe.');
         if (input.action !== 'create' && !old) throw new Error('Orbe no encontrado. Usá listResources o manageOrb list.');
         const tasks = await invoke<any[]>('codeclub_scheduled_list', { projectPath: '' });
         const task = old && tasks.find(item => item.id === `orb_${old.id}`);

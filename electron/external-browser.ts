@@ -106,7 +106,7 @@ const stateExpression = `(() => {
   const controls = Array.from(document.querySelectorAll('a[href],button,input,textarea,select,[role="button"],[role="link"],[role="textbox"],[contenteditable="true"]')).filter(visible).slice(0, 100).map(el => {
     const r = el.getBoundingClientRect();
     const label = el.getAttribute('aria-label') || el.labels?.[0]?.innerText || el.getAttribute('placeholder') || el.getAttribute('title') || el.innerText || (el.type === 'password' ? '' : el.value) || '';
-    return { selector: selectorFor(el), tag: el.localName, role: el.getAttribute('role') || '', name: clean(label), text: clean(el.innerText), value: el.type === 'password' ? undefined : (typeof el.value === 'string' ? clean(el.value) : undefined), type: el.type || undefined, href: el.href || undefined, disabled: Boolean(el.disabled), bounds: { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) } };
+    return { selector: selectorFor(el), tag: el.localName, role: el.getAttribute('role') || '', name: clean(label), text: clean(el.innerText), value: el.type === 'password' ? undefined : (typeof el.value === 'string' ? el.value : undefined), type: el.type || undefined, href: el.href || undefined, disabled: Boolean(el.disabled), bounds: { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) } };
   });
   return { url: location.href, title: document.title, text: String(document.body?.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 12000), elements: controls, media: Array.from(document.querySelectorAll('video,audio')).map(media => ({ paused: media.paused, muted: media.muted, volume: media.volume, currentTime: media.currentTime, ended: media.ended, readyState: media.readyState })) };
 })()`;
@@ -169,6 +169,13 @@ export class ExternalBrowserControl {
     } catch (error) { return { ok: false, error: error instanceof Error ? error.message : 'No se pudo observar la pestaña.' }; }
   }
 
+  async manageTabs(request: Record<string, unknown>) {
+    const browserId = String(request.browserId || '');
+    if (!browserId.startsWith('extension:') || !this.extensionBridge) return { ok: false, error: 'Tab management requires a connected companion extension.' };
+    try { return await this.extensionBridge.manageTabs(browserId, request); }
+    catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) }; }
+  }
+
   async action(request: { port?: unknown; targetId?: unknown; browserId?: unknown; snapshotId?: unknown; selector?: unknown; action?: unknown; text?: unknown; key?: unknown; amount?: unknown }) {
     const browserId = String((request as any).browserId || '');
     if (browserId.startsWith('extension:')) {
@@ -181,10 +188,10 @@ export class ExternalBrowserControl {
     const action = String(request.action || ''); const text = String(request.text ?? ''); const key = String(request.key || '');
     const amount = Number(request.amount);
     const supported = ['click', 'type', 'key', 'scroll', 'navigate'];
-    if (!port || !targetId || !snapshotId || !supported.includes(action)) return { ok: false, error: 'Acción incompleta; usá el snapshot reciente del navegador externo.' };
+    if (!port || !targetId || (action !== 'navigate' && !snapshotId) || !supported.includes(action)) return { ok: false, error: 'Acción incompleta; usá el snapshot reciente del navegador externo.' };
     const snapshot = this.snapshots.get(snapshotId);
-    if (!snapshot || snapshot.port !== port || snapshot.targetId !== targetId || Date.now() - snapshot.createdAt > MAX_SNAPSHOT_AGE_MS) return { ok: false, error: 'Snapshot vencido o de otra pestaña. Volvé a observarla.' };
-    if (action !== 'scroll' && action !== 'navigate' && !snapshot.elements.some(element => element.selector === selector)) return { ok: false, error: 'El selector no pertenece al último estado observado.' };
+    if (action !== 'navigate' && (!snapshot || snapshot.port !== port || snapshot.targetId !== targetId || Date.now() - snapshot.createdAt > MAX_SNAPSHOT_AGE_MS)) return { ok: false, error: 'Snapshot vencido o de otra pestaña. Volvé a observarla.' };
+    if (action !== 'scroll' && action !== 'navigate' && !snapshot!.elements.some(element => element.selector === selector)) return { ok: false, error: 'El selector no pertenece al último estado observado.' };
     if (action === 'type' && text.length > 20_000) return { ok: false, error: 'El texto excede 20000 caracteres.' };
     if (action === 'key' && !['Enter', 'Tab', 'Escape', 'Backspace', 'Delete', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Control+A', 'Meta+A'].includes(key)) return { ok: false, error: 'Tecla no permitida.' };
     if (action === 'scroll' && (!Number.isFinite(amount) || amount === 0 || Math.abs(amount) > 2400)) return { ok: false, error: 'amount debe ser distinto de cero y estar entre -2400 y 2400.' };
@@ -193,12 +200,14 @@ export class ExternalBrowserControl {
       catch { return { ok: false, error: 'La navegación requiere una URL http(s) válida.' }; }
     }
     this.snapshots.delete(snapshotId);
+    if (action === 'navigate') for (const [id, previous] of this.snapshots) if (previous.port === port && previous.targetId === targetId) this.snapshots.delete(id);
     try {
       const targets = await fetchJson(`http://127.0.0.1:${port}/json/list`);
       const target = Array.isArray(targets) ? targets.find((item: CdpTarget) => item.id === targetId && item.type === 'page') : undefined;
       if (!target?.webSocketDebuggerUrl) return { ok: false, error: 'La pestaña ya no existe.' };
       const cdp = new CdpConnection(target.webSocketDebuggerUrl, port);
       try {
+        await cdp.send('Page.bringToFront');
         if (action === 'navigate') {
           await cdp.send('Page.enable');
           const loaded = cdp.waitForEvent('Page.loadEventFired');
@@ -211,23 +220,23 @@ export class ExternalBrowserControl {
           await cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: Math.max(1, Math.floor(width / 2)), y: Math.max(1, Math.floor(height / 2)), deltaY: Math.max(-2400, Math.min(2400, -amount)), deltaX: 0 });
         }
         else {
-          const found = await cdp.send('Runtime.evaluate', { expression: `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; const r=el.getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2,tag:el.tagName,disabled:Boolean(el.disabled),readOnly:Boolean(el.readOnly),canType:el.isContentEditable || el.tagName === 'INPUT' || el.tagName === 'TEXTAREA'}; })()`, returnByValue: true });
+          const found = await cdp.send('Runtime.evaluate', { expression: `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; el.scrollIntoView({block:'center',inline:'center'}); const r=el.getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2,tag:el.tagName,disabled:Boolean(el.disabled),readOnly:Boolean(el.readOnly),canType:el.isContentEditable || el.tagName === 'INPUT' || el.tagName === 'TEXTAREA'}; })()`, returnByValue: true });
           const element = found.result?.value;
           if (!element) return { ok: false, error: 'El elemento cambió desde la última observación.' };
-          if (element.disabled || element.readOnly) return { ok: false, error: 'El elemento está deshabilitado o es de solo lectura.' };
+          if (element.disabled || (action === 'type' && element.readOnly)) return { ok: false, error: 'El elemento está deshabilitado o es de solo lectura.' };
           if (action === 'type' && !element.canType) return { ok: false, error: 'El elemento observado no admite escritura de texto.' };
+          if (action === 'type' || action === 'key') await cdp.send('Runtime.evaluate', { expression: `document.querySelector(${JSON.stringify(selector)})?.focus()`, returnByValue: true });
           if (action === 'click') {
             await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: element.x, y: element.y, button: 'left', clickCount: 1 });
             await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: element.x, y: element.y, button: 'left', clickCount: 1 });
           } else if (action === 'type') {
-            await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: element.x, y: element.y, button: 'left', clickCount: 1 });
-            await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: element.x, y: element.y, button: 'left', clickCount: 1 });
             await cdp.send('Input.insertText', { text });
           } else {
             const keyMap: Record<string, { key: string; code: string; modifiers?: number }> = { Enter: { key: 'Enter', code: 'Enter' }, Tab: { key: 'Tab', code: 'Tab' }, Escape: { key: 'Escape', code: 'Escape' }, Backspace: { key: 'Backspace', code: 'Backspace' }, Delete: { key: 'Delete', code: 'Delete' }, ArrowUp: { key: 'ArrowUp', code: 'ArrowUp' }, ArrowDown: { key: 'ArrowDown', code: 'ArrowDown' }, ArrowLeft: { key: 'ArrowLeft', code: 'ArrowLeft' }, ArrowRight: { key: 'ArrowRight', code: 'ArrowRight' }, Home: { key: 'Home', code: 'Home' }, End: { key: 'End', code: 'End' }, 'Control+A': { key: 'a', code: 'KeyA', modifiers: 2 }, 'Meta+A': { key: 'a', code: 'KeyA', modifiers: 4 } };
             const mapped = keyMap[key];
-            await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', ...mapped });
-            await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...mapped });
+            const virtualKeyCode = ({Enter:13,Tab:9,Escape:27,Backspace:8,Delete:46,ArrowUp:38,ArrowDown:40,ArrowLeft:37,ArrowRight:39,Home:36,End:35,'Control+A':65,'Meta+A':65} as Record<string, number>)[key];
+            await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', ...mapped, windowsVirtualKeyCode: virtualKeyCode });
+            await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...mapped, windowsVirtualKeyCode: virtualKeyCode });
           }
         }
       } finally { cdp.close(); }

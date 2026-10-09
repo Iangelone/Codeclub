@@ -18,6 +18,7 @@ import { useOrbPalette } from './OrbPaletteProvider';
 import OrbPaletteButton from './ui/OrbPaletteButton';
 import { readGlobalChats, readProjectMeta, writeGlobalChats, writeProjectMeta } from '../lib/projectManager';
 import { nativeInvoke, onTerminalOutput } from '../lib/runtime';
+import { parseGitNumstat, parseGitStatus } from '../lib/git-output';
 import { getSetting, setSetting } from '../lib/persistence';
 import { activityTranslations, agentTextSelectionTranslations, browserStyleTranslations, rightSidebarTranslations, sidebarTranslations, useAppLanguage, type AppLanguage } from '../lib/i18n';
 import { sameSession, useSharedSessions, type SharedSession } from '../lib/shared-sessions';
@@ -946,37 +947,22 @@ function ReviewPanel({ projectPath, visible, onClose }: { projectPath?: string; 
     setLoading(true);
     setError('');
     try {
-      const diffArgs = changeScope === 'branch'
-        ? ['diff', compareBranch || 'HEAD', '--numstat', '--']
-        : changeScope === 'staged'
-          ? ['diff', '--cached', '--numstat', '--']
-          : changeScope === 'unstaged'
-            ? ['diff', '--numstat', '--']
-            : ['diff', 'HEAD', '--numstat', '--'];
       const [statusResult, diffResult, branchResult, branchesResult, upstreamResult] = await Promise.all([
-        nativeInvoke<{ stdout?: string; stderr?: string; code?: number }>('codeclub_run_command', { projectPath, request: { command: 'git', args: ['status', '--short', '--untracked-files=all'] } }),
-        nativeInvoke<{ stdout?: string; stderr?: string; code?: number }>('codeclub_run_command', { projectPath, request: { command: 'git', args: diffArgs } }),
+        nativeInvoke<{ stdout?: string; stderr?: string; code?: number }>('codeclub_git_read', { projectPath, operation: 'status' }),
+        nativeInvoke<{ stdout?: string; stderr?: string; code?: number }>('codeclub_git_read', { projectPath, operation: 'numstat', scope: changeScope, ref: compareBranch || 'HEAD' }),
         nativeInvoke<{ stdout?: string; stderr?: string; code?: number }>('codeclub_run_command', { projectPath, request: { command: 'git', args: ['branch', '--show-current'] } }),
         nativeInvoke<{ stdout?: string; stderr?: string; code?: number }>('codeclub_run_command', { projectPath, request: { command: 'git', args: ['branch', '--all', '--no-color', '--format=%(refname:short)'] } }),
         nativeInvoke<{ stdout?: string; stderr?: string; code?: number }>('codeclub_run_command', { projectPath, request: { command: 'git', args: ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'] } }),
       ]);
       if (statusResult.code && statusResult.code !== 0) throw new Error(language === 'en' ? 'This folder is not a Git repository yet.' : 'Esta carpeta todavía no tiene un repositorio Git.');
-      const statusLines = String(statusResult.stdout || '').split(/\r?\n/).filter(Boolean);
-      const diffByPath = new Map<string, { additions: number; deletions: number }>();
-      String(diffResult.stdout || '').split(/\r?\n/).filter(Boolean).forEach((line) => {
-        const [added, removed, ...pathParts] = line.split('\t');
-        const path = pathParts.join('\t').trim();
-        if (!path) return;
-        diffByPath.set(path, { additions: added === '-' ? 0 : Number(added) || 0, deletions: removed === '-' ? 0 : Number(removed) || 0 });
-      });
-      const visibleStatusLines = statusLines.filter((line) => changeScope === 'staged'
-        ? line.slice(0, 2) !== '??' && line[0] !== ' '
+      const statusLines = parseGitStatus(String(statusResult.stdout || ''));
+      const diffByPath = parseGitNumstat(String(diffResult.stdout || ''));
+      const visibleStatusLines = statusLines.filter(({ code }) => changeScope === 'staged'
+        ? code !== '??' && code[0] !== ' '
         : changeScope === 'unstaged'
-          ? line.slice(0, 2) === '??' || line[1] !== ' '
+          ? code === '??' || code[1] !== ' '
           : true);
-      const nextFiles = visibleStatusLines.map((line) => {
-        const code = line.slice(0, 2);
-        const path = line.slice(3).trim();
+      const nextFiles = visibleStatusLines.map(({ code, path }) => {
         const delta = diffByPath.get(path) || { additions: 0, deletions: 0 };
         return { path, status: code === '??' ? 'A' : code.trim() || 'M', untracked: code === '??', ...delta };
       });

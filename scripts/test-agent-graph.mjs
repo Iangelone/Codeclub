@@ -37,15 +37,23 @@ for (const input of ['{invalid', '[]', 'null', '{}', { content: 42 }, { content:
 assert.equal(dynamicEffects, 1, 'Dynamic dispatch must validate nested arguments before effects');
 const text = [{ type: 'text-start', id: 'answer' }, { type: 'text-delta', id: 'answer', delta: 'Verified.' }, { type: 'text-end', id: 'answer' }];
 const model = new MockLanguageModelV3({ doStream: [stream([call('one')], 'tool-calls'), stream(text, 'stop')] });
-const steps = [], deltas = [], endings = [], usages = [];
+const steps = [], deltas = [], endings = [], usages = [], modelCalls = [];
 const result = await runStream({ model, system: 'Fixture', messages: [{ role: 'user', content: 'Change once' }], tools,
-  callbacks: { onTextDelta: value => deltas.push(value), onStepEnd: step => steps.push(step.stepNumber), onEnd: info => endings.push(info), onUsage: info => usages.push(info) },
+  callbacks: { onModelCall: metrics => modelCalls.push(metrics), onTextDelta: value => deltas.push(value), onStepEnd: step => steps.push(step.stepNumber), onEnd: info => endings.push(info), onUsage: info => usages.push(info) },
 });
 assert.equal(result, 'Verified.'); assert.equal(effects, 1);
 assert.deepEqual(steps, [0, 1]); assert.equal(endings.length, 1); assert.equal(endings[0].steps.length, 2);
 assert.equal(usages.length, 1); assert.equal(usages[0].inputTokens, 20); assert.equal(usages[0].outputTokens, 8); assert.equal(usages[0].reasoningTokens, 2);
 assert.equal(deltas.at(-1), 'Verified.');
 assert.ok(model.doStreamCalls[1].prompt.some(message => message.role === 'tool'));
+assert.deepEqual(modelCalls.map(call => call.status), ['started', 'completed', 'started', 'completed']);
+assert.equal(modelCalls[0].callId, modelCalls[1].callId);
+assert.notEqual(modelCalls[0].callId, modelCalls[2].callId);
+assert.equal(modelCalls[1].inputTokens, 10);
+assert.equal(modelCalls[1].outputTokens, 4);
+assert.equal(modelCalls[1].attempt, 1);
+assert(modelCalls[1].durationMs >= 0);
+assert(modelCalls[1].context.beforeBytes >= modelCalls[1].context.afterBytes);
 
 const adapted = await adaptLangChainTools(tools);
 await assert.rejects(adapted.change.execute({ value: 'invalid' }, {}));
@@ -72,17 +80,23 @@ assert.equal(endless.doStreamCalls.length, 2); assert.equal(effects, 3);
 assert.equal(limitEnd.steps.at(-1).finishReason, 'tool-calls');
 
 let failedCalls = 0;
+const failedMetrics = [];
 const failure = new MockLanguageModelV3({ doStream: () => {
   if (failedCalls++ === 0) return stream([call('before-failure')], 'tool-calls');
   return stream([{ type: 'error', error: new Error('Fixture transport failed') }], 'error');
 } });
-await assert.rejects(runStream({ model: failure, system: 'Fixture', messages: [{ role: 'user', content: 'Fail after effect' }], tools, callbacks: { onTextDelta: () => {} } }));
+await assert.rejects(runStream({ model: failure, system: 'Fixture', messages: [{ role: 'user', content: 'Fail after effect' }], tools, callbacks: { onModelCall: metrics => failedMetrics.push(metrics), onTextDelta: () => {} } }));
 assert.equal(effects, 4, 'A later transport failure must not replay the graph effect');
 assert.equal(failedCalls, 2);
+assert.equal(failedMetrics.at(-1).status, 'error');
+assert.equal(failedMetrics.at(-1).inputTokens, undefined, 'Unknown usage must not be reported as zero');
 
 const rateLimit = Object.assign(new Error('Rate limit'), { name: 'RateLimitError', responseHeaders: { 'retry-after': '0' } });
 const throttled = new MockLanguageModelV3({ doStream: [stream([call('before-limit')], 'tool-calls'), stream([{ type: 'error', error: rateLimit }], 'error'), stream(text, 'stop')] });
-assert.equal(await runStream({ model: throttled, system: 'Fixture', messages: [{ role: 'user', content: 'Finish after quota recovery' }], tools, callbacks: { onTextDelta: () => {} } }), 'Verified.');
+const retryMetrics = [];
+assert.equal(await runStream({ model: throttled, system: 'Fixture', messages: [{ role: 'user', content: 'Finish after quota recovery' }], tools, callbacks: { onModelCall: metrics => retryMetrics.push(metrics), onTextDelta: () => {} } }), 'Verified.');
+assert.equal(retryMetrics.find(metrics => metrics.status === 'retrying').retryDelayMs, 0);
+assert.equal(retryMetrics.at(-1).attempt, 2);
 assert.equal(effects, 5, 'Rate-limit recovery must not replay the previous tool effect');
 assert.equal(throttled.doStreamCalls.length, 3);
 const exhausted = new MockLanguageModelV3({ doStream: () => stream([{ type: 'error', error: rateLimit }], 'error') });
@@ -124,6 +138,26 @@ await runStream({ model: objectModel, system: 'Fixture', messages: [{ role: 'use
 });
 assert.deepEqual(structured, { completed: true });
 
+const browserResults = [], browserMetrics = [];
+const browserTools = { getBrowserState: tool({
+  inputSchema: jsonSchema({ type: 'object', properties: {}, additionalProperties: false }),
+  execute: async () => {
+    const observation = { ok: true, snapshotId: `observation-${browserResults.length + 1}`, url: 'https://example.org', text: 'Unique page evidence', elements: [{ selector: '#play', tag: 'button', name: 'Play', text: 'Play', bounds: { x: 1, y: 2, width: 30, height: 30 } }], media: [{ paused: false, muted: false }] };
+    browserResults.push(observation);
+    return observation;
+  },
+}) };
+const browserCall = id => ({ type: 'tool-call', toolCallId: id, toolName: 'getBrowserState', input: '{}' });
+const browserModel = new MockLanguageModelV3({ doStream: [stream([browserCall('first')], 'tool-calls'), stream([browserCall('second')], 'tool-calls'), stream(text, 'stop')] });
+await runStream({ model: browserModel, system: 'Fixture', messages: [{ role: 'user', content: 'Inspect browser' }], tools: browserTools, callbacks: { onTextDelta: () => {}, onModelCall: metrics => browserMetrics.push(metrics) } });
+const browserPrompt = JSON.stringify(browserModel.doStreamCalls.at(-1).prompt);
+assert(browserPrompt.includes('observation-2'), 'Latest snapshot must reach the model');
+assert(!browserPrompt.includes('observation-1'), 'Stale selectors/IDs must not reach the next request');
+assert(browserPrompt.includes('#play'));
+assert(browserPrompt.includes('Unique page evidence'));
+assert.equal(browserResults[0].snapshotId, 'observation-1', 'The raw executor evidence must stay intact');
+assert(browserMetrics.at(-1).context.afterBytes < browserMetrics.at(-1).context.beforeBytes);
+
 const cancelled = new AbortController();
 let abortNotified = 0;
 const cancelledModel = new MockLanguageModelV3(); cancelled.abort();
@@ -132,3 +166,28 @@ await assert.rejects(runStream({ model: cancelledModel, system: 'Fixture', messa
 }));
 assert.equal(cancelledModel.doStreamCalls.length, 0); assert.equal(abortNotified, 1);
 console.log('Agent graph: LangChain validation, multi-step continuation, streaming, structured output, total usage, limits, abort and no replay after partial failure passed.');
+
+// Discovery promotes arbitrary tools with their exact schemas on the next model step.
+const promotedAccess = createDynamicToolAccess(tools);
+const promotedModel = new MockLanguageModelV3({ doStream: [
+  stream([{ type: 'tool-call', toolCallId: 'discover', toolName: 'searchTools', input: '{"query":"change"}' }], 'tool-calls'),
+  stream([call('promoted')], 'tool-calls'), stream(text, 'stop'),
+] });
+const beforeEffects = effects;
+await runStream({ model: promotedModel, system: 'Fixture', messages: [{ role: 'user', content: 'Discover then change' }], tools: promotedAccess, callbacks: { onTextDelta: () => {} } });
+assert.equal(effects, beforeEffects + 1);
+assert(!promotedModel.doStreamCalls[0].tools.some(entry => entry.name === 'change'));
+assert(promotedModel.doStreamCalls[1].tools.some(entry => entry.name === 'change' && entry.inputSchema.properties.value.type === 'number'));
+assert(JSON.stringify(promotedModel.doStreamCalls[1].prompt).includes('schemaInToolDefinition'));
+const { getDiscoveredTools, compactToolSchemas } = await import('../src/lib/engine/tool-discovery.ts');
+assert(!getDiscoveredTools(createDynamicToolAccess(tools)).change, 'Discovery stays isolated per session');
+const catalog = [{ role: 'tool', content: [{ type: 'tool-result', toolCallId: 'fixture', toolName: 'searchTools', output: { type: 'json', value: discovered } }] }];
+const originalCatalog = JSON.stringify(catalog);
+const compactedCatalog = compactToolSchemas(catalog, new Map([['change', discovered.tools[0].schema]]));
+assert.equal(compactedCatalog.schemasCompacted, 1);
+assert.equal(JSON.stringify(catalog), originalCatalog, 'Audit data must remain intact');
+assert.equal(compactToolSchemas(compactedCatalog.messages, new Map()).schemasCompacted, 0);
+assert.equal(compactToolSchemas(catalog, new Map([['change', { type: 'string' }]])).schemasCompacted, 0);
+await dynamicAdapted.executeTool.execute({ name: 'write', input: { content: 'again' } }, {});
+assert.equal(dynamicEffects, 2, 'Definition reuse must never cache effects');
+console.log('Tool discovery promotion and schema compaction passed.');

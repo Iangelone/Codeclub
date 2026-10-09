@@ -1,6 +1,6 @@
 # Agent engine: integrations and limits
 
-Reviewed October 4, 2026. Based on current code, installed dependencies, and the linked official sources. This document distinguishes implementation, tests, and pending improvements; it does not certify full compatibility with any framework or standard.
+Integration overview reviewed October 4, 2026; operational guides and browser verification updated October 8, 2026. Based on repository code, installed dependencies, and the linked official sources. This document distinguishes implementation, tests, and pending improvements; it does not certify full compatibility with any framework or standard.
 
 ## At a glance
 
@@ -16,6 +16,14 @@ Reviewed October 4, 2026. Based on current code, installed dependencies, and the
 | LangSmith / AI SDK DevTools | LangSmith is not integrated. DevTools is installed, but tracing is inactive; SDK telemetry is disabled in the engine. | [Local usage](../src/lib/usage.ts), [audit log](../src/lib/execution-log.ts) |
 
 The integration changes execution control and tool validation; its quality should be measured with reproducible tasks. Installing libraries alone does not improve responses.
+
+## Operational guides for agents
+
+For extension maintenance, use [packaging, release, and portability guidance](browser-extension-development.md).
+
+Use runtime tool discovery and its returned schemas as the source of truth; Markdown documentation is not automatically loaded into every model call. Do not invent tools or observations. See [Browser Control contracts and recovery](browser-control.md#for-llm-agents-and-integrators), [tool discovery](tool-discovery.md), [browser context and model-call metrics](browser-context.md), [terminal output](terminal-agent-output.md), and [machine-readable Git paths](git-paths.md).
+
+The October 8 browser audit supersedes the older companion connection notes below: the current unpacked extension passed 22/22 extended checks in the user's Edge profile after reload and visibility recovery. This does not validate the store package or every integration. See [the audit](tool-audit-2026-10-08.md).
 
 ## Current execution flow
 
@@ -155,4 +163,12 @@ Automatic chat naming uses the latest available `turnSummary` and never replaces
 
 Expanded verification on 2026-10-08: `test-chat-history` (10,000 messages), `test-agent-graph`, `test-page-bootstrap`, `test-chat-ui` (streaming, chat races, persistence, generated summary), `test-scheduled-tasks` (SDK, credentials, tools, cancellation, errors, step editing for orbs, save/play/stop, and language), `test-orb-state` (per-key settings across windows, chat registration, vault, and loop guards), `test-native-commands`, and `test-external-browser` passed. Fixtures were updated where they still expected the retired Tasks screen or confused the summary with the answer. `next:build`, `electron:compile`, `tsc --noEmit`, and `git diff --check` completed successfully. Test providers and browsers are isolated fixtures; this does not validate every external combination or a Windows reinstall.
 
-Known pending issue: `test-browser-extension` could not connect the extension and discover the tab in headless Chromium. The fixture port was isolated to avoid binding to the open app, but the failure persists. The service worker passes `node --check` and CDP control passes its suite; this does not validate the companion or its published package.
+Browser companion verification (2026-10-08): `test-browser-extension` now passes in isolated Chromium: connection, tab discovery, password redaction, DOM inspection, click, and typing. The worker previously tried to read `document` outside the inspected page; media now comes from the page evaluation. This worker correction affects the bundled extension; an existing store installation requires a new published extension version to receive source changes.
+
+Edge Add-ons assigns `bomojefgeconjddklieajpeimnjkkbbb`, while the unpacked key assigns `pomkkenhcjkfjdabdhogladflacafopd`. The loopback bridge allows only those exact extension origins. `test-browser-extension-origins.mjs` verifies both origins, rejects unrelated origins, and checks Edge install/removal destinations. Edge installation opens the published Add-ons listing; removal opens `edge://extensions/?id=bomojefgeconjddklieajpeimnjkkbbb`. Other browsers retain unpacked installation. Connection status requires a successful `listTabs` response, rather than only the initial handshake. Restart the desktop process after bridge changes.
+
+### Current companion verification and release status — October 8, 2026
+
+The original store-package connection attempts were inconclusive. Later direct checks confirmed the user's unpacked companion (`pomkkenhcjkfjdabdhogladflacafopd`), and the extended suite passed 22/22 in that real Edge profile and an isolated profile. This supersedes the earlier live-connection uncertainty for the unpacked copy only. The store package was not updated or certified by those runs.
+
+Bundled 1.0.1 includes alarms/startup/install/toolbar wake-up and duplicate-socket protection. The latest source fixes add visibility checks, multiline hit testing, and increasing reconnect backoff. Reload unpacked source after edits; store users need a published update. Restart the desktop process after native bridge changes. Full contracts and recovery are in [Browser Control](browser-control.md); evidence and intermediate failures are in [the audit](tool-audit-2026-10-08.md).

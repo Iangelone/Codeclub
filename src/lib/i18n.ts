@@ -4,6 +4,14 @@ import { useEffect, useState } from 'react';
 export type AppLanguage = 'es' | 'en';
 
 export const LANGUAGE_STORAGE_KEY = 'codeclub-language';
+export const toolConsoleTranslations = {
+  es: { title: 'Consola de herramienta', input: 'Entrada', output: 'Salida', running: 'En curso', failed: 'Falló', done: 'Listo', waiting: 'Esperando el resultado…', empty: 'Sin salida', truncated: 'Salida recortada para mostrarla' },
+  en: { title: 'Tool console', input: 'Input', output: 'Output', running: 'Running', failed: 'Failed', done: 'Done', waiting: 'Waiting for the result…', empty: 'No output', truncated: 'Output truncated for display' },
+} as const;
+export const browserExtensionTranslations = {
+  es: { edgeInstall: 'En Edge, elegí «Obtener» y aceptá agregar Codeclub Browser Control.', manualInstall: 'Elegí «Cargar descomprimida» y seleccioná la carpeta Codeclub Browser Control que se abrió.', uninstall: 'Quitá Codeclub Browser Control desde la página de extensiones del navegador.', help: 'Edge: Instalar abre Microsoft Edge Add-ons. Desinstalar abre la extensión para quitarla. Otros navegadores usan carga manual. Conectado confirma que la extensión responde a Codeclub.' },
+  en: { edgeInstall: 'In Edge, choose Get and approve adding Codeclub Browser Control.', manualInstall: 'Choose Load unpacked and select the Codeclub Browser Control folder that opened.', uninstall: 'Remove Codeclub Browser Control from the browser extensions page.', help: 'Edge: Install opens Microsoft Edge Add-ons. Uninstall opens the extension for removal. Other browsers use manual loading. Connected confirms the companion responds to Codeclub.' },
+} as const;
 export const extensionActionTranslations = {
   es: { install: 'Instalar', uninstall: 'Desinstalar' },
   en: { install: 'Install', uninstall: 'Uninstall' },

@@ -85,35 +85,11 @@ extension origin. It does not ask users to close or restart the browser or
 enable debugging ports. The browser displays its debugging indicator while
 connected.
 
-One-time setup:
+For installation, updates, permissions, tab groups, recovery, and exact agent contracts, use [Browser Control: user and agent guide](browser-control.md). Edge's Install action opens the published Add-ons listing; development uses an unpacked copy loaded from `browser-extension`. Keep Codeclub open for normal use. Standalone debug scripts require it completely closed.
 
-1. In Codeclub, open **Extensions → Codeclub Browser Control → Install** to open
-   the browser's extensions page and the folder prepared by the app.
-2. Enable **Developer mode**, choose **Load unpacked**, and select that folder.
-   The browser shows its own permission prompts before enabling the extension.
-3. Accept the **debugger** permission for Codeclub Browser Control. The browser
-   displays its own permission prompts before enabling the extension.
-4. Keep Codeclub open. Ask the AI to list external tabs; the extension connects
-   automatically so the AI can observe and interact with the visible DOM.
+`externalBrowserList` returns observed browser/tab/window identities and the connected extension ID. `externalBrowserState` returns a one-minute, tab-scoped snapshot. `externalBrowserAction` requires that snapshot for click/type/key/scroll, consumes it, and returns fresh state. HTTP/HTTPS navigation uses the observed tab identity without a snapshot, including from protected source pages. `externalBrowserTabs` manages tabs/groups through the companion without a DOM snapshot.
 
-To remove it, choose **Uninstall** on the same row and confirm **Remove** in the
-browser. The browser API requires this native confirmation. The panel detects
-installed Edge, Chrome, Brave, Opera, and Vivaldi. Firefox and Safari are not
-supported by this `chrome.debugger` companion.
-
-`externalBrowserList` returns each tab's `browserId` and `targetId`.
-`externalBrowserState` observes text and controls;
-`externalBrowserAction` can navigate, click, type, press keys, and scroll. Each
-action requires a recent snapshot and returns a new state. Password values are
-hidden; cookies and storage are not read, and arbitrary JavaScript execution is
-not exposed.
-
-The extension requests **debugger**, a powerful browser permission that allows
-it to instrument tabs while Codeclub is connected. Disconnecting the extension
-or closing Codeclub ends the bridge. The browser remains in control of its
-profile. Visual Computer Use/UI Automation remains available for Firefox,
-Safari, and controls this API does not expose. Chromium also supports direct CDP
-over loopback on ports `9222`–`9232`, or another explicitly specified port.
+The companion activates tabs and checks visibility before input; an accepted command alone does not establish task success. Password values are omitted, cookies/storage are not read, and arbitrary page JavaScript is not exposed. Visual Computer Use remains a separate integration with its own observations and limitations. Loopback CDP on ports 9222–9232 or explicit ports is also supported for DOM actions; the companion tab-management tool is not implemented by direct CDP.
 
 ## Beyond OCR: OmniParser
 
@@ -182,10 +158,7 @@ Tool tests cover error propagation, cancellation, and auditing without input
 text. Engine tests cover consumed/expired references, negative coordinates, and
 parser validation.
 
-The project's Next build skips type validation. `npx tsc --noEmit` reports
-pre-existing errors in ChatInterface.tsx and Topbar.tsx, unrelated to these
-changes. A missing `maxOutputTokens` destructuring in run.ts was also fixed
-because it caused a ReferenceError when agent streaming started.
+The project's Next build skips type validation, so run `npx tsc --noEmit` separately. The October 8 checks passed TypeScript as well as the Next and Electron builds. Earlier errors mentioned in this document are historical, not current results. See [the October 8 audit](tool-audit-2026-10-08.md) for later external-browser verification.
 
 No full manual regression covered language switching, projects, persistence,
 panel resizing, browser selection, or terminals. Their UI was not changed. No
