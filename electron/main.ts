@@ -347,7 +347,11 @@ async function resolveProjectFile(projectPath: string, relativePath: string, all
 
 async function listProjectFiles(projectPath: string, maxFiles: number) {
   const limit = Number.isFinite(maxFiles) ? Math.min(1200, Math.max(1, Math.floor(maxFiles))) : 400;
-  const rootPath = await fs.realpath(path.resolve(projectPath));
+  let rootPath: string;
+  try { rootPath = await fs.realpath(path.resolve(projectPath)); } catch (error: any) {
+    if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return [];
+    throw error;
+  }
   const result: Array<{ path: string; kind: string; size?: number; modifiedAt?: number }> = [];
   const pending: Array<{ folder: string; relative: string }> = [{ folder: rootPath, relative: '' }];
   while (pending.length && result.length < limit) {
@@ -640,14 +644,22 @@ async function invokeNativeCommand(command: string, args: any = {}, signal?: Abo
       }
       return { ok: true, browser: id, action: args.action === 'install' ? 'install' : 'uninstall', extensionPath };
     }
-    case 'codeclub_git_read': return readProjectGit(await resolveProjectFile(String(args.projectPath || ''), '.'), args, signal);
+    case 'codeclub_git_read': {
+      let root: string;
+      try { root = await resolveProjectFile(String(args.projectPath || ''), '.'); } catch (error: any) {
+        if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return { code: 1, stdout: '', stderr: 'La carpeta del proyecto ya no está disponible.' };
+        throw error;
+      }
+      return readProjectGit(root, args, signal);
+    }
     case 'codeclub_list_files': return listProjectFiles(String(args.projectPath || ''), Number(args.maxFiles) || 400);
     case 'codeclub_path_kind': {
-      const target = await resolveProjectFile(String(args.projectPath || ''), String(args.path || '.'));
       try {
+        const target = await resolveProjectFile(String(args.projectPath || ''), String(args.path || '.'));
         const stat = await fs.stat(target);
         return { kind: stat.isDirectory() ? 'directory' : stat.isFile() ? 'file' : 'other' };
-      } catch {
+      } catch (error: any) {
+        if (error?.code !== 'ENOENT' && error?.code !== 'ENOTDIR') throw error;
         return { kind: 'missing' };
       }
     }
@@ -1058,7 +1070,12 @@ app.whenReady().then(async () => {
   ipcMain.handle('chats:transcript', (_event, project: string, id: string, markdown: string) => chatStore.transcript(project, id, markdown));
   app.once('will-quit', () => chatStore.close());
   await loadProjects();
-  ipcMain.handle('projects:list', () => projects);
+  ipcMain.handle('projects:list', async () => {
+    const available = await Promise.all(projects.map(async (project) => {
+      try { return (await fs.stat(project.path)).isDirectory() ? project : null; } catch { return null; }
+    }));
+    return available.filter((project) => project !== null);
+  });
   ipcMain.handle('projects:select-folder', async () => { const result = await dialog.showOpenDialog({ properties: ['openDirectory'] }); if (result.canceled || !result.filePaths[0]) return null; const project = registerProject(result.filePaths[0]); await saveProjects(); return project; });
   ipcMain.handle('files:select', async () => { const result = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] }); return result.canceled ? [] : result.filePaths; });
   ipcMain.handle('files:read', async (_event, filePath: string) => Array.from(await fs.readFile(filePath)));
@@ -1136,7 +1153,7 @@ app.whenReady().then(async () => {
     await chatStore.saveTail(projectPath, chatId, 0, content.split('\n').filter(line => line.trim()).map(line => JSON.parse(line)));
     return true;
   });
-  ipcMain.handle('projects:switch', async (_event, id: string) => { const project = projects.find((item) => item.id === id); if (!project) throw new Error('Proyecto no encontrado.'); project.lastOpenedAt = new Date().toISOString(); await saveProjects(); return project; });
+  ipcMain.handle('projects:switch', async (_event, id: string) => { const project = projects.find((item) => item.id === id); if (!project) throw new Error('Proyecto no encontrado.'); if (!(await fs.stat(project.path).catch(() => null))?.isDirectory()) throw new Error('La carpeta del proyecto ya no está disponible.'); project.lastOpenedAt = new Date().toISOString(); await saveProjects(); return project; });
   ipcMain.handle('projects:rename', async (_event, id: string, name: string) => {
     const project = projects.find((item) => item.id === id);
     const nextName = name.trim();

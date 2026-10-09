@@ -1,7 +1,7 @@
 'use client';
 
 /** Main workspace shell: coordinates project/chat-scoped panels, persisted layouts, browser, files, review, and terminals. */
-import { createElement, memo, useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { createElement, memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, Check, ChevronDown, Circle, CircleCheck, Clock, CopyX, EllipsisVertical, ExternalLink, FileWarning, FolderOpen, FolderPen, FolderTree, Grid2X2, Heart, Home, Hourglass, Info, MessageSquare, MoreHorizontal, MousePointerClick, PanelLeft, Pencil, Pin, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
@@ -20,6 +20,7 @@ import { createBrowserPickerScript, type BrowserMarkerOrder } from '../lib/brows
 import { ProjectPanelView } from './ChatInterface';
 import { useOrbPalette } from './OrbPaletteProvider';
 import OrbPaletteButton from './ui/OrbPaletteButton';
+import FluidOrb from './ui/fluid-orb';
 import { readGlobalChats, readProjectMeta, writeGlobalChats, writeProjectMeta } from '../lib/projectManager';
 import { nativeInvoke, onTerminalOutput } from '../lib/runtime';
 import { parseGitNumstat, parseGitStatus } from '../lib/git-output';
@@ -91,10 +92,10 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
   const sidebarText = sidebarTranslations[language];
   const panelText = rightSidebarTranslations[language];
   const [activeProjectId, setActiveProjectId] = useState('home');
-  const [activeProjectName, setActiveProjectName] = useState('Codeclub');
+  const [activeProjectName, setActiveProjectName] = useState('Home');
   const [activeProjectPath, setActiveProjectPath] = useState<string | undefined>();
   const [editingProjectName, setEditingProjectName] = useState(false);
-  const [projectNameDraft, setProjectNameDraft] = useState('Codeclub');
+  const [projectNameDraft, setProjectNameDraft] = useState('Home');
   const [projectNameError, setProjectNameError] = useState('');
   const projectNameEdit = useRef({ token: 0, submitted: true });
   const [chatsByProject, setChatsByProject] = useState<Record<string, RecentChat[]>>({});
@@ -378,13 +379,16 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
       const projectId = project.id;
       setActiveProjectId(projectId);
       setActiveProjectPath(project.path);
-      const nextName = project.name ?? (project.id === 'home' ? 'Codeclub' : activeProjectName);
+      const nextName = project.id === 'home' ? 'Home' : (project.name ?? activeProjectName);
       setActiveProjectName(nextName);
       setProjectNameDraft(nextName);
       projectNameEdit.current = { token: projectNameEdit.current.token + 1, submitted: true };
       setEditingProjectName(false);
       setProjectNameError('');
       setChatsByProject((current) => current[projectId] ? current : { ...current, [projectId]: [] });
+      // Project selection updates the renderer scope before resetting the chat; existing consumers clean up their listeners on unmount.
+      window.dispatchEvent(new CustomEvent('codeclub:project-selection-changed', { detail: { selected: Boolean(project.path), projectPath: project.path || '', projectName: nextName } }));
+      window.dispatchEvent(new CustomEvent('codeclub:active-project', { detail: { projectPath: project.path || null, projectName: nextName } }));
       window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
       if (project.path) window.localStorage.setItem('codeclub:active-project', JSON.stringify({ id: projectId, name: nextName, path: project.path }));
       else window.localStorage.removeItem('codeclub:active-project');
@@ -394,21 +398,25 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
   }, []);
 
   useEffect(() => {
-    try {
-      const saved = JSON.parse(window.localStorage.getItem('codeclub:active-project') || 'null') as { id?: string; name?: string; path?: string } | null;
-      if (!saved?.id || !saved.path) return;
-      setActiveProjectId(saved.id);
-      setActiveProjectPath(saved.path);
-      setActiveProjectName(saved.name || 'Proyecto');
-      setProjectNameDraft(saved.name || 'Proyecto');
-      setChatsByProject((current) => current[saved.id!] ? current : { ...current, [saved.id!]: [] });
-      window.setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('codeclub:project-selection-changed', { detail: { selected: true, projectPath: saved.path, projectName: saved.name || 'Proyecto' } }));
-        window.dispatchEvent(new CustomEvent('codeclub:active-project', { detail: { projectPath: saved.path, projectName: saved.name || 'Proyecto' } }));
-      }, 0);
-    } catch { /* Start in the global Codeclub workspace when no project is saved. */ }
+    let cancelled = false;
+    const restore = async () => {
+      try {
+        const saved = JSON.parse(window.localStorage.getItem('codeclub:active-project') || 'null') as { id?: string; name?: string; path?: string } | null;
+        if (!saved?.id || !saved.path) return;
+        const projects = await (window as any).codeclub?.listProjects?.() as SidebarProject[] | undefined;
+        if (cancelled) return;
+        const project = projects?.find(item => item.id === saved.id && item.path === saved.path);
+        if (!project) {
+          window.localStorage.removeItem('codeclub:active-project');
+          window.dispatchEvent(new CustomEvent('codeclub:project-switch', { detail: { id: 'home', name: 'Home' } }));
+          return;
+        }
+        window.dispatchEvent(new CustomEvent('codeclub:project-switch', { detail: project }));
+      } catch { /* Keep Home available when the saved project cannot be restored. */ }
+    };
+    void restore();
+    return () => { cancelled = true; };
   }, []);
-
   useEffect(() => {
     let cancelled = false;
     let request = 0;
@@ -417,7 +425,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
       try {
         const chats = activeProjectPath
           ? ((await readProjectMeta(activeProjectPath))?.chats || []).map((chat) => ({ id: chat.id, title: chat.name, customName: chat.customName, projectPath: activeProjectPath, projectName: activeProjectName }))
-          : (await readGlobalChats()).map((chat) => ({ id: chat.id, title: chat.name, customName: chat.customName, projectPath: '', projectName: 'Sin proyecto' }));
+          : (await readGlobalChats()).map((chat) => ({ id: chat.id, title: chat.name, customName: chat.customName, projectPath: '', projectName: 'Home' }));
         if (!cancelled && version === request) setChatsByProject((current) => ({ ...current, [activeProjectId]: chats }));
       } catch (error) { console.warn('No se pudieron cargar los chats recientes', error); }
     };
@@ -462,6 +470,20 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
     window.addEventListener('codeclub:rename-chat', handleChatRename);
     return () => window.removeEventListener('codeclub:rename-chat', handleChatRename);
   }, []);
+
+  useLayoutEffect(() => {
+    if (!chatContextMenu) return;
+    const position = () => {
+      const menu = chatContextMenuRef.current;
+      if (!menu) return;
+      const bounds = menu.getBoundingClientRect();
+      menu.style.left = `${Math.max(8, Math.min(chatContextMenu.x, window.innerWidth - bounds.width - 8))}px`;
+      menu.style.top = `${Math.max(8, Math.min(chatContextMenu.y, window.innerHeight - bounds.height - 8))}px`;
+    };
+    position();
+    window.addEventListener('resize', position);
+    return () => window.removeEventListener('resize', position);
+  }, [chatContextMenu, confirmClearHistory]);
 
   useEffect(() => {
     if (!chatContextMenu) { setConfirmClearHistory(false); return; }
@@ -553,7 +575,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
       setActiveChatId(chat?.chatId);
       if (chat && typeof chat.projectPath === 'string') {
         const id = chat.projectId || sidebarProjects.find(project => project.path === chat.projectPath)?.id || (chat.projectPath ? chat.projectPath : 'home');
-        const name = chat.projectName || 'Codeclub';
+        const name = chat.projectPath ? (chat.projectName || 'Proyecto') : 'Home';
         setActiveProjectId(id);
         setActiveProjectPath(chat.projectPath || undefined);
         setActiveProjectName(name);
@@ -600,7 +622,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
     const refresh = async () => {
       const request = ++version;
       const results = await Promise.allSettled([
-        readGlobalChats().then(chats => chats.map(chat => ({ id: chat.id, title: chat.name, customName: chat.customName, projectId: 'home', projectPath: '', projectName: 'Codeclub' }))),
+        readGlobalChats().then(chats => chats.map(chat => ({ id: chat.id, title: chat.name, customName: chat.customName, projectId: 'home', projectPath: '', projectName: 'Home' }))),
         ...sidebarProjects.map(async project => ((await readProjectMeta(project.path))?.chats || []).map(chat => ({ id: chat.id, title: chat.name, customName: chat.customName, projectId: project.id, projectPath: project.path, projectName: project.name }))),
       ]);
       if (mounted && request === version) setSidebarChats(results.flatMap(result => result.status === 'fulfilled' ? result.value : []));
@@ -620,7 +642,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
     const chat = { id: session.chatId, title: session.name || session.chatId, projectPath: session.projectPath, projectName: session.projectName, projectId: sidebarProjects.find(project => project.path === session.projectPath)?.id || 'home' };
     if (!indexedChats.has(sidebarChatKey(chat))) indexedChats.set(sidebarChatKey(chat), chat);
   });
-  const allSidebarChats = [...indexedChats.values()].reverse();
+  const allSidebarChats = [...indexedChats.values()].filter(chat => (chat.projectPath || '') === (activeProjectPath || '')).reverse();
   const chatSession = (chat: RecentChat) => sessions.find(session => !session.external && sameSession({ chatId: chat.id, projectPath: chat.projectPath || '' }, session));
   const needsReview = (chat: RecentChat) => { const session = chatSession(chat); return Boolean(session && (session.approvals.length > 0 || session.state === 'question' || session.state === 'unverified')); };
   const isBlocked = (chat: RecentChat) => { const session = chatSession(chat); return Boolean(session && ['blocked', 'error', 'failed', 'interrupted'].includes(session.state)); };
@@ -632,7 +654,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
     setPinnedChatKeys(next);
     setChatContextMenu(null);
   };
-  const renderSidebarChat = (chat: RecentChat) => <button key={sidebarChatKey(chat)} type="button" onContextMenu={event => { event.preventDefault(); setChatContextMenu({ chat, x: event.clientX, y: event.clientY }); }} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: { chatId: chat.id, name: chat.title, customName: chat.customName, projectId: chat.projectId || 'home', projectPath: chat.projectPath || '', projectName: chat.projectName || 'Codeclub' } }))} title={chat.title} className={`flex w-full min-w-0 items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${activeChatId === chat.id && (activeProjectPath || '') === (chat.projectPath || '') ? 'bg-(--codeclub-acrylic-active)' : 'hover:bg-(--codeclub-hover)'}`}><span className="min-w-0 flex-1 truncate">{chat.title}</span><ChatSessionStatus seenCompletions={seenCompletions} session={chatSession(chat)} language={language} /></button>;
+  const renderSidebarChat = (chat: RecentChat) => <button key={sidebarChatKey(chat)} type="button" onContextMenu={event => { event.preventDefault(); setChatContextMenu({ chat, x: event.clientX, y: event.clientY }); }} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: { chatId: chat.id, name: chat.title, customName: chat.customName, projectId: chat.projectId || 'home', projectPath: chat.projectPath || '', projectName: chat.projectPath ? (chat.projectName || 'Proyecto') : 'Home' } }))} title={chat.title} className={`flex h-7 w-full min-w-0 items-center justify-between gap-2 rounded-lg px-2.5 py-0 text-left text-[12px] leading-4 text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${activeChatId === chat.id && (activeProjectPath || '') === (chat.projectPath || '') ? 'bg-(--codeclub-acrylic-active)' : 'hover:bg-(--codeclub-hover)'}`}><span className="min-w-0 flex-1 truncate">{chat.title}</span><ChatSessionStatus seenCompletions={seenCompletions} session={chatSession(chat)} language={language} /></button>;
 
   const selectSidebarProject = async (project?: SidebarProject) => {
     setProjectSelectionError('');
@@ -640,6 +662,10 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
       const api = (window as any).codeclub;
       const selected = project || await api?.selectProjectFolder?.();
       if (!selected) return;
+      if (selected.id === 'home') {
+        window.dispatchEvent(new CustomEvent('codeclub:project-switch', { detail: { id: 'home', name: 'Home' } }));
+        return;
+      }
       if (project) await api.switchProject(project.id);
       const next = [...sidebarProjects.filter(item => item.id !== selected.id), selected];
       setSidebarProjects(next);
@@ -652,7 +678,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
   const selectSidebarSection = (section: SidebarSection) => {
     setActiveSection(section);
     setActiveChatId(undefined);
-    if (section === 'new-chat') window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
+    if (section === 'new-chat') window.dispatchEvent(new CustomEvent('codeclub:project-switch', { detail: { id: 'home', name: 'Home' } }));
     else if (section === 'extensions') window.dispatchEvent(new CustomEvent('codeclub:open-extensions'));
     else window.dispatchEvent(new CustomEvent('codeclub:close-extensions', { detail: { preserveSection: true } }));
   };
@@ -957,7 +983,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
     <div className="flex h-full min-h-0 min-w-0 overflow-hidden">
       <motion.aside id="codeclub-left-sidebar" animate={{ width: leftOpen ? leftWidth : 68 }} transition={resizing ? { duration: 0 } : { type: 'spring', stiffness: 340, damping: 30 }} className="codeclub-widget-chrome flex h-full min-h-0 shrink-0 overflow-hidden" aria-label={sidebarText.leftSidebar}>
         <nav className="flex w-[68px] shrink-0 flex-col items-center gap-2 px-2 py-3" aria-label={sidebarText.mainNavigation}>
-          <RailItem active={activeSection === 'new-chat' || activeSection === 'orbs' || activeSection === 'tasks'} icon={<Home />} label={sidebarText.home} onClick={() => { window.dispatchEvent(new CustomEvent('codeclub:project-switch', { detail: { id: 'home', name: 'Codeclub' } })); selectSidebarSection('new-chat'); }} />
+          <RailItem active={activeSection === 'new-chat' || activeSection === 'orbs' || activeSection === 'tasks'} icon={<Home />} label={sidebarText.home} onClick={() => selectSidebarSection('new-chat')} />
           <RailItem active={activeSection === 'extensions'} icon={<Grid2X2 />} label={sidebarText.extensions} onClick={() => selectSidebarSection('extensions')} />
           <div className="my-1 h-px w-8 bg-(--codeclub-border-soft)" aria-hidden="true" />
           <RailItem active={false} icon={<MoreHorizontal />} label={sidebarText.devices} disabled onClick={() => {}} />
@@ -982,13 +1008,13 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
           {activeSection === 'extensions' ? <div className="min-h-0 flex-1 overflow-hidden"><ExtensionsPanel selectedProject={activeProjectPath ? { projectPath: activeProjectPath } : null} layout="sidebar" /></div> : <>
             <div className="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <button type="button" onClick={() => selectSidebarSection('new-chat')} className="flex h-9 w-full min-w-0 items-center gap-2 rounded-lg px-1.5 text-left text-[13px] text-(--codeclub-text-strong) transition-colors hover:bg-(--codeclub-hover) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)"><Plus size={16} className="shrink-0 text-(--codeclub-text-muted)" aria-hidden="true" /><span className="truncate">{sidebarText.newChat}</span></button>
-              <button type="button" onClick={() => { setActiveOrbId(undefined); selectSidebarSection('orbs'); }} className="flex h-9 w-full min-w-0 items-center gap-2 rounded-lg px-1.5 text-left text-[13px] text-(--codeclub-text-strong) transition-colors hover:bg-(--codeclub-hover) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)"><Circle size={16} className="shrink-0 text-(--codeclub-text-muted)" aria-hidden="true" /><span className="truncate">{sidebarText.yourOrb}</span></button>
+              <button type="button" onClick={() => { setActiveOrbId(undefined); selectSidebarSection('orbs'); }} className="flex h-9 w-full min-w-0 items-center gap-2 rounded-lg px-1.5 text-left text-[13px] text-(--codeclub-text-strong) transition-colors hover:bg-(--codeclub-hover) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)"><FluidOrb size={16} active animateOnHover={false} className="shrink-0" aria-hidden="true" /><span className="truncate">{sidebarText.yourOrb}</span></button>
               <SidebarChatGroup key="pinned" id="pinned" title={sidebarText.pinned} chats={allSidebarChats.filter(chat => pinnedChatKeys.includes(sidebarChatKey(chat)))} renderChat={renderSidebarChat} emptyText={sidebarText.noChats} initiallyOpen />
               <SidebarChatGroup key="recent" id="recent" title={sidebarText.recent} chats={allSidebarChats.filter(chat => !pinnedChatKeys.includes(sidebarChatKey(chat)) && !needsReview(chat) && !isBlocked(chat))} renderChat={renderSidebarChat} emptyText={sidebarText.noChats} initiallyOpen />
               <SidebarChatGroup key="humanReview" id="humanReview" title={sidebarText.humanReview} chats={allSidebarChats.filter(needsReview)} renderChat={renderSidebarChat} emptyText={sidebarText.noChats} />
               <SidebarChatGroup key="blocked" id="blocked" title={sidebarText.blocked} chats={allSidebarChats.filter(isBlocked)} renderChat={renderSidebarChat} emptyText={sidebarText.noChats} />
               <SidebarCategory key="projects" id="projects" title={sidebarText.projects} initiallyOpen action={<button type="button" onClick={() => void selectSidebarProject()} aria-label={sidebarText.selectFolder} title={sidebarText.selectFolder} className="mr-1.5 grid h-6 w-6 place-items-center rounded-md text-(--codeclub-text-muted) hover:bg-(--codeclub-hover) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)"><Plus size={14} aria-hidden="true" /></button>}>
-                <div className="mt-1 space-y-1">{sidebarProjects.map(project => <button key={project.id} type="button" onClick={() => void selectSidebarProject(project)} aria-current={activeProjectId === project.id ? 'page' : undefined} title={project.path} className={`flex h-8 w-full min-w-0 items-center gap-2 rounded-lg px-1.5 text-left text-[13px] text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${activeProjectId === project.id ? 'bg-(--codeclub-acrylic-active)' : 'hover:bg-(--codeclub-hover)'}`}><FolderOpen size={15} className="shrink-0 text-(--codeclub-text-muted)" aria-hidden="true" /><span className="truncate">{project.name}</span></button>)}</div>
+                <div className="mt-1 space-y-1">{[{ id: 'home', name: 'Home', path: '' }, ...sidebarProjects.filter(project => project.id !== 'home')].map(project => <button key={project.id} type="button" onClick={() => void selectSidebarProject(project)} aria-current={activeProjectId === project.id ? 'page' : undefined} title={project.path} className={`flex h-8 w-full min-w-0 items-center gap-2 rounded-lg px-1.5 text-left text-[13px] text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${activeProjectId === project.id ? 'bg-(--codeclub-acrylic-active)' : 'hover:bg-(--codeclub-hover)'}`}><FolderOpen size={15} className="shrink-0 text-(--codeclub-text-muted)" aria-hidden="true" /><span className="truncate">{project.name}</span></button>)}</div>
                 {projectSelectionError && <p role="alert" className="px-1.5 text-[11px] text-red-300">{projectSelectionError}</p>}
               </SidebarCategory>
               <SidebarCategory key="tasks" id="tasks" title={sidebarText.tasks} action={<button type="button" onClick={() => setTaskModalOpen(true)} aria-label={sidebarText.newTask} title={sidebarText.newTask} className="mr-1.5 grid h-6 w-6 place-items-center rounded-md text-(--codeclub-text-muted) hover:bg-(--codeclub-hover) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)"><Plus size={14} aria-hidden="true" /></button>}>
@@ -1002,7 +1028,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
         </div>
         </motion.div>
       </motion.aside>
-      {chatContextMenu && <div ref={chatContextMenuRef} className="fixed z-[100] w-48 rounded-xl border border-white/[0.08] bg-[#2C2C2C]/90 p-1 shadow-2xl backdrop-blur-xl" style={{ left: chatContextMenu.x, top: chatContextMenu.y }} role="menu" aria-label={sidebarText.chatMenu}><button type="button" disabled={!pinsReady} onClick={() => void toggleChatPin().catch(() => setProjectSelectionError(sidebarText.pinError))} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) disabled:opacity-40" role="menuitem"><Pin size={14} aria-hidden="true" />{pinnedChatKeys.includes(sidebarChatKey(chatContextMenu.chat)) ? sidebarText.unpinChat : sidebarText.pinChat}</button><button type="button" onClick={openFromContextMenu} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><FolderOpen size={14} aria-hidden="true" />{sidebarText.open}</button><div className="mx-2 h-px bg-[#444444]" aria-hidden="true" /><button type="button" onClick={() => void deleteFromContextMenu()} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><Trash2 size={14} aria-hidden="true" />{sidebarText.delete}</button><div className="mx-2 h-px bg-[#444444]" aria-hidden="true" /><button type="button" onClick={() => void clearChatHistory()} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><Clock size={14} aria-hidden="true" />{sidebarText.clearHistory}</button>{confirmClearHistory && <><div className="mx-2 my-1 h-px bg-[#444444]" aria-hidden="true" /><div className="grid grid-cols-2 gap-1 px-1" role="group" aria-label={language === 'en' ? 'Confirm clearing history' : 'Confirmar limpieza del historial'}><button type="button" onClick={() => void clearChatHistory()} className="grid h-7 place-items-center rounded-lg text-[#8BC7FF] hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" title={language === 'en' ? 'Confirm' : 'Confirmar'} aria-label={language === 'en' ? 'Confirm' : 'Confirmar'}><Check size={14} aria-hidden="true" /></button><button type="button" onClick={() => setConfirmClearHistory(false)} className="grid h-7 place-items-center rounded-lg text-(--codeclub-text-muted) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" title={language === 'en' ? 'Cancel' : 'Cancelar'} aria-label={language === 'en' ? 'Cancel' : 'Cancelar'}><X size={14} aria-hidden="true" /></button></div></>}</div>}
+      {chatContextMenu && <div ref={chatContextMenuRef} className="fixed z-[100] w-[172px] max-w-[calc(100vw-16px)] max-h-[calc(100dvh-16px)] overflow-y-auto rounded-xl border border-[#333333] bg-[#2B2B2B] p-1 shadow-2xl" style={{ left: chatContextMenu.x, top: chatContextMenu.y }} role="menu" aria-label={sidebarText.chatMenu}><button type="button" disabled={!pinsReady} onClick={() => void toggleChatPin().catch(() => setProjectSelectionError(sidebarText.pinError))} className="grid h-7 w-full grid-cols-[14px_minmax(0,1fr)] items-center gap-2 rounded-lg px-2 py-0 text-left text-[11px] leading-4 text-(--codeclub-text) hover:bg-(--codeclub-hover) disabled:opacity-40" role="menuitem"><Pin size={12} strokeWidth={1.8} className="h-3 w-3 shrink-0 justify-self-center" aria-hidden="true" />{pinnedChatKeys.includes(sidebarChatKey(chatContextMenu.chat)) ? sidebarText.unpinChat : sidebarText.pinChat}</button><div className="mx-2 h-px bg-[#3A3A3A]" aria-hidden="true" /><button type="button" onClick={openFromContextMenu} className="grid h-7 w-full grid-cols-[14px_minmax(0,1fr)] items-center gap-2 rounded-lg px-2 py-0 text-left text-[11px] leading-4 text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><FolderOpen size={12} strokeWidth={1.8} className="h-3 w-3 shrink-0 justify-self-center" aria-hidden="true" />{sidebarText.open}</button><div className="mx-2 h-px bg-[#3A3A3A]" aria-hidden="true" /><button type="button" onClick={() => void deleteFromContextMenu()} className="grid h-7 w-full grid-cols-[14px_minmax(0,1fr)] items-center gap-2 rounded-lg px-2 py-0 text-left text-[11px] leading-4 text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><Trash2 size={12} strokeWidth={1.8} className="h-3 w-3 shrink-0 justify-self-center" aria-hidden="true" />{sidebarText.delete}</button><div className="mx-2 h-px bg-[#3A3A3A]" aria-hidden="true" /><button type="button" onClick={() => void clearChatHistory()} className="grid h-7 w-full grid-cols-[14px_minmax(0,1fr)] items-center gap-2 rounded-lg px-2 py-0 text-left text-[11px] leading-4 text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><Clock size={12} strokeWidth={1.8} className="h-3 w-3 shrink-0 justify-self-center" aria-hidden="true" />{sidebarText.clearHistory}</button>{confirmClearHistory && <><div className="mx-2 my-1 h-px bg-[#3A3A3A]" aria-hidden="true" /><div className="grid grid-cols-2 gap-1 px-1" role="group" aria-label={language === 'en' ? 'Confirm clearing history' : 'Confirmar limpieza del historial'}><button type="button" onClick={() => void clearChatHistory()} className="grid h-7 place-items-center rounded-lg text-[#8BC7FF] hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" title={language === 'en' ? 'Confirm' : 'Confirmar'} aria-label={language === 'en' ? 'Confirm' : 'Confirmar'}><Check size={12} strokeWidth={1.8} className="h-3 w-3 shrink-0 justify-self-center" aria-hidden="true" /></button><button type="button" onClick={() => setConfirmClearHistory(false)} className="grid h-7 place-items-center rounded-lg text-(--codeclub-text-muted) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" title={language === 'en' ? 'Cancel' : 'Cancelar'} aria-label={language === 'en' ? 'Cancel' : 'Cancelar'}><X size={12} strokeWidth={1.8} className="h-3 w-3 shrink-0 justify-self-center" aria-hidden="true" /></button></div></>}</div>}
       {rightContextMenu && <div ref={rightContextMenuRef} className="fixed z-[100] grid w-52 gap-0.5 rounded-xl border border-white/[0.08] bg-[#2C2C2C]/90 p-1 shadow-2xl backdrop-blur-xl" style={{ left: rightContextMenu.x, top: rightContextMenu.y }} role="menu" aria-label={`${panelText.rightPanel}: ${rightContextMenu.panel.label}`}><button type="button" onClick={() => closeRightPanel(rightContextMenu.panel.instanceId)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><X size={14} aria-hidden="true" />{panelText.closeRightPanel}</button><button type="button" onClick={() => closeOtherRightPanels(rightContextMenu.panel.instanceId)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><CopyX size={14} aria-hidden="true" />{panelText.closeOtherRightPanels}</button><button type="button" onClick={() => closeRightPanelsToRight(rightContextMenu.panel.instanceId)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><ArrowRightToLine size={14} aria-hidden="true" />{panelText.closeRightPanelsAfter}</button></div>}
       {leftOpen && <ResizeHandle side="left" value={leftWidth} maxValue={MAX_WIDTH} onStart={startResize('left')} onKeyboardResize={setLeftWidth} language={language} />}
 

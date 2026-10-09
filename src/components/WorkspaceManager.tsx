@@ -111,12 +111,10 @@ function WorkspaceManager({ catalog, defaultProvider, defaultModel }: { catalog:
       setChatOpenVersion((version) => version + 1);
     };
     const handleNavigateNewChat = () => {
-      if (showExtensions) {
-        setShowExtensions(false);
-        visit(activeChatStore.get().id ? `chat:${activeChatStore.get().id}` : 'new-chat');
-        return;
-      }
-      if (activeChatStore.get().id) window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
+      pendingChatRef.current = null;
+      setSelectedProject(null);
+      setShowExtensions(false);
+      window.dispatchEvent(new CustomEvent('codeclub:project-switch', { detail: { id: 'home', name: 'Home' } }));
     };
     const handleOpenEmptyChat = () => { setShowExtensions(false); visit('new-chat'); };
     const move = (direction: -1 | 1) => {
