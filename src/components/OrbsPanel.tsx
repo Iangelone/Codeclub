@@ -3,16 +3,18 @@
 /** Lists and edits autonomous or scheduled agents; run status and history are authoritative in Electron. */
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { useDialogAccessibility } from './ui/use-accessible-overlay';
 import { Check, Copy, Play, Plus, Search, Square, X, MessageSquare, Trash2 } from 'lucide-react';
 import { getSetting, setSetting } from '../lib/persistence';
 import { ORBS_STORAGE_KEY, type OrbDefinition } from '../lib/chat-resources';
 import { orbControlTranslations, orbsTranslations, useAppLanguage } from '../lib/i18n';
-import { readGlobalChatHistory } from '../lib/projectManager';
+import { readGlobalChatHistory, writeGlobalChatHistory } from '../lib/projectManager';
 import type { ScheduledTask } from '../lib/scheduled-tasks';
 import { useSharedSessions } from '../lib/shared-sessions';
 import { ORB_PALETTES } from './OrbPaletteProvider';
 import FluidOrb from './ui/fluid-orb';
 import OrbWorkspaceSetup from './OrbWorkspaceSetup';
+import OrbAgentChat from './OrbAgentChat';
 import { models, providers } from '../lib/ai-catalog';
 import { credentialKeyFor, modelIdFor, modelMatchesProvider, usesGateway } from '../lib/ai-routing';
 
@@ -76,25 +78,25 @@ function CatalogPicker({ id, label, value, items, placeholder, noResults, autoFo
     <input ref={inputRef} id={id} autoFocus={autoFocus} role="combobox" aria-autocomplete="none" aria-expanded={open} aria-controls={`${id}-options`} value={value?.label || ''} placeholder={placeholder} readOnly onClick={showMenu} onKeyDown={(event) => {
       if (event.key === 'Escape' && open) { event.preventDefault(); setOpen(false); inputRef.current?.focus(); }
       if (['ArrowDown', 'Enter', ' '].includes(event.key)) { event.preventDefault(); showMenu(); }
-    }} className="h-8 w-full cursor-pointer border border-[#2b2b2b] bg-[#101010] px-2.5 text-[12px] text-[#eeeeee] outline-none placeholder:text-[#666666] focus-visible:border-[#8BC7FF] focus-visible:ring-1 focus-visible:ring-[#8BC7FF]" />
-    {open && menuPosition && typeof document !== 'undefined' && createPortal(<div ref={menuRef} style={{ position: 'fixed', top: menuPosition.top, left: menuPosition.left, width: menuPosition.width, maxHeight: menuPosition.maxHeight, zIndex: 2147483647 }} className="flex flex-col overflow-hidden border border-[#303030] bg-[#171717] p-1 shadow-xl shadow-black/50">
+    }} className="h-8 w-full cursor-pointer rounded-lg border border-[#2b2b2b] bg-[#191919] px-2.5 text-[12px] text-[#eeeeee] outline-none placeholder:text-[#666666] focus-visible:border-[#8BC7FF] focus-visible:ring-1 focus-visible:ring-[#8BC7FF]" />
+    {open && menuPosition && typeof document !== 'undefined' && createPortal(<div ref={menuRef} style={{ position: 'fixed', top: menuPosition.top, left: menuPosition.left, width: menuPosition.width, maxHeight: menuPosition.maxHeight, zIndex: 2147483647 }} className="flex flex-col overflow-hidden rounded-xl border border-[#2b2b2b] bg-[#191919] p-1.5 shadow-xl shadow-black/50">
       <div className="relative mb-1 shrink-0">
-        <Search size={13} aria-hidden="true" className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[#777777]" />
+        <Search size={13} aria-hidden="true" className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[#999999]" />
         <input ref={searchRef} type="text" role="combobox" aria-label={`${label}: ${placeholder}`} aria-autocomplete="list" aria-expanded="true" aria-controls={`${id}-options`} aria-activedescendant={options[activeIndex] ? `${id}-option-${activeIndex}` : undefined} value={query} placeholder={placeholder} onChange={(event) => { setQuery(event.target.value); setActiveIndex(0); }} onKeyDown={(event) => {
         if (event.key === 'Escape') { event.preventDefault(); setOpen(false); setQuery(''); inputRef.current?.focus(); }
         if (event.key === 'ArrowDown') { event.preventDefault(); setActiveIndex((index) => Math.min(index + 1, options.length - 1)); }
         if (event.key === 'ArrowUp') { event.preventDefault(); setActiveIndex((index) => Math.max(index - 1, 0)); }
         if (event.key === 'Enter' && options[activeIndex]) { event.preventDefault(); choose(options[activeIndex]); }
-      }} className="h-7 w-full border-b border-[#303030] bg-transparent pl-7 pr-2 text-[11px] text-[#eeeeee] outline-none placeholder:text-[#777777] focus-visible:border-[#8BC7FF]" />
+      }} className="h-7 w-full rounded-md border-b border-[#2b2b2b] bg-transparent pl-7 pr-2 text-[11px] text-[#eeeeee] outline-none placeholder:text-[#777777] focus-visible:border-[#8BC7FF]" />
       </div>
-      <div id={`${id}-options`} role="listbox" aria-label={label} className="min-h-0 overflow-y-auto [scrollbar-color:#444444_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#444444]">
-        {options.length ? options.map((item, index) => <button key={item.gatewayId || item.id} id={`${id}-option-${index}`} type="button" role="option" aria-selected={item.id === value?.id && item.gatewayId === value?.gatewayId} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(item)} onMouseEnter={() => setActiveIndex(index)} className={`block min-h-7 w-full truncate px-2 text-left text-[11px] ${index === activeIndex ? 'bg-[#292929] text-white' : 'text-[#bdbdbd] hover:bg-[#222222]'}`}>{item.label}</button>) : <p role="status" className="m-0 px-2 py-2 text-[11px] text-[#888888]">{noResults}</p>}
+      <div id={`${id}-options`} role="listbox" aria-label={label} className="min-h-0 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {options.length ? options.map((item, index) => <button key={item.gatewayId || item.id} id={`${id}-option-${index}`} type="button" role="option" aria-selected={item.id === value?.id && item.gatewayId === value?.gatewayId} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(item)} onMouseEnter={() => setActiveIndex(index)} className={`block min-h-7 w-full truncate rounded-md px-2 text-left text-[11px] ${index === activeIndex ? 'bg-[#1E1E1E] text-[#eeeeee]' : 'text-[#999999] hover:bg-[#1E1E1E] hover:text-[#eeeeee]'}`}>{item.label}</button>) : <p role="status" className="m-0 px-2 py-2 text-[11px] text-[#999999]">{noResults}</p>}
       </div>
     </div>, document.body)}
   </div>;
 }
 
-export default function OrbsPanel({ createMode = false, onCreated }: { createMode?: boolean; onCreated?: (id: string) => void }) {
+export default function OrbsPanel({ createMode = false, onCreated, workspaceMode = false, selectedOrbId }: { createMode?: boolean; onCreated?: (id: string) => void; workspaceMode?: boolean; selectedOrbId?: string }) {
   const language = useAppLanguage();
   const text = orbsTranslations[language];
   const controls = orbControlTranslations[language];
@@ -136,7 +138,7 @@ export default function OrbsPanel({ createMode = false, onCreated }: { createMod
     try {
       if (!api?.tasksList) throw new Error('ORB_RUNTIME_UNAVAILABLE');
       if (action === 'play') {
-        await api.tasksSave('', { id: taskId, name: orb.name, prompt: orb.purpose, provider: orb.providerId, model: orb.modelId, allowComputer: orb.allowComputer !== false, autonomous: true, status: 'active', interval: 'Personalizado', every: '30 min', notifications: 'Solo errores', language });
+        await api.tasksSave('', { id: taskId, name: orb.name, prompt: orb.purpose, provider: orb.providerId, model: orb.modelId, allowComputer: orb.allowComputer !== false, maximumAutonomy: orb.maximumAutonomy !== false, requiresAdministrator: orb.requiresAdministrator === true, autonomous: true, status: 'active', interval: 'Personalizado', every: '30 min', notifications: 'Solo errores', language });
         await api.tasksRun('', taskId);
       } else if (action === 'stop') {
         const currentTasks: ScheduledTask[] = await api.tasksList('');
@@ -200,11 +202,38 @@ export default function OrbsPanel({ createMode = false, onCreated }: { createMod
     setCredentialLoading(true);
     setDraft(orb);
   };
+  useEffect(() => {
+    if (!workspaceMode) return;
+    const configure = (event: Event) => {
+      const orb = orbs.find(item => item.id === (event as CustomEvent<{ orbId: string }>).detail?.orbId);
+      if (orb) openEditor({ ...orb });
+    };
+    window.addEventListener('codeclub:configure-orb', configure);
+    return () => window.removeEventListener('codeclub:configure-orb', configure);
+  }, [workspaceMode, orbs]);
+
+  const startConversation = async (options: { allowComputer: boolean; maximumAutonomy: boolean; requiresAdministrator: boolean }) => {
+    setControlError('');
+    try {
+      const orb = { ...emptyOrb(), ...options, name: language === 'es' ? 'Tu orbe' : 'Your orb' };
+      const chatId = `orb-chat-${orb.id}`;
+      const saved = await getSetting<Orb[]>(STORAGE_KEY, []);
+      const next = [...saved, { ...orb, chatId }];
+      await setSetting(STORAGE_KEY, next);
+      await writeGlobalChatHistory(chatId, [{ role: 'assistant', content: language === 'es' ? 'Hola, soy tu orbe. ¿Qué querés que haga?' : 'Hi, I’m your orb. What would you like me to do?', createdAt: Date.now(), source: 'orb-welcome' }]);
+      setOrbs(next);
+      window.dispatchEvent(new CustomEvent('codeclub:orbs-changed'));
+      window.dispatchEvent(new CustomEvent('codeclub:global-chat-changed'));
+      onCreated?.(orb.id);
+    } catch { setControlError(text.saveError); }
+  };
   const closeEditor = () => {
     setDraft(null);
     setApiKey('');
     requestAnimationFrame(() => openerRef.current?.focus());
   };
+  const dialogRef = useRef<HTMLFormElement | null>(null);
+  useDialogAccessibility(dialogRef, Boolean(draft), closeEditor);
 
 
   const selectedProvider = (providers.find((provider) => provider.id === draft?.providerId) || defaultProvider) as CatalogOption | undefined;
@@ -240,22 +269,6 @@ export default function OrbsPanel({ createMode = false, onCreated }: { createMod
     return () => { active = false; };
   }, [draft?.providerId, draft?.modelId, requiresCredential]);
 
-  useEffect(() => {
-    if (!draft) return;
-    const onDialogKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { event.preventDefault(); closeEditor(); return; }
-      if (event.key !== 'Tab') return;
-      const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
-      if (!dialog) return;
-      const focusable = [...dialog.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), textarea:not([disabled])')].filter((element) => !element.hasAttribute('hidden'));
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-    };
-    window.addEventListener('keydown', onDialogKeyDown);
-    return () => window.removeEventListener('keydown', onDialogKeyDown);
-  }, [draft]);
 
   const saveOrb = async (event: FormEvent) => {
     event.preventDefault();
@@ -269,7 +282,7 @@ export default function OrbsPanel({ createMode = false, onCreated }: { createMod
       await setSetting(STORAGE_KEY, next);
       window.dispatchEvent(new CustomEvent('codeclub:orbs-changed'));
       const task = tasks.find((item) => item.id === `orb_${draft.id}`);
-      if (task) await (window as any).codeclub.tasksSave('', { ...task, name: draft.name.trim(), prompt: draft.purpose.trim(), provider: draft.providerId, model: draft.modelId, allowComputer: draft.allowComputer !== false, language });
+      if (task) await (window as any).codeclub.tasksSave('', { ...task, name: draft.name.trim(), prompt: draft.purpose.trim(), provider: draft.providerId, model: draft.modelId, allowComputer: draft.allowComputer !== false, maximumAutonomy: draft.maximumAutonomy !== false, requiresAdministrator: draft.requiresAdministrator === true, language });
       setOrbs(next);
       closeEditor();
       onCreated?.(draft.id);
@@ -280,7 +293,7 @@ export default function OrbsPanel({ createMode = false, onCreated }: { createMod
     }
   };
 
-  const continueToDesign = async () => {
+  const continueToDesignImpl = async () => {
     setFlowError('');
     if (!draft || !selectedProvider || !selectedModel) { setFlowError(text.selectProviderModel); return; }
     if (requiresCredential && !credentialSaved && !apiKey.trim()) { setFlowError(text.apiKeyRequired); return; }
@@ -299,12 +312,35 @@ export default function OrbsPanel({ createMode = false, onCreated }: { createMod
         return;
       }
     }
+    if (workspaceMode) {
+      try {
+        // Saving through the current setup enables ordinary computer access, as creation does.
+        const updated = { ...draft, allowComputer: true, providerId: selectedProvider.id, modelId: modelIdFor(selectedProvider, selectedModel) };
+        const saved = await getSetting<Orb[]>(STORAGE_KEY, []);
+        const next = saved.map(orb => orb.id === draft.id ? updated : orb);
+        await setSetting(STORAGE_KEY, next);
+        const task = tasks.find(item => item.id === `orb_${draft.id}`);
+        if (task) await (window as any).codeclub.tasksSave('', { ...task, allowComputer: updated.allowComputer, provider: updated.providerId, model: updated.modelId });
+        setOrbs(next);
+        window.dispatchEvent(new CustomEvent('codeclub:orbs-changed'));
+        closeEditor();
+      } catch { setFlowError(text.saveError); }
+      return;
+    }
     setDraft({ ...draft, providerId: selectedProvider.id, modelId: modelIdFor(selectedProvider, selectedModel) });
     setStep(2);
   };
 
+  const connectionPending = useRef(false);
+  const continueToDesign = async () => {
+    if (connectionPending.current) return;
+    connectionPending.current = true; setSaving(true);
+    try { await continueToDesignImpl(); }
+    finally { connectionPending.current = false; setSaving(false); }
+  };
+
   return <section className="h-full min-h-0 overflow-y-auto bg-(--codeclub-center) [scrollbar-color:#444444_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#444444]" aria-label={text.title}>
-    {createMode ? <OrbWorkspaceSetup onContinue={allowComputer => openEditor({ ...emptyOrb(), allowComputer })} /> : <div className="mx-auto flex min-h-full min-w-0 w-full max-w-[1040px] flex-col px-6 py-7 lg:px-8">
+    {workspaceMode && selectedOrbId ? (orbs.find(orb => orb.id === selectedOrbId) ? <OrbAgentChat key={selectedOrbId} orb={orbs.find(orb => orb.id === selectedOrbId)!} /> : <p role="status" className="p-5 text-[12px] text-[#999999]">{text.loading}</p>) : createMode ? <><OrbWorkspaceSetup onContinue={options => workspaceMode ? startConversation(options) : openEditor({ ...emptyOrb(), ...options })} />{controlError && <p role="alert" className="px-5 text-[11px] text-red-300">{controlError}</p>}</> : <div className="mx-auto flex min-h-full min-w-0 w-full max-w-[1040px] flex-col px-6 py-7 lg:px-8">
       <header className="flex items-start gap-4">
         <div className="min-w-0 flex-1">
           <h1 className="m-0 text-[28px] font-normal tracking-[-0.04em] text-(--codeclub-text-strong)">{text.title}</h1>
@@ -313,10 +349,10 @@ export default function OrbsPanel({ createMode = false, onCreated }: { createMod
         <button type="button" onClick={() => openEditor(emptyOrb())} className="inline-flex h-8 shrink-0 items-center gap-2 rounded-lg border border-[#2b2b2b] bg-[#191919] px-3 text-[12px] text-[#dddddd] transition-colors hover:bg-[#222222] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.create} title={text.create}><Plus size={14} aria-hidden="true" /><span>{text.create}</span></button>
       </header>
 
-      {!ready ? <p role="status" className="mt-8 text-[13px] text-[#777777]">{text.loading}</p> : orbs.length === 0 ? <div className="flex flex-1 items-center justify-center px-6 pb-14 text-center">
+      {!ready ? <p role="status" className="mt-8 text-[13px] text-[#999999]">{text.loading}</p> : orbs.length === 0 ? <div className="flex flex-1 items-center justify-center px-6 pb-14 text-center">
         <div className="mx-auto max-w-[360px]">
           <h2 className="m-0 text-[15px] font-medium text-[#dddddd]">{text.emptyTitle}</h2>
-          <p className="mt-1.5 mb-0 text-[12px] leading-5 text-[#888888]">{text.emptyDescription}</p>
+          <p className="mt-1.5 mb-0 text-[12px] leading-5 text-[#999999]">{text.emptyDescription}</p>
           <button type="button" onClick={() => openEditor(emptyOrb())} className="mt-4 inline-flex h-8 items-center gap-2 rounded-lg px-2 text-[12px] text-[#999999] transition-colors hover:bg-white/[0.04] hover:text-[#eeeeee] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)"><Plus size={14} aria-hidden="true" />{text.create}</button>
         </div>
       </div> : <div className="mt-7 overflow-hidden rounded-xl border border-[#202020] bg-[#111111]">
@@ -342,7 +378,7 @@ export default function OrbsPanel({ createMode = false, onCreated }: { createMod
           <span className={`shrink-0 ${active ? '' : 'grayscale opacity-40'}`}><FluidOrb size={32} color={orb.color} active={active} themeTint={false} aria-hidden="true" /></span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-[12px] font-medium text-[#eeeeee]">{orb.name}</span>
-            <span role={active ? "status" : undefined} aria-live={active ? "polite" : undefined} title={subtitle} className="mt-0.5 block truncate text-[11px] text-[#888888]">{subtitle}</span>
+            <span role={active ? "status" : undefined} aria-live={active ? "polite" : undefined} title={subtitle} className="mt-0.5 block truncate text-[11px] text-[#999999]">{subtitle}</span>
           </span>
           </button>
           <div className="flex shrink-0 items-center gap-1">
@@ -359,14 +395,14 @@ export default function OrbsPanel({ createMode = false, onCreated }: { createMod
     </div>}
 
     {draft && typeof document !== 'undefined' && createPortal(<div className="fixed inset-0 z-[2147483647] grid place-items-center bg-black/65 p-4 backdrop-blur-[3px]" onMouseDown={(event) => { if (event.target === event.currentTarget) closeEditor(); }}>
-      <form role="dialog" aria-modal="true" aria-label={orbs.some((orb) => orb.id === draft.id) ? text.edit : text.create} onSubmit={(event) => { event.preventDefault(); if (step === 1) { if (!credentialLoading) void continueToDesign(); } else void saveOrb(event); }} className="relative flex max-h-[min(700px,90vh)] w-full max-w-[600px] flex-col overflow-hidden border border-[#303030] bg-[#141414] shadow-2xl shadow-black/60">
-        <button type="button" onClick={closeEditor} className="absolute right-3 top-3 z-10 grid h-9 w-9 place-items-center text-[#888888] hover:bg-[#242424] hover:text-[#eeeeee] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.close} title={text.close}><X size={15} aria-hidden="true" /></button>
-        <nav aria-label={text.steps} className="flex items-center gap-2 border-b border-[#252525] px-5 py-3 pr-14 sm:px-6">
-          <span aria-current={step === 1 ? 'step' : undefined} className={`text-[10px] ${step === 1 ? 'text-[#eeeeee]' : 'text-[#777777]'}`}>01&nbsp; {text.connection}</span>
+      <form ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={orbs.some((orb) => orb.id === draft.id) ? text.edit : text.create} onSubmit={(event) => { event.preventDefault(); if (step === 1) { if (!credentialLoading) void continueToDesign(); } else void saveOrb(event); }} className="relative flex max-h-[min(560px,90vh)] w-full max-w-[420px] flex-col overflow-hidden rounded-[20px] border border-[#202020] bg-[#111111] shadow-2xl shadow-black/60">
+        <button type="button" onClick={closeEditor} className="absolute right-3 top-3 z-10 grid h-6 w-6 place-items-center rounded-md text-[#999999] hover:bg-[#242424] hover:text-[#eeeeee] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.close} title={text.close}><X size={15} aria-hidden="true" /></button>
+        {workspaceMode ? <h2 className="m-0 px-5 pb-2 pt-4 pr-12 text-[14px] font-semibold text-[#eeeeee]">{text.connection}</h2> : <nav aria-label={text.steps} className="flex items-center gap-2 border-b border-[#252525] px-5 py-3 pr-14 sm:px-6">
+          <span aria-current={step === 1 ? 'step' : undefined} className={`text-[10px] ${step === 1 ? 'text-[#eeeeee]' : 'text-[#999999]'}`}>01&nbsp; {text.connection}</span>
           <span aria-hidden="true" className="h-px w-7 bg-[#333333]" />
-          <span aria-current={step === 2 ? 'step' : undefined} className={`text-[10px] ${step === 2 ? 'text-[#eeeeee]' : 'text-[#777777]'}`}>02&nbsp; {text.design}</span>
-        </nav>
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4 sm:px-6 [scrollbar-color:#444444_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#444444]">
+          <span aria-current={step === 2 ? 'step' : undefined} className={`text-[10px] ${step === 2 ? 'text-[#eeeeee]' : 'text-[#999999]'}`}>02&nbsp; {text.design}</span>
+        </nav>}
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4 sm:px-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {step === 1 ? <>
             <CatalogPicker id="orb-provider" label={text.provider} value={selectedProvider} items={selectableProviders} placeholder={text.searchProvider} noResults={text.noResults} autoFocus onSelect={(provider) => {
               const firstModel = models.find((model) => modelMatchesProvider(model, provider)) as CatalogOption | undefined;
@@ -374,10 +410,10 @@ export default function OrbsPanel({ createMode = false, onCreated }: { createMod
               setApiKey(''); setFlowError(''); setCredentialSaved(false); setCredentialLoading(true);
             }} />
             <CatalogPicker id="orb-model" label={text.model} value={selectedModel || undefined} items={providerModels} placeholder={text.searchModel} noResults={text.noResults} onSelect={(model) => { setDraft({ ...draft, modelId: modelIdFor(selectedProvider || {}, model) }); setApiKey(''); setFlowError(''); setCredentialSaved(false); setCredentialLoading(true); }} />
-            <label className="block"><span className="mb-1 flex items-center gap-1 text-[11px] text-[#aaaaaa]">{text.apiKey}<span className="text-[#666666]">{requiresCredential ? `· ${text.required}` : `· ${text.optional}`}</span></span><input type="password" autoComplete="new-password" value={apiKey} onChange={(event) => { setApiKey(event.target.value); setFlowError(''); }} placeholder={credentialSaved ? text.credentialSaved : text.apiKeyPlaceholder} className="h-8 w-full border border-[#2b2b2b] bg-[#101010] px-2.5 text-[12px] text-[#eeeeee] outline-none placeholder:text-[#666666] focus-visible:border-[#8BC7FF] focus-visible:ring-1 focus-visible:ring-[#8BC7FF]" /></label>
-            {credentialLoading && <p role="status" className="m-0 text-[10px] text-[#777777]">{text.checkingCredential}</p>}
+            <label className="block"><span className="mb-1 flex items-center gap-1 text-[11px] text-[#aaaaaa]">{text.apiKey}<span className="text-[#666666]">{requiresCredential ? `· ${text.required}` : `· ${text.optional}`}</span></span><input type="password" autoComplete="new-password" value={apiKey} onChange={(event) => { setApiKey(event.target.value); setFlowError(''); }} placeholder={credentialSaved ? text.credentialSaved : text.apiKeyPlaceholder} className="h-8 w-full rounded-lg border border-[#2b2b2b] bg-[#191919] px-2.5 text-[12px] text-[#eeeeee] outline-none placeholder:text-[#666666] focus-visible:border-[#8BC7FF] focus-visible:ring-1 focus-visible:ring-[#8BC7FF]" /></label>
+            {credentialLoading && <p role="status" className="m-0 text-[10px] text-[#999999]">{text.checkingCredential}</p>}
           </> : <>
-            <label className="block"><span className="mb-1 block text-[11px] text-[#aaaaaa]">{text.name}</span><input autoFocus maxLength={48} value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder={text.namePlaceholder} className="h-8 w-full border border-[#2b2b2b] bg-[#101010] px-2.5 text-[12px] text-[#eeeeee] outline-none placeholder:text-[#666666] focus-visible:border-[#8BC7FF] focus-visible:ring-1 focus-visible:ring-[#8BC7FF]" /></label>
+            <label className="block"><span className="mb-1 block text-[11px] text-[#aaaaaa]">{text.name}</span><input autoFocus maxLength={48} value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder={text.namePlaceholder} className="h-8 w-full rounded-lg border border-[#2b2b2b] bg-[#191919] px-2.5 text-[12px] text-[#eeeeee] outline-none placeholder:text-[#666666] focus-visible:border-[#8BC7FF] focus-visible:ring-1 focus-visible:ring-[#8BC7FF]" /></label>
             <label className="block"><span className="mb-1 block text-[11px] text-[#aaaaaa]">{text.purpose}</span><textarea rows={3} maxLength={4000} value={draft.purpose} onChange={(event) => setDraft({ ...draft, purpose: event.target.value })} placeholder={text.purposePlaceholder} className="w-full resize-y border border-[#2b2b2b] bg-[#101010] px-2.5 py-2 text-[12px] leading-4 text-[#eeeeee] outline-none placeholder:text-[#666666] focus-visible:border-[#8BC7FF] focus-visible:ring-1 focus-visible:ring-[#8BC7FF]" /></label>
             <fieldset><legend className="mb-1 text-[11px] text-[#aaaaaa]">{text.color}</legend><div className="flex flex-wrap gap-1.5">{ORB_PALETTES.map((palette) => <label key={palette.id} className="relative grid h-8 w-8 cursor-pointer place-items-center border border-transparent has-[:checked]:border-white has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-[#8BC7FF]" title={language === 'es' ? palette.es : palette.en}>
               <input type="radio" name="orb-color" value={palette.orb} checked={draft.color === palette.orb} onChange={() => setDraft({ ...draft, color: palette.orb })} aria-label={language === 'es' ? palette.es : palette.en} className="sr-only" />
@@ -389,12 +425,12 @@ export default function OrbsPanel({ createMode = false, onCreated }: { createMod
         <footer className="flex items-center justify-between gap-3 border-t border-[#252525] px-4 py-2.5 sm:px-5">
           <div className="flex min-w-0 items-center gap-2.5" aria-live="polite" aria-label={`${text.color}: ${language === 'es' ? ORB_PALETTES.find((palette) => palette.orb === draft.color)?.es : ORB_PALETTES.find((palette) => palette.orb === draft.color)?.en}`}>
             <FluidOrb size={42} color={draft.color} active animateOnHover={false} themeTint={false} aria-hidden="true" />
-            <span className="truncate text-[11px] text-[#888888]">{draft.name.trim() || (language === 'es' ? 'Vista previa' : 'Preview')}</span>
+            <span className="truncate text-[11px] text-[#999999]">{draft.name.trim() || (language === 'es' ? 'Vista previa' : 'Preview')}</span>
           </div>
           <div className="flex shrink-0 justify-end gap-2">
             {step === 1 ? <>
               <button type="button" onClick={closeEditor} className="h-8 px-2 text-[11px] text-[#999999] hover:bg-[#222222] hover:text-[#eeeeee] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)">{text.cancel}</button>
-              <button key="orb-continue" type="button" onClick={(event) => { event.preventDefault(); void continueToDesign(); }} disabled={!selectedProvider || !selectedModel || credentialLoading} className="h-8 bg-[#292929] px-3 text-[11px] text-[#eeeeee] hover:bg-[#353535] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) disabled:cursor-not-allowed disabled:opacity-40">{text.continue}</button>
+              <button key="orb-continue" type="button" onClick={(event) => { event.preventDefault(); void continueToDesign(); }} disabled={saving || !selectedProvider || !selectedModel || credentialLoading} className="h-8 bg-[#292929] px-3 text-[11px] text-[#eeeeee] hover:bg-[#353535] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) disabled:cursor-not-allowed disabled:opacity-40">{workspaceMode ? (language === 'es' ? 'Guardar' : 'Save') : text.continue}</button>
             </> : <>
               <button type="button" onClick={() => { setFlowError(''); setStep(1); }} className="h-8 px-2 text-[11px] text-[#999999] hover:bg-[#222222] hover:text-[#eeeeee] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)">{text.back}</button>
               <button key="orb-save" type="submit" disabled={saving || !draft.name.trim() || !draft.purpose.trim()} className="h-8 bg-[#292929] px-3 text-[11px] text-[#eeeeee] hover:bg-[#353535] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) disabled:cursor-not-allowed disabled:opacity-40">{saving ? text.saving : text.save}</button>

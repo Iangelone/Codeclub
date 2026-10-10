@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { jsonSchema, Output, tool } from 'ai';
+import { jsonSchema, Output, RetryError, tool } from 'ai';
 import { MockLanguageModelV3, simulateReadableStream } from 'ai/test';
 import { adaptLangChainTools, runStream } from '../src/lib/engine/run.ts';
 import { createDynamicToolAccess } from '../src/lib/engine/tools.ts';
@@ -111,6 +111,12 @@ assert.equal(retryMetrics.find(metrics => metrics.status === 'retrying').retryDe
 assert.equal(retryMetrics.at(-1).attempt, 2);
 assert.equal(effects, 5, 'Rate-limit recovery must not replay the previous tool effect');
 assert.equal(throttled.doStreamCalls.length, 3);
+const wrappedLimit = new RetryError({ message: 'Retries exhausted', reason: 'maxRetriesExceeded', errors: [Object.assign(new Error('Provider quota'), { statusCode: 429, responseHeaders: { 'Retry-After': '0' } })] });
+const wrappedModel = new MockLanguageModelV3({ doStream: [stream([{ type: 'error', error: wrappedLimit }], 'error'), stream(text, 'stop')] });
+const wrappedMetrics = [];
+assert.equal(await runStream({ model: wrappedModel, system: 'Fixture', messages: [{ role: 'user', content: 'Recover wrapped provider quota' }], tools: {}, callbacks: { onTextDelta: () => {}, onModelCall: metrics => wrappedMetrics.push(metrics) } }), 'Verified.');
+assert.equal(wrappedMetrics.find(metrics => metrics.status === 'retrying').retryDelayMs, 0);
+assert.equal(wrappedModel.doStreamCalls.length, 2);
 const exhausted = new MockLanguageModelV3({ doStream: () => stream([{ type: 'error', error: rateLimit }], 'error') });
 await assert.rejects(runStream({ model: exhausted, system: 'Fixture', messages: [{ role: 'user', content: 'Bound recovery' }], tools: {}, callbacks: { onTextDelta: () => {} } }));
 assert.equal(exhausted.doStreamCalls.length, 3, 'Rate-limit recovery must stop after two retries');

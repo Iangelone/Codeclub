@@ -1,6 +1,7 @@
 /** Creates, selects, renames, and indexes local projects; project files stay behind the Electron bridge. */
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Folder } from 'lucide-react';
+import { usePopupKeyboard } from './ui/use-accessible-overlay';
 import { activeChatStore } from '../lib/store';
 import ChatInterface from './ChatInterface.tsx';
 import ExtensionsPanel from './ExtensionsPanel.tsx';
@@ -13,8 +14,21 @@ function WorkspaceManager({ catalog, defaultProvider, defaultModel }: { catalog:
   const language = useAppLanguage();
   const text = sidebarTranslations[language];
   const [selectedProject, setSelectedProject] = useState<SelectedProject | null>(null);
+  const selectedProjectRef = useRef<SelectedProject | null>(null);
+  const updateSelectedProject = useCallback((project: SelectedProject | null) => {
+    selectedProjectRef.current = project;
+    setSelectedProject(project);
+  }, []);
   const [showExtensions, setShowExtensions] = useState(false);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+  const projectPickerRef = useRef<HTMLDivElement>(null);
+  usePopupKeyboard(projectPickerRef, projectPickerOpen, () => setProjectPickerOpen(false));
+  useEffect(() => {
+    if (!projectPickerOpen) return;
+    const close = (event: PointerEvent) => { if (!projectPickerRef.current?.contains(event.target as Node)) setProjectPickerOpen(false); };
+    window.addEventListener('pointerdown', close);
+    return () => window.removeEventListener('pointerdown', close);
+  }, [projectPickerOpen]);
   const [availableProjects, setAvailableProjects] = useState<ProjectEntry[]>([]);
   const pendingChatRef = useRef<any>(null);
   const preserveSectionRef = useRef(false);
@@ -33,22 +47,22 @@ function WorkspaceManager({ catalog, defaultProvider, defaultModel }: { catalog:
     const handleProjectPanelSelection = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
       if (!detail.projectPath) {
-        setSelectedProject(null);
+        updateSelectedProject(null);
         return;
       }
-      setSelectedProject({ projectPath: detail.projectPath, projectName: detail.projectName });
+      updateSelectedProject({ projectPath: detail.projectPath, projectName: detail.projectName });
     };
     const handleProjectSelection = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
-      setSelectedProject(detail.selected === true && detail.projectPath
+      updateSelectedProject(detail.selected === true && detail.projectPath
         ? { projectPath: detail.projectPath, projectName: detail.projectName }
         : null);
     };
 
     const handleActiveProject = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
-      if (detail.projectPath) setSelectedProject({ projectPath: detail.projectPath, projectName: detail.projectName });
-      else if (Object.prototype.hasOwnProperty.call(detail, 'projectPath')) setSelectedProject(null);
+      if (detail.projectPath) updateSelectedProject({ projectPath: detail.projectPath, projectName: detail.projectName });
+      else if (Object.prototype.hasOwnProperty.call(detail, 'projectPath')) updateSelectedProject(null);
     };
 
     window.addEventListener('codeclub:project-panel-selected', handleProjectPanelSelection);
@@ -102,21 +116,35 @@ function WorkspaceManager({ catalog, defaultProvider, defaultModel }: { catalog:
       setShowExtensions(true);
       visit('extensions');
     };
-    const handleCloseExtensions = (event: Event) => { preserveSectionRef.current = Boolean((event as CustomEvent).detail?.preserveSection); setShowExtensions(false); visit(activeChatStore.get().id ? `chat:${activeChatStore.get().id}` : 'new-chat'); };
+    const handleCloseExtensions = (event: Event) => {
+      preserveSectionRef.current = Boolean((event as CustomEvent).detail?.preserveSection);
+      setShowExtensions(false);
+      if (preserveSectionRef.current) return;
+      const project = selectedProjectRef.current;
+      const chatId = activeChatStore.get().id;
+      const detail = { chatId, projectPath: project?.projectPath || '', projectName: project?.projectName || 'Home' };
+      const key = chatId ? `chat:${JSON.stringify([detail.projectPath, chatId])}` : `draft:${detail.projectPath}`;
+      visit(key, panelNavigation.current.chats[key] || detail);
+    };
     const handleOpenChat = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
       pendingChatRef.current = detail;
       setShowExtensions(false);
-      visit(detail.chatId ? `chat:${detail.chatId}` : 'new-chat', detail);
+      visit(detail.chatId ? `chat:${JSON.stringify([detail.projectPath || '', detail.chatId])}` : 'new-chat', detail);
       setChatOpenVersion((version) => version + 1);
     };
     const handleNavigateNewChat = () => {
       pendingChatRef.current = null;
-      setSelectedProject(null);
+      updateSelectedProject(null);
       setShowExtensions(false);
       window.dispatchEvent(new CustomEvent('codeclub:project-switch', { detail: { id: 'home', name: 'Home' } }));
     };
-    const handleOpenEmptyChat = () => { setShowExtensions(false); visit('new-chat'); };
+    const handleOpenEmptyChat = () => {
+      pendingChatRef.current = null;
+      setShowExtensions(false);
+      const project = selectedProjectRef.current;
+      visit(`draft:${project?.projectPath || ''}`, { projectPath: project?.projectPath || '', projectName: project?.projectName || 'Home' });
+    };
     const move = (direction: -1 | 1) => {
       const navigation = panelNavigation.current;
       const nextIndex = navigation.index + direction;
@@ -125,7 +153,10 @@ function WorkspaceManager({ catalog, defaultProvider, defaultModel }: { catalog:
       navigation.index = nextIndex;
       navigation.moving = true;
       if (key === 'extensions') { navigation.moving = false; window.dispatchEvent(new CustomEvent('codeclub:open-extensions')); }
-      else if (key === 'new-chat') window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
+      else if (key === 'new-chat' || key.startsWith('draft:')) {
+        const project = navigation.chats[key];
+        window.dispatchEvent(new CustomEvent('codeclub:project-switch', { detail: { id: project?.projectPath || 'home', path: project?.projectPath || '', name: project?.projectName || 'Home' } }));
+      }
       else if (navigation.chats[key]) window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: navigation.chats[key] }));
       publishNavigationState();
     };
@@ -137,8 +168,8 @@ function WorkspaceManager({ catalog, defaultProvider, defaultModel }: { catalog:
     window.addEventListener('codeclub:open-extensions', handleOpenExtensions);
     window.addEventListener('codeclub:close-extensions', handleCloseExtensions);
     window.addEventListener('codeclub:open-empty-chat', handleOpenEmptyChat);
-    window.addEventListener('codeclub:right-panel-back', handleBack);
-    window.addEventListener('codeclub:right-panel-forward', handleForward);
+    window.addEventListener('codeclub:left-panel-back', handleBack);
+    window.addEventListener('codeclub:left-panel-forward', handleForward);
     window.addEventListener('codeclub:left-panel-navigation-request', handleNavigationRequest);
     return () => {
       window.removeEventListener('codeclub:open-extensions', handleOpenExtensions);
@@ -146,8 +177,8 @@ function WorkspaceManager({ catalog, defaultProvider, defaultModel }: { catalog:
       window.removeEventListener('codeclub:open-empty-chat', handleOpenEmptyChat);
       window.removeEventListener('codeclub:open-chat', handleOpenChat);
       window.removeEventListener('codeclub:navigate-new-chat', handleNavigateNewChat);
-      window.removeEventListener('codeclub:right-panel-back', handleBack);
-      window.removeEventListener('codeclub:right-panel-forward', handleForward);
+      window.removeEventListener('codeclub:left-panel-back', handleBack);
+      window.removeEventListener('codeclub:left-panel-forward', handleForward);
       window.removeEventListener('codeclub:left-panel-navigation-request', handleNavigationRequest);
     };
   }, [showExtensions]);
@@ -185,9 +216,9 @@ function WorkspaceManager({ catalog, defaultProvider, defaultModel }: { catalog:
   return (
     <div className="workspace-panels group relative flex h-full w-full min-w-0 min-h-0 flex-col overflow-hidden">
       <div className="absolute left-0 top-0 z-[60] h-12 w-full" role="toolbar" aria-label={language === 'en' ? 'Quick access' : 'Accesos rápidos'}>
-        {projectPickerOpen && <div className="absolute left-1/2 top-12 z-50 grid w-[230px] -translate-x-1/2 gap-1 rounded-xl border border-[#2b2b2b] bg-[#121212] p-1.5" onClick={(event) => event.stopPropagation()}>
-          <button type="button" onClick={() => selectActiveProject({ path: '', name: language === 'en' ? 'No project' : 'Sin proyecto' })} className="flex min-h-[32px] items-center gap-2 rounded-lg border-0 bg-transparent px-2.5 text-left text-xs text-[#bdbdbd] hover:bg-[#1e1e1e] hover:text-[#eeeeee]"><Folder size={14} /><span className="min-w-0 flex-1 truncate">{language === 'en' ? 'No project' : 'Sin proyecto'}</span></button>
-          {availableProjects.length === 0 ? <div className="px-3 py-2 text-[11px] text-[#777777]">{language === 'en' ? 'No indexed projects' : 'No hay proyectos indexados'}</div> : availableProjects.map((project) => <button key={project.path} type="button" onClick={() => selectActiveProject(project)} className="flex min-h-[32px] items-center gap-2 rounded-lg border-0 bg-transparent px-2.5 text-left text-xs text-[#bdbdbd] hover:bg-[#1e1e1e] hover:text-[#eeeeee]"><Folder size={14} /><span className="min-w-0 flex-1 truncate">{project.name}</span></button>)}
+        {projectPickerOpen && <div ref={projectPickerRef} role="menu" aria-label={text.projects} className="absolute left-1/2 top-12 z-50 grid w-[230px] -translate-x-1/2 gap-1 rounded-xl border border-[#2b2b2b] bg-[#121212] p-1.5" onClick={(event) => event.stopPropagation()}>
+          <button type="button" role="menuitemradio" aria-checked={!selectedProject?.projectPath} onClick={() => selectActiveProject({ path: '', name: language === 'en' ? 'No project' : 'Sin proyecto' })} className="flex min-h-[32px] items-center gap-2 rounded-lg border-0 bg-transparent px-2.5 text-left text-xs text-[#bdbdbd] hover:bg-[#1e1e1e] hover:text-[#eeeeee]"><Folder size={14} aria-hidden="true" /><span className="min-w-0 flex-1 truncate">{language === 'en' ? 'No project' : 'Sin proyecto'}</span></button>
+          {availableProjects.length === 0 ? <div className="px-3 py-2 text-[11px] text-[#999999]">{language === 'en' ? 'No indexed projects' : 'No hay proyectos indexados'}</div> : availableProjects.map((project) => <button key={project.path} type="button" role="menuitemradio" aria-checked={selectedProject?.projectPath === project.path} onClick={() => selectActiveProject(project)} className="flex min-h-[32px] items-center gap-2 rounded-lg border-0 bg-transparent px-2.5 text-left text-xs text-[#bdbdbd] hover:bg-[#1e1e1e] hover:text-[#eeeeee]"><Folder size={14} aria-hidden="true" /><span className="min-w-0 flex-1 truncate">{project.name}</span></button>)}
         </div>}
       </div>
       <div className={`workspace-pane acrylic-panel min-h-0 min-w-0 flex-1 ${showExtensions ? 'overflow-hidden bg-(--codeclub-center)' : 'overflow-visible bg-transparent'}`}>

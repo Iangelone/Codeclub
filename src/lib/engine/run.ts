@@ -147,12 +147,23 @@ async function runStreamInternal({ model, system, messages, tools, structuredOut
 
         if (streamError != null) {
           await Promise.allSettled([result.usage, result.response]);
-          const error = streamError as { name?: string; message?: string; statusCode?: number; responseHeaders?: Record<string, string> };
-          const rateLimited = error.statusCode === 429 || /RateLimitError$/.test(error.name || '');
-          const temporarilyUnavailable = [500, 502, 503, 504].includes(error.statusCode ?? 0) || /service temporarily unavailable/i.test(error.message || '');
+          type ProviderError = { name?: string; message?: string; statusCode?: number; responseHeaders?: Record<string, string>; lastError?: unknown; cause?: unknown };
+          const error = streamError as ProviderError;
+          // AI SDK retries and Gateway errors wrap the provider's status and headers.
+          const errors: ProviderError[] = [];
+          let nested: unknown = error;
+          while (nested && typeof nested === 'object' && errors.length < 8 && !errors.includes(nested as ProviderError)) {
+            const current = nested as ProviderError;
+            errors.push(current);
+            nested = current.lastError || current.cause;
+          }
+          const rateLimited = errors.some(item => item.statusCode === 429 || /RateLimitError$/.test(item.name || ''));
+          const temporarilyUnavailable = errors.some(item => [500, 502, 503, 504].includes(item.statusCode ?? 0) || /service temporarily unavailable/i.test(item.message || ''));
           if (!requestedTool && state.retries < 2 && (rateLimited || temporarilyUnavailable)) {
-            const retryAfter = Number(error.responseHeaders?.['retry-after']);
-            const delay = Number.isFinite(retryAfter) && retryAfter >= 0 ? retryAfter * 1000 : (rateLimited ? 30000 : 1000) * (state.retries + 1);
+            const retryHeader = errors.flatMap(item => Object.entries(item.responseHeaders || {})).find(([name]) => name.toLowerCase() === 'retry-after')?.[1];
+            const retrySeconds = retryHeader === undefined ? NaN : Number(retryHeader);
+            const retryAfter = Number.isFinite(retrySeconds) ? retrySeconds * 1000 : retryHeader ? Date.parse(retryHeader) - Date.now() : NaN;
+            const delay = Number.isFinite(retryAfter) && retryAfter >= 0 ? retryAfter : (rateLimited ? 30000 : 1000) * (state.retries + 1);
             await reportMetric({ status: 'retrying', errorName: error.name || 'Error', retryDelayMs: Math.min(delay, 60000) });
             content = contentBefore;
             reasoning = reasoningBefore;

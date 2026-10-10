@@ -1,5 +1,5 @@
 /** Privileged desktop boundary: owns windows, filesystem, processes, and IPC handlers used by the renderer preload. */
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, safeStorage, screen, shell, Tray } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, powerMonitor, safeStorage, screen, shell, Tray } from 'electron';
 import { runProjectCommand } from './run-command.js';
 import { readProjectGit } from './git-read.js';
 import { TaskScheduler, type ScheduledTask, type TaskRun } from './task-scheduler.js';
@@ -24,6 +24,8 @@ import { createExternalBrowserControl } from './external-browser.js';
 import { EDGE_EXTENSION_ID, edgeExtensionPage } from './browser-extension-config.js';
 import { createBrowserExtensionBridge } from './browser-extension-bridge.js';
 import { createFloatingChat } from './floating-chat.js';
+import { isAdministrator, launchAdministrator, foregroundApplication } from './administrator.js';
+import { OrbLearning, proactiveOrbTask, type LearningOrb } from './orb-learning.js';
 const { autoUpdater } = electronUpdater;
 
 type Project = { id: string; name: string; path: string; createdAt: string; lastOpenedAt?: string };
@@ -70,6 +72,11 @@ let fullscreenTransition: 'entering' | 'leaving' | null = null;
 let floatingChat: ReturnType<typeof createFloatingChat> | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
+let administratorRestartPending = false;
+let orbLearning: OrbLearning | undefined;
+let orbLearningLanguage: 'es' | 'en' = 'es';
+let orbLearningOrbs: () => LearningOrb[] = () => [];
+const orbLearningActive = () => Boolean(!isQuitting && mainWindow && mainWindow.isVisible() && !mainWindow.isMinimized() && powerMonitor.getSystemIdleTime() < 300 && powerMonitor.getSystemIdleState(300) !== 'locked');
 let selectedSessionChat: SessionChat | null = null;
 let credentialVault: CredentialVault;
 let taskScheduler: TaskScheduler | undefined;
@@ -94,7 +101,10 @@ function publishTaskChange() {
   if (isQuitting) return;
   for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed() && !win.webContents.isDestroyed() && !taskWorkers.has(win.webContents.id)) win.webContents.send('codeclub:scheduled-tasks-changed');
 }
-function executeScheduledTask(task: ScheduledTask, run: TaskRun): Promise<void> {
+async function executeScheduledTask(task: ScheduledTask, run: TaskRun): Promise<void> {
+  if (task.proactive && (!orbLearningActive() || !orbLearningOrbs().some(orb => orb.id === task.orbId && orb.maximumAutonomy === true))) throw new Error('TASK_CANCELLED');
+  // A saved preference is not an administrator token. Recheck every execution.
+  if (task.requiresAdministrator && task.allowComputer !== false && !(await isAdministrator())) throw new Error('TASK_ADMIN_REQUIRED');
   return new Promise((resolve, reject) => {
     const worker = new BrowserWindow({ show: false, webPreferences: { preload: path.join(root, '..', 'electron', 'preload.cjs'), contextIsolation: true, nodeIntegration: false, webviewTag: true, backgroundThrottling: false } });
     const owner = worker.webContents.id;
@@ -554,7 +564,7 @@ async function listAgentPlugins(projectPath: string) {
         let mcpServers: Record<string, unknown> = {};
         try { const mcp = JSON.parse(await fs.readFile(path.join(root, 'mcp.json'), 'utf8')); mcpServers = mcp.mcpServers || {}; } catch { /* MCP opcional. */ }
         plugins.push({ id, name: manifest.displayName || manifest.interface?.displayName || id, version: manifest.version, description: manifest.description, root, source: entry.scope, scope: entry.scope, projectPath: entry.scope === 'project' ? path.resolve(projectPath) : undefined, skills, mcpServers, warnings: [], builtIn: entry.builtIn === true });
-      } catch { /* Manifest inválido: no se carga. */ }
+      } catch { /* Invalid manifest: skip loading. */ }
     }
   }
   return plugins.sort((left, right) => String(left.name).localeCompare(String(right.name)));
@@ -941,7 +951,13 @@ function createWindow() {
     if (accessibilityDebugMode) mainWindow?.webContents.openDevTools({ mode: 'detach' });
   });
   const devUrl = process.env.CODECLUB_NEXT_DEV_URL;
-  if (devUrl) void mainWindow.loadURL(devUrl); else void mainWindow.loadFile(path.join(root, '..', 'out', 'index.html'));
+  const orbSetup = process.argv.includes('--orb-admin-setup');
+  const orbQuery = orbSetup ? { orbSetup: '1', orbComputer: '1', orbMaximumAutonomy: process.argv.includes('--orb-maximum-autonomy=1') ? '1' : '0' } : undefined;
+  if (devUrl) {
+    const url = new URL(devUrl);
+    if (orbQuery) for (const [key, value] of Object.entries(orbQuery)) url.searchParams.set(key, value);
+    void mainWindow.loadURL(url.toString());
+  } else void mainWindow.loadFile(path.join(root, '..', 'out', 'index.html'), { query: orbQuery });
 }
 
 function publishAutoUpdate(state: AutoUpdateState) {
@@ -981,6 +997,7 @@ app.whenReady().then(async () => {
   credentialVault=new CredentialVault(app.getPath('userData'),safeStorage);
   credentialVault.migrate(path.join(app.getPath('userData'),'settings.json'));
   taskScheduler = new TaskScheduler(path.join(app.getPath('userData'), 'scheduled-tasks.json'), executeScheduledTask, publishTaskChange, (task, run) => {
+    if (!task.proactive) orbLearning?.observeOutcome(run.status === 'completed' ? 'task-completed' : 'task-failed');
     if (task.notifications === 'Sin notificaciones' || (task.notifications === 'Solo errores' && run.status === 'completed')) return;
     if (Notification.isSupported()) {
       const notice = new Notification({ title: task.name, body: task.language === 'en' ? (run.status === 'completed' ? 'Task completed' : 'Task needs attention') : (run.status === 'completed' ? 'Tarea completada' : 'La tarea requiere atención') });
@@ -1041,7 +1058,24 @@ app.whenReady().then(async () => {
   chatStore.migrateGlobalSettings();
   const settingsStore = new SettingsStore(path.join(app.getPath('userData'), 'settings.json'), key => {
     for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('codeclub:settings-changed', { key });
+    if (key === 'codeclub_orbs') orbLearning?.refresh();
+    if (key === 'codeclub_orbs') for (const worker of taskWorkers.values()) if (worker.task.proactive && !orbLearningOrbs().some(orb => orb.id === worker.task.orbId && orb.maximumAutonomy === true)) worker.complete('TASK_CANCELLED');
   });
+  orbLearningOrbs = () => { const saved = settingsStore.get('codeclub_orbs'); return Array.isArray(saved) ? saved.filter(orb => orb && typeof orb.id === 'string') : []; };
+  orbLearning = new OrbLearning(path.join(app.getPath('userData'), 'orb-learning.json'), {
+    active: orbLearningActive,
+    orbs: orbLearningOrbs,
+    upcoming: () => taskScheduler?.upcoming() || [],
+    busy: chatId => sessionHub.list().some(session => session.chatId === chatId && session.busy),
+    suggest: async (orb, context) => {
+      const id = `orb_proactive_${orb.id}`;
+      const existing = taskScheduler!.list('').find(task => task.id === id);
+      if (existing?.runs.some(run => ['running', 'queued'].includes(run.status))) return;
+      taskScheduler!.save('', proactiveOrbTask(orb, context, orbLearningLanguage));
+      taskScheduler!.run('', id);
+    },
+  });
+  orbLearning.start();
   ipcMain.handle('codeclub:settings-get', (event, key: string) => { requireAppSender(event); return settingsStore.get(key); });
   ipcMain.handle('codeclub:settings-set', (event, key: string, value: unknown) => { requireAppSender(event); settingsStore.set(key, value); });
   ipcMain.handle('codeclub:settings-remove', (event, key: string) => { requireAppSender(event); settingsStore.set(key, undefined, true); });
@@ -1062,7 +1096,11 @@ app.whenReady().then(async () => {
   ipcMain.handle('chats:turn-page', (_event, project: string, id: string, before?: number, limit?: number, direction?: 'before'|'after') => chatStore.turnPage(project, id, before, limit, direction));
   ipcMain.handle('chats:context', (_event, project: string, id: string) => chatStore.context(project,id));
   ipcMain.handle('chats:tail', (_event, project: string, id: string, start: number, messages: any[], expectedTotal?:number) => chatStore.saveTail(project, id, start, messages,expectedTotal));
-  ipcMain.handle('chats:append', (_event, project: string, id: string, message: any) => chatStore.append(project, id, message));
+  ipcMain.handle('chats:append', async (_event, project: string, id: string, message: any) => {
+    const result = await chatStore.append(project, id, message);
+    if (!project && message?.role === 'user' && !message.hidden) orbLearning?.respond(id);
+    return result;
+  });
   ipcMain.handle('chats:all', (_event, project: string, id: string) => chatStore.all(project, id));
   ipcMain.handle('chats:search', (_event, project: string, id: string, query: string) => chatStore.search(project, id, query));
   ipcMain.handle('chats:copy', (_event, from: string, to: string, id: string) => chatStore.copy(from, to, id));
@@ -1103,6 +1141,46 @@ app.whenReady().then(async () => {
   ipcMain.handle('path:app-config', () => app.getPath('userData'));
   ipcMain.handle('path:app-cache', () => path.join(app.getPath('userData'), 'cache'));
   ipcMain.handle('native:invoke', async (event, payload: { command: string; args?: Record<string, unknown> }) => {
+    if (payload.command === 'codeclub_orb_observe') {
+      requireTaskUi(event);
+      orbLearningLanguage = payload.args?.language === 'en' ? 'en' : 'es';
+      orbLearning?.observe(String(payload.args?.surface || ''), Array.isArray(payload.args?.ready) ? payload.args.ready.filter((id): id is string => typeof id === 'string') : []);
+      if (orbLearningActive() && orbLearningOrbs().some(orb => orb.maximumAutonomy === true && orb.allowComputer === true)) void (async () => {
+        const elevated = await isAdministrator();
+        const allowed = orbLearningOrbs().filter(orb => orb.maximumAutonomy === true && orb.allowComputer === true && (!orb.requiresAdministrator || elevated));
+        if (allowed.length) orbLearning?.observeApplication(await foregroundApplication(), allowed.map(orb => orb.id));
+      })().catch(() => undefined);
+      void orbLearning?.tick().catch(() => undefined);
+      return true;
+    }
+    if (payload.command === 'codeclub_orb_proactive_result') {
+      const worker = taskWorkers.get(event.sender.id);
+      if (!worker?.task.proactive || !worker.task.orbId) throw new Error('Unauthorized proactive result');
+      // A slow provider must not announce a task that was paused, rescheduled, or already started.
+      const anticipated = JSON.parse(worker.task.prompt).upcomingTasks;
+      if (Array.isArray(anticipated) && anticipated.length && !anticipated.every(task => taskScheduler!.upcoming().some(current => current.name === task.name && current.projectPath === task.projectPath && current.scheduledAt === task.scheduledAt))) return false;
+      return orbLearning?.result(worker.task.orbId, String(payload.args?.message || '').slice(0, 1500)) || false;
+    }
+    if (payload.command === 'codeclub_admin_status' || payload.command === 'codeclub_request_admin') {
+      requireTaskUi(event);
+      if (administratorRestartPending) throw new Error('ORB_ADMIN_BUSY');
+      const elevated = await isAdministrator();
+      if (payload.command === 'codeclub_admin_status' || elevated) return { elevated, computerName: process.env.COMPUTERNAME || '' };
+      // Do not interrupt active agents or terminals for an elevation restart.
+      if (taskWorkers.size || activeCommands.size || nativeTerminals.size || sessionHub.list().some(session => session.busy)) throw new Error('ORB_ADMIN_BUSY');
+      if (administratorRestartPending) throw new Error('ORB_ADMIN_BUSY');
+      administratorRestartPending = true;
+      app.releaseSingleInstanceLock();
+      try {
+        await launchAdministrator(process.execPath, app.isPackaged ? undefined : app.getAppPath(), payload.args?.maximumAutonomy === true);
+      } catch (error) {
+        administratorRestartPending = false;
+        app.requestSingleInstanceLock();
+        throw error;
+      }
+      setTimeout(() => app.quit(), 250);
+      return { elevated: false, restarting: true };
+    }
     if (payload.command.startsWith('codeclub_scheduled_')) {
       requireTaskUi(event);
       const project = String(payload.args?.projectPath || '');
@@ -1142,6 +1220,10 @@ app.whenReady().then(async () => {
       if(request)request.requestId=`${event.sender.id}:${String(request.requestId||randomUUID())}`;
     }
     const result = await invokeNativeCommand(payload.command, payload.args, worker?.controller.signal);
+    if (!worker?.task.proactive) {
+      const outcome = payload.command === 'codeclub_write_file' ? 'edit' : payload.command === 'codeclub_run_command' ? 'command' : payload.command === 'codeclub_browser_action' ? 'browser' : undefined;
+      if (outcome) orbLearning?.observeOutcome(outcome);
+    }
     if (worker && payload.command === 'codeclub_terminal_create') worker.terminals.add(String(result.id));
     if (worker && payload.command === 'codeclub_terminal_list') return (result as any[]).filter(terminal => worker.terminals.has(String(terminal.id)));
     return result;
@@ -1210,5 +1292,5 @@ app.whenReady().then(async () => {
   app.on('activate', showMainWindow);
 });
 
-app.on('before-quit', () => { isQuitting = true; for (const stop of activeCommands) stop(); for (const session of nativeMcpSessions.values()) session.close(); nativeMcpSessions.clear(); taskScheduler?.stop(); for (const worker of taskWorkers.values()) worker.complete('TASK_INTERRUPTED'); floatingChat?.destroy(); desktopControl.stop(); destroyComputerOverlay(); tray?.destroy(); });
+app.on('before-quit', () => { isQuitting = true; for (const stop of activeCommands) stop(); for (const session of nativeMcpSessions.values()) session.close(); nativeMcpSessions.clear(); taskScheduler?.stop(); orbLearning?.stop(); for (const worker of taskWorkers.values()) worker.complete('TASK_INTERRUPTED'); floatingChat?.destroy(); desktopControl.stop(); destroyComputerOverlay(); tray?.destroy(); });
 app.on('window-all-closed', () => { /* La app permanece disponible en la bandeja. */ });

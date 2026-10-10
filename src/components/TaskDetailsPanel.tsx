@@ -30,7 +30,7 @@ export default function TaskDetailsPanel({ task }: { task?: ScheduledTask }) {
     <div className="mx-auto max-w-[720px]">
       <div className="mb-5 flex items-center gap-2 text-[12px] text-(--codeclub-text-muted)"><Clock size={15} aria-hidden="true" />{sidebarTranslations[language].tasks}</div>
       <h1 className="m-0 text-[24px] font-semibold text-(--codeclub-text-strong)">{task.name}</h1>
-      <p className="mt-2 text-[12px] text-(--codeclub-text-muted)">{task.status === 'active' ? text.active : text.paused} · {task.interval} · {task.interval === 'Personalizado' ? task.every : task.time}</p>
+      <p role="status" aria-atomic="true" className="mt-2 text-[12px] text-(--codeclub-text-muted)">{task.status === 'active' ? text.active : text.paused} · {task.interval} · {task.interval === 'Personalizado' ? task.every : task.time}</p>
       <p className="mt-6 whitespace-pre-wrap text-[13px] leading-6 text-(--codeclub-text)">{task.prompt}</p>
       <div className="mt-6 flex flex-wrap gap-2">
         <button type="button" disabled={pending || running} onClick={() => void change('run')} className="inline-flex h-8 items-center gap-2 rounded-lg border border-[#2b2b2b] bg-[#202020] px-3 text-[12px] text-(--codeclub-text-strong) hover:bg-[#292929] disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)"><Play size={14} aria-hidden="true" />{running ? text.running : text.runNow}</button>

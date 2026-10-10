@@ -4,6 +4,10 @@ import { useEffect, useState } from 'react';
 export type AppLanguage = 'es' | 'en';
 
 export const LANGUAGE_STORAGE_KEY = 'codeclub-language';
+export const accessibilityTranslations = {
+  es: { remove: 'Quitar', navigation: 'Navegación', attachments: 'Archivos adjuntos' },
+  en: { remove: 'Remove', navigation: 'Navigation', attachments: 'Attachments' },
+} as const;
 export const toolConsoleTranslations = {
   es: { title: 'Consola de herramienta', input: 'Entrada', output: 'Salida', running: 'En curso', failed: 'Falló', done: 'Listo', waiting: 'Esperando el resultado…', empty: 'Sin salida', truncated: 'Salida recortada para mostrarla' },
   en: { title: 'Tool console', input: 'Input', output: 'Output', running: 'Running', failed: 'Failed', done: 'Done', waiting: 'Waiting for the result…', empty: 'No output', truncated: 'Output truncated for display' },
@@ -192,17 +196,22 @@ export const agentTextSelectionTranslations = {
   en: { addToChat: 'Add to chat', addComment: 'Add a comment', commentPlaceholder: 'Add an optional comment…', moreDetails: 'More details', toolbar: 'Actions for selected text', detailPrompt: 'Explain this part in more detail:', selectedReference: 'Selected text', removeReference: 'Remove reference' },
 } as const;
 
+export const customizeSidebarTranslations = {
+  es: { included: 'Integrados', global: 'Globales', project: 'Proyecto', empty: 'Sin elementos' },
+  en: { included: 'Built in', global: 'Global', project: 'Project', empty: 'No items' },
+} as const;
+
 export const sidebarTranslations = {
   es: {
     downloadLatestRelease: 'Descargar la última versión de Codeclub', downloadReleaseError: 'No se pudo abrir la descarga. Volvé a intentarlo.',
     tasks: 'Tareas', newTask: 'Nueva tarea', noTasks: 'Sin tareas programadas', pinned: 'Fijados', humanReview: 'Revisión humana', blocked: 'Bloqueados', personal: 'Personal', pinChat: 'Fijar chat', unpinChat: 'Desfijar chat', noChats: 'Sin chats', pinError: 'No se pudo guardar el chat fijado.', home: 'Inicio', chat: 'Chat', projects: 'Proyectos', agents: 'Agentes', extensions: 'Extensiones', chats: 'Chats', settings: 'Ajustes', orbs: 'Orbes', devices: 'Varios', recent: 'Recientes', support: 'Apoyar Codeclub',
-    projectName: 'Nombre del proyecto', renameProject: 'Cambiar nombre del proyecto', saveProjectName: 'Guardar nombre del proyecto', renameProjectError: 'No se pudo cambiar el nombre del proyecto.', newFile: 'Nuevo archivo', newFolder: 'Nueva carpeta', ready: 'Listo para revisión', workspace: 'Espacio de trabajo', leftSidebar: 'Barra lateral izquierda', mainNavigation: 'Navegación principal', chatMenu: 'Menú del chat', donation: 'Hacer una donación',
+    projectName: 'Nombre del proyecto', renameProject: 'Cambiar nombre del proyecto', saveProjectName: 'Guardar nombre del proyecto', renameProjectError: 'No se pudo cambiar el nombre del proyecto.', newFile: 'Nuevo archivo', newFolder: 'Nueva carpeta', ready: 'Listo para revisión', workspace: 'Espacio de trabajo', leftSidebar: 'Barra lateral izquierda', mainNavigation: 'Navegación principal', chatMenu: 'Menú del chat', projectMenu: 'Menú del proyecto', renameProjectMenu: 'Cambiar nombre', copyProjectPath: 'Copiar ruta', donation: 'Hacer una donación',
     couldNotCreate: 'No se pudo crear', newChat: 'Nuevo chat', yourOrb: 'Tu orbe', createNew: 'Crear nuevo...', open: 'Abrir', close: 'Cerrar', rename: 'Renombrar', delete: 'Eliminar', clearChats: 'Limpiar chats', clearHistory: 'Limpiar historial', clearProjectChats: 'Limpiar todos los chats de este proyecto', newName: 'Nuevo nombre', deleteElement: 'Eliminar elemento', selectFolder: 'Seleccionar carpeta para el proyecto',
   },
   en: {
     downloadLatestRelease: 'Download the latest Codeclub release', downloadReleaseError: 'Could not open the download. Please try again.',
     tasks: 'Tasks', newTask: 'New task', noTasks: 'No scheduled tasks', pinned: 'Pinned', humanReview: 'Human review', blocked: 'Blocked', personal: 'Personal', pinChat: 'Pin chat', unpinChat: 'Unpin chat', noChats: 'No chats', pinError: 'Could not save the pinned chat.', home: 'Home', chat: 'Chat', projects: 'Projects', agents: 'Agents', extensions: 'Extensions', chats: 'Chats', settings: 'Settings', orbs: 'Orbs', devices: 'Miscellaneous', recent: 'Recent', support: 'Support Codeclub',
-    projectName: 'Project name', renameProject: 'Rename project', saveProjectName: 'Save project name', renameProjectError: 'Could not rename the project.', newFile: 'New file', newFolder: 'New folder', ready: 'Ready for review', workspace: 'Workspace', leftSidebar: 'Left sidebar', mainNavigation: 'Main navigation', chatMenu: 'Chat menu', donation: 'Make a donation',
+    projectName: 'Project name', renameProject: 'Rename project', saveProjectName: 'Save project name', renameProjectError: 'Could not rename the project.', newFile: 'New file', newFolder: 'New folder', ready: 'Ready for review', workspace: 'Workspace', leftSidebar: 'Left sidebar', mainNavigation: 'Main navigation', chatMenu: 'Chat menu', projectMenu: 'Project menu', renameProjectMenu: 'Rename', copyProjectPath: 'Copy path', donation: 'Make a donation',
     couldNotCreate: 'Could not create', newChat: 'New chat', yourOrb: 'Your orb', createNew: 'Create new...', open: 'Open', close: 'Close', rename: 'Rename', delete: 'Delete', clearChats: 'Clear chats', clearHistory: 'Clear history', clearProjectChats: 'Clear all chats from this project', newName: 'New name', deleteElement: 'Delete item', selectFolder: 'Select folder for project',
   },
 } as const;
@@ -222,9 +231,19 @@ export const taskDetailsTranslations = {
   en: { active: 'Active', paused: 'Paused', running: 'Running…', runNow: 'Run now', pause: 'Pause', resume: 'Resume', openChat: 'Open latest chat', error: 'Could not update the task.' },
 } as const;
 
+export const orbUpcomingTaskTranslations = {
+  es: { scheduled: (name: string, time: string) => `La tarea «${name}» está programada para las ${time}. Se intentará ejecutar al horario y las acciones pueden requerir aprobación; ¿querés ayuda para prepararla?` },
+  en: { scheduled: (name: string, time: string) => `The task “${name}” is scheduled for ${time}. Its runner will attempt it then and actions may require approval; would you like help preparing it?` },
+};
+
+export const orbSidebarTranslations = {
+  es: { sidebar: 'Panel del orbe', configure: 'Configurar', integrations: 'Integraciones', newOrb: 'Nuevo orbe', chooseModel: 'Elegir proveedor y modelo', apiKey: 'API key', configured: 'Configurado', pending: 'Pendiente', computers: 'Equipos', devices: 'Dispositivos', clearChat: 'Limpiar chat', confirmClear: 'Confirmar limpieza', clearError: 'No se pudo limpiar el chat.', cancel: 'Cancelar', orb: 'Tu orbe', active: 'Activo', idle: 'En espera', close: 'Cerrar panel del orbe', settings: 'Configuración del orbe', used: 'Utilizado', browser: 'Navegador', noDevices: 'Sin dispositivos utilizados', workspace: 'Espacio del orbe', thisComputer: 'Computadora', available: 'Disponible', connected: 'Conectado', noAccess: 'Sin acceso', activity: 'Actividad', noActivity: 'Sin actividad todavía', activityError: 'No se pudo cargar o ejecutar la actividad.', noObjective: 'Primero indicá una tarea en el chat.', actions: 'Acciones del orbe', pauseAutonomy: 'Pausar autonomía', resumeAutonomy: 'Activar autonomía', run: 'Ejecutar en segundo plano', pause: 'Pausar', working: 'Trabajando', status: { queued: 'Tarea en cola', running: 'Tarea en curso', completed: 'Tarea completada', failed: 'Tarea fallida', cancelled: 'Tarea cancelada', interrupted: 'Tarea interrumpida', blocked: 'Tarea bloqueada', unverified: 'Resultado sin verificar' } },
+  en: { sidebar: 'Orb sidebar', configure: 'Configure', integrations: 'Integrations', newOrb: 'New orb', chooseModel: 'Choose provider and model', apiKey: 'API key', configured: 'Configured', pending: 'Pending', computers: 'Computers', devices: 'Devices', clearChat: 'Clear chat', confirmClear: 'Confirm clearing', clearError: 'Could not clear the chat.', cancel: 'Cancel', orb: 'Your orb', active: 'Active', idle: 'Idle', close: 'Close orb sidebar', settings: 'Orb settings', used: 'Used', browser: 'Browser', noDevices: 'No devices used', workspace: 'Orb workspace', thisComputer: 'Computer', available: 'Available', connected: 'Connected', noAccess: 'No access', activity: 'Activity', noActivity: 'No activity yet', activityError: 'Could not load or run activity.', noObjective: 'First describe a task in the chat.', actions: 'Orb actions', pauseAutonomy: 'Pause autonomy', resumeAutonomy: 'Enable autonomy', run: 'Run in background', pause: 'Pause', working: 'Working', status: { queued: 'Task queued', running: 'Task running', completed: 'Task completed', failed: 'Task failed', cancelled: 'Task cancelled', interrupted: 'Task interrupted', blocked: 'Task blocked', unverified: 'Result unverified' } },
+} as const;
+
 export const orbWorkspaceTranslations = {
-  es: { changeShape: 'Cambiar forma de todos los orbes', title: 'Elegí dónde puede trabajar tu orbe', description: 'Tu orbe tiene un navegador separado para trabajar. También podés darle acceso a este equipo.', workspace: 'Espacio de tu orbe', workspaceDescription: 'Un navegador separado para investigar y trabajar en la web.', thisComputer: 'Este equipo', computerDescription: 'Acceder a archivos y trabajar con tus aplicaciones.', continue: 'Continuar' },
-  en: { changeShape: 'Change the shape of all orbs', title: 'Choose where your orb can work', description: 'Your orb has a separate browser for work. You can also give it access to this computer.', workspace: 'Your orb’s workspace', workspaceDescription: 'A separate browser for research and work on the web.', thisComputer: 'This computer', computerDescription: 'Access files and work with your applications.', continue: 'Continue' },
+  es: { changeShape: 'Cambiar forma de todos los orbes', title: 'Elegí dónde puede trabajar tu orbe', description: 'Elegí la autonomía de tu orbe.', setupError: 'No se pudo iniciar el orbe.', workspace: 'Máxima autonomía', workspaceDescription: 'Actúa sin pedir aprobación.', thisComputer: 'Acceso a PC', computerDescription: 'Archivos y apps · administrador.', continue: 'Continuar', requesting: 'Solicitando permiso…', adminError: 'No se autorizó el acceso administrador.', busy: 'Detené los agentes y cerrá las terminales antes de reiniciar como administrador.' },
+  en: { changeShape: 'Change the shape of all orbs', title: 'Choose where your orb can work', description: 'Choose your orb’s autonomy.', setupError: 'Could not start the orb.', workspace: 'Maximum autonomy', workspaceDescription: 'Acts without asking for approval.', thisComputer: 'PC access', computerDescription: 'Files and apps · administrator.', continue: 'Continue', requesting: 'Requesting permission…', adminError: 'Administrator access was not authorized.', busy: 'Stop agents and close terminals before restarting as administrator.' },
 } as const;
 
 export const orbsTranslations = {
@@ -267,3 +286,135 @@ export const resourceMenuTranslations = {
   es: { resources: 'Recursos seleccionados', remove: 'Quitar referencia', plugin: 'Extensión', extension: 'Extensión integrada', mcp: 'MCP', orb: 'Orbe', skill: 'Skill', global: 'Global', project: 'Proyecto', readOnly: 'Integrado · solo lectura', createExtension: 'Crear extensión', createSkill: 'Crear skill', createMcp: 'Crear MCP', createOrb: 'Crear orbe', createDescription: 'Preparar un pedido en el chat', createPrompt: 'Quiero crear un recurso de tipo', detailPrompt: 'Describí su nombre y qué debe hacer.' },
   en: { resources: 'Selected resources', remove: 'Remove reference', plugin: 'Extension', extension: 'Built-in extension', mcp: 'MCP', orb: 'Orb', skill: 'Skill', global: 'Global', project: 'Project', readOnly: 'Built-in · read only', createExtension: 'Create extension', createSkill: 'Create skill', createMcp: 'Create MCP', createOrb: 'Create orb', createDescription: 'Prepare a request in chat', createPrompt: 'I want to create a resource of type', detailPrompt: 'Describe its name and what it should do.' },
 } as const;
+
+/** English presentation for the existing development commands; IDs remain stable. */
+export const developmentEnglishTranslations: Record<string, { label: string; description: string }> = {
+  "build-feature": {
+    "label": "Build a feature",
+    "description": "Plan, implement and verify"
+  },
+  "debug-project": {
+    "label": "Investigate and fix",
+    "description": "Diagnose with tools"
+  },
+  "review-changes": {
+    "label": "Review the project",
+    "description": "Review status and next steps"
+  },
+  "test-list-files": {
+    "label": "Test: list files",
+    "description": "Inspect the workspace"
+  },
+  "test-read-file": {
+    "label": "Test: read a file",
+    "description": "Read existing files"
+  },
+  "test-search-text": {
+    "label": "Test: search text",
+    "description": "Search the code"
+  },
+  "test-ask-user": {
+    "label": "Test: ask the user",
+    "description": "Pause for clarification"
+  },
+  "test-create-plan": {
+    "label": "Test: create a plan",
+    "description": "Create a persistent plan"
+  },
+  "test-update-plan": {
+    "label": "Test: update a plan",
+    "description": "Update step status"
+  },
+  "test-todos": {
+    "label": "Test: TODOs",
+    "description": "Manage persistent tasks"
+  },
+  "test-task-status": {
+    "label": "Test: task status",
+    "description": "Read plans and TODOs"
+  },
+  "test-execution-log": {
+    "label": "Test: execution log",
+    "description": "Inspect tool audit evidence"
+  },
+  "test-run-command": {
+    "label": "Test: run a command",
+    "description": "Run a safe command"
+  },
+  "test-terminal": {
+    "label": "Test: persistent terminal",
+    "description": "Inspect terminal processes"
+  },
+  "test-open-browser": {
+    "label": "Test: open browser",
+    "description": "Open the embedded browser"
+  },
+  "test-browser-state": {
+    "label": "Test: browser state",
+    "description": "Observe the current page"
+  },
+  "test-browser-action": {
+    "label": "Test: browser action",
+    "description": "Verify web interaction"
+  },
+  "test-list-windows": {
+    "label": "Test: list windows",
+    "description": "Inspect desktop windows"
+  },
+  "test-computer-state": {
+    "label": "Test: window state",
+    "description": "Inspect UI Automation"
+  },
+  "test-screenshot": {
+    "label": "Test: screenshot",
+    "description": "Capture the desktop"
+  },
+  "test-ocr": {
+    "label": "Test: screen OCR",
+    "description": "Read visible text"
+  },
+  "test-computer-action": {
+    "label": "Test: desktop action",
+    "description": "Verify mouse and keyboard control"
+  },
+  "test-subagent": {
+    "label": "Test: subagent",
+    "description": "Verify specialized delegation"
+  },
+  "test-tool-discovery": {
+    "label": "Test: discover tools",
+    "description": "Discover and execute a tool"
+  },
+  "test-write-file": {
+    "label": "Test: write a file",
+    "description": "Verify controlled file writes"
+  },
+  "test-create-skill": {
+    "label": "Test: create a skill",
+    "description": "Verify Agent Plugins"
+  },
+  "test-create-extension": {
+    "label": "Test: create an extension",
+    "description": "Verify agent extensions"
+  },
+  "test-delete-extension": {
+    "label": "Test: delete an extension",
+    "description": "Remove a test plugin"
+  },
+  "test-create-mcp": {
+    "label": "Test: create MCP",
+    "description": "Verify MCP configuration"
+  },
+  "test-delete-mcp": {
+    "label": "Test: delete MCP",
+    "description": "Remove a test server"
+  },
+  "test-switch-project": {
+    "label": "Test: switch project",
+    "description": "Verify workspace context"
+  },
+  "test-full-development-flow": {
+    "label": "Test: full workflow",
+    "description": "Verify the development cycle"
+  }
+};

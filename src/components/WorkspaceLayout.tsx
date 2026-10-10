@@ -3,15 +3,18 @@
 /** Main workspace shell: coordinates project/chat-scoped panels, persisted layouts, browser, files, review, and terminals. */
 import { createElement, memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, Check, ChevronDown, Circle, CircleCheck, Clock, CopyX, Download, EllipsisVertical, ExternalLink, FileWarning, FolderOpen, FolderPen, FolderTree, Grid2X2, Heart, Home, Hourglass, Info, MessageSquare, MoreHorizontal, MousePointerClick, PanelLeft, Pencil, Pin, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
+import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, Check, ChevronDown, Circle, CircleCheck, Clock, Copy, CopyX, Download, EllipsisVertical, ExternalLink, FileWarning, FolderOpen, FolderPen, FolderTree, Grid2X2, Home, Hourglass, Info, MessageSquare, MoreHorizontal, MousePointerClick, PanelLeft, Pencil, Pin, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { GlobeCheck } from 'lucide-react';
 import { Terminal as XtermTerminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import ChatPanel from './ChatPanel';
+import { useDialogAccessibility, usePopupKeyboard } from './ui/use-accessible-overlay';
 import ExtensionsPanel from './ExtensionsPanel';
 import OrbsPanel from './OrbsPanel';
+import OrbSidebar from './OrbSidebar';
+import OrbActivityObserver from './OrbActivityObserver';
 import TaskDetailsPanel from './TaskDetailsPanel';
 import TaskEditorModal from './TaskEditorModal';
 import type { ScheduledTask } from '../lib/scheduled-tasks';
@@ -21,6 +24,7 @@ import { ProjectPanelView } from './ChatInterface';
 import { useOrbPalette } from './OrbPaletteProvider';
 import OrbPaletteButton from './ui/OrbPaletteButton';
 import FluidOrb from './ui/fluid-orb';
+import SidebarCategory from './ui/SidebarCategory';
 import { readGlobalChats, readProjectMeta, writeGlobalChats, writeProjectMeta } from '../lib/projectManager';
 import { nativeInvoke, onTerminalOutput } from '../lib/runtime';
 import { parseGitNumstat, parseGitStatus } from '../lib/git-output';
@@ -43,7 +47,7 @@ type SidebarProject = { id: string; name: string; path: string };
 type SidebarSection = 'new-chat' | 'projects' | 'orbs' | 'extensions' | 'tasks';
 type ChatContextMenu = { chat: RecentChat; x: number; y: number };
 type RightPanelTab = 'files' | 'browser' | 'terminals';
-type RightPanelInstance = { instanceId: string; tab: RightPanelTab; label: string; iconUrl?: string; terminalId?: string };
+type RightPanelInstance = { instanceId: string; tab: RightPanelTab; label: string; iconUrl?: string; terminalId?: string; requestedUrl?: string; navigationRequestId?: string };
 type RightChatView = { panels: RightPanelInstance[]; active: string; file: string; tree: boolean; width: number; open: boolean };
 const emptyRightView = (): RightChatView => ({ panels: [], active: '', file: '', tree: false, width: DEFAULT_RIGHT, open: false });
 type RightPanelContextMenu = { panel: RightPanelInstance; x: number; y: number };
@@ -119,6 +123,11 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
     return () => { mounted = false; };
   }, []);
   const [sidebarProjects, setSidebarProjects] = useState<SidebarProject[]>([]);
+  const [projectContextMenu, setProjectContextMenu] = useState<{ project: SidebarProject; x: number; y: number } | null>(null);
+  const projectContextMenuRef = useRef<HTMLDivElement>(null);
+  usePopupKeyboard(projectContextMenuRef, Boolean(projectContextMenu), () => setProjectContextMenu(null));
+  const sidebarProjectsRef = useRef(sidebarProjects);
+  sidebarProjectsRef.current = sidebarProjects;
   const [sidebarTasks, setSidebarTasks] = useState<ScheduledTask[]>([]);
   const [selectedTaskKey, setSelectedTaskKey] = useState('');
   const [taskModalOpen, setTaskModalOpen] = useState(false);
@@ -148,7 +157,23 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
     return () => { mounted = false; window.removeEventListener('codeclub:project-switch', refresh); window.removeEventListener('codeclub:project-renamed', refresh); };
   }, []);
   const [activeSection, setActiveSection] = useState<SidebarSection>('new-chat');
+  useEffect(() => {
+    // Resume the orb permission screen after an explicit Windows elevation restart.
+    if (new URLSearchParams(window.location.search).get('orbSetup') === '1') setActiveSection('orbs');
+  }, []);
   const [activeOrbId, setActiveOrbId] = useState<string>();
+  const openOrb = (id?: string) => {
+    const orb = sidebarOrbs.find(item => item.id === id);
+    const chatId = id ? (orb?.chatId || `orb-chat-${id}`) : undefined;
+    setActiveOrbId(id); setActiveSection('orbs'); setActiveChatId(chatId);
+    setActiveProjectId('home'); setActiveProjectPath(undefined); setActiveProjectName('Home');
+    window.localStorage.removeItem('codeclub:active-project');
+    const scope = JSON.stringify(['', chatId || 'draft']);
+    setRightViews(previous => {
+      const view = { ...emptyRightView(), ...previous[scope] };
+      return { ...previous, [scope]: { ...view, width: Number.isFinite(view.width) && view.width >= MIN_WIDTH ? view.width : DEFAULT_RIGHT, open: Boolean(id) } };
+    });
+  };
   useEffect(() => {
     let active = true;
     const refreshOrbs = () => { void getSetting<unknown>(ORBS_STORAGE_KEY, []).then((value) => { if (active) setSidebarOrbs(parseOrbs(value)); }).catch(() => { if (active) setSidebarOrbs([]); }); };
@@ -186,7 +211,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
   const [rightViews, setRightViews] = useState<Record<string, RightChatView>>({});
   const [rightViewsReady, setRightViewsReady] = useState(false);
   const rightView = rightViews[rightScope] || emptyRightView();
-  const restoringVisibility = useRef<boolean | null>(null);
+  const visibilitySync = useRef<{ scope: string; stored: boolean; external: boolean } | null>(null);
   const { panels: rightPanels, active: activeRightPanelId, file: selectedRightFilePath, tree: filesTreeVisible, width: rightWidth } = rightView;
   const updateRightView = useCallback(<K extends keyof RightChatView,>(key: K, update: React.SetStateAction<RightChatView[K]>) => {
     setRightViews(previous => { const view = previous[rightScope] || emptyRightView(); return { ...previous, [rightScope]: { ...view, [key]: typeof update === 'function' ? (update as (value: RightChatView[K]) => RightChatView[K])(view[key]) : update } }; });
@@ -198,26 +223,15 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
   const setRightWidth = (update: React.SetStateAction<number>) => updateRightView('width', update);
   useEffect(() => {
     if (!rightViewsReady) return;
-    const open = rightViews[rightScope]?.open ?? false;
-    restoringVisibility.current = open;
-    onRightVisibilityChange(open);
-  }, [rightScope, rightViewsReady, onRightVisibilityChange]);
-  useEffect(() => {
-    if (!rightViewsReady) return;
-    if (restoringVisibility.current !== null) {
-      if (restoringVisibility.current === rightOpen) restoringVisibility.current = null;
+    const previous = visibilitySync.current;
+    const stored = rightView.open;
+    visibilitySync.current = { scope: rightScope, stored, external: rightOpen };
+    if (!previous || previous.scope !== rightScope || previous.stored !== stored) {
+      if (rightOpen !== stored) onRightVisibilityChange(stored);
       return;
     }
-    updateRightView('open', rightOpen);
-  }, [rightOpen, rightScope, rightViewsReady, updateRightView]);
-
-  useEffect(() => {
-    if (!rightViewsReady || !rightOpen || activeSection !== 'new-chat' || rightPanels.length > 0) return;
-    rightPanelSequence.current += 1;
-    const instanceId = `files-${crypto.randomUUID()}`;
-    setRightPanels([{ instanceId, tab: 'files', label: panelText.files }]);
-    setActiveRightPanelId(instanceId);
-  }, [rightViewsReady, rightOpen, activeSection, rightPanels.length, panelText.files, setRightPanels, setActiveRightPanelId]);
+    if (previous.external !== rightOpen) updateRightView('open', rightOpen);
+  }, [rightOpen, rightScope, rightView.open, rightViewsReady, updateRightView, onRightVisibilityChange]);
 
   useEffect(() => {
     try {
@@ -227,7 +241,9 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
         const view = value as RightChatView;
         const context = JSON.parse(key);
         if (!Array.isArray(context) || context.length !== 2 || !Array.isArray(view?.panels)) continue;
-        restored[key] = { ...emptyRightView(), ...view, panels: view.panels.filter(panel => ['files', 'browser', 'terminals'].includes(panel.tab) && typeof panel.instanceId === 'string').map(panel => ({ ...panel, terminalId: undefined })) };
+        if (context[0] === '' && context[1] === 'draft') continue;
+        const panels = view.panels.filter(panel => ['files', 'browser', 'terminals'].includes(panel.tab) && typeof panel.instanceId === 'string').map(panel => ({ ...panel, terminalId: undefined, requestedUrl: undefined, navigationRequestId: undefined }));
+        restored[key] = { ...emptyRightView(), ...view, panels, active: panels.some(panel => panel.instanceId === view.active) ? view.active : (panels[0]?.instanceId ?? ''), open: Boolean(view.open) && panels.length > 0 };
       }
       setRightViews(previous => ({ ...restored, ...previous }));
     } catch { /* Invalid saved layout starts empty. */ }
@@ -244,6 +260,9 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
   const rightMenuRef = useRef<HTMLDivElement | null>(null);
   const [rightContextMenu, setRightContextMenu] = useState<RightPanelContextMenu | null>(null);
   const rightContextMenuRef = useRef<HTMLDivElement | null>(null);
+  usePopupKeyboard(chatContextMenuRef, Boolean(chatContextMenu), () => setChatContextMenu(null));
+  usePopupKeyboard(rightContextMenuRef, Boolean(rightContextMenu), () => setRightContextMenu(null));
+  usePopupKeyboard(rightMenuRef, rightMenuOpen, () => setRightMenuOpen(false));
   const rightPanelSequence = useRef(0);
   const rightPanelNavigation = useRef<{ entries: string[]; index: number; moving: boolean }>({ entries: [], index: -1, moving: false });
   const [resizing, setResizing] = useState<Side | null>(null);
@@ -255,7 +274,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
 
   const rightMaxWidth = Math.max(
     MIN_WIDTH,
-    viewportWidth - (leftOpen ? leftWidth : 0) - MIN_CENTER_WIDTH - RESIZE_HANDLE_SPACE,
+    viewportWidth - (leftOpen ? leftWidth : 68) - MIN_CENTER_WIDTH - RESIZE_HANDLE_SPACE,
   );
   const rightMaxWidthRef = useRef(rightMaxWidth);
   rightMaxWidthRef.current = rightMaxWidth;
@@ -386,9 +405,13 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
     const handleProjectSwitch = (event: Event) => {
       const project = (event as CustomEvent<{ id?: string; name?: string; path?: string }>).detail;
       if (!project?.id) return;
-      const projectId = project.id;
+      const projectId = sidebarProjectsRef.current.find(item => item.path === project.path && Boolean(project.path))?.id || project.id;
       setActiveProjectId(projectId);
       setActiveProjectPath(project.path);
+      if (projectId === 'home') {
+        setRightViews(previous => ({ ...previous, [JSON.stringify(['', 'draft'])]: emptyRightView() }));
+        onRightVisibilityChange(false);
+      }
       const nextName = project.id === 'home' ? 'Home' : (project.name ?? activeProjectName);
       setActiveProjectName(nextName);
       setProjectNameDraft(nextName);
@@ -495,6 +518,22 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
     return () => window.removeEventListener('resize', position);
   }, [chatContextMenu, confirmClearHistory]);
 
+  useLayoutEffect(() => {
+    if (!projectContextMenu) return;
+    const position = () => {
+      const menu = projectContextMenuRef.current;
+      if (!menu) return;
+      const bounds = menu.getBoundingClientRect();
+      menu.style.left = `${Math.max(8, Math.min(projectContextMenu.x, window.innerWidth - bounds.width - 8))}px`;
+      menu.style.top = `${Math.max(8, Math.min(projectContextMenu.y, window.innerHeight - bounds.height - 8))}px`;
+    };
+    position();
+    const close = (event: PointerEvent) => { if (!projectContextMenuRef.current?.contains(event.target as Node)) setProjectContextMenu(null); };
+    window.addEventListener('resize', position);
+    window.addEventListener('pointerdown', close);
+    return () => { window.removeEventListener('resize', position); window.removeEventListener('pointerdown', close); };
+  }, [projectContextMenu]);
+
   useEffect(() => {
     if (!chatContextMenu) { setConfirmClearHistory(false); return; }
     const close = (event: PointerEvent) => { if (!chatContextMenuRef.current?.contains(event.target as Node)) setChatContextMenu(null); };
@@ -559,17 +598,6 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
         (tab as HTMLButtonElement & { codeclubMove?: (event: KeyboardEvent) => void }).codeclubMove = move;
       });
       root.querySelectorAll<HTMLElement>('[role="tablist"] > div').forEach((item) => item.setAttribute('role', 'presentation'));
-      const panelMenu = root.querySelector<HTMLElement>('[role="menu"]');
-      panelMenu?.setAttribute('aria-label', 'Paneles de la sidebar derecha');
-      const fileTree = root.querySelector<HTMLElement>('aside');
-      if (fileTree) {
-        fileTree.setAttribute('role', 'tree');
-        fileTree.setAttribute('aria-label', 'Árbol de archivos del proyecto');
-        fileTree.querySelectorAll<HTMLButtonElement>('button').forEach((item) => {
-          item.setAttribute('role', 'treeitem');
-          item.setAttribute('aria-label', item.textContent?.trim() || 'Elemento del proyecto');
-        });
-      }
       return () => tabs.forEach((tab) => {
         const move = (tab as HTMLButtonElement & { codeclubMove?: (event: KeyboardEvent) => void }).codeclubMove;
         if (move) tab.removeEventListener('keydown', move);
@@ -580,8 +608,10 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
 
   useEffect(() => {
     const showChat = (event: Event) => {
-      setActiveSection('new-chat');
       const chat = (event as CustomEvent<{ chatId?: string; projectId?: string; projectPath?: string; projectName?: string }>).detail;
+      const orb = !chat?.projectPath && sidebarOrbs.find(item => (item.chatId || `orb-chat-${item.id}`) === chat?.chatId);
+      if (orb) { openOrb(orb.id); return; }
+      setActiveSection('new-chat');
       setActiveChatId(chat?.chatId);
       if (chat && typeof chat.projectPath === 'string') {
         const id = chat.projectId || sidebarProjects.find(project => project.path === chat.projectPath)?.id || (chat.projectPath ? chat.projectPath : 'home');
@@ -609,7 +639,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
       setActiveChatId(chatId);
     };
     const showEmptyChat = () => { setActiveSection('new-chat'); setActiveChatId(undefined); };
-    const showExtensions = () => { setActiveSection('extensions'); setActiveChatId(undefined); };
+    const showExtensions = () => { setActiveSection('extensions'); };
     window.addEventListener('codeclub:open-chat', showChat);
     window.addEventListener('codeclub:panel-left:open-chat', showChat);
     window.addEventListener('codeclub:chat-created', showCreatedChat);
@@ -622,7 +652,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
       window.removeEventListener('codeclub:open-empty-chat', showEmptyChat);
       window.removeEventListener('codeclub:open-extensions', showExtensions);
     };
-  }, [activeProjectPath, sidebarProjects]);
+  }, [activeProjectPath, sidebarProjects, sidebarOrbs]);
 
   const recentChats = chatsByProject[activeProjectId] ?? [];
 
@@ -652,7 +682,8 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
     const chat = { id: session.chatId, title: session.name || session.chatId, projectPath: session.projectPath, projectName: session.projectName, projectId: sidebarProjects.find(project => project.path === session.projectPath)?.id || 'home' };
     if (!indexedChats.has(sidebarChatKey(chat))) indexedChats.set(sidebarChatKey(chat), chat);
   });
-  const allSidebarChats = [...indexedChats.values()].reverse();
+  const orbChatIds = new Set(sidebarOrbs.map(orb => orb.chatId || `orb-chat-${orb.id}`));
+  const allSidebarChats = [...indexedChats.values()].filter(chat => chat.projectPath || (!chat.id.startsWith('orb-chat-') && !orbChatIds.has(chat.id))).reverse();
   const projectSidebarChats = allSidebarChats.filter(chat => (chat.projectPath || '') === (activeProjectPath || ''));
   const chatSession = (chat: RecentChat) => sessions.find(session => !session.external && sameSession({ chatId: chat.id, projectPath: chat.projectPath || '' }, session));
   const needsReview = (chat: RecentChat) => { const session = chatSession(chat); return Boolean(session && (session.approvals.length > 0 || session.state === 'question' || session.state === 'unverified')); };
@@ -665,7 +696,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
     setPinnedChatKeys(next);
     setChatContextMenu(null);
   };
-  const renderSidebarChat = (chat: RecentChat) => <button key={sidebarChatKey(chat)} type="button" onContextMenu={event => { event.preventDefault(); setChatContextMenu({ chat, x: event.clientX, y: event.clientY }); }} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: { chatId: chat.id, name: chat.title, customName: chat.customName, projectId: chat.projectId || 'home', projectPath: chat.projectPath || '', projectName: chat.projectPath ? (chat.projectName || 'Proyecto') : 'Home' } }))} title={chat.title} className={`flex h-7 w-full min-w-0 items-center justify-between gap-2 rounded-lg px-2.5 py-0 text-left text-[12px] leading-4 text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${activeChatId === chat.id && (activeProjectPath || '') === (chat.projectPath || '') ? 'bg-(--codeclub-acrylic-active)' : 'hover:bg-(--codeclub-hover)'}`}><span className="min-w-0 flex-1 truncate">{chat.title}</span><ChatSessionStatus seenCompletions={seenCompletions} session={chatSession(chat)} language={language} /></button>;
+  const renderSidebarChat = (chat: RecentChat) => <button key={sidebarChatKey(chat)} type="button" onContextMenu={event => { event.preventDefault(); event.currentTarget.focus(); setProjectContextMenu(null); setChatContextMenu({ chat, x: event.clientX, y: event.clientY }); }} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: { chatId: chat.id, name: chat.title, customName: chat.customName, projectId: chat.projectId || 'home', projectPath: chat.projectPath || '', projectName: chat.projectPath ? (chat.projectName || 'Proyecto') : 'Home' } }))} title={chat.title} aria-current={activeSection === 'new-chat' && activeChatId === chat.id && (activeProjectPath || '') === (chat.projectPath || '') ? 'page' : undefined} className={`flex h-7 w-full min-w-0 items-center justify-between gap-2 rounded-lg px-2.5 py-0 text-left text-[12px] leading-4 text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${activeChatId === chat.id && (activeProjectPath || '') === (chat.projectPath || '') ? 'bg-(--codeclub-acrylic-active)' : 'hover:bg-(--codeclub-hover)'}`}><span className="min-w-0 flex-1 truncate">{chat.title}</span><ChatSessionStatus seenCompletions={seenCompletions} session={chatSession(chat)} language={language} /></button>;
 
   const selectSidebarProject = async (project?: SidebarProject) => {
     setProjectSelectionError('');
@@ -686,9 +717,22 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
     } catch (error) { setProjectSelectionError(error instanceof Error ? error.message : sidebarText.selectFolder); }
   };
 
+  const projectMenuAction = async (action: 'open' | 'rename' | 'copy') => {
+    const project = projectContextMenu?.project;
+    if (!project) return;
+    setProjectContextMenu(null);
+    try {
+      if (action === 'copy') { await navigator.clipboard.writeText(project.path); return; }
+      await selectSidebarProject(project);
+      if (action === 'rename') {
+        projectNameEdit.current = { token: projectNameEdit.current.token + 1, submitted: false };
+        setProjectNameDraft(project.name); setProjectNameError(''); setEditingProjectName(true);
+      }
+    } catch (error) { setProjectSelectionError(error instanceof Error ? error.message : sidebarText.projectMenu); }
+  };
+
   const selectSidebarSection = (section: SidebarSection) => {
     setActiveSection(section);
-    setActiveChatId(undefined);
     if (section === 'new-chat') window.dispatchEvent(new CustomEvent('codeclub:project-switch', { detail: { id: 'home', name: 'Home' } }));
     else if (section === 'extensions') window.dispatchEvent(new CustomEvent('codeclub:open-extensions'));
     else window.dispatchEvent(new CustomEvent('codeclub:close-extensions', { detail: { preserveSection: true } }));
@@ -768,23 +812,28 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
 
   useEffect(() => {
     const openBrowser = (event: Event) => {
-      const detail = (event as CustomEvent<{ chatId?: string; projectPath?: string }>).detail;
+      const detail = (event as CustomEvent<{ chatId?: string; projectPath?: string; url?: string }>).detail;
+      const navigationRequestId = crypto.randomUUID();
       if (detail?.chatId) {
         const scope = JSON.stringify([detail.projectPath || '', detail.chatId]);
         setRightViews(previous => {
           const view = previous[scope] || emptyRightView();
           const browser = view.panels.find(panel => panel.tab === 'browser') || { instanceId: `browser-${crypto.randomUUID()}`, tab: 'browser' as const, label: panelText.browser };
-          return { ...previous, [scope]: { ...view, panels: view.panels.includes(browser) ? view.panels : [...view.panels, browser], active: browser.instanceId } };
+          const panels = view.panels.includes(browser) ? view.panels : [...view.panels, browser];
+          return { ...previous, [scope]: { ...view, panels: panels.map(panel => panel.instanceId === browser.instanceId ? { ...panel, requestedUrl: detail.url, navigationRequestId } : panel), active: browser.instanceId, open: true } };
         });
+        if (scope === rightScope) window.dispatchEvent(new CustomEvent('codeclub:open-right-sidebar'));
         return;
       }
+      window.dispatchEvent(new CustomEvent('codeclub:open-right-sidebar'));
       const existing = rightPanels.find((panel) => panel.tab === 'browser');
       if (existing) {
+        setRightPanels(current => current.map(panel => panel.instanceId === existing.instanceId ? { ...panel, requestedUrl: detail?.url, navigationRequestId } : panel));
         setActiveRightPanelId(existing.instanceId);
         return;
       }
       rightPanelSequence.current += 1;
-      const panel = { instanceId: `browser-${crypto.randomUUID()}`, tab: 'browser' as const, label: panelText.browser };
+      const panel = { instanceId: `browser-${crypto.randomUUID()}`, tab: 'browser' as const, label: panelText.browser, requestedUrl: detail?.url, navigationRequestId };
       setRightPanels((current) => [...current, panel]);
       setActiveRightPanelId(panel.instanceId);
     };
@@ -792,7 +841,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
     return () => {
       window.removeEventListener('codeclub:open-right-panel', openBrowser);
     };
-  }, [activeProjectPath, rightPanels]);
+  }, [activeProjectPath, rightScope, rightPanels, panelText.browser]);
 
   useEffect(() => {
     const updateBrowserTab = (event: Event) => {
@@ -820,6 +869,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
     const openRightFile = (event: Event) => {
       const detail = (event as CustomEvent<{ path?: string; projectPath?: string }>).detail || {};
       if (!detail.path || (detail.projectPath && detail.projectPath !== activeProjectPath)) return;
+      window.dispatchEvent(new CustomEvent('codeclub:open-right-sidebar'));
       setSelectedRightFilePath(detail.path);
       setFilesTreeVisible(true);
       const existing = rightPanels.find((panel) => panel.tab === 'files');
@@ -843,8 +893,8 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
         const scope = JSON.stringify([detail.projectPath || '', detail.chatId]);
         setRightViews(previous => {
           const view = previous[scope] || emptyRightView();
-          const panel = view.panels.find(item => item.terminalId === detail.terminalId) || { instanceId: `terminals-${crypto.randomUUID()}`, tab: 'terminals' as const, label: 'PowerShell', terminalId: detail.terminalId };
-          return { ...previous, [scope]: { ...view, panels: view.panels.includes(panel) ? view.panels : [...view.panels, panel], active: panel.instanceId } };
+          const panel = view.panels.find(item => item.tab === 'terminals' && (detail.terminalId ? item.terminalId === detail.terminalId : true)) || { instanceId: `terminals-${crypto.randomUUID()}`, tab: 'terminals' as const, label: 'PowerShell', terminalId: detail.terminalId };
+          return { ...previous, [scope]: { ...view, panels: view.panels.includes(panel) ? view.panels : [...view.panels, panel], active: panel.instanceId, open: true } };
         });
         if (scope === rightScope) window.dispatchEvent(new CustomEvent('codeclub:open-right-sidebar'));
         return;
@@ -871,12 +921,13 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
       if (!detail.terminalId) return;
       setRightViews(current => Object.fromEntries(Object.entries(current).map(([scope, view]) => {
         const panels = view.panels.filter(panel => panel.terminalId !== detail.terminalId);
-        return [scope, { ...view, panels, active: panels.some(panel => panel.instanceId === view.active) ? view.active : panels[0]?.instanceId || '' }];
+        return [scope, { ...view, panels, active: panels.some(panel => panel.instanceId === view.active) ? view.active : panels[0]?.instanceId || '', open: panels.length > 0 && view.open }];
       })));
+      if (rightPanels.length > 0 && rightPanels.every(panel => panel.terminalId === detail.terminalId)) onRightVisibilityChange(false);
     };
     window.addEventListener('codeclub:terminal-closed', closeTerminalPanel);
     return () => window.removeEventListener('codeclub:terminal-closed', closeTerminalPanel);
-  }, [activeProjectPath]);
+  }, [rightPanels, onRightVisibilityChange]);
 
   useEffect(() => {
     const openTerminalAndRun = (detail: { code?: string; language?: string; cwd?: string }) => {
@@ -921,8 +972,16 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
     const index = rightPanels.findIndex((panel) => panel.instanceId === instanceId);
     if (index < 0) return;
     const next = rightPanels.filter((panel) => panel.instanceId !== instanceId);
-    setRightPanels(next);
-    if (activeRightPanelId === instanceId) setActiveRightPanelId(next[index === next.length ? index - 1 : index]?.instanceId ?? '');
+    setRightViews(previous => {
+      const view = previous[rightScope] || emptyRightView();
+      return { ...previous, [rightScope]: {
+        ...view,
+        panels: next,
+        active: activeRightPanelId === instanceId ? (next[index === next.length ? index - 1 : index]?.instanceId ?? '') : view.active,
+        open: next.length > 0 && view.open,
+      } };
+    });
+    if (next.length === 0) onRightVisibilityChange(false);
     setRightContextMenu(null);
   };
 
@@ -994,16 +1053,19 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
     <div className="flex h-full min-h-0 min-w-0 overflow-hidden">
       <motion.aside id="codeclub-left-sidebar" animate={{ width: leftOpen ? leftWidth : 68 }} transition={resizing ? { duration: 0 } : { type: 'spring', stiffness: 340, damping: 30 }} className="codeclub-widget-chrome flex h-full min-h-0 shrink-0 overflow-hidden" aria-label={sidebarText.leftSidebar}>
         <nav className="flex w-[68px] shrink-0 flex-col items-center gap-2 px-2 py-3" aria-label={sidebarText.mainNavigation}>
-          <RailItem active={activeSection === 'new-chat' || activeSection === 'orbs' || activeSection === 'tasks'} icon={<Home />} label={sidebarText.home} onClick={() => selectSidebarSection('new-chat')} />
+          <RailItem active={activeSection === 'new-chat' || activeSection === 'tasks'} icon={<Home />} label={sidebarText.home} onClick={() => selectSidebarSection('new-chat')} />
           <RailItem active={activeSection === 'extensions'} icon={<Grid2X2 />} label={sidebarText.extensions} onClick={() => selectSidebarSection('extensions')} />
           <div className="my-1 h-px w-8 bg-(--codeclub-border-soft)" aria-hidden="true" />
           <RailItem active={false} icon={<MoreHorizontal />} label={sidebarText.devices} disabled onClick={() => {}} />
-          <button type="button" onClick={() => void downloadLatestRelease()} disabled={openingDownload} className="mt-auto grid h-9 w-9 place-items-center rounded-lg text-(--codeclub-text-muted) transition-colors hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong) disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={sidebarText.downloadLatestRelease} title={downloadError || sidebarText.downloadLatestRelease}><Download size={16} aria-hidden="true" /></button>
+          <div className="mt-auto flex shrink-0 flex-col items-center gap-2">
+            <div className="h-px w-8 bg-(--codeclub-border-soft)" aria-hidden="true" />
+            <button type="button" onClick={() => void downloadLatestRelease()} disabled={openingDownload} className="grid h-9 w-9 place-items-center rounded-lg text-(--codeclub-text-muted) transition-colors hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong) disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={sidebarText.downloadLatestRelease} title={downloadError || sidebarText.downloadLatestRelease}><Download size={16} aria-hidden="true" /></button>
+          </div>
         </nav>
         <motion.div animate={{ width: leftOpen ? leftWidth - 68 : 0, opacity: leftOpen ? 1 : 0 }} transition={resizing ? { duration: 0 } : { type: 'spring', stiffness: 340, damping: 30 }} className="flex min-h-0 shrink-0 flex-col overflow-hidden" aria-hidden={!leftOpen} inert={!leftOpen}>
         <div className="flex min-h-0 flex-1 flex-col px-2.5 py-2.5 text-(--codeclub-text)">
           <div className="flex h-8 min-w-0 items-center gap-2 px-1.5">
-            {activeSection === 'extensions' ? <><span id="codeclub-extensions-sidebar-heading" className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-tight text-(--codeclub-text-strong)">{language === 'en' ? 'Customize' : 'Personalizar'}</span><button type="button" onClick={() => window.dispatchEvent(new CustomEvent('codeclub:extensions-search-toggle'))} className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-(--codeclub-text-muted) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={language === 'en' ? 'Search installed items' : 'Buscar instalados'} title={language === 'en' ? 'Search installed items' : 'Buscar instalados'}><Search size={15} aria-hidden="true" /></button></> : <>
+            {activeSection === 'extensions' ? <><span id="codeclub-extensions-sidebar-heading" className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-tight text-(--codeclub-text-strong)">{language === 'en' ? 'Customize' : 'Personalizar'}</span><button type="button" onClick={onToggleLeft} className="grid h-7 w-7 place-items-center rounded-md text-(--codeclub-text-muted) transition-colors hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-text-muted)" aria-label={language === 'en' ? 'Hide left sidebar' : 'Ocultar sidebar izquierda'} title={language === 'en' ? 'Hide left sidebar' : 'Ocultar sidebar izquierda'}><PanelLeft size={15} aria-hidden="true" /></button></> : <>
             {editingProjectName ? <input autoFocus value={projectNameDraft} onFocus={(event) => event.currentTarget.select()} onChange={(event) => { setProjectNameDraft(event.target.value); setProjectNameError(''); }} onBlur={() => void commitProjectName()} onKeyDown={(event) => {
               if (event.nativeEvent.isComposing) return;
               if (event.key === 'Enter') { event.preventDefault(); void commitProjectName(); }
@@ -1019,44 +1081,46 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
           {activeSection === 'extensions' ? <div className="min-h-0 flex-1 overflow-hidden"><ExtensionsPanel selectedProject={activeProjectPath ? { projectPath: activeProjectPath } : null} layout="sidebar" /></div> : <>
             <div className="mt-4 min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <button type="button" onClick={() => selectSidebarSection('new-chat')} className="flex h-9 w-full min-w-0 items-center gap-2 rounded-lg px-1.5 text-left text-[13px] text-(--codeclub-text-strong) transition-colors hover:bg-(--codeclub-hover) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)"><Plus size={16} className="shrink-0 text-(--codeclub-text-muted)" aria-hidden="true" /><span className="truncate">{sidebarText.newChat}</span></button>
-              <button type="button" onClick={() => { setActiveOrbId(undefined); selectSidebarSection('orbs'); }} className="flex h-9 w-full min-w-0 items-center gap-2 rounded-lg px-1.5 text-left text-[13px] text-(--codeclub-text-strong) transition-colors hover:bg-(--codeclub-hover) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)"><FluidOrb size={16} active animateOnHover={false} className="shrink-0" aria-hidden="true" /><span className="truncate">{sidebarText.yourOrb}</span></button>
+              <button type="button" onClick={() => openOrb(sidebarOrbs[0]?.id)} aria-current={activeSection === 'orbs' ? 'page' : undefined} className={`flex h-9 w-full min-w-0 items-center gap-2 rounded-lg px-1.5 text-left text-[13px] text-(--codeclub-text-strong) transition-colors focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${activeSection === 'orbs' ? 'bg-(--codeclub-acrylic-active)' : 'hover:bg-(--codeclub-hover)'}`}><FluidOrb size={16} active animateOnHover={false} className="shrink-0" aria-hidden="true" /><span className="truncate">{sidebarText.yourOrb}</span></button>
               <SidebarChatGroup key="pinned" id="pinned" title={sidebarText.pinned} chats={projectSidebarChats.filter(chat => pinnedChatKeys.includes(sidebarChatKey(chat)))} renderChat={renderSidebarChat} emptyText={sidebarText.noChats} initiallyOpen />
               <SidebarChatGroup key="recent" id="recent" title={sidebarText.recent} chats={allSidebarChats} renderChat={renderSidebarChat} emptyText={sidebarText.noChats} initiallyOpen />
               <SidebarChatGroup key="humanReview" id="humanReview" title={sidebarText.humanReview} chats={projectSidebarChats.filter(needsReview)} renderChat={renderSidebarChat} emptyText={sidebarText.noChats} />
               <SidebarChatGroup key="blocked" id="blocked" title={sidebarText.blocked} chats={projectSidebarChats.filter(isBlocked)} renderChat={renderSidebarChat} emptyText={sidebarText.noChats} />
               <SidebarCategory key="projects" id="projects" title={sidebarText.projects} initiallyOpen action={<button type="button" onClick={() => void selectSidebarProject()} aria-label={sidebarText.selectFolder} title={sidebarText.selectFolder} className="mr-1.5 grid h-6 w-6 place-items-center rounded-md text-(--codeclub-text-muted) hover:bg-(--codeclub-hover) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)"><Plus size={14} aria-hidden="true" /></button>}>
-                <div className="mt-1 space-y-1">{[{ id: 'home', name: 'Home', path: '' }, ...sidebarProjects.filter(project => project.id !== 'home')].map(project => <button key={project.id} type="button" onClick={() => void selectSidebarProject(project)} aria-current={activeProjectId === project.id ? 'page' : undefined} title={project.path} className={`flex h-8 w-full min-w-0 items-center gap-2 rounded-lg px-1.5 text-left text-[13px] text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${activeProjectId === project.id ? 'bg-(--codeclub-acrylic-active)' : 'hover:bg-(--codeclub-hover)'}`}><FolderOpen size={15} className="shrink-0 text-(--codeclub-text-muted)" aria-hidden="true" /><span className="truncate">{project.name}</span></button>)}</div>
+                <div className="mt-1 space-y-1">{[{ id: 'home', name: 'Home', path: '' }, ...sidebarProjects.filter(project => project.id !== 'home')].map(project => <button key={project.id} type="button" onContextMenu={event => { if (project.id === 'home') return; event.preventDefault(); event.currentTarget.focus(); setChatContextMenu(null); setProjectContextMenu({ project, x: event.clientX, y: event.clientY }); }} onKeyDown={event => { if (project.id === 'home' || !(event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10'))) return; event.preventDefault(); const bounds = event.currentTarget.getBoundingClientRect(); setChatContextMenu(null); setProjectContextMenu({ project, x: bounds.left, y: bounds.bottom }); }} onClick={() => { setProjectContextMenu(null); void selectSidebarProject(project); }} aria-current={activeSection !== 'orbs' && activeProjectId === project.id ? 'page' : undefined} title={project.path} className={`flex h-8 w-full min-w-0 items-center gap-2 rounded-lg px-1.5 text-left text-[13px] text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${activeSection !== 'orbs' && activeProjectId === project.id ? 'bg-(--codeclub-acrylic-active)' : 'hover:bg-(--codeclub-hover)'}`}><FolderOpen size={15} className="shrink-0 text-(--codeclub-text-muted)" aria-hidden="true" /><span className="truncate">{project.name}</span></button>)}</div>
                 {projectSelectionError && <p role="alert" className="px-1.5 text-[11px] text-red-300">{projectSelectionError}</p>}
               </SidebarCategory>
               <SidebarCategory key="tasks" id="tasks" title={sidebarText.tasks} action={<button type="button" onClick={() => setTaskModalOpen(true)} aria-label={sidebarText.newTask} title={sidebarText.newTask} className="mr-1.5 grid h-6 w-6 place-items-center rounded-md text-(--codeclub-text-muted) hover:bg-(--codeclub-hover) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)"><Plus size={14} aria-hidden="true" /></button>}>
                 {sidebarTasks.length ? sidebarTasks.map(task => { const key = JSON.stringify([task.projectPath, task.id]); return <button key={key} type="button" onClick={() => { setSelectedTaskKey(key); selectSidebarSection('tasks'); }} title={task.name} aria-current={activeSection === 'tasks' && selectedTaskKey === key ? 'page' : undefined} className={`flex h-8 w-full min-w-0 items-center gap-2 rounded-lg px-1.5 text-left text-[13px] text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${activeSection === 'tasks' && selectedTaskKey === key ? 'bg-(--codeclub-acrylic-active)' : 'hover:bg-(--codeclub-hover)'}`}><Clock size={15} className="shrink-0 text-(--codeclub-text-muted)" aria-hidden="true" /><span className="truncate">{task.name}</span></button>; }) : <p className="px-2.5 py-1 text-[11px] text-(--codeclub-text-muted)">{sidebarText.noTasks}</p>}
               </SidebarCategory>
               <SidebarChatGroup key="personal" id="personal" title={sidebarText.chats} chats={projectSidebarChats} renderChat={renderSidebarChat} emptyText={sidebarText.noChats} />
-              {sidebarOrbs.length > 0 && <SidebarCategory key="orbs" id="orbs" title={sidebarText.orbs} initiallyOpen>{sidebarOrbs.map((orb) => <button key={orb.id} type="button" onClick={() => { setActiveSection('orbs'); setActiveOrbId(orb.id); setActiveChatId(undefined); }} className={`flex h-8 w-full min-w-0 items-center gap-2 rounded-lg px-1.5 text-left text-[13px] text-(--codeclub-text-strong) ${activeSection === 'orbs' && activeOrbId === orb.id ? 'bg-(--codeclub-acrylic-active)' : 'bg-transparent hover:bg-(--codeclub-hover)'}`} title={orb.name}><FluidOrb size={20} color={orb.color} themeTint={false} active={activeOrbId === orb.id} className="shrink-0" aria-hidden="true" /><span className="min-w-0 flex-1 truncate">{orb.name}</span></button>)}</SidebarCategory>}
             </div>
-            <div className="mt-auto border-t border-(--codeclub-border-soft) px-1.5 pt-3"><button type="button" onClick={() => void nativeInvoke('codeclub_open_external', { url: 'https://ko-fi.com/iangeldev' })} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12px] text-(--codeclub-text-muted) transition-colors hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={sidebarText.support} title={sidebarText.donation}><Heart size={15} strokeWidth={1.8} /><span>{sidebarText.support}</span></button></div>
           </>}
         </div>
         </motion.div>
       </motion.aside>
+      {projectContextMenu && <div ref={projectContextMenuRef} className="fixed z-[100] w-[190px] max-w-[calc(100vw-16px)] max-h-[calc(100dvh-16px)] overflow-y-auto rounded-xl border border-[#333333] bg-[#2B2B2B] p-1 shadow-2xl [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" style={{ left: projectContextMenu.x, top: projectContextMenu.y }} role="menu" aria-label={`${sidebarText.projectMenu}: ${projectContextMenu.project.name}`}>
+        {([{ action: 'open', label: sidebarText.open, icon: FolderOpen }, { action: 'rename', label: sidebarText.renameProjectMenu, icon: Pencil }, { action: 'copy', label: sidebarText.copyProjectPath, icon: Copy }] as const).map((item, index) => <div key={item.action}>{index > 0 && <div className="mx-2 h-px bg-[#3A3A3A]" aria-hidden="true" />}<button type="button" role="menuitem" onClick={() => void projectMenuAction(item.action)} className="grid min-h-8 whitespace-nowrap w-full grid-cols-[14px_minmax(0,1fr)] items-center gap-2 rounded-lg px-2 py-0 text-left text-[11px] leading-4 text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)"><item.icon size={12} strokeWidth={1.8} className="h-3 w-3 shrink-0 justify-self-center" aria-hidden="true" /><span className="min-w-0 truncate">{item.label}</span></button></div>)}
+      </div>}
       {chatContextMenu && <div ref={chatContextMenuRef} className="fixed z-[100] w-[172px] max-w-[calc(100vw-16px)] max-h-[calc(100dvh-16px)] overflow-y-auto rounded-xl border border-[#333333] bg-[#2B2B2B] p-1 shadow-2xl" style={{ left: chatContextMenu.x, top: chatContextMenu.y }} role="menu" aria-label={sidebarText.chatMenu}><button type="button" disabled={!pinsReady} onClick={() => void toggleChatPin().catch(() => setProjectSelectionError(sidebarText.pinError))} className="grid h-7 w-full grid-cols-[14px_minmax(0,1fr)] items-center gap-2 rounded-lg px-2 py-0 text-left text-[11px] leading-4 text-(--codeclub-text) hover:bg-(--codeclub-hover) disabled:opacity-40" role="menuitem"><Pin size={12} strokeWidth={1.8} className="h-3 w-3 shrink-0 justify-self-center" aria-hidden="true" />{pinnedChatKeys.includes(sidebarChatKey(chatContextMenu.chat)) ? sidebarText.unpinChat : sidebarText.pinChat}</button><div className="mx-2 h-px bg-[#3A3A3A]" aria-hidden="true" /><button type="button" onClick={openFromContextMenu} className="grid h-7 w-full grid-cols-[14px_minmax(0,1fr)] items-center gap-2 rounded-lg px-2 py-0 text-left text-[11px] leading-4 text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><FolderOpen size={12} strokeWidth={1.8} className="h-3 w-3 shrink-0 justify-self-center" aria-hidden="true" />{sidebarText.open}</button><div className="mx-2 h-px bg-[#3A3A3A]" aria-hidden="true" /><button type="button" onClick={() => void deleteFromContextMenu()} className="grid h-7 w-full grid-cols-[14px_minmax(0,1fr)] items-center gap-2 rounded-lg px-2 py-0 text-left text-[11px] leading-4 text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><Trash2 size={12} strokeWidth={1.8} className="h-3 w-3 shrink-0 justify-self-center" aria-hidden="true" />{sidebarText.delete}</button><div className="mx-2 h-px bg-[#3A3A3A]" aria-hidden="true" /><button type="button" onClick={() => void clearChatHistory()} className="grid h-7 w-full grid-cols-[14px_minmax(0,1fr)] items-center gap-2 rounded-lg px-2 py-0 text-left text-[11px] leading-4 text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><Clock size={12} strokeWidth={1.8} className="h-3 w-3 shrink-0 justify-self-center" aria-hidden="true" />{sidebarText.clearHistory}</button>{confirmClearHistory && <><div className="mx-2 my-1 h-px bg-[#3A3A3A]" aria-hidden="true" /><div className="grid grid-cols-2 gap-1 px-1" role="group" aria-label={language === 'en' ? 'Confirm clearing history' : 'Confirmar limpieza del historial'}><button type="button" onClick={() => void clearChatHistory()} className="grid h-7 place-items-center rounded-lg text-[#8BC7FF] hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" title={language === 'en' ? 'Confirm' : 'Confirmar'} aria-label={language === 'en' ? 'Confirm' : 'Confirmar'}><Check size={12} strokeWidth={1.8} className="h-3 w-3 shrink-0 justify-self-center" aria-hidden="true" /></button><button type="button" onClick={() => setConfirmClearHistory(false)} className="grid h-7 place-items-center rounded-lg text-(--codeclub-text-muted) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" title={language === 'en' ? 'Cancel' : 'Cancelar'} aria-label={language === 'en' ? 'Cancel' : 'Cancelar'}><X size={12} strokeWidth={1.8} className="h-3 w-3 shrink-0 justify-self-center" aria-hidden="true" /></button></div></>}</div>}
       {rightContextMenu && <div ref={rightContextMenuRef} className="fixed z-[100] grid w-52 gap-0.5 rounded-xl border border-white/[0.08] bg-[#2C2C2C]/90 p-1 shadow-2xl backdrop-blur-xl" style={{ left: rightContextMenu.x, top: rightContextMenu.y }} role="menu" aria-label={`${panelText.rightPanel}: ${rightContextMenu.panel.label}`}><button type="button" onClick={() => closeRightPanel(rightContextMenu.panel.instanceId)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><X size={14} aria-hidden="true" />{panelText.closeRightPanel}</button><button type="button" onClick={() => closeOtherRightPanels(rightContextMenu.panel.instanceId)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><CopyX size={14} aria-hidden="true" />{panelText.closeOtherRightPanels}</button><button type="button" onClick={() => closeRightPanelsToRight(rightContextMenu.panel.instanceId)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><ArrowRightToLine size={14} aria-hidden="true" />{panelText.closeRightPanelsAfter}</button></div>}
       {leftOpen && <ResizeHandle side="left" value={leftWidth} maxValue={MAX_WIDTH} onStart={startResize('left')} onKeyboardResize={setLeftWidth} language={language} />}
 
       <div data-main-panel={activeSection} className="codeclub-conversation-surface flex min-h-0 min-w-0 flex-1 overflow-hidden">
-          <PanelManager activeSection={activeSection} activeOrbId={activeOrbId} onOrbCreated={setActiveOrbId} selectedTask={sidebarTasks.find(task => JSON.stringify([task.projectPath, task.id]) === selectedTaskKey)} />
+          <PanelManager activeSection={activeSection} activeOrbId={activeOrbId} onOrbCreated={openOrb} selectedTask={sidebarTasks.find(task => JSON.stringify([task.projectPath, task.id]) === selectedTaskKey)} />
 
       {rightOpen && <ResizeHandle side="right" value={rightWidth} maxValue={rightMaxWidth} onStart={startResize('right')} onKeyboardResize={setRightWidth} language={language} />}
       <motion.aside id="codeclub-right-sidebar" animate={{ width: rightOpen ? rightWidth : 0, opacity: rightOpen ? 1 : 0 }} transition={resizing ? { duration: 0 } : { type: 'spring', stiffness: 340, damping: 30 }} className={`codeclub-panel-edge flex h-full min-h-0 shrink-0 flex-col bg-transparent ${rightOpen ? 'pointer-events-auto overflow-visible' : 'pointer-events-none overflow-hidden'}`} aria-label={panelText.rightPanel} aria-hidden={!rightOpen} inert={!rightOpen}>
-        <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+        {activeSection === 'orbs' && rightOpen && <OrbSidebar orb={sidebarOrbs.find(orb => orb.id === activeOrbId)} onClose={() => onRightVisibilityChange(false)} />}
+        <div className={`relative h-full min-h-0 flex-1 flex-col overflow-hidden ${activeSection === 'orbs' ? 'hidden' : 'flex'}`} aria-hidden={activeSection === 'orbs'} inert={activeSection === 'orbs'}>
           <div ref={rightMenuRef} className="codeclub-widget-chrome relative z-[2147483647] isolate flex h-11 min-w-0 shrink-0 items-center gap-2 px-2 [transform:translateZ(0)] [pointer-events:auto]">
             <div role="tablist" aria-label={panelText.openPanels} className="right-panel-tabs-scroll flex h-full min-w-0 flex-1 items-start gap-1.5 overflow-x-scroll overflow-y-hidden pt-1.5 pb-0.5" onWheel={(event) => {
               const tabs = event.currentTarget;
               if (tabs.scrollWidth <= tabs.clientWidth || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) return;
               tabs.scrollLeft += event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? tabs.clientWidth : 1);
             }}>
-              {rightPanels.map((panel) => { const item = rightPanelTabs.find((candidate) => candidate.id === panel.tab) ?? rightPanelTabs[0]; const Icon = item.icon; const label = panelText[panel.tab]; const displayLabel = panel.tab === 'browser' || panel.tab === 'terminals' ? panel.label : label; const active = activeRightPanelId === panel.instanceId; return <div key={panel.instanceId} className={`group flex h-8 min-w-0 shrink-0 items-center rounded-lg transition-colors ${active ? 'bg-(--codeclub-acrylic-active) hover:bg-(--codeclub-hover)' : 'hover:bg-white/[0.06]'}`}><button type="button" role="tab" aria-selected={active} aria-controls={`right-panel-${panel.instanceId}`} title={displayLabel} onClick={() => setActiveRightPanelId(panel.instanceId)} onContextMenu={(event) => { event.preventDefault(); setRightMenuOpen(false); setRightContextMenu({ panel, x: event.clientX, y: event.clientY }); }} className={`flex h-full min-w-0 items-center gap-2 rounded-lg px-2.5 text-[12px] font-medium focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${active ? 'text-(--codeclub-text-strong)' : 'text-(--codeclub-text-muted)'}`}>{panel.iconUrl ? <img src={panel.iconUrl} alt="" onError={(event) => { event.currentTarget.style.display = 'none'; window.dispatchEvent(new CustomEvent('codeclub:browser-tab-meta', { detail: { clearFavicon: true } })); }} className="h-[15px] w-[15px] shrink-0 rounded-sm object-contain" /> : <Icon size={15} strokeWidth={1.8} aria-hidden="true" />}<span className="max-w-[150px] truncate">{displayLabel}</span></button><button type="button" onClick={() => closeRightPanel(panel.instanceId)} className={`mr-1 grid h-5 w-5 shrink-0 place-items-center rounded-md transition-opacity hover:bg-white/[0.1] hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${active ? 'text-(--codeclub-text-strong) opacity-100' : 'text-(--codeclub-text-muted) opacity-0 group-hover:opacity-100'}`} aria-label={`${sidebarText.close} ${displayLabel}`} title={`${sidebarText.close} ${displayLabel}`}><X size={12} strokeWidth={2} aria-hidden="true" /></button></div>; })}
-              <button type="button" onClick={() => setRightMenuOpen((open) => !open)} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-transparent text-(--codeclub-text-muted) transition-colors hover:bg-white/[0.08] hover:text-(--codeclub-text) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={panelText.addRightPanel} aria-haspopup="menu" aria-expanded={rightMenuOpen}><Plus size={16} strokeWidth={1.7} aria-hidden="true" /></button>
+              {rightPanels.map((panel) => { const item = rightPanelTabs.find((candidate) => candidate.id === panel.tab) ?? rightPanelTabs[0]; const Icon = item.icon; const label = panelText[panel.tab]; const displayLabel = panel.tab === 'browser' || panel.tab === 'terminals' ? panel.label : label; const active = activeRightPanelId === panel.instanceId; return <div key={panel.instanceId} className={`group flex h-8 min-w-0 shrink-0 items-center rounded-lg transition-colors ${active ? 'bg-(--codeclub-acrylic-active) hover:bg-(--codeclub-hover)' : 'hover:bg-white/[0.06]'}`}><button type="button" role="tab" aria-selected={active} aria-controls={`right-panel-${panel.instanceId}`} title={displayLabel} onClick={() => setActiveRightPanelId(panel.instanceId)} onContextMenu={(event) => { event.preventDefault(); setRightMenuOpen(false); setRightContextMenu({ panel, x: event.clientX, y: event.clientY }); }} className={`flex h-full min-w-0 items-center gap-2 rounded-lg px-2.5 text-[12px] font-medium focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${active ? 'text-(--codeclub-text-strong)' : 'text-(--codeclub-text-muted)'}`}>{panel.iconUrl ? <img src={panel.iconUrl} alt="" onError={(event) => { event.currentTarget.style.display = 'none'; window.dispatchEvent(new CustomEvent('codeclub:browser-tab-meta', { detail: { clearFavicon: true } })); }} className="h-[15px] w-[15px] shrink-0 rounded-sm object-contain" /> : <Icon size={15} strokeWidth={1.8} aria-hidden="true" />}<span className="max-w-[150px] truncate">{displayLabel}</span></button><button type="button" onClick={() => closeRightPanel(panel.instanceId)} className={`mr-1 grid h-5 w-5 shrink-0 place-items-center rounded-md transition-opacity hover:bg-white/[0.1] hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${active ? 'text-(--codeclub-text-strong) opacity-100' : 'text-(--codeclub-text-muted) opacity-0 group-hover:opacity-100 focus-visible:opacity-100'}`} aria-label={`${sidebarText.close} ${displayLabel}`} title={`${sidebarText.close} ${displayLabel}`}><X size={12} strokeWidth={2} aria-hidden="true" /></button></div>; })}
+              <button type="button" onClick={() => setRightMenuOpen((open) => !open)} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-transparent text-(--codeclub-text-muted) transition-colors hover:bg-white/[0.08] hover:text-(--codeclub-text) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={panelText.addRightPanel} aria-haspopup="menu" aria-expanded={rightMenuOpen} title={panelText.addRightPanel}><Plus size={16} strokeWidth={1.7} aria-hidden="true" /></button>
             </div>
             <AnimatePresence>
               {rightMenuOpen && <motion.div initial={{ opacity: 0, y: -5, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -5, scale: 0.98 }} transition={{ duration: 0.14, ease: 'easeOut' }} className="absolute top-[42px] left-2 z-30 w-[220px] max-w-[calc(100vw-24px)] rounded-xl border border-white/[0.08] bg-[#2C2C2C]/90 p-1 shadow-2xl backdrop-blur-xl" role="menu" aria-label={panelText.rightPanelMenu}>
@@ -1068,7 +1132,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
           </div>
           <div className="absolute inset-x-0 top-11 bottom-0 flex min-h-0 flex-col overflow-hidden">
             {rightPanels.length === 0 && <RightPanelEmptyState onSelect={openRightPanel} />}
-            {Object.entries(rightViews).flatMap(([scope, view]) => view.panels.map(panel => { const visible = scope === rightScope && view.active === panel.instanceId; const [projectPath] = JSON.parse(scope); return <div key={panel.instanceId} className={`min-h-0 min-w-0 flex-1 flex-col ${visible ? 'flex' : 'hidden'}`}><RightSidebarContent panel={panel} projectName={projectPath ? projectPath.split(/[\\/]/).pop() : 'Codeclub'} projectPath={projectPath} selectedFilePath={view.file} filesTreeVisible={view.tree} onToggleFilesTree={() => setFilesTreeVisible(value => !value)} visible={visible} chatId={JSON.parse(scope)[1] === 'draft' ? undefined : JSON.parse(scope)[1]} selected={view.active === panel.instanceId} /></div>; }))}
+            {Object.entries(rightViews).flatMap(([scope, view]) => view.panels.map(panel => { const visible = rightOpen && activeSection !== 'orbs' && scope === rightScope && view.active === panel.instanceId; const [projectPath] = JSON.parse(scope); return <div key={panel.instanceId} className={`min-h-0 min-w-0 flex-1 flex-col ${visible ? 'flex' : 'hidden'}`}><RightSidebarContent panel={panel} projectName={projectPath ? projectPath.split(/[\\/]/).pop() : 'Codeclub'} projectPath={projectPath} selectedFilePath={view.file} filesTreeVisible={view.tree} onToggleFilesTree={() => setFilesTreeVisible(value => !value)} visible={visible} chatId={JSON.parse(scope)[1] === 'draft' ? undefined : JSON.parse(scope)[1]} selected={view.active === panel.instanceId} /></div>; }))}
           </div>
         </div>
       </motion.aside>
@@ -1079,25 +1143,6 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
   </section>;
 }
 
-function SidebarCategory({ id, title, children, action, initiallyOpen = false }: { id: string; title: string; children: ReactNode; action?: ReactNode; initiallyOpen?: boolean }) {
-  const [expanded, setExpanded] = useState(initiallyOpen);
-  useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem(`codeclub:sidebar-category:${id}`);
-      if (stored === 'true' || stored === 'false') setExpanded(stored === 'true');
-    } catch { /* Keep the category usable when preferences are unavailable. */ }
-  }, [id]);
-  const toggle = () => {
-    const next = !expanded;
-    setExpanded(next);
-    try { window.localStorage.setItem(`codeclub:sidebar-category:${id}`, String(next)); } catch { /* Keep the in-memory preference. */ }
-  };
-  return <section className="mt-3 pb-1" aria-label={title}>
-    <div className="flex items-center"><button type="button" onClick={toggle} aria-expanded={expanded} aria-controls={`codeclub-sidebar-category-${id}`} className="flex h-7 min-w-0 flex-1 items-center gap-1 rounded-md px-1.5 text-left text-[12px] font-medium text-(--codeclub-text-muted) hover:text-(--codeclub-text-strong) focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)"><span className="truncate">{title}</span><ChevronDown size={12} className={`shrink-0 ${expanded ? '' : '-rotate-90'}`} aria-hidden="true" /></button>{action}</div>
-    <div id={`codeclub-sidebar-category-${id}`} hidden={!expanded} className="mt-1 space-y-1">{children}</div>
-  </section>;
-}
-
 function SidebarChatGroup({ id, title, chats, renderChat, emptyText, initiallyOpen = false }: { id: string; title: string; chats: RecentChat[]; renderChat: (chat: RecentChat) => ReactNode; emptyText: string; initiallyOpen?: boolean }) {
   return <SidebarCategory id={id} title={title} initiallyOpen={initiallyOpen}>{chats.length ? chats.map(renderChat) : <p className="px-2.5 py-1 text-[11px] text-(--codeclub-text-muted)">{emptyText}</p>}</SidebarCategory>;
 }
@@ -1105,16 +1150,18 @@ function SidebarChatGroup({ id, title, chats, renderChat, emptyText, initiallyOp
 const PanelManager = memo(function PanelManager({ activeSection, activeOrbId, onOrbCreated, selectedTask }: { activeSection: SidebarSection; activeOrbId?: string; onOrbCreated: (id: string) => void; selectedTask?: ScheduledTask }) {
   const language = useAppLanguage();
   const chatVisible = activeSection === 'new-chat' || activeSection === 'extensions';
+  const commandsVisible = activeSection === 'new-chat';
   const synapseVisible = activeSection === 'projects';
   const orbsVisible = activeSection === 'orbs';
   useEffect(() => {
-    window.dispatchEvent(new CustomEvent('codeclub:chat-panel-visibility', { detail: { visible: chatVisible } }));
-  }, [chatVisible]);
-  return <main id="codeclub-main-content" tabIndex={-1} className="relative min-h-0 min-w-0 flex-1 overflow-hidden" aria-label={rightSidebarTranslations[language].panelManager} aria-live="polite">
+    window.dispatchEvent(new CustomEvent('codeclub:chat-panel-visibility', { detail: { visible: commandsVisible } }));
+  }, [commandsVisible]);
+  return <main id="codeclub-main-content" data-surface={activeSection} tabIndex={-1} className="relative min-h-0 min-w-0 flex-1 overflow-hidden" aria-label={rightSidebarTranslations[language].panelManager}>
+    <OrbActivityObserver />
     <div className={`codeclub-panel-shell h-full w-full ${chatVisible ? 'overflow-visible' : 'overflow-hidden'} bg-(--codeclub-center)`}>
       <div className={`h-full min-h-0 min-w-0 ${chatVisible ? 'block' : 'hidden'}`} aria-hidden={!chatVisible} inert={!chatVisible}><ChatPanel /></div>
       {synapseVisible && <div className="relative z-10 h-full min-h-0 min-w-0"><SynapsePanel /></div>}
-      {orbsVisible && <div className="relative z-10 h-full min-h-0 min-w-0"><OrbsPanel createMode={!activeOrbId} onCreated={onOrbCreated} /></div>}
+      {orbsVisible && <div className="relative z-10 h-full min-h-0 min-w-0"><OrbsPanel workspaceMode selectedOrbId={activeOrbId} createMode={!activeOrbId} onCreated={onOrbCreated} /></div>}
       {activeSection === 'tasks' && <TaskDetailsPanel task={selectedTask} />}
     </div>
   </main>;
@@ -1150,6 +1197,10 @@ function ReviewPanel({ projectPath, visible, onClose }: { projectPath?: string; 
   const [branchQuery, setBranchQuery] = useState('');
   const scopeMenuRef = useRef<HTMLDivElement | null>(null);
   const branchMenuRef = useRef<HTMLDivElement | null>(null);
+  const dialogRef = useRef<HTMLElement | null>(null);
+  useDialogAccessibility(dialogRef, visible, onClose);
+  usePopupKeyboard(scopeMenuRef, scopeMenuOpen, () => setScopeMenuOpen(false));
+  usePopupKeyboard(branchMenuRef, branchMenuOpen, () => setBranchMenuOpen(false));
   const [loading, setLoading] = useState(false);
   const [diffLoading, setDiffLoading] = useState(false);
   const [diffContent, setDiffContent] = useState('');
@@ -1207,12 +1258,6 @@ function ReviewPanel({ projectPath, visible, onClose }: { projectPath?: string; 
     return () => window.removeEventListener('codeclub:workspace-changed', refresh);
   }, [projectPath, compareBranch, changeScope]);
   useEffect(() => {
-    if (!visible) return undefined;
-    const closeWithEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', closeWithEscape);
-    return () => window.removeEventListener('keydown', closeWithEscape);
-  }, [visible, onClose]);
-  useEffect(() => {
     if (!scopeMenuOpen && !branchMenuOpen) return undefined;
     const closeOnOutsideClick = (event: PointerEvent) => {
       const target = event.target as Node;
@@ -1255,7 +1300,7 @@ function ReviewPanel({ projectPath, visible, onClose }: { projectPath?: string; 
     : { unstaged: 'Sin preparar', uncommitted: 'Sin confirmar', staged: 'Preparados', branch: 'Rama' };
   const filteredBranches = branches.filter((item) => item.toLowerCase().includes(branchQuery.trim().toLowerCase()));
   const diffRows = diffContent.split(/\r?\n/);
-  const modal = visible && typeof document !== 'undefined' ? createPortal(<div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-black/65 p-4 backdrop-blur-[3px]" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section role="dialog" aria-modal="true" aria-label={language === 'en' ? 'Review changes' : 'Revisar cambios'} className="codeclub-file-dialog flex h-[min(480px,80dvh)] w-[min(640px,92vw)] flex-col overflow-hidden rounded-[20px] border border-[#151515] bg-[#111111] shadow-2xl shadow-black/60" style={{ '--codeclub-accent': palette.accent, '--codeclub-accent-bright': palette.bright } as React.CSSProperties}>
+  const modal = visible && typeof document !== 'undefined' ? createPortal(<div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-black/65 p-4 backdrop-blur-[3px]" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-busy={loading || diffLoading} aria-label={language === 'en' ? 'Review changes' : 'Revisar cambios'} className="codeclub-file-dialog flex h-[min(480px,80dvh)] w-[min(640px,92vw)] flex-col overflow-hidden rounded-[20px] border border-[#151515] bg-[#111111] shadow-2xl shadow-black/60" style={{ '--codeclub-accent': palette.accent, '--codeclub-accent-bright': palette.bright } as React.CSSProperties}>
     <header className="relative z-20 flex min-h-10 shrink-0 flex-wrap items-center gap-2 border-b border-[#202020] px-3 py-1.5">
       <GithubMark size={18}/>
       <h2 className="m-0 shrink-0 text-[13px] font-medium text-(--codeclub-text-strong)">{language === 'en' ? 'Review changes' : 'Revisar cambios'}</h2>
@@ -1273,7 +1318,7 @@ function ReviewPanel({ projectPath, visible, onClose }: { projectPath?: string; 
       <div className="ml-auto flex shrink-0 items-center gap-2 text-[11px] tabular-nums"><span className="text-(--codeclub-text-muted)">{files.length} {language === 'en' ? 'files' : 'archivos'}</span><span className="text-[#4ade80]">+{additions}</span><span className="text-[#f87171]">−{deletions}</span><button type="button" onClick={() => void loadReview()} className="grid h-7 w-7 place-items-center text-(--codeclub-text-muted) hover:text-(--codeclub-text-strong)" aria-label={language === 'en' ? 'Refresh changes' : 'Actualizar cambios'} title={language === 'en' ? 'Refresh changes' : 'Actualizar cambios'}><RotateCw size={14} aria-hidden="true"/></button><button type="button" onClick={onClose} className="grid h-7 w-7 place-items-center text-(--codeclub-text-muted) hover:text-(--codeclub-text-strong)" aria-label={language === 'en' ? 'Close' : 'Cerrar'} title={language === 'en' ? 'Close' : 'Cerrar'}><X size={16} aria-hidden="true"/></button></div>
     </header>
     {!projectPath ? <div className="grid min-h-0 flex-1 place-items-center px-6 text-center text-[12px] text-(--codeclub-text-muted)">{text.selectProjectReview}</div> : <div className="flex min-h-0 flex-1">
-      <aside className="flex w-[min(230px,36%)] shrink-0 flex-col border-r border-[#252525]" aria-label={language === 'en' ? 'Changed files' : 'Archivos modificados'}><div className="project-files-modal-scroll min-h-0 flex-1 space-y-1 overflow-auto p-1.5">{loading && <p className="m-0 px-2 py-3 text-[11px] text-(--codeclub-text-muted)">{text.reviewing}</p>}{!loading && error && <div className="flex items-start gap-2 px-2 py-3 text-[11px] text-(--codeclub-text-muted)"><FileWarning size={14} className="mt-0.5 shrink-0 text-(--codeclub-accent-bright)" aria-hidden="true"/><span>{error}</span></div>}{!loading && !error && files.length === 0 && <p className="m-0 px-2 py-3 text-[11px] text-(--codeclub-text-muted)">{text.noPendingChanges}</p>}{!loading && !error && files.map((file) => <button key={`${file.status}-${file.path}`} type="button" onClick={() => setSelectedFile(file.path)} className={`flex w-full min-w-0 items-center gap-2 rounded-xl px-2 py-1.5 text-left text-[11px] transition-colors hover:bg-[#1c1c1c] ${selectedFile === file.path ? 'bg-[#1c1c1c]' : ''}`}><span className={`grid h-5 w-5 shrink-0 place-items-center text-[10px] font-semibold ${file.status === 'A' ? 'text-[#8BC7FF]' : file.status === 'D' ? 'text-[#999999]' : 'text-(--codeclub-text-strong)'}`} aria-label={file.status === 'A' ? text.added : file.status === 'D' ? text.deleted : text.modified}>{file.status}</span><span className="min-w-0 flex-1 truncate text-(--codeclub-text)">{file.path}</span>{(file.additions || file.deletions) > 0 && <span className="shrink-0 tabular-nums text-[10px]"><span className="text-[#4ade80]">+{file.additions}</span> <span className="text-[#f87171]">−{file.deletions}</span></span>}</button>)}</div></aside>
+      <aside className="flex w-[min(230px,36%)] shrink-0 flex-col border-r border-[#252525]" aria-label={language === 'en' ? 'Changed files' : 'Archivos modificados'}><div className="project-files-modal-scroll min-h-0 flex-1 space-y-1 overflow-auto p-1.5">{loading && <p role="status" className="m-0 px-2 py-3 text-[11px] text-(--codeclub-text-muted)">{text.reviewing}</p>}{!loading && error && <div role="alert" className="flex items-start gap-2 px-2 py-3 text-[11px] text-(--codeclub-text-muted)"><FileWarning size={14} className="mt-0.5 shrink-0 text-(--codeclub-accent-bright)" aria-hidden="true"/><span>{error}</span></div>}{!loading && !error && files.length === 0 && <p className="m-0 px-2 py-3 text-[11px] text-(--codeclub-text-muted)">{text.noPendingChanges}</p>}{!loading && !error && files.map((file) => <button key={`${file.status}-${file.path}`} type="button" onClick={() => setSelectedFile(file.path)} aria-pressed={selectedFile === file.path} className={`flex w-full min-w-0 items-center gap-2 rounded-xl px-2 py-1.5 text-left text-[11px] transition-colors hover:bg-[#1c1c1c] ${selectedFile === file.path ? 'bg-[#1c1c1c]' : ''}`}><span className={`grid h-5 w-5 shrink-0 place-items-center text-[10px] font-semibold ${file.status === 'A' ? 'text-[#8BC7FF]' : file.status === 'D' ? 'text-[#999999]' : 'text-(--codeclub-text-strong)'}`} aria-label={file.status === 'A' ? text.added : file.status === 'D' ? text.deleted : text.modified}>{file.status}</span><span className="min-w-0 flex-1 truncate text-(--codeclub-text)">{file.path}</span>{(file.additions || file.deletions) > 0 && <span className="shrink-0 tabular-nums text-[10px]"><span className="text-[#4ade80]">+{file.additions}</span> <span className="text-[#f87171]">−{file.deletions}</span></span>}</button>)}</div></aside>
       <main className="flex min-w-0 flex-1 flex-col"><div className="flex h-9 shrink-0 items-center gap-3 border-b border-[#252525] px-4 text-[11px]">{selected ? <><span className="min-w-0 flex-1 truncate text-(--codeclub-text-strong)">{selected.path}</span>{(selected.additions || selected.deletions) > 0 && <span className="shrink-0 tabular-nums"><span className="text-[#4ade80]">+{selected.additions}</span> <span className="text-[#f87171]">−{selected.deletions}</span></span>}</> : <span className="text-(--codeclub-text-muted)">{language === 'en' ? 'Select a changed file' : 'Seleccioná un archivo modificado'}</span>}</div><div className="project-files-modal-scroll m-2 min-h-0 flex-1 overflow-auto rounded-xl bg-[#101010] font-mono text-[12px] leading-[21px]">{!selected ? <div className="grid h-full place-items-center text-[11px] text-(--codeclub-text-muted)">{loading ? text.reviewing : text.noPendingChanges}</div> : diffLoading ? <div className="p-4 text-[11px] text-(--codeclub-text-muted)">{text.reviewing}</div> : diffContent ? <div className="min-w-max py-2">{diffRows.map((line, index) => { const added = line.startsWith('+') && !line.startsWith('+++'); const removed = line.startsWith('-') && !line.startsWith('---'); const hunk = line.startsWith('@@'); const header = line.startsWith('diff --git') || line.startsWith('index ') || line.startsWith('--- ') || line.startsWith('+++ '); return <div key={`${index}-${line}`} className={`flex min-h-[21px] px-4 ${added ? 'bg-[#12301f] text-[#a4e4b5]' : removed ? 'bg-[#351b1b] text-[#f2aaaa]' : hunk ? 'bg-[#17232e] text-[#9bc7ec]' : header ? 'text-[#858585]' : 'text-[#c6c6c6]'}`}><span className="sticky left-0 w-12 shrink-0 select-none bg-[#111111] pr-3 text-right text-[#555555]">{index + 1}</span><span className="whitespace-pre">{line || ' '}</span></div>; })}</div> : <div className="grid h-full place-items-center px-6 text-center text-[11px] text-(--codeclub-text-muted)">{text.noDiff}</div>}</div></main>
     </div>}
     </section></div>, document.body) : null;
@@ -1298,7 +1343,7 @@ const normalizeBrowserAddress = (value: string) => {
 };
 
 /** Integrated WebView; scoped agent events go to the matching chat/project, while legacy broadcasts reach only visible instances. */
-export function BrowserPanel({ isolated = false, visible = true, selected = true, chatId, projectPath = '', instanceId = 'isolated-browser' }: { isolated?: boolean; visible?: boolean; selected?: boolean; chatId?: string; projectPath?: string; instanceId?: string } = {}) {
+export function BrowserPanel({ isolated = false, visible = true, selected = true, chatId, projectPath = '', instanceId = 'isolated-browser', requestedUrl, navigationRequestId }: { isolated?: boolean; visible?: boolean; selected?: boolean; chatId?: string; projectPath?: string; instanceId?: string; requestedUrl?: string; navigationRequestId?: string } = {}) {
   const language = useAppLanguage();
   const { palette } = useOrbPalette();
   const text = rightSidebarTranslations[language];
@@ -1307,13 +1352,26 @@ export function BrowserPanel({ isolated = false, visible = true, selected = true
   const selectedRef = useRef(selected); selectedRef.current = selected;
   const acceptsBrowserEvent = (event: Event) => { const detail = (event as CustomEvent).detail; return isolated || (detail?.chatId ? selectedRef.current && detail.chatId === chatId && (detail.projectPath || '') === projectPath : visibleRef.current); };
   const addressId = `codeclub-browser-address-${instanceId}`;
-  const initialUrl = typeof window !== 'undefined' && !isolated ? localStorage.getItem(`codeclub:browser-url:${instanceId}`) || DEFAULT_BROWSER_URL : DEFAULT_BROWSER_URL;
+  const initialUrl = normalizeBrowserAddress(requestedUrl || '') || (typeof window !== 'undefined' && !isolated ? localStorage.getItem(`codeclub:browser-url:${instanceId}`) || DEFAULT_BROWSER_URL : DEFAULT_BROWSER_URL);
   const [address, setAddress] = useState(initialUrl);
   const [currentUrl, setCurrentUrl] = useState(initialUrl);
+  // Carry navigation through React state so newly mounted WebViews cannot miss it.
+  useEffect(() => {
+    const url = normalizeBrowserAddress(requestedUrl || '');
+    if (!url) return;
+    setAddress(url); setCurrentUrl(url);
+    const view = webviewRef.current;
+    try {
+      // Link navigation can change the guest URL while React's src stays unchanged.
+      if (view && view.getURL() !== url) void view.loadURL(url).catch(() => {});
+    } catch { /* Initial navigation uses src until the WebView is ready. */ }
+  }, [requestedUrl, navigationRequestId]);
   useEffect(() => { if (!isolated) localStorage.setItem(`codeclub:browser-url:${instanceId}`, currentUrl); }, [currentUrl, instanceId, isolated]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
+  const browserMenuRef = useRef<HTMLDivElement | null>(null);
+  usePopupKeyboard(browserMenuRef, menuOpen, () => setMenuOpen(false));
   const [browserHistory, setBrowserHistory] = useState<{ url: string; title: string }[]>([]);
   const browserAddressMenuRef = useRef<HTMLDivElement | null>(null);
   const browserAddressFocusedRef = useRef(false);
@@ -1740,9 +1798,9 @@ export function BrowserPanel({ isolated = false, visible = true, selected = true
     <div className="flex h-9 shrink-0 items-center gap-2 bg-transparent px-2.5" aria-label={text.browserControls}>{!currentUrl && !loadError && <div className="absolute top-9 right-0 bottom-0 left-0 z-[1] flex flex-col items-center justify-center gap-5 bg-[#202124]"><GlobeCheck aria-hidden="true" className="text-[#9aa0a6]" size={38} strokeWidth={1.7} /><form onSubmit={submitAddress} className="flex h-[52px] w-[min(520px,calc(100%-32px))] items-center gap-2 rounded-[14px] border border-[#3c4043] bg-[#1a1a1a] px-3 shadow-[0_8px_30px_#00000040] transition-colors hover:bg-[#1f1f1f] focus-within:border-[#5f6368]"><span className="grid h-8 w-8 shrink-0 place-items-center text-[24px] text-[#8a8a8a]">⌕</span><input autoFocus value={address} onChange={(event) => setAddress(event.target.value)} className="h-9 min-w-0 flex-1 bg-transparent px-2 text-[13px] text-[#e8eaed] outline-none placeholder:text-[#9a9a9a]" placeholder={text.browserAddressPlaceholder} aria-label={text.webAddress} /><button type="submit" aria-label={text.openUrl} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-transparent text-[24px] text-[#8a8a8a] hover:bg-white/[0.06] hover:text-[#f1f1f1]">↗</button></form></div>}
       <div className="flex shrink-0 items-center gap-0.5"><button type="button" onClick={() => webviewRef.current?.goBack?.()} className="grid h-7 w-7 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.back} title={text.back}><ArrowLeft size={16} /></button><button type="button" onClick={() => webviewRef.current?.goForward?.()} className="grid h-7 w-7 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.forward} title={text.forward}><ArrowRight size={16} /></button><button type="button" onClick={() => webviewRef.current?.reload?.()} className="grid h-7 w-7 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.reload} title={text.reload}><RotateCw size={16} className={loading ? 'animate-spin' : ''} /></button><button type="button" onClick={() => { setAddress(''); setCurrentUrl(DEFAULT_BROWSER_URL); setLoadError(''); setLoading(false); }} className="grid h-7 w-7 place-items-center rounded-full text-[#8a8a8a] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.home} title={text.home}><Home size={15} /></button></div>
       <form onSubmit={submitAddress} className="min-w-0 flex-1"><label className="sr-only" htmlFor={addressId}>{text.webAddress}</label><input id={addressId} value={address.replace(/^https?:\/\//, '').replace(/\/$/, '')} onChange={(event) => setAddress(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); closeAddressMenu(); event.currentTarget.blur(); } else if (event.key === 'ArrowDown') { const firstRow = browserAddressMenuRef.current?.querySelector<HTMLButtonElement>('.codeclub-browser-history-row'); if (firstRow) { event.preventDefault(); firstRow.focus(); } } }} onFocus={(event) => event.currentTarget.select()} className="h-8 w-full bg-transparent text-center text-[17px] font-medium text-[#f1f3f4] outline-none placeholder:text-[#8a8a8a]" aria-label={text.webAddress} placeholder={text.browserAddressPlaceholder} /></form>
-      <div className="relative flex shrink-0 items-center gap-0.5"><button type="button" className={`grid h-7 w-7 place-items-center rounded-full hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${selectionMode ? 'bg-[#3d9bff22] text-[#8bc7ff]' : 'text-[#b8b8b8]'}`} aria-label={text.pickElement} title={text.pickElement} aria-pressed={selectionMode} onClick={() => selectionMode ? void clearPagePicker() : void startPagePicker()}><MousePointerClick size={17} /></button><button type="button" onClick={() => setMenuOpen((open) => !open)} className="grid h-7 w-7 place-items-center rounded-full text-[#b8b8b8] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.moreOptions} title={text.moreOptions} aria-expanded={menuOpen}><EllipsisVertical size={17} /></button>{menuOpen && <div className="absolute top-9 right-0 z-20 w-56 rounded-xl border border-white/[0.08] bg-[#2C2C2C]/95 p-1.5 shadow-xl backdrop-blur-xl"><button type="button" onClick={() => { webviewRef.current?.reload?.(); setMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[11px] whitespace-nowrap text-[#eeeeee] hover:bg-white/[0.08]"><RotateCw className="shrink-0 text-[#b8b8b8]" size={14} strokeWidth={1.8} aria-hidden="true" /><span className="min-w-0 truncate">{text.reload}</span></button><div className="mx-2 my-1 h-px bg-[#444444]" /><button type="button" onClick={() => { window.open(currentUrl, '_blank'); setMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[11px] whitespace-nowrap text-[#eeeeee] hover:bg-white/[0.08]"><ExternalLink className="shrink-0 text-[#b8b8b8]" size={14} strokeWidth={1.8} aria-hidden="true" /><span className="min-w-0 truncate">{text.openOutside}</span></button></div>}</div>
+      <div ref={browserMenuRef} className="relative flex shrink-0 items-center gap-0.5"><button type="button" className={`grid h-7 w-7 place-items-center rounded-full hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${selectionMode ? 'bg-[#3d9bff22] text-[#8bc7ff]' : 'text-[#b8b8b8]'}`} aria-label={text.pickElement} title={text.pickElement} aria-pressed={selectionMode} onClick={() => selectionMode ? void clearPagePicker() : void startPagePicker()}><MousePointerClick size={17} /></button><button type="button" onClick={() => setMenuOpen((open) => !open)} className="grid h-7 w-7 place-items-center rounded-full text-[#b8b8b8] hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={text.moreOptions} title={text.moreOptions} aria-haspopup="menu" aria-expanded={menuOpen}><EllipsisVertical size={17} /></button>{menuOpen && <div role="menu" aria-label={text.moreOptions} className="absolute top-9 right-0 z-20 w-56 rounded-xl border border-white/[0.08] bg-[#2C2C2C]/95 p-1.5 shadow-xl backdrop-blur-xl"><button type="button" role="menuitem" onClick={() => { webviewRef.current?.reload?.(); setMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[11px] whitespace-nowrap text-[#eeeeee] hover:bg-white/[0.08]"><RotateCw className="shrink-0 text-[#b8b8b8]" size={14} strokeWidth={1.8} aria-hidden="true" /><span className="min-w-0 truncate">{text.reload}</span></button><div className="mx-2 my-1 h-px bg-[#444444]" /><button type="button" role="menuitem" onClick={() => { window.open(currentUrl, '_blank'); setMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[11px] whitespace-nowrap text-[#eeeeee] hover:bg-white/[0.08]"><ExternalLink className="shrink-0 text-[#b8b8b8]" size={14} strokeWidth={1.8} aria-hidden="true" /><span className="min-w-0 truncate">{text.openOutside}</span></button></div>}</div>
     </div>
-    <div className="absolute top-9 right-0 bottom-0 left-0 overflow-hidden">{createElement('webview', viewProps)}</div>{selectedElement && <div className="absolute z-20 w-[min(360px,calc(100%-16px))]" style={{ left: `clamp(8px, ${selectedElement.x}px, calc(100% - 376px))`, top: styleEditorOpen ? `clamp(48px, ${selectedElement.y + 48}px, calc(100% - 328px))` : `clamp(48px, ${selectedElement.y + 48}px, calc(100% - 152px))`, ...(styleEditorOpen ? { height: "min(320px, calc(100% - 56px))" } : {}) }}>{styleEditorOpen ? <BrowserStyleEditor key={selectedElement.markerId} element={selectedElement} language={language} onCancel={cancelStyleChanges} onConfirm={addStyleChanges} onPreview={previewStyleChanges} /> : <form className="chat-selection-comment browser-selection-comment" onSubmit={(event) => { event.preventDefault(); addSelectedReference(); }}><button type="button" onClick={() => setStyleEditorOpen(true)} aria-label={browserStyleTranslations[language].edit} title={browserStyleTranslations[language].edit}><Pencil size={15} strokeWidth={1.8} aria-hidden="true" /></button><input ref={selectionCommentRef} type="text" value={selectionComment} onChange={(event) => setSelectionComment(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); discardSelectedReference(); } }} placeholder={agentTextSelectionTranslations[language].commentPlaceholder} aria-label={agentTextSelectionTranslations[language].commentPlaceholder} /><button type="submit" aria-label={agentTextSelectionTranslations[language].addToChat} title={agentTextSelectionTranslations[language].addToChat}><ArrowUp size={16} strokeWidth={2} /></button></form>}</div>}{loadError && <div className="absolute inset-0 z-10 grid place-items-center bg-[#202124] px-6 text-center"><div className="max-w-[360px]"><p className="m-0 text-[15px] font-medium text-[#f1f3f4]">{text.pageLoadError}</p><p className="mt-2 mb-0 break-words text-[12px] leading-5 text-[#a7a7a7]">{loadError}</p><p className="mt-1 mb-0 break-words text-[11px] text-[#777777]">{currentUrl}</p><button type="button" onClick={() => { setLoadError(''); setLoading(true); webviewRef.current?.reload?.(); }} className="mt-4 rounded-lg bg-white/[0.08] px-3 py-1.5 text-[11px] text-[#eeeeee] hover:bg-white/[0.14]">{text.retry}</button></div></div>}
+    <div className="absolute top-9 right-0 bottom-0 left-0 overflow-hidden">{createElement('webview', viewProps)}</div>{selectedElement && <div className="absolute z-20 w-[min(360px,calc(100%-16px))]" style={{ left: `clamp(8px, ${selectedElement.x}px, calc(100% - 376px))`, top: styleEditorOpen ? `clamp(48px, ${selectedElement.y + 48}px, calc(100% - 328px))` : `clamp(48px, ${selectedElement.y + 48}px, calc(100% - 152px))`, ...(styleEditorOpen ? { height: "min(320px, calc(100% - 56px))" } : {}) }}>{styleEditorOpen ? <BrowserStyleEditor key={selectedElement.markerId} element={selectedElement} language={language} onCancel={cancelStyleChanges} onConfirm={addStyleChanges} onPreview={previewStyleChanges} /> : <form className="chat-selection-comment browser-selection-comment" onSubmit={(event) => { event.preventDefault(); addSelectedReference(); }}><button type="button" onClick={() => setStyleEditorOpen(true)} aria-label={browserStyleTranslations[language].edit} title={browserStyleTranslations[language].edit}><Pencil size={15} strokeWidth={1.8} aria-hidden="true" /></button><input ref={selectionCommentRef} type="text" value={selectionComment} onChange={(event) => setSelectionComment(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); discardSelectedReference(); } }} placeholder={agentTextSelectionTranslations[language].commentPlaceholder} aria-label={agentTextSelectionTranslations[language].commentPlaceholder} /><button type="submit" aria-label={agentTextSelectionTranslations[language].addToChat} title={agentTextSelectionTranslations[language].addToChat}><ArrowUp size={16} strokeWidth={2} /></button></form>}</div>}{loadError && <div className="absolute inset-0 z-10 grid place-items-center bg-[#202124] px-6 text-center"><div className="max-w-[360px]"><p className="m-0 text-[15px] font-medium text-[#f1f3f4]">{text.pageLoadError}</p><p className="mt-2 mb-0 break-words text-[12px] leading-5 text-[#a7a7a7]">{loadError}</p><p className="mt-1 mb-0 break-words text-[11px] text-[#999999]">{currentUrl}</p><button type="button" onClick={() => { setLoadError(''); setLoading(true); webviewRef.current?.reload?.(); }} className="mt-4 rounded-lg bg-white/[0.08] px-3 py-1.5 text-[11px] text-[#eeeeee] hover:bg-white/[0.14]">{text.retry}</button></div></div>}
   </div>;
 }
 
@@ -1916,7 +1974,7 @@ function TerminalPanel({ projectPath, terminalId, instanceId, visible = true }: 
               if (followOutput) terminal.scrollToBottom();
             }
             outputOffsetRef.current = Number(snapshot.offset) || outputOffsetRef.current;
-          } catch { /* La sesión se limpia al desmontar el panel. */ }
+          } catch { /* The session is cleaned up when the panel unmounts. */ }
           finally {
             pollInFlight = false;
             if (pollAgain && !cancelled) void poll();
@@ -1939,7 +1997,7 @@ function TerminalPanel({ projectPath, terminalId, instanceId, visible = true }: 
     };
   }, [projectPath, terminalId]);
 
-  return <div ref={containerRef} id="codeclub-terminal-panel" className="h-full min-h-0 w-full bg-(--paper) p-0" onClick={() => terminalRef.current?.focus()} aria-label={rightSidebarTranslations[language].terminalAria} />;
+  return <div ref={containerRef} id="codeclub-terminal-panel" role="region" className="h-full min-h-0 w-full bg-(--paper) p-0" onClick={() => terminalRef.current?.focus()} aria-label={rightSidebarTranslations[language].terminalAria} />;
 }
 
 function ChatSessionStatus({ session, language, seenCompletions }: { session?: SharedSession; language: AppLanguage; seenCompletions: Record<string, string> }) {
@@ -1982,8 +2040,8 @@ function RightSidebarContent({ panel, projectName, projectPath, selectedFilePath
   } : {
     files: 'Explorá los archivos del proyecto activo.', browser: 'Abrí y controlá páginas dentro de Electron.', terminals: 'Gestioná terminales persistentes de la sesión.',
   };
-  if (tab === 'files') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={text.files} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="h-full min-h-0 flex-1 overflow-hidden bg-(--paper) text-(--ink)">{projectPath ? <ProjectPanelView projectPath={projectPath} projectName={projectName} selectedPath={selectedFilePath} showFileTree={filesTreeVisible} onToggleFileTree={onToggleFilesTree} /> : <div className="flex h-full flex-col items-center justify-center px-5 text-center"><div><FolderPen size={28} strokeWidth={1.3} className="mx-auto text-(--codeclub-text-muted)" aria-hidden="true" /><p className="mt-3 mb-0 text-[12px] text-(--codeclub-text-strong)">{language === 'en' ? 'No active project' : 'Sin proyecto activo'}</p><p className="mt-1 mb-0 text-[11px] leading-5 text-(--codeclub-text-muted)">{language === 'en' ? 'Link a folder to explore its files.' : 'Vinculá una carpeta para explorar sus archivos.'}</p></div></div>}</motion.section>;
-  if (tab === 'browser') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="h-full min-h-0 flex-1 overflow-hidden bg-(--paper) text-(--ink)"><BrowserPanel visible={visible} selected={selected} chatId={chatId} projectPath={projectPath} instanceId={panel.instanceId} /></motion.section>;
+  if (tab === 'files') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={text.files} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="h-full min-h-0 flex-1 overflow-hidden bg-(--paper) text-(--ink)">{projectPath ? <ProjectPanelView projectPath={projectPath} projectName={projectName} selectedPath={selectedFilePath} showFileTree={filesTreeVisible && visible} onToggleFileTree={onToggleFilesTree} /> : <div className="flex h-full flex-col items-center justify-center px-5 text-center"><div><FolderPen size={28} strokeWidth={1.3} className="mx-auto text-(--codeclub-text-muted)" aria-hidden="true" /><p className="mt-3 mb-0 text-[12px] text-(--codeclub-text-strong)">{language === 'en' ? 'No active project' : 'Sin proyecto activo'}</p><p className="mt-1 mb-0 text-[11px] leading-5 text-(--codeclub-text-muted)">{language === 'en' ? 'Link a folder to explore its files.' : 'Vinculá una carpeta para explorar sus archivos.'}</p></div></div>}</motion.section>;
+  if (tab === 'browser') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="h-full min-h-0 flex-1 overflow-hidden bg-(--paper) text-(--ink)"><BrowserPanel visible={visible} selected={selected} chatId={chatId} projectPath={projectPath} instanceId={panel.instanceId} requestedUrl={panel.requestedUrl} navigationRequestId={panel.navigationRequestId} /></motion.section>;
   if (tab === 'terminals') return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-hidden bg-(--paper) text-(--ink)"><TerminalPanel projectPath={projectPath} terminalId={panel.terminalId} instanceId={panel.instanceId} visible={visible} /></motion.section>;
   return <motion.section key={panel.instanceId} id={`right-panel-${panel.instanceId}`} role="tabpanel" aria-label={panel.label} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.16, ease: 'easeOut' }} className="min-h-0 flex-1 overflow-auto bg-(--paper) px-3 py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
     <div className="mt-5 grid min-h-[180px] place-items-center rounded-xl bg-transparent px-5 text-center"><div><Icon size={28} strokeWidth={1.3} className="mx-auto text-(--codeclub-text-muted)" aria-hidden="true" /><p className="mt-3 mb-0 text-[12px] text-(--codeclub-text-strong)">{projectPath ? projectName : 'Sin proyecto activo'}</p><p className="mt-1 mb-0 text-[11px] leading-5 text-(--codeclub-text-muted)">{descriptions[tab]}</p></div></div>

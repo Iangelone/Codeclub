@@ -20,7 +20,9 @@ try {
       // Keep the actual page, navigation bars, sidebar and persistence hooks.
       // Only the AI chat and background task execution are outside this regression.
       builder.onResolve({ filter: /(?:^|\/)(ChatPanel|FloatingChat|ScheduledTaskRunner)(?:\.tsx)?$/ }, args => ({ path: args.path, namespace: 'qa-child' }));
-      builder.onLoad({ filter: /.*/, namespace: 'qa-child' }, () => ({ contents: `import React from 'react';export default function Child(){return <div data-qa-chat/>}`, loader: 'jsx', resolveDir: repo }));
+      builder.onLoad({ filter: /.*/, namespace: 'qa-child' }, args => ({ contents: args.path.includes('ChatPanel') ? `import React from 'react';import WorkspaceManager from ${JSON.stringify(path.join(repo, 'src/components/WorkspaceManager.tsx'))};export default function Child(){return <WorkspaceManager catalog={{}} defaultProvider="qa" defaultModel="qa"/>}` : `import React from 'react';export default function Child(){return <div data-qa-chat/>}`, loader: 'jsx', resolveDir: repo }));
+      builder.onResolve({ filter: /ChatInterface\.tsx$/ }, args => ({ path: args.path, namespace: 'qa-chat' }));
+      builder.onLoad({ filter: /.*/, namespace: 'qa-chat' }, () => ({ contents: `import React from 'react';export default function Chat(){return <div data-qa-chat/>}`, loader: 'jsx', resolveDir: repo }));
     },
   }] });
   const cssDirectory = path.join(repo, 'out/_next/static/chunks');
@@ -36,7 +38,7 @@ try {
   browser = await chromium.launch({ channel: 'msedge', headless: true });
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   const errors = [];
-  page.on('pageerror', error => errors.push(error.message));
+  page.on('pageerror', error => { errors.push(error.message); console.error('Layout:', error.message); });
   await page.addInitScript(() => {
     const project = { id: 'fixture', name: 'Proyecto QA', path: 'C:/qa/project' };
     if (!localStorage.getItem('qa:initialized')) {
@@ -48,6 +50,7 @@ try {
     window.addEventListener('codeclub:open-empty-chat', () => { window.qa.emptyChats++; });
     const files = new Map();
     window.codeclub = {
+      credentialPresent: async () => false, tasksList: async () => [],
       onMainShow: () => () => {}, onTasksChanged: () => () => {}, onFullscreenChange: () => () => {},
       windowIsFullScreen: async () => false, onSessions: () => () => {}, sessionList: async () => [],
       listProjects: async () => [project], switchProject: async () => project,
@@ -74,6 +77,23 @@ try {
       return button.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
     }), { message: 'The visible control receives clicks at its center' }).toBe(true);
   };
+  const projectRow = sidebar.getByRole('button', { name: 'Proyecto QA', exact: true });
+  await projectRow.click({ button: 'right' });
+  const projectMenu = page.getByRole('menu', { name: 'Menú del proyecto: Proyecto QA', exact: true });
+  await expect(projectMenu).toBeVisible();
+  await expect(projectMenu.getByRole('menuitem')).toHaveCount(3);
+  for (const item of await projectMenu.getByRole('menuitem').all()) assert.ok(await item.evaluate(button => { const text = button.querySelector('span'); return button.scrollHeight <= button.clientHeight && text.getBoundingClientRect().height <= parseFloat(getComputedStyle(text).lineHeight) + 1; }), 'Project menu labels fit on one line');
+  if (process.env.CODECLUB_QA_PROJECT_MENU_SCREENSHOT) await projectMenu.screenshot({ path: process.env.CODECLUB_QA_PROJECT_MENU_SCREENSHOT });
+  await projectMenu.getByRole('menuitem', { name: 'Cambiar nombre', exact: true }).click();
+  await expect(sidebar.getByRole('textbox', { name: 'Nombre del proyecto', exact: true })).toHaveValue('Proyecto QA');
+  await sidebar.getByRole('textbox', { name: 'Nombre del proyecto', exact: true }).press('Escape');
+  await projectRow.focus(); await projectRow.press('Shift+F10');
+  await expect(projectMenu).toBeVisible(); await page.keyboard.press('Escape');
+  await expect(projectMenu).toHaveCount(0);
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('codeclub:open-project-picker')));
+  const quickProjects = page.getByRole('menu', { name: 'Proyectos', exact: true });
+  await expect(quickProjects.getByRole('menuitemradio').first()).toBeFocused();
+  await page.keyboard.press('Escape'); await expect(quickProjects).toHaveCount(0);
   await assertHit(rename);
   await assertHit(sidebar.getByRole('button', { name: 'Ocultar sidebar izquierda', exact: true }));
   await page.mouse.click(136, 56); // Former invisible Reload hitbox over the sidebar header.
@@ -87,7 +107,7 @@ try {
   await rename.click();
   await nameInput.fill('Renombrado QA');
   await nameInput.press('Enter');
-  await sidebar.getByText('Renombrado QA', { exact: true }).waitFor();
+  await sidebar.getByTitle('Renombrado QA', { exact: true }).waitFor();
   assert.equal(await page.evaluate(() => window.qa.renames), 1, 'Enter commits exactly one rename');
   const emptyChats = await page.evaluate(() => window.qa.emptyChats);
   await sidebar.getByRole('button', { name: 'Ocultar sidebar izquierda', exact: true }).click();
@@ -96,21 +116,7 @@ try {
   await assertHit(rename);
   assert.equal(await page.evaluate(() => window.qa.emptyChats), emptyChats, 'Sidebar visibility preserves the current project/chat');
 
-  for (let index = 0; index < 3; index++) {
-    await page.getByRole('button', { name: 'Mostrar barra superior', exact: true }).click();
-    const reload = page.getByRole('button', { name: 'Recargar', exact: true });
-    await assertHit(reload);
-    const geometry = await page.evaluate(() => ({
-      toolbarBottom: document.querySelector('[role="toolbar"] button[title="Recargar"]').closest('[role="toolbar"]').getBoundingClientRect().bottom,
-      workspaceTop: document.getElementById('codeclub-workspace').getBoundingClientRect().top,
-    }));
-    assert.ok(geometry.workspaceTop >= geometry.toolbarBottom, 'The expanded toolbar occupies its own grid row');
-    const search = page.getByRole('textbox', { name: 'Buscar en Renombrado QA', exact: true });
-    await search.focus();
-    await page.getByRole('button', { name: 'Ocultar barra superior', exact: true }).click();
-    assert.equal(await page.getByRole('button', { name: 'Recargar', exact: true, includeHidden: true }).count(), 0);
-    await assertHit(rename);
-  }
+  assert.equal(await page.getByRole('button', { name: 'Mostrar barra superior', exact: true }).count(), 0, 'Removed toolbar has no toggle');
   await page.keyboard.press('Tab');
   for (let index = 0; index < 18; index++) {
     assert.notEqual(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), 'Recargar', 'Hidden controls cannot receive keyboard focus');
@@ -124,22 +130,97 @@ try {
   await separator.press('Home');
   await page.waitForFunction(() => Math.abs(document.getElementById('codeclub-left-sidebar').getBoundingClientRect().width - 220) < 1);
   await assertHit(rename);
-  await page.getByRole('button', { name: 'Mostrar barra superior', exact: true }).click();
-  await page.getByRole('button', { name: 'Recargar', exact: true }).click();
-  assert.equal(await page.evaluate(() => window.qa.reloads), 1, 'Reload works only when the toolbar is visible and intentionally clicked');
-  await page.getByRole('button', { name: 'Ocultar barra superior', exact: true }).click();
+  const right = page.locator('#codeclub-right-sidebar');
+  const emit = (name, detail) => page.evaluate(({ name, detail }) => window.dispatchEvent(new CustomEvent(name, { detail })), { name, detail });
+  await page.getByRole('button', { name: 'Mostrar barra lateral derecha', exact: true }).click();
+  await right.getByRole('button', { name: 'Archivos', exact: true }).click();
+  await right.getByRole('tab', { name: 'Archivos', exact: true }).waitFor();
+  const panelMenuTrigger = right.getByRole('button', { name: /Abrir paneles/ });
+  await panelMenuTrigger.focus();
+  await panelMenuTrigger.press('Enter');
+  await expect(right.getByRole('menuitemradio').filter({ hasText: 'Navegador' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(panelMenuTrigger).toBeFocused();
+  await right.getByRole('button', { name: 'Cerrar Archivos', exact: true }).click();
+  await expect(right).toHaveAttribute('aria-hidden', 'true');
+  await expect(right.getByRole('tab', { name: 'Archivos', includeHidden: true })).toHaveCount(0);
+  await emit('codeclub:open-chat', { chatId: 'chat-a', projectPath: 'C:/qa/project', projectName: 'Proyecto QA', projectId: 'fixture' });
+  await emit('codeclub:open-right-panel', { chatId: 'chat-a', projectPath: 'C:/qa/project' });
+  await expect(right).toHaveAttribute('aria-hidden', 'false');
+  const browserTab = right.getByRole('tab', { name: 'Navegador', exact: true, includeHidden: true });
+  await browserTab.waitFor();
+  const browserMenuTrigger = right.getByRole('button', { name: 'Más opciones', exact: true });
+  await browserMenuTrigger.click();
+  await expect(right.getByRole('menuitem', { name: 'Recargar', exact: true })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(browserMenuTrigger).toBeFocused();
+  await emit('codeclub:open-right-panel', { chatId: 'background', projectPath: 'C:/qa/project' });
+  await expect(right.getByRole('tab')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Ocultar barra lateral derecha', exact: true }).click();
+  await emit('codeclub:open-chat', { chatId: 'background', projectPath: 'C:/qa/project', projectId: 'fixture' });
+  await expect(right).toHaveAttribute('aria-hidden', 'false');
+  await browserTab.waitFor();
+  const backgroundPanel = await browserTab.getAttribute('aria-controls');
+  await page.locator('header').getByRole('button', { name: 'Atrás', exact: true }).click();
+  await expect.poll(() => browserTab.getAttribute('aria-controls')).not.toBe(backgroundPanel);
+  await expect(right).toHaveAttribute('aria-hidden', 'true');
+  await emit('codeclub:open-right-panel', { chatId: 'chat-a', projectPath: 'C:/qa/project' });
+  await expect(right).toHaveAttribute('aria-hidden', 'false');
+  const chatPanel = await browserTab.getAttribute('aria-controls');
+  await sidebar.getByRole('button', { name: 'Extensiones', exact: true }).click();
+  await expect(browserTab).toHaveAttribute('aria-controls', chatPanel);
+  await expect(page.locator('header [data-slash-menu-toggle]')).toHaveCount(0);
+  await page.locator('header').getByRole('button', { name: 'Atrás', exact: true }).click();
+  await expect(page.locator('[data-main-panel]')).toHaveAttribute('data-main-panel', 'new-chat');
+  await expect(browserTab).toHaveAttribute('aria-controls', chatPanel);
+  const projectsCategory = sidebar.getByRole('button', { name: 'Proyectos', exact: true });
+  await projectsCategory.click();
+  await expect(projectsCategory).toHaveAttribute('aria-expanded', 'false');
   await page.reload();
   await rename.waitFor();
-  assert.equal(await page.getByRole('button', { name: 'Recargar', exact: true, includeHidden: true }).count(), 0, 'Collapsed visibility persists across reload');
+  await expect(projectsCategory).toHaveAttribute('aria-expanded', 'false');
+  await page.evaluate(() => {
+    const views = JSON.parse(localStorage.getItem('codeclub:right-chat-views') || '{}');
+    views[JSON.stringify(['C:/qa/project', 'draft'])] = { panels: [{ instanceId: 'restored-file', tab: 'files', label: 'Files' }], active: 'deleted-tab', open: true, width: 300, tree: false, file: '' };
+    localStorage.setItem('codeclub:right-chat-views', JSON.stringify(views));
+  });
+  await page.reload();
+  await rename.waitFor();
+  await expect(right.getByRole('tab', { name: 'Archivos', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await sidebar.getByRole('button', { name: 'Nuevo chat', exact: true }).click();
+  await expect(right).toHaveAttribute('aria-hidden', 'true');
+  await expect(right.getByRole('tab', { includeHidden: true })).toHaveCount(0);
+  await page.reload();
+  await expect(right).toHaveAttribute('aria-hidden', 'true');
+  await expect(right.getByRole('tab', { includeHidden: true })).toHaveCount(0);
   await page.evaluate(() => {
     localStorage.setItem('codeclub-language', 'en');
     window.dispatchEvent(new CustomEvent('codeclub:language-change', { detail: { language: 'en' } }));
   });
-  await assertHit(sidebar.getByRole('button', { name: 'Rename project', exact: true }));
-  await page.getByRole('button', { name: 'Show top bar', exact: true }).click();
-  await assertHit(page.getByRole('button', { name: 'Reload', exact: true }));
+  await assertHit(sidebar.getByRole('button', { name: 'Your orb', exact: true }));
+  await page.getByRole('button', { name: 'Extensions', exact: true }).first().click();
+  await assertHit(sidebar.getByRole('button', { name: 'Hide left sidebar', exact: true }));
+  await page.getByRole('button', { name: 'Home', exact: true }).first().click();
+  await sidebar.getByRole('button', { name: 'Your orb', exact: true }).click();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(page.locator('#codeclub-main-content')).toHaveAttribute('data-surface', 'orbs');
+  await expect(right.getByRole('button', { name: 'Configure', exact: true })).toBeVisible();
+  await assertHit(right.getByRole('button', { name: 'Configure', exact: true }));
+  await expect.poll(async () => (await right.boundingBox()).width).toBeGreaterThanOrEqual(220);
+  if (process.env.CODECLUB_QA_SCREENSHOT) await right.screenshot({ path: process.env.CODECLUB_QA_SCREENSHOT });
+  await expect(page.getByRole('log')).toContainText('Hi, I’m your orb.');
+  const orb = await page.evaluate(() => JSON.parse(localStorage.getItem('codeclub:settings')).codeclub_orbs[0]);
+  await expect(sidebar.getByRole('button', { name: 'Your orb', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(sidebar.locator('[aria-current="page"]')).toHaveCount(1);
+  assert.ok(await page.evaluate(chatId => !(JSON.parse(localStorage.getItem('codeclub:settings')).codeclub_global_chats || []).some(chat => chat.id === chatId), orb.chatId), 'Orb history does not enter the global chat index');
+  await expect(page.getByRole('switch', { name: 'PC access', exact: true })).toHaveCount(0);
+  await sidebar.getByRole('button', { name: 'New chat', exact: true }).click();
+  await expect(page.locator('#codeclub-main-content')).toHaveAttribute('data-surface', 'new-chat');
+  await page.evaluate(chatId => window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: { chatId, projectPath: '' } })), orb.chatId);
+  await expect(page.locator('#codeclub-main-content')).toHaveAttribute('data-surface', 'orbs');
+  await expect(right.getByRole('button', { name: 'Configure', exact: true })).toBeVisible();
   assert.deepEqual(errors, [], 'Layout controls cause no runtime errors');
-  console.log(JSON.stringify({ passed: true, collapsedHitTesting: true, renameAndCancel: true, sidebarVisibility: true, repeatedToggles: true, keyboardFocus: true, resizing: true, intentionalReload: true, persistence: true, languageSwitch: true }));
+  console.log(JSON.stringify({ passed: true, renameAndCancel: true, sidebarVisibility: true, keyboardFocus: true, resizing: true, closeLastTab: true, backgroundPanels: true, navigationIsolation: true, customizePreservesScope: true, emptyHome: true, restoredActiveTab: true, categoryPersistence: true, languageSwitch: true, orbChatSidebar: true, recentOrbRouting: true }));
 } finally {
   await browser?.close();
   await new Promise(resolve => server ? server.close(resolve) : resolve());

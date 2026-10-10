@@ -18,7 +18,7 @@ let stopping = false;
 
 function isReady() {
   return new Promise((resolve) => {
-    const request = http.get('http://127.0.0.1:3000', (response) => { response.resume(); resolve(response.statusCode < 500); });
+    const request = http.get('http://127.0.0.1:3000', (response) => { response.resume(); resolve(response.statusCode >= 200 && response.statusCode < 300); });
     request.on('error', () => resolve(false));
     request.setTimeout(500, () => { request.destroy(); resolve(false); });
   });
@@ -44,7 +44,7 @@ process.once('SIGTERM', stop);
 
 try {
   await waitForNext();
-  electron = spawn(npmCommand, ['run', 'electron:launch'], { stdio: 'inherit', env: { ...env, CODECLUB_NEXT_DEV_URL: 'http://127.0.0.1:3000' }, shell: process.platform === 'win32' });
+  electron = spawn(npmCommand, ['run', 'electron:launch', ...(process.argv.includes('--codeclub-a11y-debug') ? ['--', '--codeclub-a11y-debug'] : [])], { stdio: 'inherit', env: { ...env, CODECLUB_NEXT_DEV_URL: 'http://127.0.0.1:3000' }, shell: process.platform === 'win32' });
   electron.once('exit', (code) => { stop(); process.exit(code ?? 0); });
   next.once('exit', (code) => { if (!stopping) { electron?.kill(); process.exit(code ?? 1); } });
 } catch (error) {

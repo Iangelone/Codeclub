@@ -242,7 +242,7 @@ export default function FluidOrb({
       gl.deleteShader(vertex);
       gl.deleteShader(fragment);
     };
-  }, [active, animateOnHover, color, hovered, shape, size]);
+  }, [active, animateOnHover, color, hovered, shape, size, reducedMotion]);
 
   return <div
     data-slot="fluid-orb"

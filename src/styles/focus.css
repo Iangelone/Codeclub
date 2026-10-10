@@ -20,3 +20,44 @@ textarea:focus {
     outline-color: Highlight !important;
   }
 }
+
+/* Remove decorative shimmer from action labels when reduced motion is requested. */
+@media (prefers-reduced-motion: reduce) {
+  .composer-action-shine,
+  .composer-action-shine-error,
+  .composer-action-shine-success {
+    animation: none;
+    background-position: 50% 0;
+  }
+}
+
+/* Keep compact controls visible when reached by keyboard, without styling fields. */
+button:focus-visible,
+a[href]:focus-visible,
+[role="treeitem"]:focus-visible {
+  outline: 2px solid var(--codeclub-accent-bright, #8bc7ff) !important;
+  outline-offset: 2px;
+  scroll-margin: 8px;
+}
+
+button:focus-visible {
+  opacity: 1 !important;
+}
+
+/* Preserve control boundaries and text in Windows High Contrast mode. */
+@media (forced-colors: active) {
+  button,
+  a[href],
+  [role="tab"],
+  [role="treeitem"] {
+    forced-color-adjust: auto;
+  }
+  button:focus-visible,
+  a[href]:focus-visible,
+  [role="treeitem"]:focus-visible {
+    outline-color: Highlight !important;
+  }
+  button:disabled {
+    color: GrayText;
+  }
+}

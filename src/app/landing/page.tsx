@@ -17,11 +17,11 @@ const features = [
 
 export default function LandingPage() {
   return (
-    <main className="min-h-screen overflow-hidden bg-[#e4d6c0] text-[#171923]">
+    <main lang="en" className="min-h-screen overflow-hidden bg-[#e4d6c0] text-[#171923]">
       <section id="top" className="relative flex min-h-[760px] items-center justify-center overflow-hidden bg-cover bg-center px-6 pb-24 pt-32 sm:min-h-screen" style={{ backgroundImage: "linear-gradient(180deg, rgba(255,248,236,0.18) 0%, rgba(242,224,198,0.08) 45%, rgba(45,31,27,0.3) 100%), url('/landing/Fondo.png')" }}>
         <div className="absolute inset-0 bg-gradient-to-b from-white/[0.08] via-transparent to-[#251b19]/20" />
-        <nav className="absolute left-1/2 top-6 z-10 flex w-[calc(100%-32px)] max-w-[470px] -translate-x-1/2 items-center justify-between rounded-full border border-black/20 bg-[#25252b]/80 px-4 py-2.5 text-white shadow-[0_10px_30px_rgba(66,46,33,0.18)] backdrop-blur-md sm:top-8 sm:px-5">
-          <a href="#top" className="flex items-center gap-2 text-[12px] font-semibold tracking-tight text-white"><img src="/logo.png" alt="Codeclub" className="h-5 w-5 rounded-md" /> Codeclub</a>
+        <nav aria-label="Main navigation" className="absolute left-1/2 top-6 z-10 flex w-[calc(100%-32px)] max-w-[470px] -translate-x-1/2 items-center justify-between rounded-full border border-black/20 bg-[#25252b]/80 px-4 py-2.5 text-white shadow-[0_10px_30px_rgba(66,46,33,0.18)] backdrop-blur-md sm:top-8 sm:px-5">
+          <a href="#top" className="flex items-center gap-2 text-[12px] font-semibold tracking-tight text-white"><img src="/logo.png" alt="" className="h-5 w-5 rounded-md" /> Codeclub</a>
           <div className="flex items-center gap-4 text-[10px] font-medium text-white/70 sm:gap-5 sm:text-[11px]"><a href="#features" className="transition-colors hover:text-white">Features</a><a href={repositoryUrl} target="_blank" rel="noreferrer" className="transition-colors hover:text-white">GitHub</a><a href={downloadUrl} className="rounded-full bg-white px-3 py-1.5 text-[#24232b] transition-colors hover:bg-[#f6ead9]">Download</a></div>
         </nav>
 

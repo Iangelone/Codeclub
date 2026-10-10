@@ -37,7 +37,12 @@
 .floating-surface .send-button { width: 26px; height: 26px; background: transparent; border-color: transparent; color: #aaa; }
 .floating-surface .send-button svg { width: 14px; height: 14px; }
 .floating-surface .chat-turn-time, .floating-surface .message-actions { opacity: .65; }
-.floating-shell.is-compact .floating-toolbar { position: relative; height: 22px; padding: 0 4px 8px; }
+.floating-shell.is-compact { padding: 4px; border: 0; border-radius: 20px; }
+.floating-shell.is-compact .floating-toolbar { position: relative; height: 16px; padding: 0 4px 4px; }
+.floating-shell.is-compact .chat-composer .composer-box { min-height: 32px; border: 0; border-radius: 16px; }
+.floating-shell.is-compact .chat-composer .composer-box-inner { min-height: 32px !important; padding: 4px 8px !important; gap: 8px; }
+.floating-shell.is-compact textarea { font-size: 12px; }
+.floating-shell.is-compact .send-button { width: 22px; height: 22px; }
 .floating-shell.is-compact .floating-toolbar > button, .floating-shell.is-compact .floating-toolbar nav { display: none; }
 .floating-shell.is-compact .floating-drag-handle { height: 14px; }
 .floating-shell.is-compact .floating-drag-handle svg { width: 14px; height: 14px; }

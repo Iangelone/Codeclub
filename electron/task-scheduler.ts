@@ -10,6 +10,11 @@ export type ScheduledTask = {
   language?: 'es' | 'en';
   autonomous?: boolean;
   allowComputer?: boolean;
+  maximumAutonomy?: boolean;
+  requiresAdministrator?: boolean;
+  proactive?: boolean;
+  deliveryChatId?: string;
+  orbId?: string;
   nextRun?: string; lastRun?: string; runs: TaskRun[];
   runAt?: string;
 };
@@ -66,6 +71,13 @@ export class TaskScheduler {
     this.changed();
   }
   list(projectPath: string) { return structuredClone(this.tasks.filter(task => keyFor(task.projectPath, '') === keyFor(projectPath, ''))); }
+  /** Read-only anticipation across scopes; tick retains ownership of scheduled execution. */
+  upcoming() {
+    const now = this.now();
+    return this.tasks.filter(task => task.status === 'active' && !task.proactive && !task.autonomous && task.nextRun && Date.parse(task.nextRun) > now && Date.parse(task.nextRun) <= now + 15 * 60000 && !task.runs.some(run => ['queued', 'running'].includes(run.status)))
+      .sort((a, b) => Date.parse(a.nextRun!) - Date.parse(b.nextRun!)).slice(0, 5)
+      .map(task => ({ key: keyFor(task.projectPath, task.id) + '\0' + task.nextRun, name: task.name, projectPath: task.projectPath, scheduledAt: task.nextRun!, execution: 'scheduled-with-existing-approvals' as const }));
+  }
   save(projectPath: string, input: Partial<ScheduledTask>) {
     if (projectPath && !path.isAbsolute(projectPath)) throw new Error('TASK_INVALID_PROJECT');
     if (!input.id || !/^[a-zA-Z0-9_-]{1,100}$/.test(input.id) || !input.name?.trim() || !input.prompt?.trim() || !input.provider || !input.model) throw new Error('TASK_INVALID_CONFIG');
@@ -78,6 +90,11 @@ export class TaskScheduler {
       language: input.language === 'en' ? 'en' : 'es',
       autonomous: input.autonomous === true && input.id.startsWith('orb_'),
       allowComputer: input.allowComputer ?? old?.allowComputer ?? true,
+      maximumAutonomy: input.maximumAutonomy ?? old?.maximumAutonomy ?? true,
+      requiresAdministrator: input.requiresAdministrator ?? old?.requiresAdministrator ?? false,
+      proactive: input.proactive === true,
+      deliveryChatId: input.proactive === true && typeof input.deliveryChatId === 'string' && /^[\w-]{1,100}$/.test(input.deliveryChatId) ? input.deliveryChatId : undefined,
+      orbId: input.proactive === true ? input.orbId : undefined,
       runAt: input.runAt,
       runs: old?.runs || [], lastRun: old?.lastRun,
     };
@@ -105,7 +122,7 @@ export class TaskScheduler {
   run(projectPath: string, id: string) {
     const task = this.get(projectPath, id);
     if (task.runs.some(run => ['queued', 'running'].includes(run.status))) throw new Error('TASK_RUNNING');
-    const run: TaskRun = { id: randomUUID(), chatId: `scheduled-${randomUUID()}`, status: 'queued', startedAt: new Date(this.now()).toISOString() };
+    const run: TaskRun = { id: randomUUID(), chatId: task.proactive && task.deliveryChatId ? task.deliveryChatId : `scheduled-${randomUUID()}`, status: 'queued', startedAt: new Date(this.now()).toISOString() };
     task.runs = [...task.runs.slice(-19), run]; this.persist();
     void this.drain(); return structuredClone(run);
   }
@@ -139,8 +156,8 @@ export class TaskScheduler {
         if (!task || !run) break;
         run.status = 'running'; run.startedAt = new Date(this.now()).toISOString(); task.lastRun = run.startedAt; this.persist();
         try { await this.execute(structuredClone(task), structuredClone(run)); run.status = 'completed'; }
-        catch (error) { run.status = error instanceof Error && error.message === 'TASK_CANCELLED' ? 'cancelled' : error instanceof Error && error.message === 'TASK_BLOCKED' ? 'blocked' : error instanceof Error && error.message === 'TASK_UNVERIFIED' ? 'unverified' : 'failed'; run.error = error instanceof Error && /^TASK_[A-Z_]+$/.test(error.message) ? error.message : 'TASK_EXECUTION_FAILED'; }
-        if (task.autonomous && ['TASK_BLOCKED', 'TASK_UNVERIFIED', 'TASK_NO_PROGRESS', 'TASK_BUDGET_EXCEEDED', 'TASK_STEP_LIMIT'].includes(run.error || '')) { task.status = 'paused'; task.nextRun = undefined; }
+        catch (error) { run.status = error instanceof Error && error.message === 'TASK_CANCELLED' ? 'cancelled' : error instanceof Error && ['TASK_BLOCKED', 'TASK_ADMIN_REQUIRED'].includes(error.message) ? 'blocked' : error instanceof Error && error.message === 'TASK_UNVERIFIED' ? 'unverified' : 'failed'; run.error = error instanceof Error && /^TASK_[A-Z_]+$/.test(error.message) ? error.message : 'TASK_EXECUTION_FAILED'; }
+        if (task.autonomous && ['TASK_BLOCKED', 'TASK_ADMIN_REQUIRED', 'TASK_UNVERIFIED', 'TASK_NO_PROGRESS', 'TASK_BUDGET_EXCEEDED', 'TASK_STEP_LIMIT'].includes(run.error || '')) { task.status = 'paused'; task.nextRun = undefined; }
         run.finishedAt = new Date(this.now()).toISOString(); this.persist(); this.finished(task, run);
       }
     } finally { this.draining = false; }

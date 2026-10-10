@@ -1,6 +1,6 @@
 import type { AgentPlugin } from './agent-plugins';
 
-export type OrbDefinition = { id: string; name: string; purpose: string; color: string; providerId: string; modelId: string; allowComputer?: boolean };
+export type OrbDefinition = { id: string; name: string; purpose: string; color: string; providerId: string; modelId: string; chatId?: string; allowComputer?: boolean; maximumAutonomy?: boolean; requiresAdministrator?: boolean };
 export type ChatResource = {
   id: string;
   kind: 'plugin' | 'mcp' | 'orb' | 'skill' | 'extension';

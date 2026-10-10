@@ -175,9 +175,13 @@ function Perform-Action($request) {
   $win=Window-Element $request
   if ($request.processId -and $win.Current.ProcessId -ne $request.processId) { throw 'Window identity changed.' }
   $action=[string]$request.action
-  if ($action -eq 'focus' -and -not $request.target) {
+  if ($action -eq 'focus') {
+    $el=Find-ObservedElement $win $request.target
     [DesktopInput]::SetForegroundWindow([IntPtr]$win.Current.NativeWindowHandle) | Out-Null
+    # UI Automation can activate a window when Windows rejects the foreground request.
+    if ([DesktopInput]::GetForegroundWindow() -ne [IntPtr]$win.Current.NativeWindowHandle) { $win.SetFocus() }
     Start-Sleep -Milliseconds 100; Assert-Foreground $win
+    if ($el) { $el.SetFocus(); return @{ok=$true;method='SetFocus';verified=$el.Current.HasKeyboardFocus} }
     return @{ok=$true;method='foreground';verified=$true}
   }
   Assert-Foreground $win

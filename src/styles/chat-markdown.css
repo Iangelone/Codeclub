@@ -191,13 +191,13 @@
   align-items: center;
   gap: 2px;
   padding: 3px;
-  border: 1px solid color-mix(in srgb, var(--selection-accent, var(--codeclub-accent)) 30%, #363636);
-  border-radius: 11px;
-  background: #242424;
-  box-shadow: 0 8px 26px #0009;
-  color: #f2f2f2;
+  /* Match the compact neutral chat menus without inheriting the orb palette. */
+  border: 1px solid #333333;
+  border-radius: 10px;
+  background: #2b2b2b;
+  box-shadow: 0 4px 12px #0005;
+  color: var(--codeclub-text, #dddddd);
   white-space: nowrap;
-  backdrop-filter: blur(14px);
 }
 
 .chat-selection-toolbar-wrap {
@@ -285,14 +285,15 @@
 }
 
 .chat-selection-toolbar button {
-  min-height: 30px;
+  min-height: 26px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 6px;
   background: transparent;
-  padding: 0 9px;
+  padding: 0 8px;
   color: inherit;
   font: inherit;
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 16px;
   cursor: pointer;
   transition: background-color 120ms ease, color 120ms ease;
 }
@@ -300,8 +301,8 @@
 .chat-selection-toolbar button:hover:not(:disabled),
 .chat-selection-toolbar button:focus-visible {
   outline: none;
-  background: color-mix(in srgb, var(--selection-accent, var(--codeclub-accent)) 18%, #242424);
-  color: var(--selection-accent, var(--codeclub-accent-bright));
+  background: var(--codeclub-hover, #363636);
+  color: var(--codeclub-text-strong, #eeeeee);
 }
 
 .chat-selection-toolbar button:disabled {
@@ -311,8 +312,8 @@
 
 .chat-selection-toolbar-divider {
   width: 1px;
-  height: 17px;
-  background: #ffffff1a;
+  height: 14px;
+  background: #3a3a3a;
 }
 
 .chat-markdown pre {

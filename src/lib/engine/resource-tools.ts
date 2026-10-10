@@ -122,7 +122,7 @@ export function createResourceTools(ctx: ToolContext) {
         const task = old && tasks.find(item => item.id === `orb_${old.id}`);
         if (input.action === 'run' || input.action === 'pause') {
           if (input.action === 'run') {
-            await invoke('codeclub_scheduled_save', { projectPath: '', task: { ...task, id: `orb_${old!.id}`, name: old!.name, prompt: old!.purpose, provider: old!.providerId, model: old!.modelId, autonomous: true, status: 'active', interval: task?.interval || 'Personalizado', every: task?.every || '30 min', notifications: task?.notifications || 'Solo errores' } });
+            await invoke('codeclub_scheduled_save', { projectPath: '', task: { ...task, id: `orb_${old!.id}`, name: old!.name, prompt: old!.purpose, provider: old!.providerId, model: old!.modelId, allowComputer: old!.allowComputer !== false, maximumAutonomy: old!.maximumAutonomy !== false, requiresAdministrator: old!.requiresAdministrator === true, autonomous: true, status: 'active', interval: task?.interval || 'Personalizado', every: task?.every || '30 min', notifications: task?.notifications || 'Solo errores' } });
             return invoke('codeclub_scheduled_run', { projectPath: '', id: `orb_${old!.id}` });
           }
           if (task) await invoke('codeclub_scheduled_status', { projectPath: '', id: task.id, paused: true });

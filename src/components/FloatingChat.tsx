@@ -84,7 +84,8 @@ export default function FloatingChat() {
   useEffect(()=>{
     if(!autoHide)return;
     const timer=setInterval(()=>{
-      const blocked=Boolean(draft.current.trim() || needsAnswer || interaction.current || dropping || shell.current?.querySelector('.command-menu'));
+      // Keep the widget visible while keyboard focus remains inside it.
+      const blocked=Boolean(draft.current.trim() || needsAnswer || interaction.current || dropping || shell.current?.contains(document.activeElement) || shell.current?.querySelector('.command-menu'));
       if(Date.now()-lastActivity.current<30000)return;
       const next=idleWidgetMode(mode,blocked,autoHide);
       if(next!==mode){resize(next);lastActivity.current=Date.now();}
@@ -144,7 +145,7 @@ export default function FloatingChat() {
       <button className="floating-close" type="button" title={text.close} aria-label={text.close} onClick={() => void bridge()?.floatingClose()}><X size={16} strokeWidth={1.7} /></button>
     </header>
     <section className="floating-surface">
-      <ChatInterface catalog={catalog} defaultProvider={defaultProvider} defaultModel={defaultModel} panelId="floating" eventPrefix="codeclub:floating" floating onDraftChange={onDraft} composerLeading={<div className={`floating-orb ${needsAnswer?'needs-answer':relevant?.busy?'is-working':''}`} title={text.drag} aria-label={text.drag} {...dragProps}><OrbPaletteButton size={24} active={!needsAnswer && Boolean(relevant?.busy)} className="floating-orb-button" /></div>} />
+      <ChatInterface catalog={catalog} defaultProvider={defaultProvider} defaultModel={defaultModel} panelId="floating" eventPrefix="codeclub:floating" floating onDraftChange={onDraft} composerLeading={<div className={`floating-orb ${needsAnswer?'needs-answer':relevant?.busy?'is-working':''}`} title={text.drag} aria-label={text.drag} {...dragProps}><OrbPaletteButton size={mode === 'compact' ? 20 : 24} active={!needsAnswer && Boolean(relevant?.busy)} className="floating-orb-button" /></div>} />
     </section>
   </motion.main>;
 }

@@ -527,7 +527,7 @@ export function createTools(ctx: ToolContext) {
       },
     }),
     listFiles: tool({
-      description: 'List project files in the active Codeclub workspace. Skips heavy folders.',
+      description: `List files under the current filesystem root ${projectPath}. Skips heavy folders. With no project selected this is the system root, not the folder mentioned in a message.`,
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
@@ -739,11 +739,11 @@ export function createTools(ctx: ToolContext) {
       },
     }),
     writeFile: tool({
-      description: 'Write full UTF-8 content to a relative workspace file inside the active workspace. After writing, verify the real file with readFile or listFiles.',
+      description: `Write full UTF-8 content inside the current filesystem root ${projectPath}. Relative paths resolve from this root, not from a command's cwd. Absolute paths inside the root are accepted. After writing, verify the real file with readFile.`,
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Relative file path inside the workspace.' },
+          path: { type: 'string', description: 'Relative or absolute file path inside the filesystem root. Preserve the full requested destination.' },
           content: { type: 'string', description: 'Complete file content to write.' },
         },
         required: ['path', 'content'],
@@ -829,7 +829,7 @@ export function createTools(ctx: ToolContext) {
         try {
           await readPluginFile(scope, pluginName, 'plugin.json');
           return { ok: false, error: 'La extensión ya existe; no se sobrescribió.' };
-        } catch { /* extensión nueva */ }
+        } catch { /* New extension. */ }
         const manifest = { '$schema': schema, name: pluginName, version: '0.1.0', description: pluginDescription };
         const skillContent = `---\nname: ${pluginName}\ndescription: ${pluginDescription}\n---\n\n${pluginInstructions}\n`;
         const manifestWrite = await writePluginFile(scope, pluginName, 'plugin.json', JSON.stringify(manifest, null, 2) + '\n');
@@ -930,7 +930,7 @@ export function createTools(ctx: ToolContext) {
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
-          command: { type: 'string', description: 'Any executable command available on the system.' },
+          command: { type: 'string', description: 'Executable name or absolute executable path only, without arguments or shell syntax. For example command="node", args=["--version"]. For shell syntax, use command="powershell.exe" with args=["-NoProfile", "-Command", "your script"], or terminal.' },
           args: { type: 'array', items: { type: 'string' }, description: 'Command arguments. Defaults to an empty array.' },
           cwd: { type: 'string', description: 'Optional working directory. Relative paths resolve inside the active workspace; omit to use the workspace root.' },
           timeoutMs: { type: 'number', description: 'Maximum duration in milliseconds; defaults to 120000. Use terminal for persistent processes.' },
@@ -1045,8 +1045,7 @@ export function createTools(ctx: ToolContext) {
           return output;
         }
         if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('codeclub:open-right-panel', { detail: chatScope }));
-          window.setTimeout(() => window.dispatchEvent(new CustomEvent('codeclub:browser-navigate', { detail: { ...chatScope, url: normalized } })), 0);
+          window.dispatchEvent(new CustomEvent('codeclub:open-right-panel', { detail: { ...chatScope, url: normalized } }));
         }
         const output = { ok: true, url: normalized, openedIn: 'Navegador' };
         recordToolEvent('openBrowser', { url: normalized }, output);

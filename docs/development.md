@@ -10,12 +10,17 @@
 | Command | Use |
 | --- | --- |
 | npm run dev | Next.js and Electron in development. |
+| npm run desktop:debug | Start Next.js and Electron with DevTools and Windows accessibility support. |
+| npm run test:debug | Verify the native debug mode in a temporary isolated profile. |
+| npm run test:accessibility | Run browser keyboard and modal regressions after building the renderer. |
 | npm run next:dev | Renderer only. |
 | npm run electron:dev | Compile Electron and open the app. |
 | npm run next:build | Build the renderer. |
 | npm run electron:compile | Compile Electron TypeScript. |
 | npm run desktop:build | Full desktop build. |
 | npm run package:win | Create the Windows NSIS installer in release/. |
+
+Development uses `.next/`, while production export uses `out/`. Their outputs remain separate so building does not remove the running development server's cache. Desktop startup waits for an HTTP success response before opening Electron.
 
 ## Minimum verification
 

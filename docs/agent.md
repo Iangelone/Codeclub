@@ -137,8 +137,8 @@ Extended existing events:
 
 | Event | Emitter | Added payload | Consumer |
 | --- | --- | --- | --- |
-| `codeclub:open-right-panel` | engine/tools | chatId, projectPath | WorkspaceLayout creates/selects a browser in that scope |
-| `codeclub:browser-navigate` | engine/tools | chatId, projectPath, url | Selected BrowserPanel in that scope |
+| `codeclub:open-right-panel` | engine/tools | chatId, projectPath, url | WorkspaceLayout creates/selects a browser in that scope and carries the URL through React state, including first mount |
+| `codeclub:browser-navigate` | browser address/history controls | optional chatId, projectPath, url | Selected BrowserPanel in that scope; unscoped UI navigation reaches the visible instance |
 | `codeclub:browser-state-request` / `codeclub:browser-action` | engine/tools | chatId, projectPath, requestId, action | Selected BrowserPanel; isolated runner |
 | `codeclub:browser-state` / `codeclub:browser-action-result` | BrowserPanel | chatId, requestId, result | Tools accept only the correlated response |
 | `codeclub:browser-tab-meta` / `codeclub:terminal-tab-meta` | Relevant panel | instanceId and metadata | WorkspaceLayout updates the instance |
@@ -146,6 +146,14 @@ Extended existing events:
 | `codeclub:open-chat` | OrbsPanel | chatId, projectPath, name | WorkspaceLayout opens the latest cycle |
 
 Component listeners are installed and removed in the same `useEffect`. Response waits remove listeners when their requestId arrives or the timeout expires. The chat list also refreshes through `onTasksChanged`; the native subscription is released on unmount.
+
+Accessibility interaction rules, protected-field scope, surface coverage, and verification limitations are documented in [accessibility.md](accessibility.md). Shared overlay hooks preserve existing editing behavior and clean up their listeners and background isolation on unmount.
+
+The topbar arrows navigate the central conversation/Customize history. `Topbar` emits `codeclub:left-panel-back` and `codeclub:left-panel-forward` with no payload; `WorkspaceManager` consumes them and publishes `codeclub:left-panel-navigation-state` with `{ back, forward }`. It also responds to the no-payload `codeclub:left-panel-navigation-request` from `Topbar`. Both components install and remove these listeners in their respective effects. Right tab history retains its separate events, so one click cannot navigate both areas. Conversation and draft history keys include the project path.
+
+Opening Customize or Tasks preserves the current conversation's panel scope. Opening Orb selects its own global conversation and right sidebar; creating an orb opens that conversation immediately. Opening a browser or terminal for a background conversation records visibility in that conversation's view without opening it over the current chat. Explicit file/browser requests in the current scope reveal the right sidebar. Restored layouts select an existing tab and keep empty layouts closed; hidden panels remain mounted but receive `visible=false`.
+
+Panel regression checks: `node scripts/test-sidebar-layout.mjs` covers last-tab closure, scope switching, background browser requests, central navigation isolation, Customize scope, empty Home, restored active tabs, category persistence, resizing, focus/hit testing, project rename, and language switching. It renders the real shell and WorkspaceManager with a stub chat and native bridge; it does not verify real AI, WebView navigation, or PTY execution. `node scripts/test-page-bootstrap.mjs` checks normal/floating startup and fullscreen updates with isolated children.
 
 Initial validation: Next/Electron builds, TypeScript, and diff review. Later functional checks are listed at the end of this section.
 
@@ -174,3 +182,10 @@ Edge Add-ons assigns `bomojefgeconjddklieajpeimnjkkbbb`, while the unpacked key 
 The original store-package connection attempts were inconclusive. Later direct checks confirmed the user's unpacked companion (`pomkkenhcjkfjdabdhogladflacafopd`), and the extended suite passed 22/22 in that real Edge profile and an isolated profile. This supersedes the earlier live-connection uncertainty for the unpacked copy only. The store package was not updated or certified by those runs.
 
 Bundled 1.0.1 includes alarms/startup/install/toolbar wake-up and duplicate-socket protection. The latest source fixes add visibility checks, multiline hit testing, and increasing reconnect backoff. Reload unpacked source after edits; store users need a published update. Restart the desktop process after native bridge changes. Full contracts and recovery are in [Browser Control](browser-control.md); evidence and intermediate failures are in [the audit](tool-audit-2026-10-08.md).
+# Orb permissions
+
+See [Orb autonomy and computer access](orb-permissions.md) for the independent permission switches, native UAC restart, persistence, and process-wide elevation limitations.
+
+## Orb conversations and learning
+
+See [Orb conversations and proactive learning](orb-agent.md) for observation limits, online logistic learning, native job delivery, lifecycle, events, and verification. [Personal-agent comparison](agent-comparison.md) records primary-source strengths and limits for Grok Bot, Muse, and Dots.

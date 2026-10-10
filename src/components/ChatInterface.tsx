@@ -2,6 +2,8 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useChatHistory } from './use-chat-history';
+import { accessibilityTranslations } from '../lib/i18n';
+import { useDialogAccessibility, useFileTreeKeyboard, usePopupKeyboard } from './ui/use-accessible-overlay';
 import { generateTurnSummary } from '../lib/turn-summary';
 import { buildChatContext } from '../lib/chat-context';
 import { sameSession, useSharedSessions, type SharedSession } from '../lib/shared-sessions';
@@ -37,10 +39,10 @@ import { appendGenerationUsage, type GenerationUsageRecord } from '../lib/usage'
 import { appendExecutionLog } from '../lib/execution-log';
 import { parseGitFiles, parseGitStatus } from '../lib/git-output';
 import { appendGlobalChatTranscript, getProjectChatPath, getProjectTranscriptPath, readGlobalChatHistory, readGlobalChats, readProjectIndex, readProjectMeta, writeGlobalChatHistory, writeGlobalChats, writeProjectMeta, type ProjectMeta } from '../lib/projectManager';
-import { chatResources, ORBS_STORAGE_KEY, parseOrbs, type ChatResource } from '../lib/chat-resources';
+import { chatResources, ORBS_STORAGE_KEY, parseOrbs, type ChatResource, type OrbDefinition } from '../lib/chat-resources';
 import { resourceMenuTranslations, toolConsoleTranslations } from '../lib/i18n';
 import { codeclubExtensions, type CodeclubExtension } from '../lib/extensions';
-import { orbControlTranslations, savedProviderTranslations, activityTranslations, aiCredentialTranslations, providerErrorTranslations, chatHistoryTranslations, chatActionTranslations, agentTextSelectionTranslations, LANGUAGE_STORAGE_KEY, rightSidebarTranslations, type AppLanguage, useAppLanguage } from '../lib/i18n';
+import { developmentEnglishTranslations, orbControlTranslations, savedProviderTranslations, activityTranslations, aiCredentialTranslations, providerErrorTranslations, chatHistoryTranslations, chatActionTranslations, agentTextSelectionTranslations, LANGUAGE_STORAGE_KEY, rightSidebarTranslations, type AppLanguage, useAppLanguage } from '../lib/i18n';
 import { connectAllAgentPluginMcp, loadAgentPlugins } from '../lib/agent-plugins';
 import OrbPaletteButton from './ui/OrbPaletteButton';
 import { ORB_PALETTES, useOrbPalette } from './OrbPaletteProvider';
@@ -142,7 +144,7 @@ function formatChatTime(value: unknown, language: AppLanguage) {
 type CatalogItem = { id: string; type?: string; label?: string; name?: string; description?: string; aliases?: string[]; source?: string; [key: string]: any };
 type ProjectOption = CatalogItem & { path?: string; projectPath?: string | null; projectId?: string; isNone?: boolean };
 type SessionSkill = CatalogItem & { name: string; source: string; content: string; pluginRoot?: string };
-type ChatInterfaceProps = { catalog: CatalogItem[]; defaultProvider: CatalogItem; defaultModel: CatalogItem; panelId?: string; eventPrefix?: string; selectedProject?: { projectPath: string; projectName?: string } | null; blockedPanelState?: string; floating?: boolean; onDraftChange?: (draft: string) => void; composerLeading?: React.ReactNode };
+type ChatInterfaceProps = { catalog: CatalogItem[]; defaultProvider: CatalogItem; defaultModel: CatalogItem; panelId?: string; eventPrefix?: string; selectedProject?: { projectPath: string; projectName?: string } | null; blockedPanelState?: string; floating?: boolean; onDraftChange?: (draft: string) => void; composerLeading?: React.ReactNode; agentOrb?: OrbDefinition };
 function compactCommandDescription(description?: string): string {
   const words = description?.trim().split(/\s+/).filter(Boolean) || [];
   return words.slice(0, 2).join(' ') + (words.length > 2 ? '...' : '');
@@ -303,7 +305,7 @@ const formatToolExecutionFallback = (mode: AgentMode, specialist: AgentSpecialis
 };
 
 /** Reused by main, split, and floating surfaces; callers provide project scope and panel-specific event names. */
-export default function ChatInterface({ catalog: baseCatalog, defaultProvider, defaultModel, panelId = 'left', eventPrefix = 'codeclub', selectedProject, blockedPanelState = 'blank', floating = false, onDraftChange, composerLeading }: ChatInterfaceProps) {
+export default function ChatInterface({ catalog: baseCatalog, defaultProvider, defaultModel, panelId = 'left', eventPrefix = 'codeclub', selectedProject, blockedPanelState = 'blank', floating = false, onDraftChange, composerLeading, agentOrb }: ChatInterfaceProps) {
   const catalog = baseCatalog;
   const { palette } = useOrbPalette();
   const orbPaletteIndex = ORB_PALETTES.indexOf(palette);
@@ -356,9 +358,11 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     { id: 'test-switch-project', label: 'Test: cambiar proyecto', description: 'Probar contexto de workspace', type: 'development', prompt: 'Usá switchProject para consultar o seleccionar explícitamente un proyecto disponible, verificá el proyecto activo con una lectura segura y no cambies archivos.' },
     { id: 'test-full-development-flow', label: 'Test: flujo completo', description: 'Probar ciclo de desarrollo', type: 'development', prompt: 'Ejecutá un flujo completo y verificable: inspeccioná archivos con listFiles, buscá texto con searchText, leé un archivo con readFile, creá un plan con createPlan, agregá un TODO con todo, ejecutá un comando seguro con runCommand, consultá getExecutionLog y resumí toda la evidencia. No modifiques archivos.' },
     { id: 'markdown-rendering', label: language === 'en' ? 'Test: Markdown rendering' : 'Test: renderizado Markdown', description: language === 'en' ? 'Render every supported Markdown element' : 'Renderizar todos los elementos Markdown compatibles', type: 'development', prompt: '[TESTING MARKDOWN] Respondé únicamente con una demostración completa en Markdown, sin tools: encabezados H1/H2/H3, texto en **negrita**, *cursiva*, ~~tachado~~, enlace, cita, listas numeradas y con viñetas, código inline, bloque de código con lenguaje, regla horizontal y una tabla con encabezados, tres filas y alineación. Incluí emojis y caracteres especiales. No describas la prueba: renderizá directamente todos los elementos.' },
-  ];
+  ].map(command => language === 'en' ? { ...command, ...developmentEnglishTranslations[command.id], prompt: `${command.prompt}\n\nRespond in English.` } : command);
   const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
   const [moreMenuIndex, setMoreMenuIndex] = useState<number | null>(null);
+  const responseMenuRef = useRef<HTMLDivElement | null>(null);
+  usePopupKeyboard(responseMenuRef, moreMenuIndex !== null, () => setMoreMenuIndex(null), moreMenuIndex);
   const visibleHistoryStart = historyWindow.range.current.start;
   useEffect(() => {
     setMoreMenuIndex(null);
@@ -820,9 +824,20 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
         console.error("Error loading chat:", err);
       }
     };
+    // OrbSidebar emits this after clearing the named chat in storage.
+    // This listener belongs to the same panel and is removed with its open-chat listener.
+    const handleHistoryCleared = (event: Event) => {
+      const chat = activeChatRef.current;
+      if (!agentOrb || !chat || chat.chatId !== (event as CustomEvent).detail?.chatId) return;
+      chatRuntimesRef.current.delete(chat.chatId);
+      historyWindow.restore(chat, []);
+      setInput(''); setAttachedFiles([]); setIsStreaming(false); setAgentState('idle'); setActiveToolName('');
+    };
+    const clearEventName = `${eventPrefix}:history-cleared`;
+    window.addEventListener(clearEventName, handleHistoryCleared);
     const eventName = `${eventPrefix}:open-chat`;
     window.addEventListener(eventName, handleOpenChat);
-    return () => window.removeEventListener(eventName, handleOpenChat);
+    return () => { window.removeEventListener(eventName, handleOpenChat); window.removeEventListener(clearEventName, handleHistoryCleared); };
   }, [eventPrefix]);
 
   useEffect(() => {
@@ -1053,7 +1068,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
   useEffect(() => {
     let cancelled = false;
     let request = 0;
-    const restore = () => { const version = ++request; void Promise.all([
+    const restore = () => { if (agentOrb) { setCurrentProvider(defaultProvider); setCurrentModel(defaultModel); setSettingsReady(true); return; } const version = ++request; void Promise.all([
       getSetting('codeclub_last_provider_id', ''),
       getSetting('codeclub_last_model_id', ''),
     ]).then(([savedProviderId, savedModelId]) => {
@@ -1069,15 +1084,15 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     restore();
     window.addEventListener('codeclub:settings-changed', restore);
     return () => { cancelled = true; window.removeEventListener('codeclub:settings-changed', restore); };
-  }, [catalog, defaultProvider, defaultModel]);
+  }, [catalog, defaultProvider, defaultModel, agentOrb?.providerId, agentOrb?.modelId]);
 
   useEffect(() => {
-    if (settingsReady && currentProvider) void setSetting('codeclub_last_provider_id', currentProvider.id);
-  }, [currentProvider, settingsReady]);
+    if (!agentOrb && settingsReady && currentProvider) void setSetting('codeclub_last_provider_id', currentProvider.id);
+  }, [currentProvider, settingsReady, agentOrb]);
 
   useEffect(() => {
-    if (settingsReady && currentModel) void setSetting('codeclub_last_model_id', currentModel.gatewayId || currentModel.id);
-  }, [currentModel, settingsReady]);
+    if (!agentOrb && settingsReady && currentModel) void setSetting('codeclub_last_model_id', currentModel.gatewayId || currentModel.id);
+  }, [currentModel, settingsReady, agentOrb]);
 
   useEffect(() => {
     if (!currentProvider) return;
@@ -1088,6 +1103,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
   }, [catalog, currentModel, currentProvider]);
 
   const openCommandMenu = (kind: string) => {
+    if (agentOrb && ['provider', 'model', 'credential'].includes(kind)) return;
     setCommandKind(kind);
     setMenuOpen(true);
     setSearchQuery('');
@@ -1222,7 +1238,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     ...resourceOptions.map(resource => ({ id: `${resource.kind}:${resource.id}`, type: 'resource', label: resource.name, description: `${resourceText[resource.kind]} · ${resourceText[resource.scope]}`, aliases: [resource.kind, resourceText[resource.kind].toLowerCase()], icon: resource.kind === 'orb' ? PyramidMark : resource.kind === 'mcp' ? Braces : Box, resource })),
     ...(['Extension', 'Skill', 'Mcp', 'Orb'] as const).map(kind => ({ id: `create-resource-${kind}`, type: 'resource-create', label: resourceText[`create${kind}`], description: resourceText.createDescription, aliases: [`crear ${kind.toLowerCase()}`, `create ${kind.toLowerCase()}`], icon: resourceCreationIcons[kind], resourceKind: kind })),
     ...availableExtensions.map((extension) => ({ id: extension.id, label: extension.name, description: extension.description, type: 'extension' as const, icon: extensionIcons[extension.id] || Box, extension })),
-  ].filter((command: CatalogItem) => [command.label, command.description, command.id].some(value => value?.toLowerCase().includes(searchQuery.toLowerCase())) || command.aliases?.some((alias: string) => alias.includes(searchQuery.toLowerCase())));
+  ].filter((command: CatalogItem) => !agentOrb || !['proveedor', 'modelo', 'credencial'].includes(command.id)).filter((command: CatalogItem) => [command.label, command.description, command.id].some(value => value?.toLowerCase().includes(searchQuery.toLowerCase())) || command.aliases?.some((alias: string) => alias.includes(searchQuery.toLowerCase())));
   const commandMenuItems = commandKind === 'command'
     ? slashCommands
     : filteredCatalog.filter((item) => {
@@ -1323,7 +1339,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
       }
       if (item.id === 'proyecto') {
         void readProjectsForCommandMenu().then((projects) => {
-          setProjectOptions([{ id: '__none__', label: 'Sin proyecto', type: 'project', projectPath: null, isNone: true }, ...projects.map((project: any) => ({ id: project.id || project.path, label: project.name, type: 'project', projectPath: project.path, projectId: project.id }))]);
+          setProjectOptions([{ id: '__none__', label: language === 'en' ? 'No project' : 'Sin proyecto', type: 'project', projectPath: null, isNone: true }, ...projects.map((project: any) => ({ id: project.id || project.path, label: project.name, type: 'project', projectPath: project.path, projectId: project.id }))]);
           openCommandMenu('project');
         });
         return;
@@ -2125,6 +2141,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           window.dispatchEvent(new CustomEvent('codeclub:artifacts-changed', { detail: { projectPath: contextProjectPath } }));
         }
       };
+      const orbBrowserOnly = Boolean(agentOrb && agentOrb.allowComputer === false);
+      if (agentOrb?.requiresAdministrator && !orbBrowserOnly && !(await invoke<{ elevated: boolean }>('codeclub_admin_status')).elevated) throw new Error('TASK_ADMIN_REQUIRED');
       const toolProjectPath = contextProjectPath || await invoke<string>('codeclub_get_system_root');
       const developmentTools = createTools({
         chatId,
@@ -2132,7 +2150,8 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         projectScoped: Boolean(contextProjectPath),
         recordToolEvent,
         setAgentState: guardedSetAgentState,
-        requestToolApproval: guardedRequestToolApproval,
+        // Orb tool approval is enforced by the outer wrapper below.
+        requestToolApproval: agentOrb ? () => Promise.resolve(true) : guardedRequestToolApproval,
         provider,
         modelId: selectedModelReference,
         providerId: currentProvider.id,
@@ -2140,7 +2159,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       const externalMcpTools: Record<string, any> = {};
       let loadedPlugins: Awaited<ReturnType<typeof loadAgentPlugins>> = [];
       try {
-        loadedPlugins = await loadAgentPlugins(contextProjectPath);
+        loadedPlugins = orbBrowserOnly ? [] : await loadAgentPlugins(contextProjectPath);
         const pluginMcp = await connectAllAgentPluginMcp(loadedPlugins);
         Object.assign(externalMcpTools, pluginMcp.tools);
         pluginMcpClose = pluginMcp.close;
@@ -2151,7 +2170,12 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       let beforeWorkspaceSnapshot: WorkspaceSnapshot = new Map();
       routeSpecialist = inferAgentSpecialist(content, runMode);
       const selectedToolset = Object.fromEntries(Object.entries(developmentTools).filter(([name]) => !['swarm', 'subagent', 'listAvailableTools'].includes(name)));
-      const availableToolset = { ...selectedToolset, ...externalMcpTools };
+      const browserTools = new Set(['openBrowser', 'getBrowserState', 'browserAction', 'askUser']);
+      const readOnlyTools = new Set(['listFiles', 'readFile', 'searchText', 'getTaskStatus', 'getExecutionLog', 'getBrowserState', 'askUser']);
+      const availableToolset = Object.fromEntries(Object.entries({ ...selectedToolset, ...externalMcpTools }).filter(([name]) => !orbBrowserOnly || browserTools.has(name)).map(([name, definition]: [string, any]) => [name, !agentOrb ? definition : { ...definition, execute: async (input: any, options: any) => {
+        if (!agentOrb.maximumAutonomy && !readOnlyTools.has(name) && !await guardedRequestToolApproval({ toolName: name, input, summary: name })) return { cancelled: true };
+        return definition.execute(input, options);
+      } }]));
       const searchChatContext = async (query: string, page: number, pageSize: number) => {
         const normalized = query.toLowerCase().trim();
         const sources: Array<{ id: string; title: string; project: string; projectPath?: string; chatId: string }> = [];
@@ -2173,7 +2197,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       };
       const dynamicToolAccess = createDynamicToolAccess(availableToolset, recordToolEvent, { plugins: loadedPlugins, searchChatContext });
       const artifactNames = ['createPlan', 'updatePlan', 'todo', 'getTaskStatus', 'switchProject'];
-      const artifactTools = Object.fromEntries(artifactNames.filter((name) => selectedToolset[name]).map((name) => [name, selectedToolset[name]]));
+      const artifactTools = Object.fromEntries(artifactNames.filter((name) => availableToolset[name]).map((name) => [name, availableToolset[name]]));
       // MCP definitions stay in the searchable catalog and become callable only after discovery.
       tools = { ...dynamicToolAccess, ...artifactTools };
       const routedToolset = tools;
@@ -2231,7 +2255,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
           },
         }),
       };
-      beforeWorkspaceSnapshot = await readWorkspaceSnapshot(toolProjectPath);
+      beforeWorkspaceSnapshot = orbBrowserOnly ? new Map() : await readWorkspaceSnapshot(toolProjectPath);
       updateAssistantMessage();
       const system = [
         'You are Codeclub\'s coding agent. Think and operate internally in English. On demand, discover and use tools, skills, plugins, and prior chat context. Before substantial coding tasks, search for a relevant engineering skill and load it when it clearly applies. Verify real results; never invent. Reply in the user\'s language.',
@@ -2935,7 +2959,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                           type="button"
                           aria-label={language === 'en' ? 'Clear search' : 'Limpiar búsqueda'}
                           onClick={() => setArtifactSearch((current) => ({ ...current, [kind]: '' }))}
-                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-0 bg-transparent p-0 text-[#777777] hover:bg-[var(--color-surface-5)] hover:text-[#eeeeee]"
+                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-0 bg-transparent p-0 text-[#999999] hover:bg-[var(--color-surface-5)] hover:text-[#eeeeee]"
                         >
                           <X size={13} strokeWidth={1.8} />
                         </button>
@@ -3026,7 +3050,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       {!floating && historyWindow.range.current.start+messages.length<historyWindow.range.current.total && <button type="button" title={chatHistoryTranslations[language].latest} aria-label={chatHistoryTranslations[language].latest} className="self-end rounded-full p-1 text-(--codeclub-text-muted) hover:bg-(--codeclub-hover)" onClick={()=>{const chat=activeChatRef.current;if(chat){shouldAutoScrollMessagesRef.current=true;void historyWindow.open(chat);}}}><ChevronDown size={16}/></button>}
       <div className={`relative min-h-0 flex-1 ${composerDocked ? 'flex' : 'hidden'}`}>
         {!floating && showEmptyGreeting && <div data-chat-greeting className="pointer-events-none absolute inset-0 grid place-items-center px-5 text-center text-lg font-medium tracking-[-0.02em] text-(--codeclub-text-strong)">{chatText.greeting}, {username}?</div>}
-      <motion.div ref={messagesAreaRef} initial={false} animate={chatAnimations} data-chat-transition={chatTransitionPhase} aria-busy={chatTransitionPhase !== 'idle' || historyWindow.loading} onScroll={handleMessagesScroll} className={`messages-area relative min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain [overflow-anchor:none] bg-transparent [scrollbar-width:none] ${composerDocked ? 'flex' : 'hidden'} ${chatTransitionPhase === 'idle' ? '' : 'pointer-events-none'}`} role="log" aria-label={language === 'en' ? 'Chat messages' : 'Mensajes del chat'} aria-live="polite" aria-relevant="additions text">
+      <motion.div ref={messagesAreaRef} initial={false} animate={chatAnimations} data-chat-transition={chatTransitionPhase} aria-busy={chatTransitionPhase !== 'idle' || historyWindow.loading || (isAgentBusy && pendingApprovals.length === 0 && agentState !== 'question')} onScroll={handleMessagesScroll} className={`messages-area relative min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain [overflow-anchor:none] bg-transparent [scrollbar-width:none] ${composerDocked ? 'flex' : 'hidden'} ${chatTransitionPhase === 'idle' ? '' : 'pointer-events-none'}`} role="log" aria-label={language === 'en' ? 'Chat messages' : 'Mensajes del chat'} aria-live="polite" aria-relevant="additions text">
         <div aria-hidden="true" className="min-h-0 flex-1" />
 
         <div className="relative w-full shrink-0" style={virtualizeTurns ? { height: totalTurnHeight } : undefined}>
@@ -3088,7 +3112,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
               {!floating && m.role === 'assistant' && (!liveTurn || m.meta?.status === 'error') && <div data-message-actions={i} className="message-actions relative flex items-center gap-1 self-start">
                 <button type="button" aria-label={copiedMessageIndex === i ? chatActionTranslations[language].copied : chatActionTranslations[language].copy} title={copiedMessageIndex === i ? chatActionTranslations[language].copied : chatActionTranslations[language].copy} onClick={() => void handleCopyMessage(m.content, i)} className={`grid h-6 w-6 place-items-center rounded-md border-0 bg-transparent transition-colors hover:bg-white/[0.06] ${copiedMessageIndex === i ? 'text-(--codeclub-accent-bright)' : 'text-(--codeclub-text-muted)'}`}>{copiedMessageIndex === i ? <Check size={12} strokeWidth={1.8} /> : <Copy size={12} strokeWidth={1.8} />}</button>
                 <button type="button" aria-label={chatActionTranslations[language].more} title={chatActionTranslations[language].more} aria-haspopup="menu" aria-expanded={moreMenuIndex === i} onClick={() => setMoreMenuIndex((current) => current === i ? null : i)} className="grid h-6 w-6 place-items-center rounded-md border-0 bg-transparent text-(--codeclub-text-muted) transition-colors hover:bg-white/[0.06] hover:text-(--codeclub-text-strong)"><MoreHorizontal size={13} strokeWidth={1.8} /></button>
-                <AnimatePresence>{moreMenuIndex === i && <motion.div role="menu" aria-label={chatActionTranslations[language].more} initial={{ opacity: 0, y: 6, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 6, scale: 0.96 }} transition={{ duration: 0.14, ease: 'easeOut' }} className="absolute bottom-[calc(100%+8px)] left-0 z-30 grid w-[184px] max-w-[calc(100vw-16px)] gap-0.5 rounded-xl border border-[#333333] bg-[#2B2B2B] p-1 shadow-2xl">
+                <AnimatePresence>{moreMenuIndex === i && <motion.div ref={responseMenuRef} role="menu" aria-label={chatActionTranslations[language].more} initial={{ opacity: 0, y: 6, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 6, scale: 0.96 }} transition={{ duration: 0.14, ease: 'easeOut' }} className="absolute bottom-[calc(100%+8px)] left-0 z-30 grid w-[184px] max-w-[calc(100vw-16px)] gap-0.5 rounded-xl border border-[#333333] bg-[#2B2B2B] p-1 shadow-2xl">
                   {previousUserMessageIndex(i) >= 0 && <button type="button" role="menuitem" disabled={isAgentBusy} onClick={() => { handleRetryMessage(previousUserMessageIndex(i)); setMoreMenuIndex(null); }} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] text-(--codeclub-text-strong) hover:bg-white/[0.06] disabled:opacity-40"><RotateCcw size={12} />{chatActionTranslations[language].regenerate}</button>}
                   <button type="button" role="menuitem" onClick={() => { void handleCopyTrace(); setMoreMenuIndex(null); }} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] text-(--codeclub-text-strong) hover:bg-white/[0.06]"><ScrollText size={12} />{chatActionTranslations[language].trace}</button>
                 </motion.div>}</AnimatePresence>
@@ -3105,19 +3129,19 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
 
       <div className="chat-composer composer-row flex w-full min-w-0 shrink-0 items-center gap-2 bg-transparent">
           <div className="composer-box relative min-h-10 min-w-0 flex-1 overflow-visible rounded-[22px] border border-(--codeclub-border-soft) bg-(--codeclub-surface-raised) p-0 shadow-none">
-          {computerContext && <div className="flex min-h-[28px] items-center gap-2 border-b border-[#202020] px-4 py-1.5" aria-label={language === 'en' ? 'Computer Use context' : 'Contexto de Computer Use'}><span className="shrink-0 rounded-full border border-[#3D9BFF]/60 bg-[#1687FF]/10 px-2 py-0.5 text-[10px] font-medium text-[#8BC7FF]">PC</span><span className="min-w-0 flex-1 truncate text-[10px] text-[#bdbdbd]">{computerContext.title || (language === 'en' ? 'Unknown window' : 'Ventana desconocida')} · ({computerContext.x}, {computerContext.y})</span><button type="button" onClick={() => setComputerContext(null)} className="grid h-5 w-5 shrink-0 place-items-center rounded-full text-[#777] hover:bg-white/[0.08] hover:text-[#eee]" title={language === 'en' ? 'Remove Computer Use context' : 'Quitar contexto de Computer Use'} aria-label={language === 'en' ? 'Remove Computer Use context' : 'Quitar contexto de Computer Use'}><X size={12} /></button></div>}
+          {computerContext && <div className="flex min-h-[28px] items-center gap-2 border-b border-[#202020] px-4 py-1.5" aria-label={language === 'en' ? 'Computer Use context' : 'Contexto de Computer Use'}><span className="shrink-0 rounded-full border border-[#3D9BFF]/60 bg-[#1687FF]/10 px-2 py-0.5 text-[10px] font-medium text-[#8BC7FF]">PC</span><span className="min-w-0 flex-1 truncate text-[10px] text-[#bdbdbd]">{computerContext.title || (language === 'en' ? 'Unknown window' : 'Ventana desconocida')} · ({computerContext.x}, {computerContext.y})</span><button type="button" onClick={() => setComputerContext(null)} className="grid h-5 w-5 shrink-0 place-items-center rounded-full text-[#999999] hover:bg-white/[0.08] hover:text-[#eee]" title={language === 'en' ? 'Remove Computer Use context' : 'Quitar contexto de Computer Use'} aria-label={language === 'en' ? 'Remove Computer Use context' : 'Quitar contexto de Computer Use'}><X size={12} /></button></div>}
           {attachmentProgress&&<p className="m-0 truncate py-1 text-[10px] text-[#8bc7ff]" role="status">{attachmentProgress}</p>}
           {attachmentError&&<p className="m-0 py-1 text-[10px] text-[#aaa]" role="alert">{activityTranslations[language].attachmentFailed}</p>}
           {(artifactReferences.length > 0 || browserReferences.length > 0 || selectedTextReferences.length > 0 || attachedFiles.length > 0) && (
             <div ref={browserRefContainerRef} className="file-preview-scrollbar flex min-h-[76px] w-full min-w-0 max-w-full flex-nowrap items-center gap-2 overflow-x-auto overflow-y-hidden border-b-0 px-3 py-1.5" aria-label={language === 'en' ? 'References and files' : 'Referencias y archivos'}>
-              {artifactReferences.map((reference) => <button key={`${reference.kind}-${reference.id}`} type="button" onClick={() => setArtifactReferences((current) => current.filter((item) => item.kind !== reference.kind || item.id !== reference.id))} className="attachment-artifact-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] text-left text-[#cfcfcf]" title={`Quitar @${reference.kind}`}><span className="absolute left-1 top-1 text-[8px] uppercase tracking-[0.04em] text-[#858585]">@{reference.kind}</span><span className="absolute inset-x-1 bottom-1 line-clamp-2 text-center text-[8px] leading-[10px] text-[#d6d6d6]">{reference.title}</span><span aria-hidden="true" className="attachment-artifact-remove pointer-events-none absolute inset-0 z-10 grid place-items-center bg-[#161616]/80 text-[#eeeeee]"><span className="grid h-6 w-6 place-items-center rounded-full bg-[#252525] text-[#bdbdbd]"><X size={13} strokeWidth={2} /></span></span></button>)}
-              {browserReferences.map((ref, index) => <button key={ref.id} type="button" onClick={() => { setBrowserReferences((current) => current.filter((item) => item.id !== ref.id)); if (ref.markerId) window.dispatchEvent(new CustomEvent('codeclub:remove-browser-marker', { detail: { markerId: ref.markerId } })); }} className="browser-reference-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] px-1 text-left text-[#cfcfcf]" title={`Quitar @${ref.title}`}>
+              {artifactReferences.map((reference) => <button key={`${reference.kind}-${reference.id}`} type="button" onClick={() => setArtifactReferences((current) => current.filter((item) => item.kind !== reference.kind || item.id !== reference.id))} className="attachment-artifact-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] text-left text-[#cfcfcf]" aria-label={`${accessibilityTranslations[language].remove}: ${reference.title}`} title={`${accessibilityTranslations[language].remove}: ${reference.title}`}><span className="absolute left-1 top-1 text-[8px] uppercase tracking-[0.04em] text-[#858585]">@{reference.kind}</span><span className="absolute inset-x-1 bottom-1 line-clamp-2 text-center text-[8px] leading-[10px] text-[#d6d6d6]">{reference.title}</span><span aria-hidden="true" className="attachment-artifact-remove pointer-events-none absolute inset-0 z-10 grid place-items-center bg-[#161616]/80 text-[#eeeeee]"><span className="grid h-6 w-6 place-items-center rounded-full bg-[#252525] text-[#bdbdbd]"><X size={13} strokeWidth={2} /></span></span></button>)}
+              {browserReferences.map((ref, index) => <button key={ref.id} type="button" onClick={() => { setBrowserReferences((current) => current.filter((item) => item.id !== ref.id)); if (ref.markerId) window.dispatchEvent(new CustomEvent('codeclub:remove-browser-marker', { detail: { markerId: ref.markerId } })); }} className="browser-reference-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] px-1 text-left text-[#cfcfcf]" aria-label={`${accessibilityTranslations[language].remove}: ${ref.title}`} title={`${accessibilityTranslations[language].remove}: ${ref.title}`}>
                 <span className="absolute left-1 top-1 z-[1] grid h-4 w-4 place-items-center rounded-full bg-(--codeclub-accent) text-[9px] font-semibold text-[#111111]">{index + 1}</span>
                 {getBrowserReferenceFavicon(ref) ? <img src={getBrowserReferenceFavicon(ref)} alt="" className="h-7 w-7 rounded-md object-contain" /> : <span className="grid h-7 w-7 place-items-center rounded-md bg-[#202020] text-[#8BC7FF]"><Globe size={14} /></span>}
                 <span className="absolute inset-x-1 bottom-1 truncate text-center text-[9px] text-[#d6d6d6]">{ref.title}</span>
                 <span aria-hidden="true" className="browser-reference-remove pointer-events-none absolute inset-0 grid place-items-center bg-[#161616]/80 text-[#eeeeee]"><span className="grid h-6 w-6 place-items-center rounded-full bg-[#252525] text-[#bdbdbd]"><X size={13} strokeWidth={2} /></span></span>
               </button>)}
-              {selectedTextReferences.map((ref) => <button key={ref.id} type="button" onClick={() => setSelectedTextReferences((current) => current.filter((item) => item.id !== ref.id))} className="browser-reference-preview chat-selected-text-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] px-1 text-left text-[#cfcfcf]" title={`${agentTextSelectionTranslations[language].removeReference}: ${ref.comment ? `${ref.comment} · ` : ''}${ref.text}`}>
+              {selectedTextReferences.map((ref) => <button key={ref.id} type="button" aria-label={`${agentTextSelectionTranslations[language].removeReference}: ${ref.text}`} onClick={() => setSelectedTextReferences((current) => current.filter((item) => item.id !== ref.id))} className="browser-reference-preview chat-selected-text-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] px-1 text-left text-[#cfcfcf]" title={`${agentTextSelectionTranslations[language].removeReference}: ${ref.comment ? `${ref.comment} · ` : ''}${ref.text}`}>
                 <span className="chat-selected-text-content">{ref.text}</span>
                 <span className="chat-selected-text-label">{agentTextSelectionTranslations[language].selectedReference}</span>
                 <span aria-hidden="true" className="browser-reference-remove pointer-events-none absolute inset-0 grid place-items-center bg-[#161616]/80 text-[#eeeeee]"><span className="grid h-6 w-6 place-items-center rounded-full bg-[#252525] text-[#bdbdbd]"><X size={13} strokeWidth={2} /></span></span>
@@ -3133,19 +3157,19 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
                   +{browserReferences.length - maxVisibleBrowserRefs} referencias
                 </button>
               )}
-           {attachedFiles.length > 0 && <div className="contents" aria-label={language === 'en' ? 'Attached files' : 'Archivos adjuntos'}>{attachedFiles.map((file, index) => file.mediaType.startsWith('image/') ? <motion.button key={file.path} type="button" onClick={() => setAttachedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} transition={{ type: 'spring', stiffness: 420, damping: 28 }} className="attachment-image-preview relative h-16 w-16 shrink-0 overflow-hidden rounded-[10px] border-0 bg-[#161616]" title={`${language === 'en' ? 'Remove' : 'Quitar'} ${file.name}`}><img src={file.previewUrl} alt={file.name} onError={(event) => { event.currentTarget.style.display = 'none'; }} className="attachment-image-preview-image h-full w-full object-cover" /><span className="attachment-image-preview-name absolute inset-x-1 bottom-1 truncate text-center text-[9px] text-white/75">{file.name}</span><span aria-hidden="true" className="attachment-image-preview-close pointer-events-none absolute inset-0 grid place-items-center text-white"><X size={18} strokeWidth={2.2} /></span></motion.button> : <motion.button key={file.path} type="button" onClick={() => setAttachedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} transition={{ type: 'spring', stiffness: 420, damping: 28 }} className="attachment-file-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] text-[10px] font-semibold uppercase tracking-[0.04em] text-[#cfcfcf]" title={`${language === 'en' ? 'Remove' : 'Quitar'} ${file.name}`}>{file.previewText ? <pre className="attachment-file-preview-text">{file.previewText}</pre> : <span className="attachment-file-preview-name" title={file.name}>{file.name}</span>}<span aria-hidden="true" className="attachment-file-preview-close pointer-events-none absolute inset-0 grid place-items-center text-white"><X size={18} strokeWidth={2.2} /></span></motion.button>)}</div>}
+           {attachedFiles.length > 0 && <div className="contents" aria-label={language === 'en' ? 'Attached files' : 'Archivos adjuntos'}>{attachedFiles.map((file, index) => file.mediaType.startsWith('image/') ? <motion.button key={file.path} type="button" aria-label={`${accessibilityTranslations[language].remove}: ${file.name}`} onClick={() => setAttachedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} transition={{ type: 'spring', stiffness: 420, damping: 28 }} className="attachment-image-preview relative h-16 w-16 shrink-0 overflow-hidden rounded-[10px] border-0 bg-[#161616]" title={`${language === 'en' ? 'Remove' : 'Quitar'} ${file.name}`}><img src={file.previewUrl} alt={file.name} onError={(event) => { event.currentTarget.style.display = 'none'; }} className="attachment-image-preview-image h-full w-full object-cover" /><span className="attachment-image-preview-name absolute inset-x-1 bottom-1 truncate text-center text-[9px] text-white/75">{file.name}</span><span aria-hidden="true" className="attachment-image-preview-close pointer-events-none absolute inset-0 grid place-items-center text-white"><X size={18} strokeWidth={2.2} /></span></motion.button> : <motion.button key={file.path} type="button" onClick={() => setAttachedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} transition={{ type: 'spring', stiffness: 420, damping: 28 }} className="attachment-file-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] text-[10px] font-semibold uppercase tracking-[0.04em] text-[#cfcfcf]" title={`${language === 'en' ? 'Remove' : 'Quitar'} ${file.name}`}>{file.previewText ? <pre className="attachment-file-preview-text">{file.previewText}</pre> : <span className="attachment-file-preview-name" title={file.name}>{file.name}</span>}<span aria-hidden="true" className="attachment-file-preview-close pointer-events-none absolute inset-0 grid place-items-center text-white"><X size={18} strokeWidth={2.2} /></span></motion.button>)}</div>}
             </div>
           )}
           {selectedResources.length > 0 && <div className="flex min-h-[28px] flex-wrap items-center gap-1.5 border-b border-[#202020] px-3 py-1.5" aria-label={resourceText.resources}>
             {selectedResources.map(resource => <button key={`${resource.kind}:${resource.id}`} type="button" aria-label={`${resourceText.remove}: ${resource.name}`} title={`${resourceText.remove}: ${resource.name}`} onClick={() => setSelectedResources(previous => previous.filter(item => item.id !== resource.id || item.kind !== resource.kind))} className="flex items-center gap-1 rounded-full border border-[#2b2b2b] bg-[#191919] px-2.5 py-1 text-[10px] text-[#b9dcff]"><span>{resourceText[resource.kind]} · {resource.name}</span><X size={10} aria-hidden="true" /></button>)}
           </div>}
           {activeSkills.length > 0 && <div className="flex min-h-[28px] items-center gap-1.5 overflow-x-auto border-b border-[#202020] px-3 py-1.5" aria-label={chatText.activeSkills}>
-            {activeSkills.map((skill) => <button key={skill.id} type="button" onClick={() => setActiveSkills((current) => current.filter((item) => item.id !== skill.id))} className="flex shrink-0 items-center gap-1 rounded-full border border-[#3d9bff]/50 bg-[#1687ff]/10 px-2.5 py-1 text-[10px] text-[#b9dcff] hover:bg-[#1687ff]/20" title={chatText.removeSkill}>
+            {activeSkills.map((skill) => <button key={skill.id} type="button" onClick={() => setActiveSkills((current) => current.filter((item) => item.id !== skill.id))} className="flex shrink-0 items-center gap-1 rounded-full border border-[#3d9bff]/50 bg-[#1687ff]/10 px-2.5 py-1 text-[10px] text-[#b9dcff] hover:bg-[#1687ff]/20" aria-label={`${chatText.removeSkill}: ${skill.name}`} title={chatText.removeSkill}>
               <span className="max-w-[150px] truncate">{skill.name}</span><span className="text-[#8bc7ff]/70">×</span>
             </button>)}
           </div>}
           {activeExtensions.length > 0 && <div className="flex min-h-[28px] items-center gap-1.5 overflow-x-auto border-b border-[#202020] px-3 py-1.5" aria-label={chatText.activeExtensions}>
-            {activeExtensions.map((extension) => { const Icon = extensionIcons[extension.id] || Box; return <button key={extension.id} type="button" onClick={() => setActiveExtensions((current) => current.filter((item) => item.id !== extension.id))} className="flex shrink-0 items-center gap-1 rounded-full border border-[#3d9bff]/50 bg-[#1687ff]/10 px-2.5 py-1 text-[10px] text-[#b9dcff] hover:bg-[#1687ff]/20" title={chatText.removeExtension}><Icon size={11} /><span>{extension.name}</span><span className="text-[#8bc7ff]/70">×</span></button>; })}
+            {activeExtensions.map((extension) => { const Icon = extensionIcons[extension.id] || Box; return <button key={extension.id} type="button" onClick={() => setActiveExtensions((current) => current.filter((item) => item.id !== extension.id))} className="flex shrink-0 items-center gap-1 rounded-full border border-[#3d9bff]/50 bg-[#1687ff]/10 px-2.5 py-1 text-[10px] text-[#b9dcff] hover:bg-[#1687ff]/20" aria-label={`${chatText.removeExtension}: ${extension.name}`} title={chatText.removeExtension}><Icon size={11} /><span>{extension.name}</span><span className="text-[#8bc7ff]/70">×</span></button>; })}
           </div>}
           <div ref={commandMenuHostRef} className="absolute inset-x-0 bottom-full z-40 mb-2" />
           <form onSubmit={handleSubmit} aria-label={language === 'en' ? 'Message composer' : 'Compositor de mensaje'} className="composer-box-inner relative flex min-h-[44px] w-full min-w-0 flex-col items-stretch gap-0 rounded-none border-0 bg-transparent px-1.5 pb-3 pl-4 pr-3 pt-3 @max-[520px]:pl-3 @max-[520px]:pr-2 [&>button.absolute]:hidden">
@@ -3329,7 +3353,7 @@ function MaterialFileIcon({ name, kind, size = 17 }: { name: string; kind: FileT
   // Relative to the exported app document, also when Electron uses file://.
   const source = iconFile ? `./material-icons/${iconFile}` : null;
   if (kind === 'file' && (extension === 'json' || extension === 'jsonl')) return <Braces size={size} strokeWidth={1.5} className="shrink-0 text-[#f9a825]" />;
-  if (!source || failedSource === source) return kind === 'directory' ? <Folder size={size} aria-hidden="true" className="shrink-0 text-[#a89b72]" /> : <FileCode2 size={size} aria-hidden="true" className="shrink-0 text-[#777777]" />;
+  if (!source || failedSource === source) return kind === 'directory' ? <Folder size={size} aria-hidden="true" className="shrink-0 text-[#a89b72]" /> : <FileCode2 size={size} aria-hidden="true" className="shrink-0 text-[#999999]" />;
   return <img src={source} alt="" aria-hidden="true" onError={() => setFailedSource(source)} style={{ width: size, height: size }} className="shrink-0" />;
 }
 
@@ -3691,13 +3715,17 @@ function TabbedProjectView({ projectPath, projectName, initialSelectedPath = '',
   const [loading, setLoading] = useState(true);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const modalScrollRef = useRef<HTMLDivElement | null>(null);
+  const fileDialogRef = useRef<HTMLElement | null>(null);
+  useDialogAccessibility(fileDialogRef, Boolean(showFileTree), () => onToggleFileTree?.());
   const [entries, setEntries] = useState<ProjectFileEntry[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  useFileTreeKeyboard(fileDialogRef, Boolean(showFileTree), expanded, entries);
   const [tabs, setTabs] = useState<string[]>([]);
   const [previewModes, setPreviewModes] = useState<Record<string, boolean>>({});
   const [selectedPath, setSelectedPath] = useState(initialSelectedPath);
   const [fileContextMenu, setFileContextMenu] = useState<{ path: string; x: number; y: number } | null>(null);
   const fileContextMenuRef = useRef<HTMLDivElement | null>(null);
+  usePopupKeyboard(fileContextMenuRef, Boolean(fileContextMenu), () => setFileContextMenu(null));
   const [files, setFiles] = useState<Record<string, OpenFile>>({});
   const saveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const panelRef = useRef<HTMLDivElement>(null);
@@ -3846,17 +3874,11 @@ function TabbedProjectView({ projectPath, projectName, initialSelectedPath = '',
   };
 
   const tree = buildFileTree(entries);
-  useEffect(() => {
-    if (!showFileTree) return undefined;
-    const closeWithEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') onToggleFileTree?.(); };
-    window.addEventListener('keydown', closeWithEscape);
-    return () => window.removeEventListener('keydown', closeWithEscape);
-  }, [showFileTree, onToggleFileTree]);
-  const renderTree = (nodes: FileTreeNode[], depth = 0): React.ReactNode => nodes.map((node) => {
+  const renderTree = (nodes: FileTreeNode[], depth = 0): React.ReactNode => nodes.map((node, index) => {
     const isOpen = expanded.has(node.path);
     return <React.Fragment key={node.path}>
-      <button id={`project-tree-${encodeURIComponent(node.path)}`} type="button" onContextMenu={(event) => { if (node.kind !== 'file' || !projectPath) return; event.preventDefault(); const path = `${projectPath.replace(/[\/]+$/, '')}\\${node.path.replace(/\//g, '\\')}`; window.dispatchEvent(new CustomEvent('codeclub:file-reference', { detail: { path } })); onToggleFileTree?.(); }} onClick={() => node.kind === 'directory' ? setExpanded((current) => { const next = new Set(current); next.has(node.path) ? next.delete(node.path) : next.add(node.path); return next; }) : void openFile(node.path)} className={`flex w-full items-center gap-1.5 rounded-md border px-2 py-1.5 text-left text-[12px] ${selectedPath === node.path ? 'border-[#3d9bff] bg-[#3d9bff12] text-[#eeeeee]' : 'border-transparent text-[#bdbdbd] hover:bg-[var(--color-surface-3)]'}`} style={{ paddingLeft: `${8 + depth * 14}px` }}>
-        {node.kind === 'directory' ? (isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />) : <span className="w-[13px]" />}
+      <button id={`project-tree-${encodeURIComponent(node.path)}`} type="button" role="treeitem" aria-level={depth + 1} aria-posinset={index + 1} aria-setsize={nodes.length} aria-expanded={node.kind === 'directory' ? isOpen : undefined} aria-current={selectedPath === node.path ? true : undefined} onContextMenu={(event) => { if (node.kind !== 'file' || !projectPath) return; event.preventDefault(); const path = `${projectPath.replace(/[\/]+$/, '')}\\${node.path.replace(/\//g, '\\')}`; window.dispatchEvent(new CustomEvent('codeclub:file-reference', { detail: { path } })); onToggleFileTree?.(); }} onClick={() => node.kind === 'directory' ? setExpanded((current) => { const next = new Set(current); next.has(node.path) ? next.delete(node.path) : next.add(node.path); return next; }) : void openFile(node.path)} className={`flex w-full items-center gap-1.5 rounded-md border px-2 py-1.5 text-left text-[12px] ${selectedPath === node.path ? 'border-[#3d9bff] bg-[#3d9bff12] text-[#eeeeee]' : 'border-transparent text-[#bdbdbd] hover:bg-[var(--color-surface-3)]'}`} style={{ paddingLeft: `${8 + depth * 14}px` }}>
+        {node.kind === 'directory' ? (isOpen ? <ChevronDown size={13} aria-hidden="true" /> : <ChevronRight size={13} aria-hidden="true" />) : <span className="w-[13px]" />}
         <MaterialFileIcon name={node.name} kind={node.kind} />
         <span className="min-w-0 flex-1 truncate">{node.name}</span>
       </button>
@@ -3866,9 +3888,9 @@ function TabbedProjectView({ projectPath, projectName, initialSelectedPath = '',
 
   return <div ref={panelRef} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleFileDrop} className="codeclub-project-files flex h-full w-full min-w-0 flex-col overflow-hidden rounded-tl-lg bg-[#111111] text-[#eeeeee] [&>div:first-child]:hidden">
     <div className="flex h-9 shrink-0 items-center justify-between border-b border-[#2b2b2b] px-4"><span className="text-[13px] leading-none">/</span><button type="button" onClick={() => setShowFileTree()} className="grid h-7 w-7 place-items-center rounded-[9px] bg-[#202020] text-[#eeeeee] hover:bg-[#2b2b2b]" title={text.toggleTree} aria-label={text.toggleTree}><FolderOpen size={16} /></button></div>
-    {loading ? <div className="flex flex-1 items-center justify-center text-xs text-[#777777]">{text.loadingFiles}</div> : <div className="flex min-h-0 flex-1">
-      <section aria-label={language === 'en' ? 'Open files and preview' : 'Archivos abiertos y vista previa'} className="flex min-w-0 flex-1 flex-col bg-[#111111]">{tabs.length ? <><div className="file-tabs-scrollbar flex h-9 shrink-0 items-center gap-1 overflow-x-auto overflow-y-hidden border-b border-[#2b2b2b] bg-transparent px-2">{tabs.map((path) => { const fileName = path.split(/[\\/]/).pop() || path; return <div key={path} onContextMenu={(event) => { event.preventDefault(); setFileContextMenu({ path, x: event.clientX, y: event.clientY }); }} className={`group flex h-7 max-w-[190px] min-w-[110px] shrink-0 items-center gap-2 rounded-md px-2.5 text-[11px] transition-colors ${selectedPath === path ? 'text-[#eeeeee]' : 'text-[#777777] hover:text-[#bdbdbd]'}`}><MaterialFileIcon name={fileName} kind="file" /><button type="button" onClick={() => setSelectedPath(path)} className="min-w-0 flex-1 truncate bg-transparent text-left">{fileName}</button><span className="ml-auto flex shrink-0 items-center gap-0.5">{supportsPreviewToggle(path) && <button type="button" onClick={() => setPreviewModes((current) => ({ ...current, [path]: !isPreviewMode(path) }))} className="grid h-5 w-5 shrink-0 place-items-center rounded-md text-[#777777] transition-colors hover:bg-white/10 hover:text-(--codeclub-text-strong)" title={isPreviewMode(path) ? (language === 'en' ? 'Edit file' : 'Editar archivo') : (language === 'en' ? 'Preview file' : 'Previsualizar archivo')} aria-label={`${isPreviewMode(path) ? (language === 'en' ? 'Edit' : 'Editar') : (language === 'en' ? 'Preview' : 'Previsualizar')}: ${path}`}>{isPreviewMode(path) ? <Pencil size={11} strokeWidth={1.8} /> : <Eye size={12} strokeWidth={1.8} />}</button>}<button type="button" onClick={() => closeFile(path)} className={`grid h-5 w-5 shrink-0 place-items-center rounded-md text-[#777777] transition-opacity hover:bg-white/10 hover:text-white ${selectedPath === path ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} title={text.closeTab} aria-label={`${text.closeTab}: ${path}` }><X size={12} /></button></span></div>; })}</div><div className="min-h-0 flex-1 overflow-hidden bg-transparent">{files[selectedPath] ? <FilePreview projectPath={projectPath || ''} file={files[selectedPath]} preview={isPreviewMode(selectedPath)} onChange={(content) => handleContentChange(selectedPath, content)} /> : <div className="p-4 text-xs text-[#777777]">{text.loadingFile}</div>}</div></> : <div className="flex h-full flex-col items-center justify-center px-5 text-center"><div><p className="mt-3 mb-0 text-[12px] text-(--codeclub-text-strong)">{projectName || projectPath?.split(/[\\/]/).filter(Boolean).pop()}</p><p className="mt-1 mb-0 text-[11px] leading-5 text-(--codeclub-text-muted)">{text.selectFile}</p></div></div>}</section>
-{showFileTree && typeof document !== 'undefined' && createPortal(<div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-black/60 p-4 backdrop-blur-[3px]" style={{ '--codeclub-accent': palette.accent } as React.CSSProperties} onMouseDown={(event) => { if (event.target === event.currentTarget) onToggleFileTree?.(); }}><section role="dialog" aria-modal="true" aria-label={language === 'en' ? 'Project files' : 'Archivos del proyecto'} className="codeclub-file-dialog relative flex h-[min(480px,80dvh)] w-[min(640px,92vw)] flex-col overflow-hidden rounded-[20px] border border-[#151515] bg-[#111111] shadow-2xl shadow-black/60"><div ref={modalScrollRef} onScroll={(event) => setShowScrollTop(event.currentTarget.scrollTop > 180)} className="project-files-modal-scroll min-h-0 flex-1 overflow-auto p-4">{loading ? <div className="grid h-full place-items-center text-xs text-[#777777]">{text.loadingFiles}</div> : tree.length ? <><section aria-label={language === 'en' ? 'Folders' : 'Carpetas'}><h3 className="mb-3 mt-0 text-[12px] font-semibold text-[#a8a8a8]">{language === 'en' ? 'Folders' : 'Carpetas'}</h3><div className="grid grid-cols-[repeat(auto-fill,minmax(144px,1fr))] gap-2">{tree.filter((node) => node.kind === 'directory').map((node) => <button key={node.path} type="button" onClick={() => document.getElementById(`project-tree-${encodeURIComponent(node.path)}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })} className="group flex h-[52px] min-w-0 items-center gap-2 rounded-xl border-0 bg-[#161616] px-3 text-left transition-colors hover:bg-[color-mix(in_srgb,var(--codeclub-accent)_9%,#161616)] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={`${language === 'en' ? 'Go to folder' : 'Ir a la carpeta'} ${node.name}`}><MaterialFileIcon name={node.name} kind={node.kind} size={22} /><span className="min-w-0 flex-1"><span className="block truncate text-[12px] font-medium text-[#e3e3e3]">{node.name}</span><span className="mt-0.5 block text-[10px] text-[#777777]">{node.children.length} {language === 'en' ? 'items' : 'elementos'}</span></span><ChevronRight size={15} className="shrink-0 text-[#686868] transition-transform group-hover:translate-x-0.5 group-hover:text-(--codeclub-accent)" aria-hidden="true"/></button>)}</div></section><section className="mt-4" aria-label={language === 'en' ? 'All files' : 'Todos los archivos'}><h3 className="mb-2 mt-0 text-[12px] font-semibold text-[#a8a8a8]">{language === 'en' ? 'All files' : 'Todos los archivos'}</h3><div role="tree" aria-label={language === 'en' ? 'Project files' : 'Archivos del proyecto'}>{renderTree(tree)}</div></section></> : <div className="p-3 text-sm text-[#777777]">{text.noFiles}</div>}</div><button type="button" onClick={() => modalScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })} tabIndex={showScrollTop ? 0 : -1} aria-hidden={!showScrollTop} aria-label={language === 'en' ? 'Back to top' : 'Volver arriba'} title={language === 'en' ? 'Back to top' : 'Volver arriba'} className={`absolute bottom-3 left-1/2 grid h-8 w-8 -translate-x-1/2 place-items-center rounded-full border border-white/[0.08] bg-[#242424]/95 text-(--codeclub-text) shadow-md shadow-black/35 backdrop-blur transition-all duration-200 focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${showScrollTop ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-2 opacity-0'}`}><ArrowUp size={13} aria-hidden="true" /></button></section></div>, document.body)}{fileContextMenu && <div ref={fileContextMenuRef} className="fixed z-[1100] grid w-52 gap-0.5 rounded-xl border border-white/[0.08] bg-[#2C2C2C]/95 p-1 shadow-2xl backdrop-blur-xl" style={{ left: fileContextMenu.x, top: fileContextMenu.y }} role="menu" aria-label={text.openFile}><button type="button" onClick={() => closeFile(fileContextMenu.path)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><X size={14} aria-hidden="true" />{text.closeTab}</button><button type="button" onClick={() => closeOtherFiles(fileContextMenu.path)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><Copy size={14} aria-hidden="true" />{text.closeOtherTabs}</button><button type="button" onClick={() => closeFilesToRight(fileContextMenu.path)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><ChevronRight size={14} aria-hidden="true" />{text.closeTabsToRight}</button></div>}
+    {loading ? <div className="flex flex-1 items-center justify-center text-xs text-[#999999]">{text.loadingFiles}</div> : <div className="flex min-h-0 flex-1">
+      <section aria-label={language === 'en' ? 'Open files and preview' : 'Archivos abiertos y vista previa'} className="flex min-w-0 flex-1 flex-col bg-[#111111]">{tabs.length ? <><div role="group" aria-label={language === 'en' ? 'Open files' : 'Archivos abiertos'} className="file-tabs-scrollbar flex h-9 shrink-0 items-center gap-1 overflow-x-auto overflow-y-hidden border-b border-[#2b2b2b] bg-transparent px-2">{tabs.map((path) => { const fileName = path.split(/[\\/]/).pop() || path; return <div key={path} onContextMenu={(event) => { event.preventDefault(); setFileContextMenu({ path, x: event.clientX, y: event.clientY }); }} className={`group flex h-7 max-w-[190px] min-w-[110px] shrink-0 items-center gap-2 rounded-md px-2.5 text-[11px] transition-colors ${selectedPath === path ? 'text-[#eeeeee]' : 'text-[#999999] hover:text-[#bdbdbd]'}`}><MaterialFileIcon name={fileName} kind="file" /><button type="button" onClick={() => setSelectedPath(path)} aria-pressed={selectedPath === path} className="min-w-0 flex-1 truncate bg-transparent text-left">{fileName}</button><span className="ml-auto flex shrink-0 items-center gap-0.5">{supportsPreviewToggle(path) && <button type="button" onClick={() => setPreviewModes((current) => ({ ...current, [path]: !isPreviewMode(path) }))} className="grid h-5 w-5 shrink-0 place-items-center rounded-md text-[#999999] transition-colors hover:bg-white/10 hover:text-(--codeclub-text-strong)" title={isPreviewMode(path) ? (language === 'en' ? 'Edit file' : 'Editar archivo') : (language === 'en' ? 'Preview file' : 'Previsualizar archivo')} aria-label={`${isPreviewMode(path) ? (language === 'en' ? 'Edit' : 'Editar') : (language === 'en' ? 'Preview' : 'Previsualizar')}: ${path}`}>{isPreviewMode(path) ? <Pencil size={11} strokeWidth={1.8} /> : <Eye size={12} strokeWidth={1.8} />}</button>}<button type="button" onClick={() => closeFile(path)} className={`grid h-5 w-5 shrink-0 place-items-center rounded-md text-[#999999] transition-opacity hover:bg-white/10 hover:text-white ${selectedPath === path ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'}`} title={text.closeTab} aria-label={`${text.closeTab}: ${path}` }><X size={12} /></button></span></div>; })}</div><div className="min-h-0 flex-1 overflow-hidden bg-transparent">{files[selectedPath] ? <FilePreview projectPath={projectPath || ''} file={files[selectedPath]} preview={isPreviewMode(selectedPath)} onChange={(content) => handleContentChange(selectedPath, content)} /> : <div className="p-4 text-xs text-[#999999]">{text.loadingFile}</div>}</div></> : <div className="flex h-full flex-col items-center justify-center px-5 text-center"><div><p className="mt-3 mb-0 text-[12px] text-(--codeclub-text-strong)">{projectName || projectPath?.split(/[\\/]/).filter(Boolean).pop()}</p><p className="mt-1 mb-0 text-[11px] leading-5 text-(--codeclub-text-muted)">{text.selectFile}</p></div></div>}</section>
+{showFileTree && typeof document !== 'undefined' && createPortal(<div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-black/60 p-4 backdrop-blur-[3px]" style={{ '--codeclub-accent': palette.accent } as React.CSSProperties} onMouseDown={(event) => { if (event.target === event.currentTarget) onToggleFileTree?.(); }}><section ref={fileDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={language === 'en' ? 'Project files' : 'Archivos del proyecto'} className="codeclub-file-dialog relative flex h-[min(480px,80dvh)] w-[min(640px,92vw)] flex-col overflow-hidden rounded-[20px] border border-[#151515] bg-[#111111] shadow-2xl shadow-black/60"><header className="flex shrink-0 items-center justify-between border-b border-[#202020] px-4 py-2"><h2 className="m-0 text-[13px] font-medium">{language === 'en' ? 'Project files' : 'Archivos del proyecto'}</h2><button type="button" onClick={() => onToggleFileTree?.()} aria-label={language === 'en' ? 'Close project files' : 'Cerrar archivos del proyecto'} title={language === 'en' ? 'Close project files' : 'Cerrar archivos del proyecto'} className="grid h-7 w-7 place-items-center rounded-md text-[#aaaaaa] hover:bg-white/10"><X size={14} aria-hidden="true" /></button></header><div ref={modalScrollRef} onScroll={(event) => setShowScrollTop(event.currentTarget.scrollTop > 180)} className="project-files-modal-scroll min-h-0 flex-1 overflow-auto p-4">{loading ? <div className="grid h-full place-items-center text-xs text-[#999999]">{text.loadingFiles}</div> : tree.length ? <><section aria-label={language === 'en' ? 'Folders' : 'Carpetas'}><h3 className="mb-3 mt-0 text-[12px] font-semibold text-[#a8a8a8]">{language === 'en' ? 'Folders' : 'Carpetas'}</h3><div className="grid grid-cols-[repeat(auto-fill,minmax(144px,1fr))] gap-2">{tree.filter((node) => node.kind === 'directory').map((node) => <button key={node.path} type="button" onClick={() => document.getElementById(`project-tree-${encodeURIComponent(node.path)}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })} className="group flex h-[52px] min-w-0 items-center gap-2 rounded-xl border-0 bg-[#161616] px-3 text-left transition-colors hover:bg-[color-mix(in_srgb,var(--codeclub-accent)_9%,#161616)] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)" aria-label={`${language === 'en' ? 'Go to folder' : 'Ir a la carpeta'} ${node.name}`}><MaterialFileIcon name={node.name} kind={node.kind} size={22} /><span className="min-w-0 flex-1"><span className="block truncate text-[12px] font-medium text-[#e3e3e3]">{node.name}</span><span className="mt-0.5 block text-[10px] text-[#999999]">{node.children.length} {language === 'en' ? 'items' : 'elementos'}</span></span><ChevronRight size={15} className="shrink-0 text-[#686868] transition-transform group-hover:translate-x-0.5 group-hover:text-(--codeclub-accent)" aria-hidden="true"/></button>)}</div></section><section className="mt-4" aria-label={language === 'en' ? 'All files' : 'Todos los archivos'}><h3 className="mb-2 mt-0 text-[12px] font-semibold text-[#a8a8a8]">{language === 'en' ? 'All files' : 'Todos los archivos'}</h3><div role="tree" aria-label={language === 'en' ? 'Project files' : 'Archivos del proyecto'}>{renderTree(tree)}</div></section></> : <div className="p-3 text-sm text-[#999999]">{text.noFiles}</div>}</div><button type="button" onClick={() => modalScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })} tabIndex={showScrollTop ? 0 : -1} aria-hidden={!showScrollTop} aria-label={language === 'en' ? 'Back to top' : 'Volver arriba'} title={language === 'en' ? 'Back to top' : 'Volver arriba'} className={`absolute bottom-3 left-1/2 grid h-8 w-8 -translate-x-1/2 place-items-center rounded-full border border-white/[0.08] bg-[#242424]/95 text-(--codeclub-text) shadow-md shadow-black/35 backdrop-blur transition-all duration-200 focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) ${showScrollTop ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-2 opacity-0'}`}><ArrowUp size={13} aria-hidden="true" /></button></section></div>, document.body)}{fileContextMenu && <div ref={fileContextMenuRef} className="fixed z-[1100] grid w-52 gap-0.5 rounded-xl border border-white/[0.08] bg-[#2C2C2C]/95 p-1 shadow-2xl backdrop-blur-xl" style={{ left: fileContextMenu.x, top: fileContextMenu.y }} role="menu" aria-label={text.openFile}><button type="button" onClick={() => closeFile(fileContextMenu.path)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><X size={14} aria-hidden="true" />{text.closeTab}</button><button type="button" onClick={() => closeOtherFiles(fileContextMenu.path)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><Copy size={14} aria-hidden="true" />{text.closeOtherTabs}</button><button type="button" onClick={() => closeFilesToRight(fileContextMenu.path)} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-(--codeclub-text) hover:bg-(--codeclub-hover) hover:text-(--codeclub-text-strong)" role="menuitem"><ChevronRight size={14} aria-hidden="true" />{text.closeTabsToRight}</button></div>}
     </div>}
   </div>;
 }

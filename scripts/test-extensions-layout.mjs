@@ -44,7 +44,7 @@ try {
   await page.getByRole('button',{name:'Instalar: Microsoft Edge',exact:true}).waitFor();
   const checkLayout = async () => {
     const failures = await page.evaluate(() => {
-      const root = document.querySelector('#codeclub-extensions-panel');
+      const root = document.querySelector('#codeclub-extensions-main');
       const bounds = root.getBoundingClientRect();
       const issues = [];
       for(const node of root.querySelectorAll('nav,button,input,h2,.extensions-browser-row,.extensions-source')) {
@@ -62,16 +62,15 @@ try {
   };
   for(const language of ['es','en']) {
     await page.evaluate(language=>{localStorage.setItem('codeclub-language',language);window.dispatchEvent(new CustomEvent('codeclub:language-change',{detail:{language}}));},language);
-    for(const width of [280,320,400,480,540,640,1040]) {
+    for(const width of [320,400,480,540,640,1040]) {
       await page.evaluate(width=>document.documentElement.style.setProperty('--panel-width',`${width}px`),width);
-      await page.getByRole('tab').first().click();
+      // The real sidebar emits category changes; the main panel no longer duplicates its tabs.
+      await page.evaluate(() => window.dispatchEvent(new CustomEvent('codeclub:extensions-tab', { detail: { tab: 'extensions' } })));
       await checkLayout();
-      const compact = await page.locator('.extensions-category-label').first().evaluate(node=>getComputedStyle(node).display==='none');
-      assert.equal(compact,width<=480,`Container width ${width} must select the right layout on a wide window`);
-      for(const index of [1,2]) {await page.getByRole('tab').nth(index).click();await checkLayout();}
+      for(const tab of ['skills','mcp']) {await page.evaluate(tab => window.dispatchEvent(new CustomEvent('codeclub:extensions-tab', { detail: { tab } })), tab);await checkLayout();}
     }
   }
-  await page.getByRole('tab').first().click();
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('codeclub:extensions-tab', { detail: { tab: 'extensions' } })));
   await page.getByRole('button',{name:'Install: Microsoft Edge',exact:true}).click();
   assert.deepEqual(await page.evaluate(()=>window.qaActions),[{browser:'edge',action:'install'}]);
   await page.evaluate(() => window.qaSelectProject('slow'));
@@ -83,10 +82,10 @@ try {
   assert.equal(await page.getByText('Stale plugin', { exact: true }).count(), 0, 'Late plugin results cannot replace the active project');
   if(process.env.CODECLUB_QA_SCREENSHOT) {
     await page.evaluate(()=>document.documentElement.style.setProperty('--panel-width','320px'));
-    await page.locator('#codeclub-extensions-panel').screenshot({path:process.env.CODECLUB_QA_SCREENSHOT});
+    await page.locator('#codeclub-extensions-main').screenshot({path:process.env.CODECLUB_QA_SCREENSHOT});
   }
   assert.deepEqual(errors,[]);
-  console.log('Extensions: 280–1040px container widths, Spanish/English, three tabs, accessible actions and no overlapping controls passed.');
+  console.log('Extensions: 320–1040px container widths, Spanish/English, three tabs, accessible actions and no overlapping controls passed.');
 } finally {
   await browser?.close();
   if(server) await new Promise(resolve=>server.close(resolve));

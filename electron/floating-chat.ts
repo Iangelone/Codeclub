@@ -25,8 +25,8 @@ export function createFloatingChat(root: string, openMain: () => void, onVisibil
     const bounds = window.getBounds();
     const area = screen.getDisplayMatching(bounds).workArea;
     if (snap) anchor = bounds.y + bounds.height / 2 < area.y + area.height / 2 ? 'top' : 'bottom';
-    const width = Math.min(460, area.width);
-    const height = Math.min(retracted ? 52 : expanded ? 300 : 92, area.height);
+    const width = Math.min(expanded ? 460 : 360, area.width);
+    const height = Math.min(retracted ? 52 : expanded ? 300 : 76, area.height);
     const x = Math.round(Math.max(area.x, Math.min(bounds.x, area.x + area.width - width)));
     const y = anchor === 'top' ? area.y : area.y + area.height - height;
     if (bounds.x !== x || bounds.y !== y || bounds.width !== width || bounds.height !== height) {
@@ -63,8 +63,8 @@ export function createFloatingChat(root: string, openMain: () => void, onVisibil
     } catch { /* First use starts centered above the taskbar. */ }
     if (!requested || window) return;
     const area = position ? screen.getDisplayNearestPoint(position).workArea : screen.getPrimaryDisplay().workArea;
-    const width = Math.min(460, area.width);
-    const height = Math.min(92, area.height);
+    const width = Math.min(360, area.width);
+    const height = Math.min(76, area.height);
     window = new BrowserWindow({
       title: 'Codeclub · Orb', x: position?.x ?? Math.round(area.x + (area.width - width) / 2),
       y: position?.y ?? area.y + area.height - height, width, height,

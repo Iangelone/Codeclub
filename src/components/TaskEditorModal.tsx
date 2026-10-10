@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, X } from 'lucide-react';
 import ScheduledSelect from './ui/ScheduledSelect';
+import { useDialogAccessibility } from './ui/use-accessible-overlay';
 import { taskEditorTranslations, useAppLanguage } from '../lib/i18n';
 
 /** Visual task editor. Values remain local until task creation is connected to the native scheduler. */
@@ -24,10 +25,23 @@ export default function TaskEditorModal({ onClose }: { onClose: () => void }) {
   const [advanced, setAdvanced] = useState(false);
   const [notifications, setNotifications] = useState<string>(text.notificationOptions[0]);
   const [paused, setPaused] = useState(false);
+  const previousOptions = useRef({ language, frequencies: text.frequencies, endOptions: text.endOptions, notificationOptions: text.notificationOptions, timeOptions });
+  // Translate existing selector choices by index; task text and editable fields stay unchanged.
+  useEffect(() => {
+    const previous = previousOptions.current;
+    if (previous.language === language) return;
+    setFrequency(value => text.frequencies[(previous.frequencies as readonly string[]).indexOf(value)] ?? value);
+    setEndRepeat(value => text.endOptions[(previous.endOptions as readonly string[]).indexOf(value)] ?? value);
+    setNotifications(value => text.notificationOptions[(previous.notificationOptions as readonly string[]).indexOf(value)] ?? value);
+    setTime(value => timeOptions[previous.timeOptions.indexOf(value)] ?? value);
+    previousOptions.current = { language, frequencies: text.frequencies, endOptions: text.endOptions, notificationOptions: text.notificationOptions, timeOptions };
+  }, [language, text, timeOptions]);
   const dialogRef = useRef<HTMLDivElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
+  // Preserve the editor's existing field autofocus and Tab handling; only isolate the background.
+  useDialogAccessibility(dialogRef, true, onClose, true);
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const frame = window.requestAnimationFrame(() => nameRef.current?.focus());

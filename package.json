@@ -9,6 +9,9 @@
   "packageManager": "npm@11.17.0",
   "scripts": {
     "dev": "npm run desktop:dev",
+    "desktop:debug": "npm run electron:compile && node scripts/desktop-dev.mjs --codeclub-a11y-debug",
+    "test:accessibility": "node scripts/test-accessibility.mjs",
+    "test:debug": "npm run electron:compile && node scripts/test-debug-mode.mjs",
     "desktop:dev": "npm run electron:compile && node scripts/desktop-dev.mjs",
     "desktop:build": "npm run next:build && npm run electron:compile",
     "next:dev": "next dev --hostname 127.0.0.1",
