@@ -2,22 +2,27 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Blocks, CheckCircle2, ChevronRight, Circle, Laptop, Globe, MoreHorizontal, BrushCleaning, Wrench, LoaderCircle, Pencil, X } from 'lucide-react';
+import { QrCode, KeyRound, CheckCircle2, ChevronRight, Circle, Laptop, Smartphone, Globe, MoreHorizontal, BrushCleaning, Wrench, LoaderCircle, Pencil, X } from 'lucide-react';
 import type { OrbDefinition } from '../lib/chat-resources';
 import type { ScheduledTask } from '../lib/scheduled-tasks';
-import { orbSidebarTranslations, useAppLanguage } from '../lib/i18n';
+import { orbPairingTranslations, orbCredentialsTranslations, orbSidebarTranslations, orbWorkspaceTranslations, useAppLanguage } from '../lib/i18n';
+import OrbCredentialsModal from './OrbCredentialsModal';
+import OrbPairingModal from './OrbPairingModal';
 import { models, providers } from '../lib/ai-catalog';
 import { credentialKeyFor, modelIdFor, modelMatchesProvider, usesGateway } from '../lib/ai-routing';
 import { readGlobalChatHistory, writeGlobalChatHistory } from '../lib/projectManager';
 import { useSharedSessions } from '../lib/shared-sessions';
 import { usePopupKeyboard } from './ui/use-accessible-overlay';
 import FluidOrb from './ui/fluid-orb';
+import { useOrbPalette } from './OrbPaletteProvider';
 import { getSetting, setSetting } from '../lib/persistence';
 import { ORBS_STORAGE_KEY } from '../lib/chat-resources';
+import { nativeInvoke } from '../lib/runtime';
 
 /** Show real orb configuration and native run activity; never synthesize connections or tasks. */
 export default function OrbSidebar({ orb, onClose }: { orb?: OrbDefinition; onClose?: () => void }) {
   const language = useAppLanguage();
+  const { cycleShape } = useOrbPalette();
   const text = orbSidebarTranslations[language];
   const sessions = useSharedSessions();
   const [task, setTask] = useState<ScheduledTask>();
@@ -27,6 +32,9 @@ export default function OrbSidebar({ orb, onClose }: { orb?: OrbDefinition; onCl
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [showPairing, setShowPairing] = useState(false);
+  const [androidConnected, setAndroidConnected] = useState(false);
+  const [showCredentials, setShowCredentials] = useState(false);
   const [showActivity, setShowActivity] = useState(false);
   const [activityPosition, setActivityPosition] = useState({ left: 0, top: 0 });
   const showActivityTooltip = (element: HTMLElement) => { const bounds = element.getBoundingClientRect(); setActivityPosition({ left: Math.max(8, Math.min(bounds.left, window.innerWidth - 248)), top: bounds.top - 8 }); setShowActivity(true); };
@@ -36,6 +44,18 @@ export default function OrbSidebar({ orb, onClose }: { orb?: OrbDefinition; onCl
   const provider = providers.find(item => item.id === orb?.providerId);
   const model = provider && models.find(item => modelMatchesProvider(item, provider) && modelIdFor(provider, item) === orb?.modelId);
   const configure = () => { if (orb) window.dispatchEvent(new CustomEvent('codeclub:configure-orb', { detail: { orbId: orb.id } })); };
+  useEffect(() => {
+    if (!orb) return;
+    let active = true;
+    const refresh = async () => {
+      try {
+        const result = await nativeInvoke<{ devices: { state: string }[] }>('codeclub_android_pairing_status', {});
+        if (active) setAndroidConnected(result.devices.some(device => device.state === 'device'));
+      } catch { if (active) setAndroidConnected(false); }
+    };
+    void refresh(); const timer = window.setInterval(() => void refresh(), 3000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [orb?.id]);
   useEffect(() => {
     let active = true;
     const refresh = () => { void (window as any).codeclub?.tasksList?.('')?.then((items: ScheduledTask[]) => { if (active) { setTask(items.find(item => item.id === `orb_${orb?.id}`)); setActivity(items.filter(item => item.id === `orb_${orb?.id}` || item.id === `orb_proactive_${orb?.id}`).flatMap(item => item.runs).sort((a, b) => a.startedAt.localeCompare(b.startedAt))); setError(''); } }).catch(() => { if (active) setError(text.activityError); }); };
@@ -90,6 +110,11 @@ export default function OrbSidebar({ orb, onClose }: { orb?: OrbDefinition; onCl
   const requests = tools.filter(tool => tool.name === 'askUser' && tool.output?.status === 'awaiting_user' && !tool.answer);
   const browserUsed = tools.some(tool => ['openBrowser', 'getBrowserState', 'browserAction', 'externalBrowserState', 'externalBrowserAction'].includes(tool.name));
   const pcUsed = tools.some(tool => String(tool.name).startsWith('computer') || ['runCommand', 'readFile', 'writeFile', 'listFiles', 'searchText'].includes(tool.name));
+  const androidUsed = tools.some(tool => ['androidGetState', 'androidScreenshot', 'androidAction', 'androidUnlock', 'androidLock'].includes(tool.name) && (tool.output?.ok === true || tool.output?.dispatched === true));
+  const androidDetected = tools.some(tool => {
+    const output = tool.output?.result || tool.output;
+    return tool.name === 'androidListDevices' && output?.ok === true && Array.isArray(output.devices) && output.devices.some((device: { state?: string }) => device.state === 'device');
+  });
   const progress = messages.filter(message => message.role === 'assistant').flatMap(message => (message.timeline || []).filter((event: any) => event.type === 'progress')).slice(-8).reverse();
   const openChat = () => window.dispatchEvent(new CustomEvent('codeclub:orb-agent:open-chat', { detail: { chatId, projectPath: '', name: orb?.name, customName: true } }));
   const activityDetail = progress[0]?.text || text.working;
@@ -120,10 +145,10 @@ export default function OrbSidebar({ orb, onClose }: { orb?: OrbDefinition; onCl
   return <section className="relative flex h-full min-h-0 flex-col overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden bg-(--codeclub-center) px-4 py-5 text-[11px] text-[#cccccc]" aria-label={text.sidebar}>
     {onClose && <button type="button" onClick={onClose} aria-label={text.close} title={text.close} className={`${iconButton} absolute right-2 top-2`}><X size={13} aria-hidden="true" /></button>}
     <header className="mb-7 flex flex-col items-center pt-2">
-      <div className="relative"><FluidOrb size={56} color={orb?.color} active={activeOrb} animateOnHover={false} themeTint={false} aria-hidden="true" /><button type="button" onClick={configure} disabled={!orb} title={text.configure} aria-label={text.configure} className={`${iconButton} absolute -bottom-1 -right-2 h-5 w-5 bg-(--codeclub-center)`}><Pencil size={10} aria-hidden="true" /></button></div>
+      <div className="relative"><button type="button" onClick={cycleShape} title={orbWorkspaceTranslations[language].changeShape} aria-label={orbWorkspaceTranslations[language].changeShape} className="block cursor-pointer rounded-full focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-(--codeclub-accent)"><FluidOrb size={56} active={activeOrb} animateOnHover={false} aria-hidden="true" /></button><button type="button" onClick={configure} disabled={!orb} title={text.configure} aria-label={text.configure} className={`${iconButton} absolute -bottom-1 -right-2 h-5 w-5 bg-(--codeclub-center)`}><Pencil size={10} aria-hidden="true" /></button></div>
       <h1 className="mb-0 mt-3 max-w-full truncate text-[17px] font-medium text-[#eeeeee]">{orb?.name || text.orb}</h1>
       <p className="mb-0 mt-0.5 text-[11px] text-[#999999]">{currentSession?.busy ? text.working : activeOrb ? text.active : text.idle}</p>
-      <div className="mt-4 flex justify-center gap-5"><button type="button" onClick={configure} disabled={!orb} className={iconButton} title={text.settings} aria-label={text.settings}><Wrench size={15} aria-hidden="true" /></button><button type="button" onClick={() => window.dispatchEvent(new CustomEvent('codeclub:open-extensions'))} className={iconButton} title={text.integrations} aria-label={text.integrations}><Blocks size={15} aria-hidden="true" /></button><button type="button" onClick={() => void clearChat()} disabled={!orb || pending || currentSession?.busy || task?.status === 'active'} className={iconButton} title={text.clearChat} aria-label={text.clearChat}><BrushCleaning size={16} aria-hidden="true" /></button></div>
+      <div className="mt-4 flex justify-center gap-5"><button type="button" onClick={configure} disabled={!orb} className={iconButton} title={text.settings} aria-label={text.settings}><Wrench size={15} aria-hidden="true" /></button><button type="button" onClick={() => setShowCredentials(true)} className={iconButton} title={orbCredentialsTranslations[language].title} aria-label={orbCredentialsTranslations[language].title}><KeyRound size={15} aria-hidden="true" /></button><button type="button" onClick={() => setShowPairing(true)} className={iconButton} title={orbPairingTranslations[language].title} aria-label={orbPairingTranslations[language].title}><QrCode size={16} aria-hidden="true" /></button><button type="button" onClick={() => void clearChat()} disabled={!orb || pending || currentSession?.busy || task?.status === 'active'} className={iconButton} title={text.clearChat} aria-label={text.clearChat}><BrushCleaning size={16} aria-hidden="true" /></button></div>
     </header>
     <section className="mb-6" aria-label={text.configure}>
       <h2 className="mb-2 mt-0 text-[11px] font-normal text-[#888888]">{text.configure}</h2>
@@ -135,9 +160,10 @@ export default function OrbSidebar({ orb, onClose }: { orb?: OrbDefinition; onCl
     </section>
     <section className="mb-6" aria-label={text.devices}>
       <h2 className="mb-2 mt-0 text-[11px] font-normal text-[#888888]">{text.devices}</h2>
-      {pcUsed || browserUsed ? <div className="overflow-hidden rounded-xl border border-[#202020]">
+      {pcUsed || browserUsed || androidUsed || androidDetected || androidConnected ? <div className="overflow-hidden rounded-xl border border-[#202020]">
         {pcUsed && <div className="flex h-9 min-w-0 items-center gap-2 px-2 last:border-b-0 border-b border-[#202020]"><Laptop size={14} aria-hidden="true" className="shrink-0 text-[#999999]" /><span className="min-w-0 flex-1 truncate text-[#eeeeee]">{text.thisComputer}</span><span className="shrink-0 text-[10px] text-[#888888]">{text.used}</span></div>}
-        {browserUsed && <div className="flex h-9 min-w-0 items-center gap-2 px-2"><Globe size={14} aria-hidden="true" className="shrink-0 text-[#999999]" /><span className="min-w-0 flex-1 truncate text-[#eeeeee]">{text.browser}</span><span className="shrink-0 text-[10px] text-[#888888]">{text.used}</span></div>}
+        {browserUsed && <div className="flex h-9 min-w-0 items-center gap-2 px-2 last:border-b-0 border-b border-[#202020]"><Globe size={14} aria-hidden="true" className="shrink-0 text-[#999999]" /><span className="min-w-0 flex-1 truncate text-[#eeeeee]">{text.browser}</span><span className="shrink-0 text-[10px] text-[#888888]">{text.used}</span></div>}
+        {(androidUsed || androidDetected || androidConnected) && <div className="flex h-9 min-w-0 items-center gap-2 px-2"><Smartphone size={14} aria-hidden="true" className="shrink-0 text-[#999999]" /><span className="min-w-0 flex-1 truncate text-[#eeeeee]">{text.android}</span><span className="shrink-0 text-[10px] text-[#888888]">{androidConnected ? text.connected : androidUsed ? text.used : text.connected}</span></div>}
       </div> : <p className="my-2 px-2 text-[10px] text-[#888888]">{text.noDevices}</p>}
     </section>
     <section aria-label={text.activity}>
@@ -151,6 +177,8 @@ export default function OrbSidebar({ orb, onClose }: { orb?: OrbDefinition; onCl
         {!currentSession?.busy && !progress.length && !activity.length && <p className="my-2 px-2 text-[10px] text-[#888888]">{text.noActivity}</p>}
       </div>
     </section>
+    {showPairing && <OrbPairingModal onClose={() => setShowPairing(false)} />}
+    {showCredentials && <OrbCredentialsModal onClose={() => setShowCredentials(false)} />}
     {error && <p role="alert" className="mt-3 text-[10px] leading-4 text-[#ffb4b4]">{error}</p>}
   </section>;
 }

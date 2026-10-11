@@ -2,7 +2,8 @@ import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync } from '
 import path from 'node:path';
 type Crypto = { isEncryptionAvailable(): boolean; encryptString(value:string):Buffer; decryptString(value:Buffer):string };
 type RecordEntry = { cipher:string; origin?:string };
-export const isCredentialKey = (key:string) => /^[a-z0-9][a-z0-9_.-]*_api_key$/i.test(key);
+export const isAndroidPinKey = (key:string) => /^android_[a-f0-9]{64}_pin$/.test(key);
+export const isCredentialKey = (key:string) => /^[a-z0-9][a-z0-9_.-]*_api_key$/i.test(key) || isAndroidPinKey(key);
 /** Windows safeStorage uses DPAPI. Plaintext is never persisted by this store. */
 export class CredentialVault {
   private entries: Record<string,RecordEntry> = {};
@@ -14,12 +15,19 @@ export class CredentialVault {
   private persist() {const temp=this.file+'.tmp';writeFileSync(temp,JSON.stringify(this.entries));renameSync(temp,this.file);}
   set(key:string,value:string,origin?:string) {
     if(!isCredentialKey(key))throw new Error('Invalid credential identifier');
+    if(isAndroidPinKey(key) && value && (!/^\d{4,16}$/.test(value) || origin))throw new Error('Invalid Android PIN');
     if(!this.crypto.isEncryptionAvailable())throw new Error('System credential encryption unavailable');
     if(!value.trim()){delete this.entries[key];this.persist();return;}
     this.entries[key]={cipher:this.crypto.encryptString(value.trim()).toString('base64'),origin:origin?new URL(origin).origin:this.entries[key]?.origin};this.persist();
   }
   present(key:string) {return isCredentialKey(key)&&Boolean(this.entries[key]);}
+  androidPin(key:string) {
+    if(!isAndroidPinKey(key))throw new Error('Invalid Android credential identifier');
+    const entry=this.entries[key];
+    return entry?this.crypto.decryptString(Buffer.from(entry.cipher,'base64')):null;
+  }
   authorization(key:string,url:string) {
+    if(isAndroidPinKey(key))throw new Error('Android PINs cannot authorize HTTP requests');
     const entry=this.entries[key];if(!entry)return null;
     const target=new URL(url);
     if(!['https:','http:'].includes(target.protocol))throw new Error('Invalid credential endpoint');

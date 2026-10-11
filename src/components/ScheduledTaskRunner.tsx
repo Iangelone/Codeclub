@@ -146,7 +146,7 @@ async function execute() {
     const plugins = browserOnly ? [] : await loadAgentPlugins(task.projectPath);
     const mcp = await connectAllAgentPluginMcp(plugins); closeMcp = mcp.close;
     const baseTools = createTools({ chatId: run.chatId, projectPath, projectScoped: Boolean(task.projectPath), provider, modelId: modelIdFor(selectedProvider, selectedModel), recordToolEvent, setAgentState: next => { state = next; void publish(); }, requestToolApproval: ({ toolName, input }) => autoApprove ? Promise.resolve(true) : requestApproval(toolName, input) });
-    const readOnly = new Set(['listFiles', 'readFile', 'searchText', 'getTaskStatus', 'getExecutionLog', 'getBrowserState']);
+    const readOnly = new Set(['listFiles', 'readFile', 'searchText', 'getTaskStatus', 'getExecutionLog', 'getBrowserState', 'androidListDevices', 'androidGetState', 'androidScreenshot']);
     const excluded = autonomous ? ['switchProject', 'listAvailableTools', 'scheduleTask', 'listScheduledTasks', 'manageScheduledTask'] : ['swarm', 'subagent', 'switchProject', 'listAvailableTools', 'scheduleTask', 'listScheduledTasks', 'manageScheduledTask'];
     const browserTools = new Set(['openBrowser', 'getBrowserState', 'browserAction', 'askUser']);
     const available = Object.fromEntries(Object.entries({ ...baseTools, ...mcp.tools }).filter(([name]) => !excluded.includes(name) && (!browserOnly || browserTools.has(name))).map(([name, definition]: [string, any]) => [name, { ...definition, execute: async (input: any, options: any) => {

@@ -6,6 +6,9 @@
 | Document | Answers |
 | --- | --- |
 | [Architecture](architecture.md) | How is the app put together? |
+| [Android architecture](android-architecture.md) | How do the APK, chat synchronization, encrypted delivery and Android Use work together? |
+| [Android companion](android-companion.md) | How do I build, pair, troubleshoot and verify the Android app? |
+| [Android Use](android-use.md) | How do device observations, ADB actions, locking and native PIN credentials work? |
 | [Flows and events](flows.md) | How do its parts communicate? |
 | [Persistence](storage.md) | Where are chats, tasks, and settings stored? |
 | [Terminal and browser](workspace.md) | How do the interactive tools work? |

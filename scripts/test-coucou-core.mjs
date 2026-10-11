@@ -24,6 +24,17 @@ try {
   assert.equal(new CredentialVault(directory,crypto).authorization('qa_api_key','https://fixture.example/v1'),'fixture-secret');
   assert.throws(()=>new CredentialVault(directory,{...crypto,isEncryptionAvailable:()=>false}).set('x_api_key','fixture'),/unavailable/);
   vault.set('qa_api_key','');assert.equal(vault.present('qa_api_key'),false);
+  const androidKey = `android_${'a'.repeat(64)}_pin`;
+  vault.set(androidKey, '1357');
+  assert.equal(vault.present(androidKey), true);
+  assert.equal(new CredentialVault(directory, crypto).androidPin(androidKey), '1357', 'Android PIN persists encrypted across vault instances');
+  assert.equal((await readFile(path.join(directory, 'credentials.encrypted.json'), 'utf8')).includes('1357'), false);
+  assert.throws(() => vault.authorization(androidKey, 'https://fixture.example'), /cannot authorize/, 'PIN cannot be exfiltrated as an HTTP credential');
+  assert.throws(() => vault.set(androidKey, 'bad'), /Invalid Android PIN/);
+  assert.throws(() => vault.set(androidKey, '1357', 'https://fixture.example'), /Invalid Android PIN/);
+  assert.throws(() => vault.androidPin('qa_api_key'), /Invalid Android credential/);
+  vault.set(androidKey, '8642'); assert.equal(vault.androidPin(androidKey), '8642');
+  vault.set(androidKey, ''); assert.equal(vault.androidPin(androidKey), null);
 
   const hub=new SessionHub();const chat={chatId:'same',projectPath:'C:/Project',name:'Test'};
   const run=hub.claim(1,chat);

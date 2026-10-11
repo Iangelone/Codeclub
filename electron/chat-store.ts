@@ -6,6 +6,8 @@ import path from 'node:path';
 
 type Message = Record<string, any>;
 export class ChatStore {
+  index() { return this.db.prepare('SELECT scope,id FROM chats').all().map(row=>({projectPath:String(row.scope),chatId:String(row.id)})); }
+  hasMobileMessage(project:string,id:string,requestId:string) {return Boolean(this.db.prepare("SELECT 1 FROM messages WHERE scope=? AND id=? AND json_extract(payload,'$.mobileRequestId')=? LIMIT 1").get(this.scope(project),id,requestId));}
   private db: DatabaseSync;
   private importing = new Map<string, Promise<void>>();
   constructor(private directory: string) {

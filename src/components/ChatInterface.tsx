@@ -1905,15 +1905,15 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     }
   };
 
-  const sendMessage = async (content: string, baseMessages: any[] = messages, shouldRenameChat = messages.length === 0, replaceHistory = false, attachments: ChatAttachment[] = [], resumeAskUserId?: string) => {
+  const sendMessage = async (content: string, baseMessages: any[] = messages, shouldRenameChat = messages.length === 0, replaceHistory = false, attachments: ChatAttachment[] = [], resumeAskUserId?: string, mobileRequestId?:string) => {
     if (visualAnimationRef.current) {
       clearInterval(visualAnimationRef.current);
       visualAnimationRef.current = null;
     }
-    const messageArtifactReferences = artifactReferences;
-    const messageSelectedTextReferences = selectedTextReferences;
+    const messageArtifactReferences = mobileRequestId?[]:artifactReferences;
+    const messageSelectedTextReferences = mobileRequestId?[]:selectedTextReferences;
     const visibleContent = content;
-    const messageResourceReferences: ChatResource[] = [...selectedResources, ...activeSkills.map(skill => ({ id: skill.id, kind: 'skill' as const, name: skill.name, scope: skill.scope || 'global', pluginId: skill.pluginId, skillId: skill.skillId, readOnly: !!skill.readOnly })), ...activeExtensions.map(extension => ({ id: extension.id, kind: 'extension' as const, name: extension.name, scope: 'global' as const, readOnly: true }))];
+    const messageResourceReferences: ChatResource[] = mobileRequestId ? [] : [...selectedResources, ...activeSkills.map(skill => ({ id: skill.id, kind: 'skill' as const, name: skill.name, scope: skill.scope || 'global', pluginId: skill.pluginId, skillId: skill.skillId, readOnly: !!skill.readOnly })), ...activeExtensions.map(extension => ({ id: extension.id, kind: 'extension' as const, name: extension.name, scope: 'global' as const, readOnly: true }))];
     if (messageResourceReferences.length) content += `\n\nSelected Codeclub resources (identities only; selection alone does not authorize mutations): ${JSON.stringify(messageResourceReferences)}`;
 
     if (messageArtifactReferences.length > 0) {
@@ -1921,12 +1921,12 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       content = `${content}\n\n${refsText}`;
       setArtifactReferences([]);
     }
-    const messageComputerContext = computerContext;
+    const messageComputerContext = mobileRequestId?null:computerContext;
     if (messageComputerContext) {
       content = `${content}\n\nContexto de Computer Use: acción "${messageComputerContext.action}" en la ventana "${messageComputerContext.title || 'desconocida'}", coordenadas de pantalla (${messageComputerContext.x}, ${messageComputerContext.y}), handle ${messageComputerContext.handle || 'n/d'}, proceso ${messageComputerContext.processId || 'n/d'}. Usá este contexto para guiar la próxima acción y verificá el estado real.`;
       setComputerContext(null);
     }
-    const messageBrowserReferences = browserReferences;
+    const messageBrowserReferences = mobileRequestId?[]:browserReferences;
     if (messageBrowserReferences.length > 0) {
       const refsText = messageBrowserReferences
         .map((ref, idx) => `Referencia ${idx + 1}: @${ref.title}\nContenido seleccionado:\n${ref.text}`)
@@ -1971,7 +1971,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     }
     let runId: string | undefined;
     try { await (window as any).codeclub?.sessionSelect?.(chat);runId=await (window as any).codeclub?.sessionClaim?.(chat); }
-    catch { setInput(visibleContent); return; }
+    catch { if(!mobileRequestId)setInput(visibleContent); return; }
     const runtime: ChatRuntime = { runId, controller: abortController, state: 'connecting', tool: '', startedAt: generationStartedAt, messages: [], pendingApprovals: [], approvalResolvers: new Map(), approvalTimers:new Map() };
     chatRuntimesRef.current.set(chatId, runtime);
     runtime.expectedTotal=historyWindow.range.current.total;
@@ -2023,7 +2023,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     try {attachmentParts = attachments.length > 0 ? await readAttachmentParts(attachments) : [];}
     catch {
       chatRuntimesRef.current.delete(chatId);abortControllerRef.current=null;
-      setInput(visibleContent);setAttachmentError(true);setIsStreaming(false);
+      if(!mobileRequestId)setInput(visibleContent);setAttachmentError(true);setIsStreaming(false);
       if(runId)await (window as any).codeclub?.sessionPublish?.(chat,runId,{state:'error',tool:'',busy:false,messages:baseMessages,approvals:[]})?.catch(()=>undefined);
       return;
     }
@@ -2034,7 +2034,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
         ? { ...message, tools: message.tools.map((event: any) => event.id === resolvedAskUserId ? { ...event, answer: visibleContent } : event) }
         : message)
       : baseMessages;
-    const userMessage = { historyIndex: (baseMessages[0]?.historyIndex??historyWindow.range.current.start)+baseMessages.length, role: 'user', content, resourceReferences: messageResourceReferences, displayContent: resumeAskUserId ? '' : visibleContent, createdAt: Date.now(), hidden: Boolean(resumeAskUserId), artifactReferences: messageArtifactReferences, browserReferences: messageBrowserReferences, selectedTextReferences: messageSelectedTextReferences, computerContext: messageComputerContext, attachments: attachments.map(({ path, name, mediaType, size, previewUrl }) => ({ path, name, mediaType, size, previewUrl })) };
+    const userMessage = { ...(mobileRequestId?{mobileRequestId}:{}), historyIndex: (baseMessages[0]?.historyIndex??historyWindow.range.current.start)+baseMessages.length, role: 'user', content, resourceReferences: messageResourceReferences, displayContent: resumeAskUserId ? '' : visibleContent, createdAt: Date.now(), hidden: Boolean(resumeAskUserId), artifactReferences: messageArtifactReferences, browserReferences: messageBrowserReferences, selectedTextReferences: messageSelectedTextReferences, computerContext: messageComputerContext, attachments: attachments.map(({ path, name, mediaType, size, previewUrl }) => ({ path, name, mediaType, size, previewUrl })) };
     const newMessages = [...contextualBaseMessages, userMessage];
     const pendingAssistant = { role: 'assistant', content: '', timeline: [], tools: [], agentName: 'Desarrollo' };
     runtime.messages = [...newMessages, pendingAssistant];
@@ -2171,7 +2171,7 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
       routeSpecialist = inferAgentSpecialist(content, runMode);
       const selectedToolset = Object.fromEntries(Object.entries(developmentTools).filter(([name]) => !['swarm', 'subagent', 'listAvailableTools'].includes(name)));
       const browserTools = new Set(['openBrowser', 'getBrowserState', 'browserAction', 'askUser']);
-      const readOnlyTools = new Set(['listFiles', 'readFile', 'searchText', 'getTaskStatus', 'getExecutionLog', 'getBrowserState', 'askUser']);
+      const readOnlyTools = new Set(['listFiles', 'readFile', 'searchText', 'getTaskStatus', 'getExecutionLog', 'getBrowserState', 'androidListDevices', 'androidGetState', 'androidScreenshot', 'askUser']);
       const availableToolset = Object.fromEntries(Object.entries({ ...selectedToolset, ...externalMcpTools }).filter(([name]) => !orbBrowserOnly || browserTools.has(name)).map(([name, definition]: [string, any]) => [name, !agentOrb ? definition : { ...definition, execute: async (input: any, options: any) => {
         if (!agentOrb.maximumAutonomy && !readOnlyTools.has(name) && !await guardedRequestToolApproval({ toolName: name, input, summary: name })) return { cancelled: true };
         return definition.execute(input, options);
@@ -2650,6 +2650,16 @@ const summarizeWorkspaceDelta = (before: WorkspaceSnapshot, after: WorkspaceSnap
     dismissAgentTextSelection();
     void sendMessage(prompt, messages, false);
   };
+
+  const mobileSendRef=useRef(sendMessage);mobileSendRef.current=sendMessage;
+  useEffect(()=>{
+    if(!activeChat||isAgentBusy||chatTransitionPhase!=='idle')return;
+    let active=true,polling=false;
+    // Claim mobile sends through the normal engine without replacing the desktop composer draft.
+    const poll=async()=>{if(polling)return;polling=true;let item:any;try{item=await (window as any).codeclub?.mobileTake?.(activeChat);if(item&&active&&activeChatRef.current?.chatId===item.chat.chatId&&activeChatRef.current?.projectPath===item.chat.projectPath){await mobileSendRef.current(item.text,undefined,false,false,[],undefined,item.id);}}finally{if(item)await (window as any).codeclub?.mobileRelease?.(item.id);polling=false;}};
+    const timer=window.setInterval(()=>void poll().catch(()=>undefined),1000);void poll().catch(()=>undefined);
+    return()=>{active=false;window.clearInterval(timer);};
+  },[activeChat,isAgentBusy,chatTransitionPhase]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();

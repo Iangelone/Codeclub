@@ -13,6 +13,8 @@ const directory = await mkdtemp(path.join(tmpdir(), 'codeclub-orb-chat-'));
 const settings = { codeclub_last_provider_id: 'ordinary', codeclub_last_model_id: 'ordinary-model' };
 const histories = new Map(), files = new Map(), requests = [], errors = [], published = [], nativeCommands = [];
 let browser, server, assignment, finish, responseText = '¿Querés que revisemos los próximos pasos del proyecto?';
+let androidPinSaved = false;
+let pairingVersion=0, pairingReady=false, pairingFailure=false;
 const component = name => JSON.stringify(path.join(repo, `src/components/${name}.tsx`));
 try {
   await writeFile(path.join(directory, 'ui.tsx'), `import React,{useState} from 'react';import {createRoot} from 'react-dom/client';import OrbsPanel from ${component('OrbsPanel')};import OrbSidebar from ${component('OrbSidebar')};import OrbPaletteProvider from ${component('OrbPaletteProvider')};function App(){const [id,setId]=useState();const orb=window.qaOrbs?.find(o=>o.id===id);return <OrbPaletteProvider><div style={{display:'flex',height:650}}><div style={{width:720}}><OrbsPanel workspaceMode createMode={!id} selectedOrbId={id} onCreated={setId}/></div><div style={{width:260}}><OrbSidebar orb={orb} onNew={()=>setId(undefined)}/></div></div></OrbPaletteProvider>};createRoot(document.getElementById('root')).render(<App/>);`);
@@ -54,6 +56,12 @@ try {
     if (method === 'writeTextFile') { files.set(args[0], args[1]); return; }
     if (method === 'invoke') {
       const [command, data] = args; nativeCommands.push(command);
+      if(command==='codeclub_android_pairing_create'){if(pairingFailure)throw new Error('Network unavailable');return {pairId:`fixture-${++pairingVersion}`,expiresAt:Date.now()+180000,code:'CC1.fixture',qr:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3ioAAAAASUVORK5CYII='};}
+      if(command==='codeclub_android_pairing_status')return {devices:[],paired:pairingReady};
+      if(command==='codeclub_android_pairing_cancel')return {ok:true};
+      if (command === 'codeclub_android_list_devices') return {ok:true,devices:[{deviceId:'qa-android',state:'device'}]};
+      if (command === 'codeclub_android_pin_status') return {saved:androidPinSaved};
+      if (command === 'codeclub_android_pin_save') { assert.equal(data.request.deviceId, 'qa-android'); androidPinSaved=Boolean(data.request.pin); return {saved:androidPinSaved}; }
       if (command === 'codeclub_admin_status') return { elevated: false, computerName: 'QA computer' };
       if (command === 'codeclub_browser_extension_info') return { browsers: [] };
       if (command === 'codeclub_list_agent_plugins') return [];
@@ -92,12 +100,46 @@ try {
     await ui.locator('textarea').first().fill('');
   } else await ui.evaluate(() => window.dispatchEvent(new CustomEvent('codeclub:toggle-slash-menu')));
   const orb = settings.codeclub_orbs[0]; assert.equal(orb.maximumAutonomy, true); assert.equal(orb.allowComputer, true);
-  await ui.evaluate(chatId => window.qaSessions([{ chatId, projectPath: '', busy: false, state: 'question', approvals: [], messages: [{ role: 'assistant', tools: [{ id: 'qa-request', name: 'askUser', output: { status: 'awaiting_user', question: 'Connect your account' } }, { name: 'executeTool', input: { name: 'browserAction' } }, { name: 'computerGetState' }], timeline: [{ id: 'qa-progress', type: 'progress', text: 'Reviewed the page' }] }] }]), orb.chatId);
+  for (const devices of [[], [{ state: 'unauthorized' }]]) {
+    await ui.evaluate(({ chatId, devices }) => window.qaSessions([{ chatId, projectPath: '', busy: false, messages: [{ role: 'assistant', tools: [{ name: 'executeTool', input: { name: 'androidListDevices' }, output: { ok: true, result: { ok: true, devices } } }] }] }]), { chatId: orb.chatId, devices });
+    await expect(ui.getByText('Android', { exact: true })).toHaveCount(0);
+  }
+  await ui.evaluate(chatId => window.qaSessions([{ chatId, projectPath: '', busy: false, state: 'question', approvals: [], messages: [{ role: 'assistant', tools: [{ id: 'qa-request', name: 'askUser', output: { status: 'awaiting_user', question: 'Connect your account' } }, { name: 'executeTool', input: { name: 'browserAction' } }, { name: 'computerGetState' }, { name: 'executeTool', input: { name: 'androidListDevices' }, output: { ok: true, result: { ok: true, devices: [{ state: 'device' }] } } }], timeline: [{ id: 'qa-progress', type: 'progress', text: 'Reviewed the page' }] }] }]), orb.chatId);
   await expect(ui.getByRole('button', { name: 'Connect your account', exact: true })).toBeVisible();
   await expect(ui.getByRole('heading', { name: 'Devices', exact: true })).toBeVisible();
   await expect(ui.getByText('Browser', { exact: true })).toBeVisible();
-  await expect(ui.getByText('QA computer', { exact: true })).toBeVisible();
+  await expect(ui.getByText('Computer', { exact: true })).toBeVisible();
+  await expect(ui.getByText('QA computer', { exact: true })).toHaveCount(0);
+  await expect(ui.getByText('Android', { exact: true })).toBeVisible();
+  await expect(ui.getByRole('region', { name: 'Devices', exact: true })).toContainText('Connected');
   await expect(ui.getByRole('button', { name: 'Reviewed the page', exact: true })).toBeVisible();
+  await ui.getByRole('button', {name:'Connect Android',exact:true}).click();
+  const pairing=ui.getByRole('dialog',{name:'Connect Android',exact:true});
+  await expect(pairing.getByRole('img')).toHaveAttribute('alt','Temporary QR to connect Android to Codeclub');
+  const previousVersion=pairingVersion;
+  await pairing.getByRole('button',{name:'Refresh',exact:true}).click();
+  await expect(pairing.getByRole('img')).toBeVisible();assert.ok(pairingVersion>previousVersion);
+  pairingReady=true;await expect(pairing.getByRole('status')).toHaveText('Android paired');
+  await expect(pairing.getByRole('button',{name:'Copy code',exact:true})).toBeDisabled();
+  await ui.keyboard.press('Escape');await expect(pairing).toHaveCount(0);
+  await expect(ui.getByRole('button',{name:'Connect Android',exact:true})).toBeFocused();
+  pairingReady=false;
+  await ui.getByRole('button', {name:'Credentials',exact:true}).click();
+  const credentials = ui.getByRole('dialog', {name:'Credentials',exact:true});
+  await expect(credentials.getByLabel('PIN', {exact:true})).toHaveAttribute('type', 'password');
+  await credentials.getByLabel('PIN', {exact:true}).fill('1357');
+  await credentials.getByRole('button', {name:'Save',exact:true}).click();
+  await expect(credentials.getByRole('status')).toHaveText('Saved');
+  await expect(credentials.getByLabel('PIN', {exact:true})).toHaveValue('');
+  await ui.keyboard.press('Escape');
+  await expect(credentials).toHaveCount(0);
+  await expect(ui.getByRole('button', {name:'Credentials',exact:true})).toBeFocused();
+  await ui.getByRole('button', {name:'Credentials',exact:true}).click();
+  await expect(credentials.getByRole('status')).toHaveText('Saved');
+  await expect(credentials.getByLabel('PIN', {exact:true})).toHaveValue('');
+  await credentials.getByRole('button', {name:'Remove PIN',exact:true}).click();
+  await expect(credentials.getByRole('button', {name:'Remove PIN',exact:true})).toHaveCount(0);
+  await ui.keyboard.press('Escape');
   await ui.evaluate(chatId => window.qaSessions([{ chatId, projectPath: '', busy: true, state: 'tool_call', tool: 'browserAction', approvals: [], messages: [{ role: 'assistant', timeline: [{ id: 'busy-progress', type: 'progress', text: 'Reading the current page' }] }] }]), orb.chatId);
   await ui.getByRole('button', { name: 'Working', exact: true }).click();
   await expect(ui.getByRole('tooltip')).toContainText('Reading the current page');
@@ -115,6 +157,18 @@ try {
   assert.equal(settings.codeclub_last_provider_id, 'ordinary'); assert.equal(settings.codeclub_last_model_id, 'ordinary-model');
   await ui.evaluate(() => { localStorage.setItem('codeclub-language', 'es'); window.dispatchEvent(new CustomEvent('codeclub:language-change', { detail: { language: 'es' } })); });
   await expect(ui.getByRole('heading', { name: 'Configurar', exact: true })).toBeVisible();
+  pairingFailure=true;
+  await ui.getByRole('button',{name:'Conectar Android',exact:true}).click();
+  await expect(ui.getByRole('dialog',{name:'Conectar Android',exact:true}).getByRole('alert')).toContainText('No se pudo preparar');
+  pairingFailure=false;await ui.getByRole('button',{name:'Renovar',exact:true}).click();
+  await expect(ui.getByRole('dialog',{name:'Conectar Android',exact:true}).getByRole('img')).toBeVisible();
+  await ui.keyboard.press('Escape');await expect(ui.getByRole('button',{name:'Conectar Android',exact:true})).toBeFocused();
+  assert.ok(nativeCommands.includes('codeclub_android_pairing_cancel'));
+  await ui.getByRole('button', {name:'Claves',exact:true}).click();
+  await expect(ui.getByRole('dialog', {name:'Claves',exact:true}).getByRole('button', {name:'Guardar',exact:true})).toBeVisible();
+  await expect(ui.getByRole('dialog', {name:'Claves',exact:true})).toBeFocused();
+  await ui.keyboard.press('Escape');
+  await expect(ui.getByRole('dialog', {name:'Claves',exact:true})).toHaveCount(0);
   await ui.getByRole('button', { name: 'Limpiar chat', exact: true }).click();
   await expect(ui.getByRole('log')).not.toContainText('Hi, I’m your orb.');
   assert.deepEqual(histories.get(orb.chatId), []);

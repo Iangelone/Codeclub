@@ -255,7 +255,7 @@ export default function FluidOrb({
   >
     <motion.div
       className="h-full w-full"
-      style={{ background: fallback ? `radial-gradient(circle at 32% 24%, #ffffff 0 24%, #a8c7ff 54%, ${color} 82%)` : 'transparent' }}
+      style={{ background: fallback ? `radial-gradient(circle at 32% 24%, #ffffff 0 24%, color-mix(in srgb, #ffffff 50%, ${color}) 54%, ${color} 82%)` : 'transparent' }}
       animate={{ filter: `hue-rotate(${themeTint ? palette.hue : 0}deg)` }}
       transition={reducedMotion ? { duration: 0 } : { duration: 0.48, ease: [0.22, 1, 0.36, 1] }}
     >

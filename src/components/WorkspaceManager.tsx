@@ -35,6 +35,14 @@ function WorkspaceManager({ catalog, defaultProvider, defaultModel }: { catalog:
   const [chatOpenVersion, setChatOpenVersion] = useState(0);
   const panelNavigation = useRef<{ entries: string[]; index: number; moving: boolean; chats: Record<string, any> }>({ entries: ['new-chat'], index: 0, moving: false, chats: {} });
 
+  useEffect(()=>{
+    let active=true,polling=false,lastId='';
+    // Open the next eligible mobile conversation; ChatInterface owns claiming and execution.
+    const poll=async()=>{if(polling)return;polling=true;try{const next=await (window as any).codeclub?.mobileNext?.();if(active&&next&&next.id!==lastId){lastId=next.id;window.dispatchEvent(new CustomEvent('codeclub:open-chat',{detail:next.chat}));}if(!next)lastId='';}catch{/* Reconnect on the next poll. */}finally{polling=false;}};
+    const timer=window.setInterval(()=>void poll(),1000);void poll();
+    return()=>{active=false;window.clearInterval(timer);};
+  },[]);
+
   useEffect(() => {
     const open = (chat: any) => { if (chat?.chatId) window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: chat })); };
     const bridge = (window as any).codeclub;

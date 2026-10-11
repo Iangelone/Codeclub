@@ -1,0 +1,37 @@
+import assert from 'node:assert/strict';
+import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises';
+import os from 'node:os';import path from 'node:path';
+import {MobileSync} from '../electron-dist/mobile-sync.js';
+import {ChatStore} from '../electron-dist/chat-store.js';
+import {SettingsStore} from '../electron-dist/settings-store.js';
+import {SessionHub} from '../electron-dist/session-hub.js';
+const directory=await mkdtemp(path.join(os.tmpdir(),'codeclub-mobile-'));let chats,sync;
+try{
+  const settings=new SettingsStore(path.join(directory,'settings.json'),()=>{}),sessions=new SessionHub();chats=new ChatStore(directory);
+  const project={path:path.join(directory,'workspace'),name:'Project'};
+  await mkdir(path.join(directory,'projects',encodeURIComponent(project.path)),{recursive:true});await writeFile(path.join(directory,'projects',encodeURIComponent(project.path),'meta.json'),JSON.stringify({chats:[{id:'project-chat',name:'Project chat'}]}));
+  settings.set('codeclub_orbs',[{id:'test-orb',name:'Orb',color:'#112233',modelId:'configured-model',purpose:'Purpose',providerId:'private-provider'}]);
+  settings.set('codeclub_global_chats',[{id:'global-chat',name:'Global chat'}]);settings.set('codeclub_orb_shape','square');
+  await chats.append('', 'orb-chat-test-orb',{role:'assistant',content:'Previous answer'});await chats.append('', 'orb-chat-test-orb',{role:'user',content:'Hidden',hidden:true});
+  await chats.append(path.join(directory,'unregistered'),'private-chat',{role:'user',content:'Not shared'});
+  const control=(chat,action,approvalId)=>Boolean(sessions.command(chat,action,approvalId));
+  sync=new MobileSync(directory,chats,settings,sessions,()=>[project],control);
+  const initial=await sync.request('phone',{operation:'sync'});assert.equal(initial.chats.length,3);assert.equal(initial.messages.length,1);assert.equal(initial.chats.find(chat=>chat.orb).orb.shape,'square');assert.ok(!JSON.stringify(initial).includes(project.path));assert.ok(!JSON.stringify(initial).includes('private-provider'));
+  const key=initial.selectedKey,id='mobile-message-test-0001';const request={operation:'send',chatKey:key,id,text:'Hello from Android'};
+  assert.equal((await sync.request('phone',request)).state,'queued');await sync.request('phone',request);await assert.rejects(()=>sync.request('other',request));await assert.rejects(()=>sync.request('phone',{...request,text:'Changed'}));
+  const next=await sync.next();assert.equal(next.id,id);const takes=await Promise.all([sync.take(1,next.chat),sync.take(2,next.chat)]);assert.equal(takes.filter(Boolean).length,1);
+  await chats.append('',next.chat.chatId,{role:'user',content:request.text,mobileRequestId:id});assert.equal((await sync.request('phone',request)).state,'accepted');assert.equal(await sync.next(),null);
+  sync.close();sync=new MobileSync(directory,chats,settings,sessions,()=>[project],control);assert.equal((await sync.request('phone',request)).state,'accepted');
+  const run=sessions.claim(1,next.chat);sessions.publish(1,next.chat,run,{busy:true,state:'thinking',messages:[{historyIndex:2,role:'assistant',content:'Streaming answer'}]});
+  await sync.request('phone',{...request,id:'mobile-message-test-0002',text:'Follow up'});assert.equal(await sync.next(),null);
+  const live=await sync.request('phone',{operation:'sync',chatKey:key});assert.equal(live.busy,true);assert.equal(live.messages[0].text,'Streaming answer');
+  sessions.publish(1,next.chat,run,{busy:true,state:'approval',approvals:[{id:'approval-test',summary:'Test-only approval',expiresAt:Date.now()+10000}]});
+  await assert.rejects(()=>sync.request('phone',{operation:'control',chatKey:key,action:'approve',approvalId:'unknown'}));
+  assert.equal((await sync.request('phone',{operation:'control',chatKey:key,action:'approve',approvalId:'approval-test'})).controlled,true);
+  assert.equal(sessions.list()[0].approvals.length,0);
+  assert.equal((await sync.request('phone',{operation:'control',chatKey:key,action:'cancel'})).controlled,true);
+  sessions.publish(1,next.chat,run,{busy:false,state:'done'});assert.ok(await sync.next());
+  settings.set('codeclub_orbs',[{id:'test-orb',name:'Renamed',color:'#abcdef',modelId:'changed'}]);const changed=await sync.request('phone',{operation:'sync',chatKey:key});assert.equal(changed.chats.find(chat=>chat.orb).orb.name,'Renamed');assert.equal(changed.chats.find(chat=>chat.orb).orb.color,'#abcdef');
+  await assert.rejects(()=>sync.request('phone',{...request,id:'mobile-message-test-0003',chatKey:'invalid'}));
+  console.log('Mobile sync: real SQLite persistence, retries, conflicts, ownership, project isolation, live messages and orb changes passed.');
+}finally{sync?.close();chats?.close();await rm(directory,{recursive:true,force:true});}

@@ -4,11 +4,13 @@ import { runProjectCommand } from './run-command.js';
 import { readProjectGit } from './git-read.js';
 import { TaskScheduler, type ScheduledTask, type TaskRun } from './task-scheduler.js';
 import { CredentialVault } from './credential-vault.js';
+import { requestAndroidPin } from './android-pin.js';
 import { ActivityIntegrations } from './activity-integrations.js';
 import { AgentRelay } from './agent-relay.js';
 import { promises as fs } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { SettingsStore } from './settings-store.js';
+import { MobileSync } from './mobile-sync.js';
 import { ChatStore } from './chat-store.js';
 import { SessionHub, type SessionChat } from './session-hub.js';
 import { spawn } from 'node:child_process';
@@ -20,6 +22,8 @@ import { fileURLToPath } from 'node:url';
 import * as pty from 'node-pty';
 import electronUpdater from 'electron-updater';
 import { createComputerUse } from './computer-use.js';
+import { createAndroidUse } from './android-use.js';
+import { AndroidCompanion } from './android-companion.js';
 import { createExternalBrowserControl } from './external-browser.js';
 import { EDGE_EXTENSION_ID, edgeExtensionPage } from './browser-extension-config.js';
 import { createBrowserExtensionBridge } from './browser-extension-bridge.js';
@@ -35,6 +39,10 @@ const ownsAppInstance = app.requestSingleInstanceLock();
 if (!ownsAppInstance) app.quit();
 app.on('second-instance', () => showMainWindow());
 const desktopControl = createComputerUse(app.getAppPath(), app.isPackaged ? process.resourcesPath : undefined);
+const androidControls = new Map<number, ReturnType<typeof createAndroidUse>>();
+const androidPairingOwners = new Set<number>();
+const androidPinLabels = new Map<number, Parameters<typeof requestAndroidPin>[1]>();
+let androidCompanion: AndroidCompanion;
 const browserExtensionBridge = createBrowserExtensionBridge();
 const externalBrowserControl = createExternalBrowserControl(browserExtensionBridge);
 const browserExtensionManagers = {
@@ -995,6 +1003,8 @@ app.whenReady().then(async () => {
   void browserExtensionBridge.start();
   app.once('will-quit', () => browserExtensionBridge.stop());
   credentialVault=new CredentialVault(app.getPath('userData'),safeStorage);
+  androidCompanion=new AndroidCompanion(app.getPath('userData'),safeStorage);
+  void androidCompanion.resume().catch(()=>undefined);
   credentialVault.migrate(path.join(app.getPath('userData'),'settings.json'));
   taskScheduler = new TaskScheduler(path.join(app.getPath('userData'), 'scheduled-tasks.json'), executeScheduledTask, publishTaskChange, (task, run) => {
     if (!task.proactive) orbLearning?.observeOutcome(run.status === 'completed' ? 'task-completed' : 'task-failed');
@@ -1062,6 +1072,16 @@ app.whenReady().then(async () => {
     if (key === 'codeclub_orbs') for (const worker of taskWorkers.values()) if (worker.task.proactive && !orbLearningOrbs().some(orb => orb.id === worker.task.orbId && orb.maximumAutonomy === true)) worker.complete('TASK_CANCELLED');
   });
   orbLearningOrbs = () => { const saved = settingsStore.get('codeclub_orbs'); return Array.isArray(saved) ? saved.filter(orb => orb && typeof orb.id === 'string') : []; };
+  const mobileSync=new MobileSync(app.getPath('userData'),chatStore,settingsStore,sessionHub,()=>projects,(chat,action,approvalId)=>{
+    const command=sessionHub.command(chat,action,approvalId);if(!command)return false;
+    const owner=BrowserWindow.getAllWindows().find(win=>!win.isDestroyed()&&win.webContents.id===command.owner);if(!owner)return false;
+    if(action==='cancel')taskWorkers.get(command.owner)?.controller.abort();owner.webContents.send('codeclub:session-command',command);return true;
+  });
+  androidCompanion.applicationRequest=(device,request)=>mobileSync.request(device,request);
+  ipcMain.handle('codeclub:mobile-next',async event=>{requireTaskUi(event);if(event.sender!==mainWindow?.webContents)return null;return mobileSync.next();});
+  ipcMain.handle('codeclub:mobile-take',async(event,chat)=>{requireTaskUi(event);if(event.sender!==mainWindow?.webContents)return null;return mobileSync.take(event.sender.id,chat);});
+  ipcMain.handle('codeclub:mobile-release',(event,id:string)=>{requireTaskUi(event);mobileSync.release(event.sender.id,id);});
+  app.once('will-quit',()=>mobileSync.close());
   orbLearning = new OrbLearning(path.join(app.getPath('userData'), 'orb-learning.json'), {
     active: orbLearningActive,
     orbs: orbLearningOrbs,
@@ -1098,6 +1118,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('chats:tail', (_event, project: string, id: string, start: number, messages: any[], expectedTotal?:number) => chatStore.saveTail(project, id, start, messages,expectedTotal));
   ipcMain.handle('chats:append', async (_event, project: string, id: string, message: any) => {
     const result = await chatStore.append(project, id, message);
+    if(typeof message?.mobileRequestId==='string')mobileSync.accept(message.mobileRequestId);
     if (!project && message?.role === 'user' && !message.hidden) orbLearning?.respond(id);
     return result;
   });
@@ -1212,6 +1233,45 @@ app.whenReady().then(async () => {
     }
     if(payload.command==='codeclub_http_fetch'&&(payload.args?.request as any)?.credentialKey)requireAppSender(event);
     if (payload.command.startsWith('codeclub_external_browser_') || payload.command.startsWith('codeclub_browser_extension_')) requireAppSender(event);
+    if (payload.command.startsWith('codeclub_android_')) {
+      requireAppSender(event);
+      if (worker?.task.allowComputer === false) throw new Error('TASK_COMPUTER_ACCESS_REQUIRED');
+      if(payload.command==='codeclub_android_pairing_create') {
+        if(worker)throw new Error('ANDROID_PAIRING_REQUIRES_DESKTOP');
+        const offer=await androidCompanion.offer(event.sender.id);
+        const owner=event.sender.id;
+        if(!androidPairingOwners.has(owner)){androidPairingOwners.add(owner);event.sender.once('destroyed',()=>{androidPairingOwners.delete(owner);androidCompanion.cancelOffers(owner);});}
+        const qr=(await import('qrcode')).default;
+        return {...offer,qr:await qr.toDataURL(offer.code,{width:320,margin:2,errorCorrectionLevel:'M'})};
+      }
+      if(payload.command==='codeclub_android_pairing_status')return {devices:androidCompanion.status(),paired:androidCompanion.offerPaired(payload.args?.pairId,event.sender.id)};
+      if(payload.command==='codeclub_android_pairing_cancel') {androidCompanion.cancelOffers(event.sender.id);return {ok:true};}
+      if(payload.command==='codeclub_android_pairing_forget') {if(worker)throw new Error('ANDROID_PAIRING_REQUIRES_DESKTOP');androidCompanion.forget(String(payload.args?.deviceId));return {ok:true};}
+      let control = androidControls.get(event.sender.id);
+      if (!control) {
+        control = createAndroidUse(path.join(process.env.LOCALAPPDATA || app.getPath('appData'), 'Codeclub'), (signal, key) => {
+          const saved = credentialVault.androidPin(key);
+          return saved ? Promise.resolve(saved) : requestAndroidPin(BrowserWindow.fromWebContents(event.sender), androidPinLabels.get(event.sender.id)!, signal);
+        },androidCompanion);
+        const senderId = event.sender.id;
+        androidControls.set(senderId, control);
+        event.sender.once('destroyed', () => { androidControls.get(senderId)?.stop(); androidControls.delete(senderId); androidPinLabels.delete(senderId); androidCompanion.cancelOffers(senderId); });
+      }
+      const request = (payload.args?.request as Record<string, any>) || {};
+      if (payload.command === 'codeclub_android_pin_status') return { saved: credentialVault.present(control.pinKey(request.deviceId)) };
+      if (payload.command === 'codeclub_android_pin_save') {
+        if (worker) throw new Error('ANDROID_PIN_CONFIGURATION_REQUIRES_DESKTOP');
+        if (typeof request.pin !== 'string') throw new Error('INVALID_ANDROID_PIN');
+        credentialVault.set(control.pinKey(request.deviceId), request.pin);
+        return { saved: Boolean(request.pin) };
+      }
+      if (payload.command === 'codeclub_android_unlock') {
+        const labels = request.labels;
+        if (!labels || !['title', 'hint', 'cancel', 'unlock'].every(key => typeof labels[key] === 'string' && labels[key].length < 400)) throw new Error('INVALID_ANDROID_PROMPT_LABELS');
+        androidPinLabels.set(event.sender.id, labels);
+      }
+      return control.run(payload.command.slice('codeclub_android_'.length), request, worker?.controller.signal);
+    }
     if(payload.command==='codeclub_http_abort'){
       requireAppSender(event);modelRequests.get(`${event.sender.id}:${String(payload.args?.requestId)}`)?.abort();return;
     }
@@ -1294,3 +1354,4 @@ app.whenReady().then(async () => {
 
 app.on('before-quit', () => { isQuitting = true; for (const stop of activeCommands) stop(); for (const session of nativeMcpSessions.values()) session.close(); nativeMcpSessions.clear(); taskScheduler?.stop(); orbLearning?.stop(); for (const worker of taskWorkers.values()) worker.complete('TASK_INTERRUPTED'); floatingChat?.destroy(); desktopControl.stop(); destroyComputerOverlay(); tray?.destroy(); });
 app.on('window-all-closed', () => { /* La app permanece disponible en la bandeja. */ });
+app.on('before-quit', () => { for (const control of androidControls.values()) control.stop(); androidControls.clear(); androidCompanion?.close(); });

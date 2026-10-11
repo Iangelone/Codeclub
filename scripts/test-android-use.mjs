@@ -1,0 +1,147 @@
+/** Native Android regression checks. --live additionally controls the authorized physical device. */
+import assert from 'node:assert/strict';
+import childProcess from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
+import path from 'node:path';
+import { createAndroidUse, parseAndroidHierarchy } from '../electron-dist/android-use.js';
+
+const hierarchy = (text = 'Settings', password = false) => `<?xml version="1.0"?><hierarchy rotation="0"><node index="0" text="${text}" content-desc="${text}" resource-id="fixture:id/search" class="android.widget.EditText" clickable="true" enabled="true" focused="true" password="${password}" bounds="[0,0][100,100]" /></hierarchy>`;
+assert.equal(parseAndroidHierarchy(hierarchy('a &amp; b'))[0].text, 'a & b');
+assert.equal(parseAndroidHierarchy(hierarchy('private', true))[0].text, '[redacted]');
+assert.equal(parseAndroidHierarchy(hierarchy('private', true))[0].description, '[redacted]');
+assert.throws(() => parseAndroidHierarchy('ERROR: could not get idle state'));
+
+const originalExec = childProcess.execFile;
+const originalPath = process.env.CODECLUB_ADB_PATH;
+process.env.CODECLUB_ADB_PATH = process.execPath;
+const calls = [];
+let xml = hierarchy();
+let failInput = false;
+let keyguardLocked = true;
+let keyguardOccluded = false;
+let acceptPin = true;
+const png = Buffer.alloc(32);
+Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(png);
+png.writeUInt32BE(1080, 16); png.writeUInt32BE(2400, 20);
+childProcess.execFile = (_file, args, options, callback) => {
+  calls.push(args);
+  const child = { kill() {} };
+  setImmediate(() => {
+    if (options.signal?.aborted) return callback(Object.assign(new Error('cancelled'), { code: 'ABORT_ERR' }), Buffer.alloc(0));
+    if (failInput && args.includes('input')) return callback(Object.assign(new Error('uncertain dispatch'), { code: 'ETIMEDOUT' }), Buffer.alloc(0));
+    if (acceptPin && args.includes('keyevent') && args.at(-1) === '66') keyguardLocked = false;
+    if (args.includes('keyevent') && args.at(-1) === '223') keyguardLocked = true;
+    const output = args[0] === 'devices' ? 'List of devices attached\nfixture-serial device model:Fixture_Android transport_id:1\nsecond unauthorized\n' : args.includes('dumpsys') ? `mIsShowing=${keyguardLocked}\nmKeyguardOccluded=${keyguardOccluded}\n secure=true\n` : args.includes('size') ? 'Physical size: 1080x2400' : args.includes('screencap') ? png : args.includes('cat') ? xml : '';
+    callback(null, Buffer.isBuffer(output) ? output : Buffer.from(output));
+  });
+  return child;
+};
+syncBuiltinESMExports();
+try {
+  const unlockControl = createAndroidUse('unused', async () => '2468');
+  const unlockDevice = (await unlockControl.run('list_devices')).devices[0].deviceId;
+  const unlockStart = calls.length;
+  assert.equal((await unlockControl.run('unlock', {deviceId: unlockDevice})).unlocked, true);
+  assert.equal(calls.slice(unlockStart).some(args => args.join(' ').includes('2468')), false, 'PIN never enters ADB arguments');
+  assert.equal((await unlockControl.run('unlock', {deviceId: unlockDevice})).alreadyUnlocked, true);
+  assert.equal((await unlockControl.run('lock', {deviceId: unlockDevice})).locked, true);
+  keyguardLocked = true; keyguardOccluded = true;
+  const occludedStart = calls.length;
+  assert.equal((await unlockControl.run('unlock', {deviceId: unlockDevice})).ok, false);
+  assert.equal(calls.slice(occludedStart).some(args => args.includes('67')), false, 'occluded keyguard must not receive secret input');
+  keyguardOccluded = false; acceptPin = false;
+  const rejectedStart = calls.length;
+  assert.equal((await unlockControl.run('unlock', {deviceId: unlockDevice})).unlocked, false);
+  assert.equal(calls.slice(rejectedStart).filter(args => args.at(-1) === '66').length, 1, 'failed PIN is attempted only once');
+  assert.equal((await unlockControl.run('unlock', {deviceId: unlockDevice, pin: '2468'})).ok, false, 'tool requests cannot carry PINs');
+  const cancelledControl = createAndroidUse('unused', async () => null);
+  const cancelledDevice = (await cancelledControl.run('list_devices')).devices[0].deviceId;
+  assert.equal((await cancelledControl.run('unlock', {deviceId: cancelledDevice})).cancelled, true);
+  acceptPin = true;
+  const control = createAndroidUse('unused');
+  const list = await control.run('list_devices');
+  assert.equal(list.devices.length, 2);
+  assert.equal(JSON.stringify(list).includes('fixture-serial'), false, 'public device IDs are opaque');
+  const deviceId = list.devices[0].deviceId;
+  assert.equal(control.pinKey(deviceId), unlockControl.pinKey(unlockDevice), 'credential identity is stable across renderer-local device handles');
+  assert.notEqual(control.pinKey(list.devices[1].deviceId), control.pinKey(deviceId), 'each physical device owns a separate credential');
+  assert.equal((await control.run('get_state', { deviceId: 'missing' })).ok, false);
+  let state = await control.run('get_state', { deviceId });
+  assert.equal(state.elements[0].ref, 'a0');
+  const action = request => control.run('action', { deviceId, snapshotId: state.snapshotId, ...request });
+  let result = await action({ action: 'tap', ref: 'a0' });
+  assert.equal(result.dispatched, true);
+  assert.ok(calls.some(args => args.join(' ').includes('input tap 50 50')));
+  assert.equal((await action({ action: 'tap', ref: 'a0' })).ok, false, 'consumed snapshots cannot replay actions');
+  state = result.state;
+  const before = calls.filter(args => args.includes('input')).length;
+  xml = hierarchy('Changed');
+  assert.match((await action({ action: 'tap', ref: 'a0' })).error, /screen changed/);
+  assert.equal(calls.filter(args => args.includes('input')).length, before);
+  xml = 'ERROR: null root';
+  state = await control.run('get_state', { deviceId });
+  assert.equal(state.ok, true, 'screens without a hierarchy retain a recoverable screenshot observation');
+  assert.equal(state.perception, 'screenshot');
+  assert.deepEqual(state.elements, []);
+  assert.match((await action({ action: 'type', text: 'unsafe' })).error, /unprotected/);
+  state = await control.run('get_state', { deviceId });
+  png[31] = 1;
+  assert.match((await action({ action: 'tap', x: 5, y: 5 })).error, /pixels changed/);
+  png[31] = 0;
+  xml = hierarchy('Changed');
+  state = await control.run('get_state', { deviceId });
+  assert.equal((await action({ action: 'tap', x: 1080, y: 0 })).ok, false);
+  state = await control.run('get_state', { deviceId });
+  assert.equal((await action({ action: 'type', text: 'Español' })).ok, false, 'unsupported Unicode is explicit');
+  state = await control.run('get_state', { deviceId });
+  result = await action({ action: 'type', text: "literal '; echo unsafe; & $(echo unsafe)" });
+  assert.equal(result.ok, true);
+  const textCommand = calls.findLast(args => args.includes('text'));
+  assert.equal(textCommand.length, 6, 'remote input stays one quoted argument');
+  assert.ok(textCommand.at(-1).startsWith("'"));
+  assert.ok(textCommand.at(-1).includes("'\\''"), 'apostrophes are escaped for the Android shell');
+  xml = hierarchy('private', true);
+  state = await control.run('get_state', { deviceId });
+  assert.match((await action({ action: 'type', text: 'secret' })).error, /unprotected/);
+  state = await control.run('get_state', { deviceId });
+  failInput = true;
+  result = await action({ action: 'key', key: 'home' });
+  assert.equal(result.dispatched, true, 'uncertain dispatch must not invite blind retries');
+  failInput = false;
+  const aborted = new AbortController(); aborted.abort();
+  assert.equal((await control.run('list_devices', {}, aborted.signal)).ok, false);
+  const pending = control.run('list_devices'); control.stop();
+  assert.equal((await pending).ok, false, 'stop cancels queued operations');
+  const other = createAndroidUse('unused');
+  assert.equal((await other.run('get_state', { deviceId })).ok, false, 'separate renderer sessions do not share device handles');
+  console.log('Android regressions passed: parsing, privacy, discovery, refs, stale screens, bounds, text quoting, protected fields, uncertain dispatch, cancellation, isolation.');
+} finally {
+  childProcess.execFile = originalExec; syncBuiltinESMExports();
+  if (originalPath === undefined) delete process.env.CODECLUB_ADB_PATH; else process.env.CODECLUB_ADB_PATH = originalPath;
+}
+
+if (process.argv.includes('--live')) {
+  const control = createAndroidUse(path.join(process.env.LOCALAPPDATA || '', 'Codeclub'));
+  try {
+    const list = await control.run('list_devices');
+    assert.equal(list.ok, true, list.error);
+    const connected = list.devices.filter(device => device.state === 'device');
+    assert.equal(connected.length, 1, 'Live test requires exactly one authorized device.');
+    const deviceId = connected[0].deviceId;
+    const wake = await control.run('action', { deviceId, action: 'key', key: 'wake' });
+    assert.equal(wake.ok, true, wake.error);
+    let state = wake.state;
+    assert.equal(state.ok, true, state.error);
+    const initial = state.elements.map(element => [element.resourceId, element.className]);
+    const screenshot = await control.run('screenshot', { deviceId });
+    assert.equal(screenshot.ok, true, screenshot.error);
+    state = screenshot;
+    const recents = await control.run('action', { deviceId, snapshotId: state.snapshotId, action: 'key', key: 'recents' });
+    assert.equal(recents.ok, true, recents.error);
+    assert.notDeepEqual(recents.state.elements.map(element => [element.resourceId, element.className]), initial, 'Recents changes the observed interface.');
+    state = recents.state;
+    const back = await control.run('action', { deviceId, snapshotId: state.snapshotId, action: 'key', key: 'back' });
+    assert.equal(back.ok, true, back.error);
+    console.log(JSON.stringify({ live: 'passed', model: connected[0].model, dimensions: [state.width, state.height], nodes: state.elements.length, screenshot: true, recents: true, back: true }));
+  } finally { control.stop(); }
+}

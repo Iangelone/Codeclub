@@ -19,6 +19,8 @@ The integration changes execution control and tool validation; its quality shoul
 
 ## Operational guides for agents
 
+Android device tools, native boundaries, observation recovery, typing limits, and real-device checks are described in [Android Use](android-use.md).
+
 For extension maintenance, use [packaging, release, and portability guidance](browser-extension-development.md).
 
 Use runtime tool discovery and its returned schemas as the source of truth; Markdown documentation is not automatically loaded into every model call. Do not invent tools or observations. See [Browser Control contracts and recovery](browser-control.md#for-llm-agents-and-integrators), [tool discovery](tool-discovery.md), [browser context and model-call metrics](browser-context.md), [terminal output](terminal-agent-output.md), and [machine-readable Git paths](git-paths.md).
@@ -189,3 +191,7 @@ See [Orb autonomy and computer access](orb-permissions.md) for the independent p
 ## Orb conversations and learning
 
 See [Orb conversations and proactive learning](orb-agent.md) for observation limits, online logistic learning, native job delivery, lifecycle, events, and verification. [Personal-agent comparison](agent-comparison.md) records primary-source strengths and limits for Grok Bot, Muse, and Dots.
+
+## Android companion
+
+See [Android companion](android-companion.md) for QR pairing, local TLS, Accessibility permissions, device credentials, APK builds and platform limits. The existing [ADB tools](android-use.md) remain available as an independent transport.
