@@ -16,6 +16,7 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "incremental": true,
+    "tsBuildInfoFile": "build/cache/typescript.tsbuildinfo",
     "allowImportingTsExtensions": true,
     "plugins": [
       {
@@ -32,13 +33,12 @@
     "src/**/*.tsx",
     "electron/**/*.ts",
     ".next/dev/types/**/*.ts",
-    "out/types/**/*.ts",
-    "out/dev/types/**/*.ts"
+    "build/renderer/types/**/*.ts",
+    "build/renderer/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",
-    "out",
-    "dist",
-    "electron-dist"
+    "build/electron",
+    "build/release"
   ]
 }

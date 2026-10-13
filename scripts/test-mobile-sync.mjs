@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises';
 import os from 'node:os';import path from 'node:path';
-import {MobileSync} from '../electron-dist/mobile-sync.js';
-import {ChatStore} from '../electron-dist/chat-store.js';
-import {SettingsStore} from '../electron-dist/settings-store.js';
-import {SessionHub} from '../electron-dist/session-hub.js';
+import {MobileSync} from '../build/electron/mobile-sync.js';
+import {ChatStore} from '../build/electron/chat-store.js';
+import {SettingsStore} from '../build/electron/settings-store.js';
+import {SessionHub} from '../build/electron/session-hub.js';
 const directory=await mkdtemp(path.join(os.tmpdir(),'codeclub-mobile-'));let chats,sync;
 try{
   const settings=new SettingsStore(path.join(directory,'settings.json'),()=>{}),sessions=new SessionHub();chats=new ChatStore(directory);

@@ -3,6 +3,7 @@ sub project/
 
 node_modules/
 .next/
+build/
 electron-dist/
 out/
 dist/

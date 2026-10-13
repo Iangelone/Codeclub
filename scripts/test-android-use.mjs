@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import childProcess from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
 import path from 'node:path';
-import { createAndroidUse, parseAndroidHierarchy } from '../electron-dist/android-use.js';
+import { createAndroidUse, parseAndroidHierarchy } from '../build/electron/android-use.js';
 
 const hierarchy = (text = 'Settings', password = false) => `<?xml version="1.0"?><hierarchy rotation="0"><node index="0" text="${text}" content-desc="${text}" resource-id="fixture:id/search" class="android.widget.EditText" clickable="true" enabled="true" focused="true" password="${password}" bounds="[0,0][100,100]" /></hierarchy>`;
 assert.equal(parseAndroidHierarchy(hierarchy('a &amp; b'))[0].text, 'a & b');

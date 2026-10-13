@@ -25,7 +25,7 @@ try {
       builder.onLoad({ filter: /.*/, namespace: 'qa-chat' }, () => ({ contents: `import React from 'react';export default function Chat(){return <div data-qa-chat/>}`, loader: 'jsx', resolveDir: repo }));
     },
   }] });
-  const cssDirectory = path.join(repo, 'out/_next/static/chunks');
+  const cssDirectory = path.join(repo, 'build/renderer/_next/static/chunks');
   const styles = (await readdir(cssDirectory)).filter(file => file.endsWith('.css'));
   const stylesheet = (await Promise.all(styles.map(file => readFile(path.join(cssDirectory, file), 'utf8')))).join('\n');
   server = createServer(async (request, response) => {

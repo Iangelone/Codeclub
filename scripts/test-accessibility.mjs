@@ -20,7 +20,7 @@ try {
     import TaskEditorModal from ${component('TaskEditorModal')};
     import OrbsPanel from ${component('OrbsPanel')};
     import ExtensionsPanel from ${component('ExtensionsPanel')};
-    import {ProjectPanelView} from ${component('ChatInterface')};
+    import {ProjectPanelView} from ${component('ProjectPanelView')};
     import OrbPaletteProvider from ${component('OrbPaletteProvider')};
     function Fixture(){const [task,setTask]=useState(false),[files,setFiles]=useState(false);
       return <OrbPaletteProvider><main><button onClick={()=>setTask(true)}>Open task</button><button onClick={()=>setFiles(true)}>Open files</button>
@@ -30,7 +30,7 @@ try {
     }createRoot(document.getElementById('root')).render(<Fixture/>);
   `);
   await build({ entryPoints: [entry], outfile: bundle, bundle: true, jsx: 'automatic', format: 'esm', platform: 'browser', nodePaths: [path.join(repo, 'node_modules')], define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'silent' });
-  const cssRoot = path.join(repo, 'out/_next/static/chunks');
+  const cssRoot = path.join(repo, 'build/renderer/_next/static/chunks');
   const css = (await Promise.all((await readdir(cssRoot)).filter(file => file.endsWith('.css')).map(file => readFile(path.join(cssRoot, file), 'utf8')))).join('\n');
   server = createServer(async (request, response) => {
     response.setHeader('content-type', request.url === '/app.js' ? 'text/javascript' : request.url === '/style.css' ? 'text/css' : 'text/html');
@@ -43,11 +43,19 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   await page.addInitScript(() => {
     localStorage.setItem('codeclub-language', 'en');
+    window.qaFileWrites = [];
     window.codeclub = {
       settingsGet: async (_key, fallback) => fallback, settingsSet: async () => {}, onSettingsChanged: () => () => {},
       tasksList: async () => [], onTasksChanged: () => () => {},
       appConfigDir: async () => '/qa', joinPath: async (...parts) => parts.join('/'), fileExists: async () => false,
-      invoke: async command => command === 'codeclub_list_files' ? [{ path: 'src', kind: 'directory' }, { path: 'src/index.ts', kind: 'file' }, { path: 'readme.md', kind: 'file' }] : command === 'codeclub_list_agent_plugins' ? [] : command === 'codeclub_browser_extension_info' ? { browsers: [] } : null,
+      invoke: async (command, args) => {
+        if (command === 'codeclub_list_files') return [{ path: 'src', kind: 'directory' }, { path: 'src/index.ts', kind: 'file' }, { path: 'readme.md', kind: 'file' }];
+        if (command === 'codeclub_read_file') return args.path === 'readme.md' ? '# Project preview\n\n```ts\nexport const preview = true;\n```' : 'export const message = "QA";';
+        if (command === 'codeclub_write_file') { window.qaFileWrites.push(args); return { ok: true }; }
+        if (command === 'codeclub_list_agent_plugins') return [];
+        if (command === 'codeclub_browser_extension_info') return { browsers: [] };
+        return null;
+      },
     };
   });
   await page.goto(`http://127.0.0.1:${server.address().port}`);
@@ -111,6 +119,30 @@ try {
   await dialog.getByRole('button', { name: 'Close project files' }).click();
   await expect(openFiles).toBeFocused();
 
+  await openFiles.click();
+  dialog = page.getByRole('dialog', { name: 'Project files' });
+  await dialog.getByRole('treeitem', { name: 'index.ts', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Close project files' }).click();
+  const editor = page.locator('.codeclub-project-files .cm-content');
+  await expect(editor).toContainText('export const message = "QA";');
+  await editor.click();
+  await page.keyboard.press('Control+End');
+  await page.keyboard.insertText('\nexport const saved = true;');
+  await expect.poll(() => page.evaluate(() => window.qaFileWrites.at(-1)?.content)).toContain('export const saved = true;');
+  assert.equal(await page.evaluate(() => window.qaFileWrites.at(-1).projectPath), 'C:/qa');
+  assert.equal(await page.evaluate(() => window.qaFileWrites.at(-1).path), 'src/index.ts');
+  await openFiles.click();
+  dialog = page.getByRole('dialog', { name: 'Project files' });
+  await dialog.getByRole('treeitem', { name: 'readme.md', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Close project files' }).click();
+  const filePane = page.locator('.codeclub-project-files');
+  await expect(filePane.getByRole('heading', { name: 'Project preview' })).toBeVisible();
+  await expect(filePane.locator('.chat-code-card')).toContainText('export const preview = true;');
+  await filePane.getByRole('button', { name: 'Edit: readme.md', exact: true }).click();
+  await expect(editor).toContainText('# Project preview');
+  await filePane.getByRole('button', { name: 'Preview: readme.md', exact: true }).click();
+  await expect(filePane.getByRole('heading', { name: 'Project preview' })).toBeVisible();
+
   const tabs = page.locator('#codeclub-extensions-sidebar').getByRole('tab');
   await tabs.first().focus();
   await tabs.first().press('ArrowDown');
@@ -132,7 +164,7 @@ try {
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(createOrb).toBeFocused();
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ passed: true, modalIsolation: true, focusRestore: true, selectorKeyboard: true, nestedEscape: true, tabTrap: true, treeKeyboard: true, verticalTabs: true, highContrastFocus: true, orbDialog: true, language: true }));
+  console.log(JSON.stringify({ passed: true, modalIsolation: true, focusRestore: true, selectorKeyboard: true, nestedEscape: true, tabTrap: true, treeKeyboard: true, editorAutosave: true, markdownPreview: true, previewToggle: true, verticalTabs: true, highContrastFocus: true, orbDialog: true, language: true }));
 } finally {
   await browser?.close();
   if (server) await new Promise(resolve => server.close(resolve));

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
-import { ChatStore } from '../electron-dist/chat-store.js';
+import { ChatStore } from '../build/electron/chat-store.js';
 
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const directory=await mkdtemp(path.join(tmpdir(),'codeclub-chat-ui-'));
@@ -26,7 +26,7 @@ try {
   const entry=path.join(directory,'entry.tsx'),bundle=path.join(directory,'app.js');
   await writeFile(entry,`import React from 'react';import {createRoot} from 'react-dom/client';import OrbPaletteProvider from ${JSON.stringify(path.join(repo,'src/components/OrbPaletteProvider.tsx'))};import ChatInterface from ${JSON.stringify(path.join(repo,'src/components/ChatInterface.tsx'))};const provider={id:'qa',label:'QA',api:location.origin+'/v1',type:'provider',requiresApiKey:false};const model={id:'qa-model',label:'QA model',providerId:'qa',type:'model',contextWindow:32768};const saved={...provider,id:'qa-saved',label:'QA saved',requiresApiKey:true};const missing={...saved,id:'qa-missing',label:'QA missing'};const gateway={id:'ai-gateway',label:'QA Gateway',type:'provider'};const extra=[saved,missing,gateway,{...model,id:'saved-model',label:'Saved model',providerId:saved.id},{...model,id:'missing-model',label:'Missing model',providerId:missing.id},{...model,id:'gateway-model',label:'Gateway model',gatewayId:'qa/gateway-model',providerId:'qa',gatewayAvailable:true,gatewayOnly:true}];createRoot(document.getElementById('root')!).render(<div style={{height:'100vh',background:'var(--codeclub-chat-background)'}}><OrbPaletteProvider><ChatInterface catalog={[provider,model,...extra]} defaultProvider={provider} defaultModel={model} eventPrefix="codeclub:qa"/></OrbPaletteProvider></div>);`);
   await build({entryPoints:[entry],outfile:bundle,bundle:true,format:'esm',platform:'browser',target:'es2022',nodePaths:[path.join(repo,'node_modules')],define:{'process.env.NODE_ENV':'"production"'},logLevel:'silent'});
-  const cssDirectory=path.join(repo,'out/_next/static/chunks');
+  const cssDirectory=path.join(repo,'build/renderer/_next/static/chunks');
   const styles=(await readdir(cssDirectory)).filter(file=>file.endsWith('.css'));
   const stylesheet=(await Promise.all(styles.map(file=>readFile(path.join(cssDirectory,file),'utf8')))).join('\n');
   files.set('/qa/settings.json',JSON.stringify({codeclub_last_provider_id:'qa',codeclub_last_model_id:'qa-model',codeclub_api_key_qa:'fixture-only',codeclub_orbs:[{id:'qa-orb',name:'Orbe QA',purpose:'QA only',color:'#2d5fd6',providerId:'qa',modelId:'qa-model'}]}));
@@ -149,7 +149,7 @@ try {
   const firstHeaderGap=await page.locator('.chat-turn').first().evaluate(turn=>turn.querySelector('.chat-user-message').getBoundingClientRect().top-turn.querySelector('.chat-turn-time').getBoundingClientRect().bottom);
   assert.ok(firstHeaderGap>=7.5,'First message follows the same timestamp spacing');
   const bubbleColor=await page.locator('.chat-markdown-user').first().evaluate(element=>getComputedStyle(element).backgroundColor);
-  assert.equal(bubbleColor,'rgb(25, 25, 25)','User bubble uses the dark surface');
+  assert.equal(bubbleColor,'rgb(43, 43, 43)','User bubble uses the existing #2B2B2B surface');
   const transitionFrames=await page.evaluate(()=>{window.qaRecording=false;return window.qaTransitionFrames;});
   assert.ok(transitionFrames.some(frame=>frame.phase==='exiting'),'Old chat finishes its exit');
   assert.ok(transitionFrames.some(frame=>frame.phase==='entering'),'New chat enters after loading');

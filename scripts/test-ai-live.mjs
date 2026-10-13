@@ -58,7 +58,7 @@ let desktop;
 const passed=[];
 try {
   const launcher=path.join(directory,'launcher.mjs');
-  await writeFile(launcher,`import {app} from 'electron';app.setPath('userData',${JSON.stringify(directory)});app.setPath('sessionData',${JSON.stringify(directory)});await import(${JSON.stringify(pathToFileURL(path.join(repo,'electron-dist/main.js')).href)});`);
+  await writeFile(launcher,`import {app} from 'electron';app.setPath('userData',${JSON.stringify(directory)});app.setPath('sessionData',${JSON.stringify(directory)});await import(${JSON.stringify(pathToFileURL(path.join(repo,'build/electron/main.js')).href)});`);
   // Chromium safeStorage ciphertext uses the profile's encrypted OS key.
   // An isolated profile must share that encrypted key to read copied ciphertext.
   const localState=JSON.parse(await readFile(path.join(configDirectory,'Local State'),'utf8'));

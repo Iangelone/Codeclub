@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { setTimeout as delay } from 'node:timers/promises';
-import { BrowserExtensionBridge } from '../electron-dist/browser-extension-bridge.js';
-import { ExternalBrowserControl } from '../electron-dist/external-browser.js';
+import { BrowserExtensionBridge } from '../build/electron/browser-extension-bridge.js';
+import { ExternalBrowserControl } from '../build/electron/external-browser.js';
 
 // Explicit manual debugging: controls a connected Edge profile, owns only the tabs it creates.
 const bridge = new BrowserExtensionBridge();

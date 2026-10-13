@@ -6,8 +6,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from '@playwright/test';
-import { BrowserExtensionBridge } from '../electron-dist/browser-extension-bridge.js';
-import { ExternalBrowserControl } from '../electron-dist/external-browser.js';
+import { BrowserExtensionBridge } from '../build/electron/browser-extension-bridge.js';
+import { ExternalBrowserControl } from '../build/electron/external-browser.js';
 
 const project = process.cwd();
 const sourceExtension = path.join(project, 'browser-extension');

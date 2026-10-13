@@ -7,8 +7,8 @@ import { request as httpsRequest } from 'node:https';
 import { randomBytes, createCipheriv, createDecipheriv, X509Certificate } from 'node:crypto';
 import { WebSocket } from 'ws';
 import { once } from 'node:events';
-import { AndroidCompanion } from '../electron-dist/android-companion.js';
-import { createAndroidUse } from '../electron-dist/android-use.js';
+import { AndroidCompanion } from '../build/electron/android-companion.js';
+import { createAndroidUse } from '../build/electron/android-use.js';
 
 const directory = await mkdtemp(path.join(tmpdir(), 'codeclub-companion-'));
 const key = randomBytes(32);

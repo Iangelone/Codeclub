@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import path from 'node:path';
 import { createServer } from 'node:http';
-import { ComputerUse, DesktopHost } from '../electron-dist/computer-use.js';
+import { ComputerUse, DesktopHost } from '../build/electron/computer-use.js';
 
 // Opt-in real desktop test. It only types/clicks in this disposable fixture.
 const child = spawn('powershell.exe', ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', path.resolve('scripts/fixtures/computer-use.ps1')], { windowsHide: true, stdio: 'pipe' });

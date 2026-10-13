@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { ChatStore } from '../electron-dist/chat-store.js';
+import { ChatStore } from '../build/electron/chat-store.js';
 import { buildChatContext, contextBytes } from '../src/lib/chat-context.ts';
 import { boundChatWindow } from '../src/lib/chat-window.ts';
 

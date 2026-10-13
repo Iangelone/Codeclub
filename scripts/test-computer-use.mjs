@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { ComputerUse, ocrElements, omniElements, localParserUrl } from '../electron-dist/computer-use.js';
+import { ComputerUse, ocrElements, omniElements, localParserUrl } from '../build/electron/computer-use.js';
 
 const element = { runtimeId: '1.2', name: 'Save', role: 'Button', className: 'Button', automationId: 'save', processId: 4, windowId: '10', bounds: { x: -500, y: 50, width: 100, height: 40 }, enabled: true, offscreen: false, patterns: ['Invoke'] };
 const state = () => ({ ok: true, window: { ...element, runtimeId: '1', role: 'Window' }, focused: element, elements: [structuredClone(element)] });

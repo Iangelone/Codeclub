@@ -8,7 +8,7 @@ const directory = await mkdtemp(path.join(tmpdir(), 'codeclub-android-pin-'));
 let app;
 try {
   const wrapper = path.join(directory, 'main.mjs');
-  await writeFile(wrapper, `import { app, BrowserWindow } from 'electron'; app.setPath('userData',${JSON.stringify(path.join(directory, 'profile'))}); globalThis.requestPin = (await import(${JSON.stringify(new URL('../electron-dist/android-pin.js', import.meta.url).href)})).requestAndroidPin; app.whenReady().then(async () => { globalThis.parent = new BrowserWindow({show:false}); await globalThis.parent.loadURL('data:text/html,<title>PIN QA</title>'); });`);
+  await writeFile(wrapper, `import { app, BrowserWindow } from 'electron'; app.setPath('userData',${JSON.stringify(path.join(directory, 'profile'))}); globalThis.requestPin = (await import(${JSON.stringify(new URL('../build/electron/android-pin.js', import.meta.url).href)})).requestAndroidPin; app.whenReady().then(async () => { globalThis.parent = new BrowserWindow({show:false}); await globalThis.parent.loadURL('data:text/html,<title>PIN QA</title>'); });`);
   const env = {...process.env}; delete env.ELECTRON_RUN_AS_NODE;
   app = await electron.launch({args:[wrapper],env});
   await app.firstWindow();

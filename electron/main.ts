@@ -1,7 +1,9 @@
 /** Privileged desktop boundary: owns windows, filesystem, processes, and IPC handlers used by the renderer preload. */
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, powerMonitor, safeStorage, screen, shell, Tray } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, powerMonitor, safeStorage, screen, shell, Tray } from 'electron';
 import { runProjectCommand } from './run-command.js';
 import { readProjectGit } from './git-read.js';
+import { isInsidePath, listProjectFiles, projectStorageKey, resolveProjectFile, searchProjectText } from './project-files.js';
+import { listAgentPlugins, normalizePluginScope, pluginDirectory, safePluginFile, validPluginId } from './plugin-store.js';
 import { TaskScheduler, type ScheduledTask, type TaskRun } from './task-scheduler.js';
 import { CredentialVault } from './credential-vault.js';
 import { requestAndroidPin } from './android-pin.js';
@@ -22,6 +24,7 @@ import { fileURLToPath } from 'node:url';
 import * as pty from 'node-pty';
 import electronUpdater from 'electron-updater';
 import { createComputerUse } from './computer-use.js';
+import { createComputerOverlayController } from './computer-overlay.js';
 import { createAndroidUse } from './android-use.js';
 import { AndroidCompanion } from './android-companion.js';
 import { createExternalBrowserControl } from './external-browser.js';
@@ -34,7 +37,8 @@ const { autoUpdater } = electronUpdater;
 
 type Project = { id: string; name: string; path: string; createdAt: string; lastOpenedAt?: string };
 
-const root = path.dirname(fileURLToPath(import.meta.url));
+// Shared build root in development and inside app.asar: build/electron -> build.
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ownsAppInstance = app.requestSingleInstanceLock();
 if (!ownsAppInstance) app.quit();
 app.on('second-instance', () => showMainWindow());
@@ -133,17 +137,10 @@ async function executeScheduledTask(task: ScheduledTask, run: TaskRun): Promise<
     worker.webContents.on('render-process-gone', () => complete('TASK_INTERRUPTED'));
     worker.on('closed', () => complete('TASK_INTERRUPTED'));
     const devUrl = process.env.CODECLUB_NEXT_DEV_URL;
-    const loading = devUrl ? worker.loadURL(`${devUrl.replace(/\/$/, '')}/?scheduledRunner=1`) : worker.loadFile(path.join(root, '..', 'out', 'index.html'), { query: { scheduledRunner: '1' } });
+    const loading = devUrl ? worker.loadURL(`${devUrl.replace(/\/$/, '')}/?scheduledRunner=1`) : worker.loadFile(path.join(root, 'renderer', 'index.html'), { query: { scheduledRunner: '1' } });
     void loading.catch(() => complete('TASK_RUNNER_UNAVAILABLE'));
   });
 }
-const computerOverlayWindows = new Set<BrowserWindow>();
-let computerOverlayActive = false;
-let computerOverlayPaletteIndex = 0;
-let computerOverlayLanguage = 'es';
-let computerMouseHook: ReturnType<typeof spawn> | null = null;
-let computerMenuWindow: BrowserWindow | null = null;
-let lastComputerContext: Record<string, unknown> | null = null;
 type AutoUpdateState = { state: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'; version?: string; percent?: number; error?: string };
 let autoUpdateState: AutoUpdateState = { state: 'idle' };
 const activeCommands = new Set<() => void>();
@@ -152,277 +149,16 @@ const nativeMcpSessions = new Map<string, NativeMcpSession>();
 type NativeTerminal = { child: pty.IPty; info: any; buffer: string; bufferOffset: number };
 const nativeTerminals = new Map<string, NativeTerminal>();
 
-const COMPUTER_OVERLAY_PALETTES = [
-  { orb: '#2D5FD6', accent: '#3D9BFF', bright: '#8BC7FF' },
-  { orb: '#D63D52', accent: '#F04E65', bright: '#FFABB7' },
-  { orb: '#D6A317', accent: '#E8B930', bright: '#FFE08A' },
-  { orb: '#7543D6', accent: '#9C6AFF', bright: '#C1A5FF' },
-  { orb: '#21845A', accent: '#39B77C', bright: '#8FE6B9' },
-  { orb: '#D6752B', accent: '#F0893A', bright: '#FFC092' },
-  { orb: '#D64A9E', accent: '#F15BB9', bright: '#FFABD8' },
-  { orb: '#228FAD', accent: '#31B4D5', bright: '#92E5F2' },
-  { orb: '#8CAB20', accent: '#B4D43A', bright: '#DBEF8D' },
-] as const;
-
-const computerOverlayHtml = (language: string, paletteIndex: number) => {
-  const title = language === 'en' ? 'Codeclub is using your computer' : 'Codeclub está usando tu computadora';
-  const cancel = language === 'en' ? 'Esc to cancel' : 'Esc para cancelar';
-  const palette = COMPUTER_OVERLAY_PALETTES[paletteIndex] || COMPUTER_OVERLAY_PALETTES[0];
-  return `<!doctype html><html><head><meta charset="utf-8"><style>
-*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:transparent;overflow:hidden;font-family:Segoe UI,Arial,sans-serif}
-body{border:1px solid ${palette.accent};box-shadow:inset 0 0 0 1px ${palette.bright}6b,inset 0 0 28px ${palette.accent}1f,0 0 18px ${palette.accent}29}
-.pill{position:absolute;top:10px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:7px;padding:7px 16px;border:1px solid ${palette.bright}c7;border-radius:999px;background:linear-gradient(110deg,${palette.orb}f5,${palette.accent}eb);box-shadow:0 0 20px ${palette.accent}8c,0 5px 18px rgba(0,0,0,.26);color:#fff;font-size:12px;font-weight:600;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.2)}
-.dot{width:7px;height:7px;border-radius:50%;background:#fff;box-shadow:0 0 7px #fff;flex:none}.sep{opacity:.7}.cancel{font-weight:500;opacity:.92}
-</style></head><body><div class="pill"><span class="dot"></span><span>${title}</span><span class="sep">·</span><span class="cancel">${cancel}</span></div></body></html>`;
-};
-
-const computerContextMenuHtml = (language: string, paletteIndex = computerOverlayPaletteIndex) => {
-  const items = language === 'en'
-    ? [['select', '⌖', 'Select element'], ['coordinate', '⌁', 'Use coordinate'], ['screenshot', '▣', 'Capture screen']]
-    : [['select', '⌖', 'Seleccionar elemento'], ['coordinate', '⌁', 'Usar coordenada'], ['screenshot', '▣', 'Capturar pantalla']];
-  const rows = items.map(([action, icon, label]) => `<button data-action="${action}"><span class="icon">${icon}</span><span>${label}</span></button>`).join('');
-  const palette = COMPUTER_OVERLAY_PALETTES[paletteIndex] || COMPUTER_OVERLAY_PALETTES[0];
-  return `<!doctype html><html><head><meta charset="utf-8"><style>
-*{box-sizing:border-box}html,body{margin:0;background:transparent;font-family:Segoe UI,Arial,sans-serif;overflow:hidden}main{width:286px;padding:7px;border:1px solid ${palette.bright}61;border-radius:15px;background:rgba(28,32,40,.97);box-shadow:0 16px 38px rgba(0,0,0,.46),0 0 20px ${palette.accent}29;backdrop-filter:blur(18px)}button{display:flex;align-items:center;gap:12px;width:100%;height:42px;padding:0 12px;border:0;border-radius:9px;background:transparent;color:#e7edf5;font:500 14px Segoe UI,Arial,sans-serif;text-align:left;cursor:pointer}button:hover{background:${palette.bright}2e;color:#fff}.icon{display:grid;place-items:center;width:20px;color:${palette.bright};font-size:20px;line-height:1}</style></head><body><main>${rows}</main><script>for(const button of document.querySelectorAll('button'))button.addEventListener('click',()=>window.codeclub.computerMenuAction(button.dataset.action));window.addEventListener('keydown',event=>{if(event.key==='Escape')window.codeclub.computerMenuAction('close')});</script></body></html>`;
-};
-
-const computerMouseHookScript = `
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -TypeDefinition @'
-using System;
-using System.Text;
-using System.Drawing;
-using System.Diagnostics;
-using System.Runtime.InteropServices;
-using System.Windows.Forms;
-public static class CodeclubMouseHook {
-  [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
-  [StructLayout(LayoutKind.Sequential)] public struct MSLLHOOKSTRUCT { public POINT pt; public uint mouseData; public uint flags; public uint time; public IntPtr extraInfo; }
-  public delegate IntPtr HookProc(int code, IntPtr wParam, IntPtr lParam);
-  static HookProc proc = Callback;
-  static IntPtr hook;
-  [DllImport("user32.dll")] static extern IntPtr SetWindowsHookEx(int id, HookProc callback, IntPtr module, uint threadId);
-  [DllImport("user32.dll")] static extern bool UnhookWindowsHookEx(IntPtr hook);
-  [DllImport("user32.dll")] static extern IntPtr CallNextHookEx(IntPtr hook, int code, IntPtr wParam, IntPtr lParam);
-  [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(POINT point);
-  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr hwnd, StringBuilder text, int count);
-  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
-  static string Escape(string value) { return (value ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "").Replace("\n", " "); }
-  static IntPtr Callback(int code, IntPtr message, IntPtr data) {
-    if (code >= 0 && message == (IntPtr)0x0205) {
-      var info = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(data); var hwnd = WindowFromPoint(info.pt); uint processId; GetWindowThreadProcessId(hwnd, out processId); var title = new StringBuilder(512); GetWindowText(hwnd, title, title.Capacity);
-      Console.WriteLine("{\"x\":" + info.pt.X + ",\"y\":" + info.pt.Y + ",\"handle\":" + hwnd.ToInt64() + ",\"processId\":" + processId + ",\"title\":\"" + Escape(title.ToString()) + "\"}"); Console.Out.Flush();
-      return (IntPtr)1;
-    }
-    return CallNextHookEx(hook, code, message, data);
-  }
-  public static void Run() { hook=SetWindowsHookEx(14, proc, IntPtr.Zero, 0); if (hook==IntPtr.Zero) throw new Exception("No se pudo instalar el hook de mouse."); Application.Run(); UnhookWindowsHookEx(hook); }
-}
-'@
-[CodeclubMouseHook]::Run()`;
-
-function stopComputerMouseHook() {
-  if (computerMouseHook) { computerMouseHook.kill(); computerMouseHook = null; }
-}
-
-function showComputerContextMenu(payload: any) {
-  lastComputerContext = payload;
-  if (computerMenuWindow && !computerMenuWindow.isDestroyed()) computerMenuWindow.destroy();
-  const display = screen.getDisplayNearestPoint({ x: Number(payload.x || 0), y: Number(payload.y || 0) });
-  const width = 300; const height = 150;
-  const left = Math.min(Math.max(display.bounds.x, Number(payload.x || 0)), display.bounds.x + display.bounds.width - width);
-  const top = Math.min(Math.max(display.bounds.y, Number(payload.y || 0)), display.bounds.y + display.bounds.height - height);
-  computerMenuWindow = new BrowserWindow({ x: left, y: top, width, height, frame: false, transparent: true, resizable: false, movable: false, focusable: true, skipTaskbar: true, show: false, hasShadow: false, webPreferences: { preload: path.join(root, '..', 'electron', 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: false } });
-  computerMenuWindow.setAlwaysOnTop(true, 'screen-saver');
-  computerMenuWindow.on('blur', () => { if (computerMenuWindow && !computerMenuWindow.isDestroyed()) computerMenuWindow.close(); });
-  computerMenuWindow.on('closed', () => { computerMenuWindow = null; });
-  void computerMenuWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(computerContextMenuHtml('es', computerOverlayPaletteIndex))}`);
-  computerMenuWindow.once('ready-to-show', () => computerMenuWindow?.showInactive());
-  computerMenuWindow.webContents.once('did-finish-load', () => computerMenuWindow?.focus());
-}
-
-function startComputerMouseHook() {
-  stopComputerMouseHook();
-  computerMouseHook = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', computerMouseHookScript], { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
-  let buffer = '';
-  computerMouseHook.stdout?.on('data', (chunk) => {
-    buffer += String(chunk);
-    const lines = buffer.split(/\r?\n/); buffer = lines.pop() || '';
-    for (const line of lines) { try { const payload = JSON.parse(line); if (computerOverlayActive) showComputerContextMenu(payload); } catch { /* Salida parcial del hook: se ignora. */ } }
-  });
-  computerMouseHook.once('exit', () => { computerMouseHook = null; });
-}
-
-function destroyComputerOverlay() {
-  stopComputerMouseHook();
-  if (computerMenuWindow && !computerMenuWindow.isDestroyed()) computerMenuWindow.destroy();
-  computerMenuWindow = null;
-  for (const overlay of computerOverlayWindows) overlay.destroy();
-  computerOverlayWindows.clear();
-  if (globalShortcut.isRegistered('Esc')) globalShortcut.unregister('Esc');
-  computerOverlayActive = false;
-}
-
-function createComputerOverlay(language: string, paletteIndex = computerOverlayPaletteIndex) {
-  for (const display of screen.getAllDisplays()) {
-    // Windows may report work-area dimensions as monitor bounds; `size` retains
-    // the full display dimensions, including the taskbar area.
-    const bounds = { ...display.bounds, width: display.size.width, height: display.size.height };
-    const overlay = new BrowserWindow({
-      x: bounds.x,
-      y: bounds.y,
-      width: bounds.width,
-      height: bounds.height,
-      frame: false,
-      transparent: true,
-      resizable: false,
-      movable: false,
-      focusable: false,
-      skipTaskbar: true,
-      hasShadow: false,
-      show: false,
-      webPreferences: { sandbox: true },
-    });
-    overlay.setAlwaysOnTop(true, 'screen-saver');
-    overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    overlay.setIgnoreMouseEvents(true, { forward: true });
-    overlay.on('closed', () => computerOverlayWindows.delete(overlay));
-    computerOverlayWindows.add(overlay);
-    void overlay.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(computerOverlayHtml(language, paletteIndex))}`);
-    overlay.once('ready-to-show', () => {
-      if (overlay.isDestroyed() || !computerOverlayActive) return;
-      overlay.showInactive();
-      overlay.setAlwaysOnTop(true, 'screen-saver');
-    });
-  }
-}
-
-function setComputerOverlay(active: boolean, language = 'es', paletteIndex = computerOverlayPaletteIndex) {
-  if (!active) { destroyComputerOverlay(); return { ok: true, active: false }; }
-  destroyComputerOverlay();
-  computerOverlayLanguage = language;
-  computerOverlayPaletteIndex = Number.isInteger(paletteIndex) && paletteIndex >= 0 && paletteIndex < COMPUTER_OVERLAY_PALETTES.length ? paletteIndex : 0;
-  computerOverlayActive = true;
-  createComputerOverlay(computerOverlayLanguage, computerOverlayPaletteIndex);
-  startComputerMouseHook();
-  globalShortcut.register('Esc', () => {
-    if (!computerOverlayActive) return;
-    destroyComputerOverlay();
-    desktopControl.stop();
-    mainWindow?.webContents.send('computer:escape');
-  });
-  return { ok: true, active: true, displays: screen.getAllDisplays().length };
-}
+const { setComputerOverlay, destroyComputerOverlay, handleComputerMenuAction, updateComputerOverlayPalette } = createComputerOverlayController(root,
+  () => { desktopControl.stop(); mainWindow?.webContents.send('computer:escape'); },
+  payload => mainWindow?.webContents.send('computer:context-action', payload),
+);
 
 const projectsFile = () => path.join(app.getPath('userData'), 'projects.json');
 const projectId = (value: string) => value.toLowerCase().replace(/[\\/:*?"<>|\s]+/g, '-');
-const projectStorageKey = (value: string) => encodeURIComponent(path.resolve(value));
-
 async function loadProjects() { try { projects = JSON.parse(await fs.readFile(projectsFile(), 'utf8')); } catch { projects = []; } }
 async function saveProjects() { await fs.mkdir(path.dirname(projectsFile()), { recursive: true }); await fs.writeFile(projectsFile(), JSON.stringify(projects, null, 2) + '\n', 'utf8'); }
 function registerProject(folder: string): Project { const existing = projects.find((item) => item.path.toLowerCase() === folder.toLowerCase()); if (existing) return existing; const project = { id: projectId(folder), name: path.basename(folder) || folder, path: folder, createdAt: new Date().toISOString() }; projects = [...projects, project]; return project; }
-
-const ignoredDirectories = new Set(['.git', 'node_modules', '.next', 'out', 'electron-dist', 'target']);
-const projectFile = (projectPath: string, relativePath: string) => {
-  const rootPath = path.resolve(projectPath);
-  const targetPath = path.resolve(rootPath, relativePath || '.');
-  if (!isInsidePath(rootPath, targetPath)) throw new Error('La ruta queda fuera del proyecto.');
-  return targetPath;
-};
-
-const isInsidePath = (rootPath: string, targetPath: string) => {
-  const relative = path.relative(rootPath, targetPath);
-  return relative === '' || (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`));
-};
-
-async function resolveProjectFile(projectPath: string, relativePath: string, allowMissing = false) {
-  const rootPath = await fs.realpath(path.resolve(projectPath));
-  const targetPath = projectFile(rootPath, relativePath);
-  try {
-    const resolved = await fs.realpath(targetPath);
-    if (!isInsidePath(rootPath, resolved)) throw new Error('La ruta queda fuera del proyecto.');
-    return resolved;
-  } catch (error: any) {
-    if (!allowMissing || error?.code !== 'ENOENT') throw error;
-    let ancestor = path.dirname(targetPath);
-    const suffix = [path.basename(targetPath)];
-    while (isInsidePath(rootPath, ancestor)) {
-      try {
-        const resolvedAncestor = await fs.realpath(ancestor);
-        if (!isInsidePath(rootPath, resolvedAncestor)) throw new Error('La ruta queda fuera del proyecto.');
-        return path.join(resolvedAncestor, ...suffix.reverse());
-      } catch (ancestorError: any) {
-        if (ancestorError?.code !== 'ENOENT') throw ancestorError;
-        const parent = path.dirname(ancestor);
-        if (parent === ancestor) break;
-        suffix.push(path.basename(ancestor));
-        ancestor = parent;
-      }
-    }
-    throw new Error('La ruta queda fuera del proyecto.');
-  }
-}
-
-async function listProjectFiles(projectPath: string, maxFiles: number) {
-  const limit = Number.isFinite(maxFiles) ? Math.min(1200, Math.max(1, Math.floor(maxFiles))) : 400;
-  let rootPath: string;
-  try { rootPath = await fs.realpath(path.resolve(projectPath)); } catch (error: any) {
-    if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return [];
-    throw error;
-  }
-  const result: Array<{ path: string; kind: string; size?: number; modifiedAt?: number }> = [];
-  const pending: Array<{ folder: string; relative: string }> = [{ folder: rootPath, relative: '' }];
-  while (pending.length && result.length < limit) {
-    const current = pending.pop()!;
-    const directories: Array<{ folder: string; relative: string }> = [];
-    try {
-      const directory = await fs.opendir(current.folder);
-      for await (const entry of directory) {
-        if (entry.isSymbolicLink() || (entry.isDirectory() && ignoredDirectories.has(entry.name))) continue;
-        const entryRelative = current.relative ? path.join(current.relative, entry.name) : entry.name;
-        const entryPath = path.join(current.folder, entry.name);
-        if (entry.isDirectory()) {
-          result.push({ path: entryRelative.replaceAll(path.sep, '/'), kind: 'directory' });
-          directories.push({ folder: entryPath, relative: entryRelative });
-        } else if (entry.isFile()) {
-          try {
-            const stat = await fs.stat(entryPath);
-            result.push({ path: entryRelative.replaceAll(path.sep, '/'), kind: 'file', size: stat.size, modifiedAt: stat.mtimeMs });
-          } catch { /* A file may disappear while the project is being indexed. */ }
-        }
-        if (result.length >= limit) break;
-      }
-    } catch (error) {
-      if (current.folder === rootPath) throw error;
-      continue;
-    }
-    for (let index = directories.length - 1; index >= 0; index--) pending.push(directories[index]);
-  }
-  return result;
-}
-
-async function searchProjectText(projectPath: string, query: string, maxMatches: number) {
-  const needle = String(query || '').toLocaleLowerCase();
-  if (!needle) return [];
-  const limit = Number.isFinite(maxMatches) ? Math.min(200, Math.max(1, Math.floor(maxMatches))) : 80;
-  const files = await listProjectFiles(projectPath, 1200);
-  const matches: Array<{ path: string; line: number; preview: string }> = [];
-  let scannedBytes = 0;
-  for (const entry of files) {
-    if (entry.kind !== 'file' || matches.length >= limit || !entry.size || entry.size > 2 * 1024 * 1024) continue;
-    if (scannedBytes + entry.size > 32 * 1024 * 1024) break;
-    scannedBytes += entry.size;
-    try {
-      const content = await fs.readFile(await resolveProjectFile(projectPath, entry.path), 'utf8');
-      if (content.includes('\0')) continue;
-      const lines = content.split(/\r?\n/);
-      for (let index = 0; index < lines.length && matches.length < limit; index++) {
-        if (lines[index].toLocaleLowerCase().includes(needle)) matches.push({ path: entry.path, line: index + 1, preview: lines[index].trim().slice(0, 240) });
-      }
-    } catch { /* Binarios o archivos ilegibles: se omiten. */ }
-  }
-  return matches;
-}
 
 const replacePluginVariables = (value: string, root: string, data: string) => String(value || '').replaceAll('${PLUGIN_ROOT}', root).replaceAll('${PLUGIN_DATA}', data);
 async function startMcpSession(request: any) {
@@ -452,130 +188,6 @@ async function startMcpSession(request: any) {
     child.once('exit', () => nativeMcpSessions.delete(sessionId));
     return { sessionId, tools: tools?.tools || [] };
   } catch (error) { session.close(); throw error; }
-}
-
-type PluginScope = 'global' | 'project';
-const validPluginId = (value: string) => /^[a-z0-9]+(?:[-.][a-z0-9]+)*$/.test(value) && value.length <= 64 && !value.includes('..');
-const normalizePluginScope = (value: unknown, projectPath: string): PluginScope => {
-  const scope = String(value || '').trim().toLowerCase();
-  if (scope === 'global') return 'global';
-  if (scope === 'project' && String(projectPath || '').trim()) return 'project';
-  if (scope === 'project') throw new Error('Se necesita un proyecto activo para usar el alcance del proyecto.');
-  return String(projectPath || '').trim() ? 'project' : 'global';
-};
-const pluginRoot = (scope: PluginScope, projectPath: string) => scope === 'global'
-  ? path.join(app.getPath('userData'), 'plugins')
-  : path.join(app.getPath('userData'), 'projects', projectStorageKey(projectPath), 'plugins');
-const pluginDirectory = (scope: PluginScope, projectPath: string, pluginId: string) => {
-  if (!validPluginId(pluginId)) throw new Error('El identificador del plugin no es válido.');
-  return path.join(pluginRoot(scope, projectPath), pluginId);
-};
-const pluginFile = (scope: PluginScope, projectPath: string, pluginId: string, relativePath: string) => {
-  const root = pluginDirectory(scope, projectPath, pluginId);
-  const target = path.resolve(root, relativePath || '.');
-  if (target !== root && !target.startsWith(`${root}${path.sep}`)) throw new Error('La ruta queda fuera del plugin.');
-  return target;
-};
-
-/** Resolve existing ancestors as well as lexical paths, so plugin junctions cannot escape storage. */
-async function safePluginFile(scope: PluginScope, projectPath: string, pluginId: string, relativePath: string, create = false) {
-  const storage = pluginRoot(scope, projectPath);
-  const target = pluginFile(scope, projectPath, pluginId, relativePath);
-  if (create) await fs.mkdir(storage, { recursive: true });
-  const realStorage = await fs.realpath(storage);
-  let ancestor = target;
-  while (true) {
-    try {
-      const realAncestor = await fs.realpath(ancestor);
-      const relative = path.relative(realStorage, realAncestor);
-      if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('La ruta real queda fuera del almacenamiento de plugins.');
-      break;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-      const parent = path.dirname(ancestor);
-      if (parent === ancestor) throw error;
-      ancestor = parent;
-    }
-  }
-  return target;
-}
-
-const bundledAgentSkillsRoot = () => path.join(
-  app.isPackaged ? process.resourcesPath : app.getAppPath(),
-  app.isPackaged ? 'agent-skills' : path.join('vendor', 'agent-skills'),
-);
-
-async function loadSkillInstructions(pluginRootPath: string, skillPath: string) {
-  const original = await fs.readFile(skillPath, 'utf8');
-  const resources = new Map<string, string>();
-  const pending: Array<{ source: string; reference: string }> = [];
-  const queueReferences = (source: string, content: string) => {
-    const matches = content.match(/(?:(?:\.\.\/)+)?(?:references|scripts)\/[A-Za-z0-9_./-]+/g) || [];
-    for (const reference of matches) pending.push({ source, reference: reference.replace(/[.,;:!?]+$/, '') });
-  };
-  queueReferences(skillPath, original);
-
-  while (pending.length && resources.size < 16) {
-    const { source, reference } = pending.shift()!;
-    const target = path.resolve(path.dirname(source), reference);
-    const relative = path.relative(pluginRootPath, target);
-    if (!relative || relative.startsWith('..') || path.isAbsolute(relative) || resources.has(relative)) continue;
-    try {
-      const [realRoot, realTarget] = await Promise.all([fs.realpath(pluginRootPath), fs.realpath(target)]);
-      const realRelative = path.relative(realRoot, realTarget);
-      if (!realRelative || realRelative.startsWith('..') || path.isAbsolute(realRelative)) continue;
-      const content = await fs.readFile(realTarget, 'utf8');
-      if (content.length > 200_000) continue;
-      resources.set(realRelative, content);
-      queueReferences(realTarget, content);
-    } catch {
-      // Some upstream skills mention host-specific files that are not part of the skill bundle.
-    }
-  }
-
-  if (!resources.size) return original;
-  const appendix = Array.from(resources, ([relative, content]) => `### ${relative}\n\n${content}`).join('\n\n');
-  return `${original}\n\n## Supporting files included with this skill\n\n${appendix}`;
-}
-
-async function listAgentPlugins(projectPath: string) {
-  const roots = [
-    ...(String(projectPath || '').trim() ? [{ root: pluginRoot('project', projectPath), scope: 'project' as PluginScope }] : []),
-    { root: pluginRoot('global', projectPath), scope: 'global' as PluginScope },
-    { root: bundledAgentSkillsRoot(), scope: 'global' as PluginScope, builtIn: true },
-  ];
-  const plugins: any[] = [];
-  const seen = new Set<string>();
-  for (const entry of roots) {
-    let children: any[] = [];
-    try { children = await fs.readdir(entry.root, { withFileTypes: true }); } catch { continue; }
-    for (const child of children) {
-      if (!child.isDirectory()) continue;
-      const root = path.join(entry.root, child.name);
-      try {
-        const manifest = JSON.parse(await fs.readFile(path.join(root, 'plugin.json'), 'utf8'));
-        const id = String(manifest.name || child.name);
-        if (seen.has(id)) continue;
-        seen.add(id);
-        const skills: any[] = [];
-        const skillsRoot = path.join(root, 'skills');
-        for (const skill of await fs.readdir(skillsRoot, { withFileTypes: true }).catch(() => [] as any[])) {
-          if (!skill.isDirectory()) continue;
-          const skillPath = path.join(skillsRoot, skill.name, 'SKILL.md');
-          try {
-            const content = await loadSkillInstructions(root, skillPath);
-            const name = content.match(/^name:\s*(.+)$/m)?.[1]?.trim();
-            const description = content.match(/^description:\s*(.+)$/m)?.[1]?.trim();
-            if (name && description) skills.push({ id: skill.name, name, description, content, pluginName: id, scope: entry.scope });
-          } catch { /* Skill incompleta: se omite. */ }
-        }
-        let mcpServers: Record<string, unknown> = {};
-        try { const mcp = JSON.parse(await fs.readFile(path.join(root, 'mcp.json'), 'utf8')); mcpServers = mcp.mcpServers || {}; } catch { /* MCP opcional. */ }
-        plugins.push({ id, name: manifest.displayName || manifest.interface?.displayName || id, version: manifest.version, description: manifest.description, root, source: entry.scope, scope: entry.scope, projectPath: entry.scope === 'project' ? path.resolve(projectPath) : undefined, skills, mcpServers, warnings: [], builtIn: entry.builtIn === true });
-      } catch { /* Invalid manifest: skip loading. */ }
-    }
-  }
-  return plugins.sort((left, right) => String(left.name).localeCompare(String(right.name)));
 }
 
 function shellCommand(shell: string) {
@@ -965,7 +577,7 @@ function createWindow() {
     const url = new URL(devUrl);
     if (orbQuery) for (const [key, value] of Object.entries(orbQuery)) url.searchParams.set(key, value);
     void mainWindow.loadURL(url.toString());
-  } else void mainWindow.loadFile(path.join(root, '..', 'out', 'index.html'), { query: orbQuery });
+  } else void mainWindow.loadFile(path.join(root, 'renderer', 'index.html'), { query: orbQuery });
 }
 
 function publishAutoUpdate(state: AutoUpdateState) {
@@ -1314,12 +926,7 @@ app.whenReady().then(async () => {
   ipcMain.on('codeclub:orb-palette-change', (event, index: unknown) => {
     const sender = BrowserWindow.fromWebContents(event.sender);
     if (!sender || sender.isDestroyed() || typeof index !== 'number' || !Number.isInteger(index) || index < 0 || index > 8) return;
-    computerOverlayPaletteIndex = index;
-    if (computerOverlayActive) {
-      for (const overlay of computerOverlayWindows) overlay.destroy();
-      computerOverlayWindows.clear();
-      createComputerOverlay(computerOverlayLanguage, computerOverlayPaletteIndex);
-    }
+    updateComputerOverlayPalette(index);
     for (const window of BrowserWindow.getAllWindows()) {
       if (window.id !== sender.id && !window.isDestroyed() && !window.webContents.isDestroyed()) {
         window.webContents.send('codeclub:orb-palette-change', index);
@@ -1339,11 +946,7 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle('app:install-update', () => { if (autoUpdateState.state === 'downloaded') autoUpdater.quitAndInstall(); return autoUpdateState; });
   ipcMain.handle('computer:overlay', (_event, payload: { active?: boolean; language?: string; paletteIndex?: number }) => setComputerOverlay(Boolean(payload?.active), payload?.language === 'en' ? 'en' : 'es', payload?.paletteIndex));
-  ipcMain.on('computer:menu-action', (_event, action: string) => {
-    if (computerMenuWindow && !computerMenuWindow.isDestroyed()) computerMenuWindow.close();
-    if (action === 'close') return;
-    mainWindow?.webContents.send('computer:context-action', { action, ...(lastComputerContext || {}) });
-  });
+  ipcMain.on('computer:menu-action', (_event, action: string) => handleComputerMenuAction(action));
   floatingChat = createFloatingChat(root, showMainWindow, updateTrayMenu);
   createWindow();
   createTray();

@@ -20,7 +20,7 @@ import TaskEditorModal from './TaskEditorModal';
 import type { ScheduledTask } from '../lib/scheduled-tasks';
 import BrowserStyleEditor, { type BrowserElementSelection, type BrowserElementChanges } from './BrowserStyleEditor';
 import { createBrowserPickerScript, type BrowserMarkerOrder } from '../lib/browser-dom-picker';
-import { ProjectPanelView } from './ChatInterface';
+import { ProjectPanelView } from './ProjectPanelView';
 import { useOrbPalette } from './OrbPaletteProvider';
 import OrbPaletteButton from './ui/OrbPaletteButton';
 import FluidOrb from './ui/fluid-orb';

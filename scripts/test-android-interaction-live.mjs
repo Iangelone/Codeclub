@@ -4,7 +4,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createServer } from 'node:http';
 import path from 'node:path';
-import { createAndroidUse, findAndroidAdb } from '../electron-dist/android-use.js';
+import { createAndroidUse, findAndroidAdb } from '../build/electron/android-use.js';
 const execute = promisify(execFile);
 const root = path.join(process.env.LOCALAPPDATA || '', 'Codeclub');
 const control = createAndroidUse(root);

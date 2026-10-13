@@ -3,10 +3,10 @@ import { mkdtemp, readFile, writeFile, rm, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
-import { SessionHub } from '../electron-dist/session-hub.js';
-import { CredentialVault } from '../electron-dist/credential-vault.js';
-import { ActivityIntegrations } from '../electron-dist/activity-integrations.js';
-import { AgentRelay } from '../electron-dist/agent-relay.js';
+import { SessionHub } from '../build/electron/session-hub.js';
+import { CredentialVault } from '../build/electron/credential-vault.js';
+import { ActivityIntegrations } from '../build/electron/activity-integrations.js';
+import { AgentRelay } from '../build/electron/agent-relay.js';
 import { idleWidgetMode } from '../src/lib/widget-state.ts';
 
 const directory=await mkdtemp(path.join(tmpdir(),'codeclub-coucou-test-'));

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {_electron as electron,chromium} from '@playwright/test';
 import {execFile} from 'node:child_process';import {promisify} from 'node:util';import path from 'node:path';
-import {findAndroidAdb} from '../electron-dist/android-use.js';
+import {findAndroidAdb} from '../build/electron/android-use.js';
 const execute=promisify(execFile),adb=await findAndroidAdb(path.join(process.env.LOCALAPPDATA,'Codeclub'));
 const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;delete env.CODECLUB_NEXT_DEV_URL;
 let app,browser,forwardPort;

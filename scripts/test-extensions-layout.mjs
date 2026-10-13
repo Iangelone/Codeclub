@@ -15,7 +15,7 @@ try {
   const bundle = path.join(directory, 'app.js');
   await writeFile(entry, `import React,{useState} from 'react';import {createRoot} from 'react-dom/client';import ExtensionsPanel from ${JSON.stringify(path.join(repo,'src/components/ExtensionsPanel.tsx'))};function Fixture(){const [projectPath,setProjectPath]=useState('C:/projects/Very long project name for responsive layout');window.qaSelectProject=setProjectPath;return <ExtensionsPanel selectedProject={{projectPath}}/>;}createRoot(document.getElementById('root')!).render(<Fixture/>);`);
   await build({entryPoints:[entry],outfile:bundle,bundle:true,format:'esm',platform:'browser',target:'es2022',nodePaths:[path.join(repo,'node_modules')],define:{'process.env.NODE_ENV':'"production"'},logLevel:'silent'});
-  const cssRoot = path.join(repo,'out/_next/static/chunks');
+  const cssRoot = path.join(repo,'build/renderer/_next/static/chunks');
   const css = (await Promise.all((await readdir(cssRoot)).filter(file=>file.endsWith('.css')).map(file=>readFile(path.join(cssRoot,file),'utf8')))).join('\n');
   server = createServer(async (request,response) => {
     if(request.url === '/app.js') {response.setHeader('content-type','text/javascript');response.end(await readFile(bundle));return;}

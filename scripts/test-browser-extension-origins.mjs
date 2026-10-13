@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { WebSocket } from 'ws';
-import { BrowserExtensionBridge } from '../electron-dist/browser-extension-bridge.js';
-import { COMPANION_EXTENSION_IDS, EDGE_EXTENSION_URL, edgeExtensionPage, companionOriginAllowed } from '../electron-dist/browser-extension-config.js';
+import { BrowserExtensionBridge } from '../build/electron/browser-extension-bridge.js';
+import { COMPANION_EXTENSION_IDS, EDGE_EXTENSION_URL, edgeExtensionPage, companionOriginAllowed } from '../build/electron/browser-extension-config.js';
 assert.equal(edgeExtensionPage('install'), EDGE_EXTENSION_URL);
 assert.equal(edgeExtensionPage('uninstall'), 'edge://extensions/?id=bomojefgeconjddklieajpeimnjkkbbb');
 for (const origin of ['https://example.com', 'null', '', 'chrome-extension://untrusted', `chrome-extension://${COMPANION_EXTENSION_IDS[1]}.evil`]) assert.equal(companionOriginAllowed(origin), false);

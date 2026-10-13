@@ -27,7 +27,7 @@ try {
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin=`http://127.0.0.1:${server.address().port}`;
   await writeFile(path.join(directory,'settings.json'),JSON.stringify({qa_api_key:'fixture-secret',codeclub_last_provider_id:'qa',codeclub_last_model_id:'qa-model'}));
   const launcher=path.join(directory,'launcher.mjs');
-  await writeFile(launcher,`import {app} from ${JSON.stringify(path.join(repo,'node_modules/electron/index.js'))};app.setPath('userData',${JSON.stringify(directory)});app.setPath('sessionData',${JSON.stringify(directory)});await new Promise(resolve=>setTimeout(resolve,1500));await import(${JSON.stringify(pathToFileURL(path.join(repo,'electron-dist/main.js')).href)});`);
+  await writeFile(launcher,`import {app} from ${JSON.stringify(path.join(repo,'node_modules/electron/index.js'))};app.setPath('userData',${JSON.stringify(directory)});app.setPath('sessionData',${JSON.stringify(directory)});await new Promise(resolve=>setTimeout(resolve,1500));await import(${JSON.stringify(pathToFileURL(path.join(repo,'build/electron/main.js')).href)});`);
   // Electron's built-in module must be imported by name, not the Node package shim.
   await writeFile(launcher,(await readFile(launcher,'utf8')).replace(JSON.stringify(path.join(repo,'node_modules/electron/index.js')),"'electron'"));
   await writeFile(launcher,`import {Tray} from 'electron';const original=Tray.prototype.setContextMenu;Tray.prototype.setContextMenu=function(menu){globalThis.__qaTrayMenu=menu;return original.call(this,menu)};`+await readFile(launcher,'utf8'));

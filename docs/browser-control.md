@@ -12,7 +12,7 @@ For maintainers, see [extension architecture, packaging, publishing, and portabi
 - For development, open `edge://extensions` or the equivalent browser page, enable **Developer mode**, select **Load unpacked**, and choose the repository's `browser-extension` directory. Packing a CRX is unnecessary for debugging. Never commit the generated private `.pem` key.
 - Keep Codeclub running during normal use. The companion connects to a loopback WebSocket on ports 47832–47842. No browser restart or remote-debugging flags are needed.
 - After editing the worker or manifest, click **Reload** on the unpacked extension. Restart Codeclub after changing Electron or preload code. Reloading the renderer does not replace the native process.
-- Source changes do not update an installed store package. The repository manifest is 1.0.2. Its upload ZIP is `release/codeclub-browser-control-1.0.2.zip`; the October 8 fixes have not been published automatically as a new store release. The version label alone does not prove which source is loaded.
+- Source changes do not update an installed store package. The repository manifest is 1.0.2. Its upload ZIP is `build/release/codeclub-browser-control-1.0.2.zip`; the October 8 fixes have not been published automatically as a new store release. The version label alone does not prove which source is loaded.
 
 Edge, Chrome, Brave, Opera, and Vivaldi use this Chromium companion. Firefox and Safari require a different integration, such as Windows Computer Use. Verification below covers Edge and isolated Chromium, not every browser version.
 

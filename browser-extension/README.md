@@ -10,7 +10,7 @@ Chromium companion for the local Codeclub desktop app.
 
 For development, load this directory unpacked in the browser's extension manager. Reload the extension after worker or manifest edits; restart Codeclub after native bridge edits. Keep Codeclub running for normal use. Standalone debug scripts require Codeclub closed and control only their own fixture tabs.
 
-The manifest is 1.0.2. The upload package is generated at `release/codeclub-browser-control-1.0.2.zip` with manifest.json at the archive root; it has not been published automatically. Repository edits do not update store installations. Packing a CRX is not required for debugging; never commit private signing keys or release artifacts.
+The manifest is 1.0.2. The upload package is generated at `build/release/codeclub-browser-control-1.0.2.zip` with manifest.json at the archive root; it has not been published automatically. Repository edits do not update store installations. Packing a CRX is not required for debugging; never commit private signing keys or release artifacts.
 
 Store upload packages must omit the manifest `key` field. Keep that public key in the unpacked development source to preserve its local extension identity; remove it only from the ZIP manifest. The Edge store assigns its own extension ID.
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { createMcpSession } from '../electron-dist/mcp-session.js';
+import { createMcpSession } from '../build/electron/mcp-session.js';
 
 const sessions = [];
 const start = source => {

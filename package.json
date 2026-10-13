@@ -5,7 +5,7 @@
   "author": "Iangelone",
   "private": true,
   "type": "module",
-  "main": "electron-dist/main.js",
+  "main": "build/electron/main.js",
   "packageManager": "npm@11.17.0",
   "scripts": {
     "dev": "npm run desktop:dev",
@@ -16,6 +16,9 @@
     "desktop:build": "npm run next:build && npm run electron:compile",
     "next:dev": "next dev --hostname 127.0.0.1",
     "next:build": "next build",
+    "typecheck": "next typegen && tsc --noEmit",
+    "test:core": "node scripts/test-ai-catalog.mjs && npm run test:agent-graph && node scripts/test-computer-overlay.mjs && node scripts/test-native-commands.mjs && node scripts/test-plugin-resources.mjs && node scripts/test-chat-history.mjs && node scripts/test-chat-ui.mjs && npm run test:accessibility",
+    "verify": "npm run typecheck && npm run desktop:build && npm run test:core",
     "electron:compile": "tsc -p tsconfig.electron.json",
     "electron:launch": "electron .",
     "electron:dev": "npm run electron:compile && electron .",
@@ -95,11 +98,12 @@
     "appId": "com.codeclub.desktop",
     "productName": "Codeclub",
     "directories": {
-      "output": "release"
+      "output": "build/release",
+      "buildResources": "public/icono"
     },
     "files": [
-      "out/**/*",
-      "electron-dist/**/*",
+      "build/renderer/**/*",
+      "build/electron/**/*",
       "electron/preload.cjs",
       "public/**/*",
       "package.json"

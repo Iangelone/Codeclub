@@ -18,15 +18,42 @@
 | npm run next:build | Build the renderer. |
 | npm run electron:compile | Compile Electron TypeScript. |
 | npm run desktop:build | Full desktop build. |
-| npm run package:win | Create the Windows NSIS installer in release/. |
+| npm run typecheck | Generate Next.js route types, then check renderer and native TypeScript without emitting compiled files. |
+| npm run test:core | Catalog, agent, overlay, native commands/plugins, chat history/UI, file editor/previews and accessibility regressions; requires a built renderer and compiled Electron. |
+| npm run verify | Typecheck, desktop build and core regressions in sequence. |
+| npm run package:win | Create the Windows NSIS installer in build/release/. |
 
-Development uses `.next/`, while production export uses `out/`. Their outputs remain separate so building does not remove the running development server's cache. Desktop startup waits for an HTTP success response before opening Electron.
+Development uses `.next/`, while production export uses `build/renderer/`. Their outputs remain separate so building does not remove the running development server's cache. Desktop startup waits for an HTTP success response before opening Electron.
+
+## Repository layout and generated files
+
+Keep application code in `src/` and `electron/`, companion code in `browser-extension/` and `android-companion/`, maintenance tools in `scripts/`, and project guidance in `docs/`. Package manifests, Next.js/PostCSS/TypeScript/Vercel configuration, README, license and agent instructions remain at the root so the existing tooling can discover them.
+
+| Generated path | Contents |
+| --- | --- |
+| `build/renderer/` | Exported desktop renderer and production web assets. |
+| `build/electron/` | Compiled native TypeScript; package.json points to its main.js. |
+| `build/release/` | Windows installer, unpacked app, updater files and browser-extension upload ZIP. |
+| `build/cache/` | TypeScript incremental cache. |
+| `build/extension-signing/` | Preserved local CRX/private signing material; ignored and never packaged or committed. |
+
+`build/` is ignored by Git. `.next/` and `node_modules/` remain at the root as tool-owned directories. This installed Next.js version uses `.next/` internally during static-export builds even when `distDir` selects `build/renderer/`; do not patch dependencies or move its active cache just to hide the directory. Next.js also generates route types and next-env.d.ts, so typecheck runs typegen first. The empty contracts directory, obsolete dist/Astro output and old release-test profiles were moved out of the repository to a local temporary backup after permanent deletion was blocked by automatic policy review. Extension signing material remains under build/. Restart a running development app after changing native build paths.
+
+Electron derives the shared `build/` root from `build/electron/main.js`, both in development and inside app.asar. Its preload/helper assets still resolve from the app's `electron/` directory and renderer windows load `build/renderer/index.html`. Keep those paths aligned with the package file list and test launchers.
+
+The web deployment configuration also names `build/renderer` as its output directory; see [Vercel's outputDirectory configuration](https://vercel.com/docs/project-configuration/vercel-json#outputdirectory). Changing this local configuration does not deploy the site.
+
+Local layout verification on 2026-10-13 passed `npm run verify`, the debug/preload test and real PTY terminal UI test. Windows packaging generated `build/release/Codeclub Setup.exe`; inspecting app.asar confirmed the native entry, renderer, preload and icon while excluding local legacy/test/signing directories. `test:packaged-win` then passed startup, native PowerShell, project persistence, language switching, sidebar resizing, focus and browser selection. Its stale browser-comment label was updated to the current UI; production UI behavior was unchanged. The browser-extension ZIP also built at the new release path. These checks did not publish or install a release or deploy Vercel.
 
 ## Minimum verification
 
     npm run next:build
     npm run electron:compile
     git diff --check
+
+Next.js type validation is enabled: production builds fail on TypeScript errors. Use `npm run verify` for the automated baseline. `.github/workflows/verify.yml` runs this baseline on pull requests and branch pushes with Windows/Node.js 24. The release workflow checks types, builds the installer and runs the core regressions before publishing. No real AI credentials are needed for these fixtures; UI tests use installed Microsoft Edge. Passing locally does not confirm a GitHub Actions run until that workflow executes.
+
+`scripts/test-computer-overlay.mjs` tests the actual extracted controller against isolated window/mouse-hook fixtures, including full-display coverage, partial output, context actions, palette refresh, Escape and cleanup. It never starts a real mouse hook or controls the user's desktop. This complements the native-command and UI tests; it does not certify visual behavior on every physical monitor.
 
 Then manually exercise chat, project switching, persistence, right-sidebar resizing, browser selection and references, artifacts, terminals, both languages, updates, reload, and window controls.
 
@@ -37,7 +64,7 @@ The version lives in package.json and package-lock.json. Build and install local
     npm install
     npm run package:win
 
-The installer appears at `release/Codeclub Setup.exe`. The package script builds Next.js, compiles Electron, and runs electron-builder for Windows x64 with publishing disabled. The build also produces `latest.yml` and the blockmap required by `electron-updater`.
+The installer appears at `build/release/Codeclub Setup.exe`. The package script builds Next.js, compiles Electron, and runs electron-builder for Windows x64 with publishing disabled. The build also produces `latest.yml` and the blockmap required by `electron-updater`.
 
 After verification, push a `vX.Y.Z` tag. The release workflow builds on windows-latest and publishes the installer, blockmap, `latest.yml`, builder diagnostics, hashes, and source code. Normal users only need the `.exe`; future installers are detected automatically through GitHub Releases and installed when the app restarts.
 

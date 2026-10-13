@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { TaskScheduler } from '../electron-dist/task-scheduler.js';
-import { OrbLearning } from '../electron-dist/orb-learning.js';
+import { TaskScheduler } from '../build/electron/task-scheduler.js';
+import { OrbLearning } from '../build/electron/orb-learning.js';
 
 const directory = mkdtempSync(path.join(tmpdir(), 'codeclub-upcoming-tasks-'));
 let scheduler;

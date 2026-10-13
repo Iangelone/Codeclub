@@ -24,7 +24,7 @@ const server = createServer(async (request, response) => {
 try {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const wrapper = path.join(directory, 'main.mjs');
-  await writeFile(wrapper, `import {app} from 'electron';app.setPath('userData',${JSON.stringify(path.join(directory, 'profile'))});await import(${JSON.stringify(new URL('../electron-dist/main.js', import.meta.url).href)});`);
+  await writeFile(wrapper, `import {app} from 'electron';app.setPath('userData',${JSON.stringify(path.join(directory, 'profile'))});await import(${JSON.stringify(new URL('../build/electron/main.js', import.meta.url).href)});`);
   const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE; delete env.CODECLUB_NEXT_DEV_URL;
   instance = await electron.launch({ args: [wrapper], env });
   const page = await instance.firstWindow();

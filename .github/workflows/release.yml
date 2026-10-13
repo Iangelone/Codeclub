@@ -27,19 +27,25 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Check types
+        run: npm run typecheck
+
       - name: Build installer
         run: npm run package:win
+
+      - name: Run core regressions
+        run: npm run test:core
 
       - name: Verify stable installer name
         shell: pwsh
         run: |
-          if (-not (Test-Path "release/Codeclub Setup.exe")) {
+          if (-not (Test-Path "build/release/Codeclub Setup.exe")) {
             throw "The stable installer artifact was not generated."
           }
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: release/*
+          files: build/release/*
           generate_release_notes: true
           prerelease: false

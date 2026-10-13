@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { TaskScheduler, nextTaskRun } from '../electron-dist/task-scheduler.js';
+import { TaskScheduler, nextTaskRun } from '../build/electron/task-scheduler.js';
 const directory = await mkdtemp(path.join(tmpdir(), 'codeclub-scheduler-'));
 const base = { id: 'daily', name: 'Daily', prompt: 'Check files', provider: 'qa', model: 'qa-model', interval: 'Diario', every: '30 min', time: '08:00', timeZone: 'America/Argentina/Buenos_Aires', weekday: 1, status: 'active', notifications: 'Sin notificaciones' };
 const flush = () => new Promise(resolve => setImmediate(resolve));

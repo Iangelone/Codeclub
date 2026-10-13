@@ -1,5 +1,5 @@
 /** Physical portrait scanner verification; no pairing secrets or camera frames are recorded. */
-import assert from 'node:assert/strict';import {chromium} from '@playwright/test';import {execFile} from 'node:child_process';import {promisify} from 'node:util';import path from 'node:path';import {findAndroidAdb} from '../electron-dist/android-use.js';
+import assert from 'node:assert/strict';import {chromium} from '@playwright/test';import {execFile} from 'node:child_process';import {promisify} from 'node:util';import path from 'node:path';import {findAndroidAdb} from '../build/electron/android-use.js';
 const execute=promisify(execFile),adb=await findAndroidAdb(path.join(process.env.LOCALAPPDATA,'Codeclub'));let browser,port;
 try{
   await execute(adb,['shell','am','start','--activity-clear-top','-n','com.codeclub.android/.MainActivity'],{windowsHide:true});await new Promise(resolve=>setTimeout(resolve,1500));

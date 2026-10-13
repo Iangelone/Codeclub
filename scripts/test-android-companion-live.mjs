@@ -9,7 +9,7 @@ import { promisify } from 'node:util';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { findAndroidAdb, parseAndroidHierarchy } from '../electron-dist/android-use.js';
+import { findAndroidAdb, parseAndroidHierarchy } from '../build/electron/android-use.js';
 const execute = promisify(execFile);
 const adb = await findAndroidAdb(path.join(process.env.LOCALAPPDATA || '', 'Codeclub'));
 async function resumeLocally(required=false){

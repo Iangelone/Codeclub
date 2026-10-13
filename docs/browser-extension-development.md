@@ -64,10 +64,10 @@ npm run package:browser-extension
 The command reads the extension version, not the desktop app version, and writes:
 
 ```text
-release/codeclub-browser-control-<manifest-version>.zip
+build/release/codeclub-browser-control-<manifest-version>.zip
 ```
 
-For the current manifest this is `release/codeclub-browser-control-1.0.2.zip`. Rerunning replaces that generated ZIP. It does not bump versions, sign a CRX, publish, submit certification, or change the unpacked manifest.
+For the current manifest this is `build/release/codeclub-browser-control-1.0.2.zip`. Rerunning replaces that generated ZIP. It does not bump versions, sign a CRX, publish, submit certification, or change the unpacked manifest.
 
 The packager stages only the current runtime files, omits `key` from the staged manifest, compresses the contents at archive root, checks the root manifest/key omission/entry count, and prints the output path, version, byte size, file list, and SHA-256. Temporary staging cleanup is restricted to its own generated directory. No new npm dependency or signing credential is required.
 
@@ -99,7 +99,7 @@ Extension version `browser-extension/manifest.json` and desktop version `package
 7. Provide permission justifications, privacy/support URLs, listing assets, and certification instructions. Submit through the publisher account; building the ZIP is not submission.
 8. After publication, verify installation/update from the actual store in the target browser and connection to the supported desktop release. Record the assigned extension ID and acceptance in the bridge.
 
-Generated artifacts belong under ignored `release/`; never commit release packages or signing credentials. The manifest `key` is public and may remain in source. Do not claim a release is published without dashboard evidence.
+Generated artifacts belong under ignored `build/release/`; never commit release packages or signing credentials. The manifest `key` is public and may remain in source. Do not claim a release is published without dashboard evidence.
 
 ## Verification commands
 

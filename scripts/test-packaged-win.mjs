@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const executablePath = path.resolve(process.argv[2] || path.join(repo, 'release/win-unpacked/Codeclub.exe'));
+const executablePath = path.resolve(process.argv[2] || path.join(repo, 'build/release/win-unpacked/Codeclub.exe'));
 const directory = await mkdtemp(path.join(tmpdir(), 'codeclub-packaged-'));
 const profile = path.join(directory, 'profile');
 const project = path.join(directory, 'project');
@@ -78,9 +78,9 @@ try {
   await page.getByRole('button', { name: 'Seleccionar elemento', exact: true }).click();
   await page.waitForFunction(async () => await document.querySelector('webview').executeJavaScript('Boolean(window.__codeclubStopPicker)'));
   await page.evaluate(() => document.querySelector('webview').executeJavaScript("document.querySelector('#target').dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 25, clientY: 25 }))"));
-  await page.getByRole('textbox', { name: 'Agregar un comentario al elemento seleccionado' }).waitFor();
+  await page.getByRole('textbox', { name: 'Añade un comentario opcional…', exact: true }).waitFor();
   assert.deepEqual(errors, []);
-  await page.screenshot({ path: path.join(repo, 'release/packaged-smoke.png') });
+  await page.screenshot({ path: path.join(repo, 'build/release/packaged-smoke.png') });
   console.log('Language switching, project persistence, sidebar resizing, focus and browser selection passed.');
 } finally {
   await app?.close();

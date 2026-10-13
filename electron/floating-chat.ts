@@ -83,7 +83,7 @@ export function createFloatingChat(root: string, openMain: () => void, onVisibil
     window.on('closed', () => { window = null; ready = false; });
     const devUrl = process.env.CODECLUB_NEXT_DEV_URL;
     if (devUrl) await window.loadURL(`${devUrl}/?floating=1`);
-    else await window.loadFile(path.join(root, '..', 'out', 'index.html'), { query: { floating: '1' } });
+    else await window.loadFile(path.join(root, 'renderer', 'index.html'), { query: { floating: '1' } });
   }
 
   function finishHide(revision: number) {

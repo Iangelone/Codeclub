@@ -23,7 +23,7 @@ const files = [...new Set([
 const temporary = await mkdtemp(path.join(tmpdir(), 'codeclub-extension-package-'));
 const staging = path.join(temporary, 'contents');
 const archive = path.join(temporary, 'package.zip');
-const output = path.join(root, 'release', `codeclub-browser-control-${manifest.version}.zip`);
+const output = path.join(root, 'build', 'release', `codeclub-browser-control-${manifest.version}.zip`);
 try {
   await mkdir(staging);
   await writeFile(path.join(staging, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);

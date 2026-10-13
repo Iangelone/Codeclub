@@ -42,7 +42,7 @@ try {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const profile = path.join(directory, 'profile');
   const wrapper = path.join(directory, 'main.mjs');
-  await writeFile(wrapper, `import {app,BrowserWindow} from 'electron';app.setName('Codeclub live QA');app.setPath('userData',${JSON.stringify(profile)});for(const method of ['show','showInactive','focus','maximize'])BrowserWindow.prototype[method]=function(){};await import(${JSON.stringify(new URL('../electron-dist/main.js', import.meta.url).href)});`);
+  await writeFile(wrapper, `import {app,BrowserWindow} from 'electron';app.setName('Codeclub live QA');app.setPath('userData',${JSON.stringify(profile)});for(const method of ['show','showInactive','focus','maximize'])BrowserWindow.prototype[method]=function(){};await import(${JSON.stringify(new URL('../build/electron/main.js', import.meta.url).href)});`);
   const env = { ...process.env, CODECLUB_NEXT_DEV_URL: `http://127.0.0.1:${server.address().port}` };
   delete env.ELECTRON_RUN_AS_NODE; delete env.AI_GATEWAY_API_KEY;
   app = await electron.launch({ args: [wrapper], env, timeout: 30000 });

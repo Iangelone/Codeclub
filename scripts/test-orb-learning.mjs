@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { OrbLearning, proactiveOrbTask } from '../electron-dist/orb-learning.js';
-import { TaskScheduler } from '../electron-dist/task-scheduler.js';
+import { OrbLearning, proactiveOrbTask } from '../build/electron/orb-learning.js';
+import { TaskScheduler } from '../build/electron/task-scheduler.js';
 
 const directory = mkdtempSync(path.join(tmpdir(), 'codeclub-orb-learning-'));
 try {

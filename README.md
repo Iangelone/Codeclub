@@ -82,7 +82,7 @@ To create the Windows installer:
 npm run package:win
 ```
 
-The installer is generated in `release/`. See [development and releases](docs/development.md) for the full workflow.
+The installer is generated in `build/release/`. See [development and releases](docs/development.md) for the full workflow.
 
 To connect an existing Chromium browser, open **Extensions → Codeclub Browser Control → Install**. Edge opens the Add-ons listing; other detected Chromium browsers use **Developer mode → Load unpacked**. For development, load the repository's `browser-extension` folder unpacked and reload it after changes. Keep Codeclub running for normal use. Source fixes are not automatically delivered to store installations.
 

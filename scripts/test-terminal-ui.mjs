@@ -47,7 +47,7 @@ try {
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const wrapper = path.join(directory, 'main.mjs');
-  await writeFile(wrapper, `import {app,BrowserWindow,ipcMain} from 'electron';app.setPath('userData',${JSON.stringify(path.join(directory,'profile'))});for(const method of ['show','showInactive','focus','maximize'])BrowserWindow.prototype[method]=function(){};globalThis.qaSnapshots=0;const handle=ipcMain.handle.bind(ipcMain);ipcMain.handle=(channel,listener)=>handle(channel,(event,...args)=>{if(channel==='native:invoke'&&args[0]?.command==='codeclub_terminal_snapshot')globalThis.qaSnapshots++;return listener(event,...args);});await import(${JSON.stringify(new URL('../electron-dist/main.js',import.meta.url).href)});`);
+  await writeFile(wrapper, `import {app,BrowserWindow,ipcMain} from 'electron';app.setPath('userData',${JSON.stringify(path.join(directory,'profile'))});for(const method of ['show','showInactive','focus','maximize'])BrowserWindow.prototype[method]=function(){};globalThis.qaSnapshots=0;const handle=ipcMain.handle.bind(ipcMain);ipcMain.handle=(channel,listener)=>handle(channel,(event,...args)=>{if(channel==='native:invoke'&&args[0]?.command==='codeclub_terminal_snapshot')globalThis.qaSnapshots++;return listener(event,...args);});await import(${JSON.stringify(new URL('../build/electron/main.js',import.meta.url).href)});`);
   const env = {...process.env,CODECLUB_NEXT_DEV_URL:`http://127.0.0.1:${server.address().port}`};
   delete env.ELECTRON_RUN_AS_NODE;
   app = await electron.launch({args:[wrapper],env});

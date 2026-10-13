@@ -9,7 +9,7 @@ const profile = path.join(directory, 'profile');
 let app;
 try {
   const wrapper = path.join(directory, 'main.mjs');
-  await writeFile(wrapper, `import {app,BrowserWindow} from 'electron';app.setPath('userData',${JSON.stringify(profile)});for(const method of ['show','showInactive','focus','maximize'])BrowserWindow.prototype[method]=function(){};await import(${JSON.stringify(new URL('../electron-dist/main.js', import.meta.url).href)});`);
+  await writeFile(wrapper, `import {app,BrowserWindow} from 'electron';app.setPath('userData',${JSON.stringify(profile)});for(const method of ['show','showInactive','focus','maximize'])BrowserWindow.prototype[method]=function(){};await import(${JSON.stringify(new URL('../build/electron/main.js', import.meta.url).href)});`);
   const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
   app = await electron.launch({ args: [wrapper], env });

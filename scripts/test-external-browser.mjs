@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from '@playwright/test';
-import { createExternalBrowserControl } from '../electron-dist/external-browser.js';
+import { createExternalBrowserControl } from '../build/electron/external-browser.js';
 
 const profile = await mkdtemp(path.join(tmpdir(), 'codeclub-cdp-test-'));
 const server = createServer((_request, response) => {

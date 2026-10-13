@@ -5,8 +5,8 @@ import { spawn } from 'node:child_process';
 import { cp, mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { BrowserExtensionBridge } from '../electron-dist/browser-extension-bridge.js';
-import { ExternalBrowserControl } from '../electron-dist/external-browser.js';
+import { BrowserExtensionBridge } from '../build/electron/browser-extension-bridge.js';
+import { ExternalBrowserControl } from '../build/electron/external-browser.js';
 
 // Explicit manual debugging: controls a connected Edge profile, owns only the tabs it creates.
 const bridge = new BrowserExtensionBridge();

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
-import { TaskScheduler } from '../electron-dist/task-scheduler.js';
+import { TaskScheduler } from '../build/electron/task-scheduler.js';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const directory = await mkdtemp(path.join(tmpdir(), 'codeclub-tasks-ui-'));

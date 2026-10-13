@@ -3,7 +3,7 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "outDir": "electron-dist",
+    "outDir": "build/electron",
     "rootDir": "electron",
     "strict": true,
     "skipLibCheck": true,
