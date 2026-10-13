@@ -1,7 +1,7 @@
 /** Native model transport, custom XML tool formatting and provider error presentation. */
 import { nativeInvoke as invoke } from './runtime';
 import { credentialKeyFor } from './ai-routing';
-import { activityTranslations, chatHistoryTranslations, providerErrorTranslations, type AppLanguage } from './i18n';
+import { type AppLanguage, translate, getMessages } from './i18n';
 
 export type ModelFetchDebug = { method: string; url: string; requestBody?: string; status?: number; statusText?: string; responseHeaders?: unknown; responseBody?: unknown; transportError?: string };
 type TransportOptions = {
@@ -69,8 +69,8 @@ export function createDesktopModelTransport({ currentProvider, currentModel, cus
 
   const userFacingProviderError = (error: unknown, language: AppLanguage) => {
     const rawMessage = error instanceof Error ? error.message : String(error);
-    if (rawMessage.includes('CHAT_MESSAGE_TOO_LARGE')) return chatHistoryTranslations[language].tooLarge;
-    if (rawMessage.includes('CHAT_HISTORY_CONFLICT')) return chatHistoryTranslations[language].conflict;
+    if (rawMessage.includes('CHAT_MESSAGE_TOO_LARGE')) return getMessages('chatHistory', language).tooLarge;
+    if (rawMessage.includes('CHAT_HISTORY_CONFLICT')) return getMessages('chatHistory', language).conflict;
     const fetch = lastModelFetchRef.current;
     let providerMessage = '';
     if (fetch?.responseBody) {
@@ -83,36 +83,26 @@ export function createDesktopModelTransport({ currentProvider, currentModel, cus
     }
     const detail = String(providerMessage || rawMessage).replace(/^Error from provider[^:]*:\s*/i, '').trim();
     const normalized = detail.toLowerCase();
-    if (/credit card|payment method/.test(normalized)) return activityTranslations[language].paymentRequired;
-    if (/active .*subscription|subscription is required/.test(normalized)) return activityTranslations[language].subscriptionRequired;
-    if (/only be used from within/.test(normalized)) return activityTranslations[language].clientRestricted;
+    if (/credit card|payment method/.test(normalized)) return getMessages('activity', language).paymentRequired;
+    if (/active .*subscription|subscription is required/.test(normalized)) return getMessages('activity', language).subscriptionRequired;
+    if (/only be used from within/.test(normalized)) return getMessages('activity', language).clientRestricted;
     if (normalized.includes('model is unavailable') || normalized.includes('model unavailable')) {
-      return language === 'en'
-        ? 'The provider is not making this model available right now. Choose another model or try again later.'
-        : 'El proveedor no tiene disponible este modelo ahora. Elegí otro modelo o probá de nuevo más tarde.';
+      return translate('desktopModelTransport.theProviderIsNotMakingThisModel', language);
     }
     if (fetch?.status === 401 || fetch?.status === 403 || normalized.includes('invalid api key') || normalized.includes('unauthorized')) {
-      return language === 'en'
-        ? 'The provider rejected the API key. Check the key and the selected provider.'
-        : 'El proveedor rechazó la API key. Revisá la clave y el proveedor seleccionado.';
+      return translate('desktopModelTransport.theProviderRejectedTheAPIKeyCheck', language);
     }
     if (fetch?.status === 429 || normalized.includes('rate limit') || normalized.includes('too many requests')) {
-      return language === 'en'
-        ? 'The provider reached its request limit. Wait a moment and try again.'
-        : 'El proveedor alcanzó el límite de solicitudes. Esperá un momento y probá de nuevo.';
+      return translate('desktopModelTransport.theProviderReachedItsRequestLimitWait', language);
     }
     if ([500, 502, 503, 504].includes(fetch?.status ?? 0) || /service temporarily unavailable/.test(normalized)) {
-      return providerErrorTranslations[language].temporarilyUnavailable;
+      return getMessages('providerError', language).temporarilyUnavailable;
     }
     if (/network|fetch failed|enotfound|timeout|timed out|connection/i.test(normalized)) {
-      return language === 'en'
-        ? 'The provider could not be reached. Check the connection and try again.'
-        : 'No se pudo conectar con el proveedor. Revisá la conexión y probá de nuevo.';
+      return translate('desktopModelTransport.theProviderCouldNotBeReachedCheck', language);
     }
     const cleanDetail = detail.replace(/\s+/g, ' ').slice(0, 220);
-    return language === 'en'
-      ? `The provider could not generate a response${cleanDetail ? `: ${cleanDetail}` : '.'}`
-      : `El proveedor no pudo generar una respuesta${cleanDetail ? `: ${cleanDetail}` : '.'}`;
+    return translate('desktopModelTransport.theProviderCouldNotGenerateAResponseValue', language, { value1: cleanDetail ? `: ${cleanDetail}` : '.' });
   };
 
   const desktopModelFetch = async (input: RequestInfo | URL, init: RequestInit = {}) => {

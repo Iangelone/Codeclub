@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, Copy, LoaderCircle, RefreshCw, Smartphone, X } from 'lucide-react';
-import { orbPairingTranslations, useAppLanguage } from '../lib/i18n';
+import { useAppLanguage, getMessages } from '../lib/i18n';
 import { nativeInvoke } from '../lib/runtime';
 import { useDialogAccessibility } from './ui/use-accessible-overlay';
 
@@ -11,7 +11,7 @@ type Offer = { pairId: string; expiresAt: number; code: string; qr: string };
 type Device = { deviceId: string; state: string };
 /** Pairing secrets live only in this dialog; close invalidates unconsumed codes. */
 export default function OrbPairingModal({ onClose }: { onClose: () => void }) {
-  const text = orbPairingTranslations[useAppLanguage()];
+  const text = getMessages('orbPairing', useAppLanguage());
   const dialog = useRef<HTMLDivElement>(null);
   const [offer, setOffer] = useState<Offer>();
   const [devices, setDevices] = useState<Device[]>([]);

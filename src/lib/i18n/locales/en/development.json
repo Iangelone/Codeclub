@@ -1,0 +1,130 @@
+{
+  "build-feature": {
+    "label": "Build a feature",
+    "description": "Plan, implement and verify"
+  },
+  "debug-project": {
+    "label": "Investigate and fix",
+    "description": "Diagnose with tools"
+  },
+  "review-changes": {
+    "label": "Review the project",
+    "description": "Review status and next steps"
+  },
+  "test-list-files": {
+    "label": "Test: list files",
+    "description": "Inspect the workspace"
+  },
+  "test-read-file": {
+    "label": "Test: read a file",
+    "description": "Read existing files"
+  },
+  "test-search-text": {
+    "label": "Test: search text",
+    "description": "Search the code"
+  },
+  "test-ask-user": {
+    "label": "Test: ask the user",
+    "description": "Pause for clarification"
+  },
+  "test-create-plan": {
+    "label": "Test: create a plan",
+    "description": "Create a persistent plan"
+  },
+  "test-update-plan": {
+    "label": "Test: update a plan",
+    "description": "Update step status"
+  },
+  "test-todos": {
+    "label": "Test: TODOs",
+    "description": "Manage persistent tasks"
+  },
+  "test-task-status": {
+    "label": "Test: task status",
+    "description": "Read plans and TODOs"
+  },
+  "test-execution-log": {
+    "label": "Test: execution log",
+    "description": "Inspect tool audit evidence"
+  },
+  "test-run-command": {
+    "label": "Test: run a command",
+    "description": "Run a safe command"
+  },
+  "test-terminal": {
+    "label": "Test: persistent terminal",
+    "description": "Inspect terminal processes"
+  },
+  "test-open-browser": {
+    "label": "Test: open browser",
+    "description": "Open the embedded browser"
+  },
+  "test-browser-state": {
+    "label": "Test: browser state",
+    "description": "Observe the current page"
+  },
+  "test-browser-action": {
+    "label": "Test: browser action",
+    "description": "Verify web interaction"
+  },
+  "test-list-windows": {
+    "label": "Test: list windows",
+    "description": "Inspect desktop windows"
+  },
+  "test-computer-state": {
+    "label": "Test: window state",
+    "description": "Inspect UI Automation"
+  },
+  "test-screenshot": {
+    "label": "Test: screenshot",
+    "description": "Capture the desktop"
+  },
+  "test-ocr": {
+    "label": "Test: screen OCR",
+    "description": "Read visible text"
+  },
+  "test-computer-action": {
+    "label": "Test: desktop action",
+    "description": "Verify mouse and keyboard control"
+  },
+  "test-subagent": {
+    "label": "Test: subagent",
+    "description": "Verify specialized delegation"
+  },
+  "test-tool-discovery": {
+    "label": "Test: discover tools",
+    "description": "Discover and execute a tool"
+  },
+  "test-write-file": {
+    "label": "Test: write a file",
+    "description": "Verify controlled file writes"
+  },
+  "test-create-skill": {
+    "label": "Test: create a skill",
+    "description": "Verify Agent Plugins"
+  },
+  "test-create-extension": {
+    "label": "Test: create an extension",
+    "description": "Verify agent extensions"
+  },
+  "test-delete-extension": {
+    "label": "Test: delete an extension",
+    "description": "Remove a test plugin"
+  },
+  "test-create-mcp": {
+    "label": "Test: create MCP",
+    "description": "Verify MCP configuration"
+  },
+  "test-delete-mcp": {
+    "label": "Test: delete MCP",
+    "description": "Remove a test server"
+  },
+  "test-switch-project": {
+    "label": "Test: switch project",
+    "description": "Verify workspace context"
+  },
+  "test-full-development-flow": {
+    "label": "Test: full workflow",
+    "description": "Verify the development cycle"
+  }
+}

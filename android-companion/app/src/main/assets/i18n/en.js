@@ -1,0 +1,28 @@
+globalThis.codeclubMessages ??= {};
+globalThis.codeclubMessages.en = {
+  "welcome": "Your orb, wherever you are",
+  "hint": "Scan the QR in Codeclub. Keep your phone and computer on the same Wi-Fi.",
+  "scan": "Scan QR",
+  "paste": "Enter code",
+  "connected": "Connected",
+  "connecting": "Connecting…",
+  "offline": "Reconnecting…",
+  "paused": "Phone control paused",
+  "chats": "Chats",
+  "settings": "Connection and permissions",
+  "input": "Message your agent…",
+  "send": "Send message",
+  "empty": "Start a conversation",
+  "noChats": "Your chats will appear here",
+  "older": "Earlier messages",
+  "queue": "Waiting for the desktop",
+  "failed": "Could not start this message on the desktop",
+  "permissions": "Enable Accessibility in the connection menu to allow phone control",
+  "syncError": "Could not sync. Check the desktop connection.",
+  "working": "Working…",
+  "close": "Close",
+  "cancelRun": "Stop agent",
+  "approve": "Allow",
+  "deny": "Deny",
+  "retry": "Retry"
+};

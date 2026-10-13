@@ -1,0 +1,3 @@
+{
+  "scheduled": "La tarea «{{name}}» está programada para las {{time}}. Se intentará ejecutar al horario y las acciones pueden requerir aprobación; ¿querés ayuda para prepararla?"
+}

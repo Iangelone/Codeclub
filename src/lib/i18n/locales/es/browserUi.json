@@ -1,0 +1,9 @@
+{
+  "selectionReady": "Selección lista para referenciar",
+  "elementReady": "Elemento listo para referenciar",
+  "add": "Agregar",
+  "removeSelection": "Quitar selección",
+  "loading": "Cargando...",
+  "empty": "Escribí una dirección para navegar",
+  "pageError": "No se pudo cargar la página"
+}

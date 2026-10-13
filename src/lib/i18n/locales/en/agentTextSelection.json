@@ -1,0 +1,10 @@
+{
+  "addToChat": "Add to chat",
+  "addComment": "Add a comment",
+  "commentPlaceholder": "Add an optional comment…",
+  "moreDetails": "More details",
+  "toolbar": "Actions for selected text",
+  "detailPrompt": "Explain this part in more detail:",
+  "selectedReference": "Selected text",
+  "removeReference": "Remove reference"
+}

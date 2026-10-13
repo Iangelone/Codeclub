@@ -4,12 +4,12 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeft, ArrowRight, Command, Minus, PanelLeft, PanelRight, Square, X } from 'lucide-react';
 import { motion } from 'motion/react';
-import { topbarTranslations, useAppLanguage } from '../lib/i18n';
+import { useAppLanguage, getMessages } from '../lib/i18n';
 
 
 export default function Topbar({ leftOpen, rightOpen, onToggleLeft, onToggleRight }: { leftOpen: boolean; rightOpen: boolean; onToggleLeft: () => void; onToggleRight: () => void }) {
   const language = useAppLanguage();
-  const t = topbarTranslations[language];
+  const t = getMessages('topbar', language);
   const [chatPanelVisible, setChatPanelVisible] = useState(true);
   const [slashMenuActive, setSlashMenuActive] = useState(false);
   const [panelNavigation, setPanelNavigation] = useState({ back: false, forward: false });

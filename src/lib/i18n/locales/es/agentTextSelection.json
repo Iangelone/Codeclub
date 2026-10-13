@@ -1,0 +1,10 @@
+{
+  "addToChat": "Añadir al chat",
+  "addComment": "Añadir comentario",
+  "commentPlaceholder": "Añade un comentario opcional…",
+  "moreDetails": "Más detalles",
+  "toolbar": "Acciones para el texto seleccionado",
+  "detailPrompt": "Explicame con más detalle esta parte:",
+  "selectedReference": "Texto seleccionado",
+  "removeReference": "Quitar referencia"
+}

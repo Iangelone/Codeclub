@@ -120,7 +120,7 @@ The renderer never uses Node.js directly. Native work goes through nativeInvoke 
 - Browser WebView with DOM selection, numbered comments, and chat references.
 - Interactive PowerShell terminals backed by PTY.
 - Global or project-filtered plugins, skills, and MCP servers.
-- Spanish and English through src/lib/i18n.ts.
+- Spanish and English through i18next/react-i18next, with modular catalogs in src/lib/i18n/locales/.
 - Update indicator and full app reload from the topbar.
 - Dedicated orb conversations, permissions and proactive assistance; floating desktop chat shares existing sessions.
 - External Chromium browser control through the companion extension, and native Windows computer tools.
@@ -139,7 +139,7 @@ The renderer never uses Node.js directly. Native work goes through nativeInvoke 
 
 ## Language and events
 
-Use the shared catalog in src/lib/i18n.ts and useAppLanguage() for shared UI. New internal events must start with codeclub:. Document their emitter, detail payload, consumers, and listener cleanup. Install and remove listeners in the same useEffect.
+Use the public runtime in src/lib/i18n.ts and useAppLanguage() for shared UI. English is the canonical catalog and fallback; Spanish is the existing default preference. Use typed translate() keys for individual messages and getMessages() for module labels. Keep text in matching en/es module JSON files, including modal/menu text, placeholders, titles, errors, and accessibility labels. Never add inline bilingual branches or translate user content, provider metadata, tool contracts, stored scheduler values, or permission logic. Native UI uses electron/i18n/; Android WebView uses its offline assets/i18n/ catalogs. Run npm run check:i18n and npm run test:i18n after language changes. See docs/i18n.md. New internal events must start with codeclub:. Document their emitter, detail payload, consumers, and listener cleanup. Install and remove listeners in the same useEffect.
 
 ## Persistence and safety
 

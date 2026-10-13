@@ -13,15 +13,15 @@ export const ORB_PALETTE_STORAGE_KEY = 'codeclub:orb-palette-index';
 export const ORB_PALETTE_EVENT = 'codeclub:orb-palette-change';
 
 export const ORB_PALETTES = [
-  { id: 'blue', es: 'Azul', en: 'Blue', orb: '#2D5FD6', accent: '#3D9BFF', bright: '#8BC7FF', electric: '#2F6BFF', hue: 0 },
-  { id: 'red', es: 'Rojo', en: 'Red', orb: '#D63D52', accent: '#F04E65', bright: '#FFABB7', electric: '#E83A50', hue: 138 },
-  { id: 'yellow', es: 'Amarillo', en: 'Yellow', orb: '#D6A317', accent: '#E8B930', bright: '#FFE08A', electric: '#E5AF23', hue: 180 },
-  { id: 'violet', es: 'Violeta', en: 'Violet', orb: '#7543D6', accent: '#9C6AFF', bright: '#C1A5FF', electric: '#8352ED', hue: 38 },
-  { id: 'green', es: 'Verde', en: 'Green', orb: '#21845A', accent: '#39B77C', bright: '#8FE6B9', electric: '#29A76A', hue: -70 },
-  { id: 'orange', es: 'Naranja', en: 'Orange', orb: '#D6752B', accent: '#F0893A', bright: '#FFC092', electric: '#EA762B', hue: 166 },
-  { id: 'pink', es: 'Rosa', en: 'Pink', orb: '#D64A9E', accent: '#F15BB9', bright: '#FFABD8', electric: '#E64FA9', hue: 100 },
-  { id: 'cyan', es: 'Cian', en: 'Cyan', orb: '#228FAD', accent: '#31B4D5', bright: '#92E5F2', electric: '#2699BA', hue: -30 },
-  { id: 'lime', es: 'Lima', en: 'Lime', orb: '#8CAB20', accent: '#B4D43A', bright: '#DBEF8D', electric: '#9AB930', hue: -144 },
+  { id: 'blue', orb: '#2D5FD6', accent: '#3D9BFF', bright: '#8BC7FF', electric: '#2F6BFF', hue: 0 },
+  { id: 'red', orb: '#D63D52', accent: '#F04E65', bright: '#FFABB7', electric: '#E83A50', hue: 138 },
+  { id: 'yellow', orb: '#D6A317', accent: '#E8B930', bright: '#FFE08A', electric: '#E5AF23', hue: 180 },
+  { id: 'violet', orb: '#7543D6', accent: '#9C6AFF', bright: '#C1A5FF', electric: '#8352ED', hue: 38 },
+  { id: 'green', orb: '#21845A', accent: '#39B77C', bright: '#8FE6B9', electric: '#29A76A', hue: -70 },
+  { id: 'orange', orb: '#D6752B', accent: '#F0893A', bright: '#FFC092', electric: '#EA762B', hue: 166 },
+  { id: 'pink', orb: '#D64A9E', accent: '#F15BB9', bright: '#FFABD8', electric: '#E64FA9', hue: 100 },
+  { id: 'cyan', orb: '#228FAD', accent: '#31B4D5', bright: '#92E5F2', electric: '#2699BA', hue: -30 },
+  { id: 'lime', orb: '#8CAB20', accent: '#B4D43A', bright: '#DBEF8D', electric: '#9AB930', hue: -144 },
 ] as const;
 
 export type OrbPalette = (typeof ORB_PALETTES)[number];

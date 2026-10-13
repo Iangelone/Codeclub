@@ -1,0 +1,33 @@
+{
+  "title": "New task",
+  "close": "Close",
+  "name": "Task name",
+  "namePlaceholder": "Task name",
+  "prompt": "Instructions",
+  "promptPlaceholder": "What should this task do?",
+  "repeatTask": "Repeat task",
+  "repeat": "Repeat",
+  "time": "Time",
+  "endRepeat": "End repeat",
+  "advanced": "Advanced",
+  "pause": "Pause",
+  "resume": "Resume",
+  "save": "Save",
+  "notifications": "Notifications",
+  "frequencies": [
+    "Daily",
+    "Weekdays",
+    "Weekly",
+    "Monthly"
+  ],
+  "endOptions": [
+    "Never",
+    "On a date",
+    "After several runs"
+  ],
+  "notificationOptions": [
+    "Every run",
+    "Errors only",
+    "No notifications"
+  ]
+}

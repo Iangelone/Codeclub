@@ -1,0 +1,11 @@
+{
+  "chat": "Floating chat",
+  "controls": "Chat controls",
+  "open": "Open Codeclub",
+  "newChat": "New chat",
+  "collapse": "Collapse chat",
+  "close": "Close widget",
+  "openAttention": "Open pending item",
+  "noAttention": "No pending items",
+  "drag": "Drag to the top or bottom of the screen"
+}

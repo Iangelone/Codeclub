@@ -1,0 +1,14 @@
+{
+  "changeShape": "Change the shape of all orbs",
+  "title": "Choose where your orb can work",
+  "description": "Choose your orb’s autonomy.",
+  "setupError": "Could not start the orb.",
+  "workspace": "Maximum autonomy",
+  "workspaceDescription": "Acts without asking for approval.",
+  "thisComputer": "PC access",
+  "computerDescription": "Files and apps · administrator.",
+  "continue": "Continue",
+  "requesting": "Requesting permission…",
+  "adminError": "Administrator access was not authorized.",
+  "busy": "Stop agents and close terminals before restarting as administrator."
+}

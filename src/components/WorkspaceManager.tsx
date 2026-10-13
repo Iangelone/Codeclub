@@ -6,13 +6,13 @@ import { activeChatStore } from '../lib/store';
 import ChatInterface from './ChatInterface.tsx';
 import ExtensionsPanel from './ExtensionsPanel.tsx';
 import { readProjectIndex, type ProjectEntry } from '../lib/projectManager';
-import { sidebarTranslations, useAppLanguage } from '../lib/i18n';
+import { useAppLanguage, translate, getMessages } from '../lib/i18n';
 
 type SelectedProject = { projectPath: string; projectName?: string };
 
 function WorkspaceManager({ catalog, defaultProvider, defaultModel }: { catalog: any; defaultProvider: any; defaultModel: any }) {
   const language = useAppLanguage();
-  const text = sidebarTranslations[language];
+  const text = getMessages('sidebar', language);
   const [selectedProject, setSelectedProject] = useState<SelectedProject | null>(null);
   const selectedProjectRef = useRef<SelectedProject | null>(null);
   const updateSelectedProject = useCallback((project: SelectedProject | null) => {
@@ -223,10 +223,10 @@ function WorkspaceManager({ catalog, defaultProvider, defaultModel }: { catalog:
 
   return (
     <div className="workspace-panels group relative flex h-full w-full min-w-0 min-h-0 flex-col overflow-hidden">
-      <div className="absolute left-0 top-0 z-[60] h-12 w-full" role="toolbar" aria-label={language === 'en' ? 'Quick access' : 'Accesos rápidos'}>
+      <div className="absolute left-0 top-0 z-[60] h-12 w-full" role="toolbar" aria-label={translate('workspaceManager.quickAccess', language)}>
         {projectPickerOpen && <div ref={projectPickerRef} role="menu" aria-label={text.projects} className="absolute left-1/2 top-12 z-50 grid w-[230px] -translate-x-1/2 gap-1 rounded-xl border border-[#2b2b2b] bg-[#121212] p-1.5" onClick={(event) => event.stopPropagation()}>
-          <button type="button" role="menuitemradio" aria-checked={!selectedProject?.projectPath} onClick={() => selectActiveProject({ path: '', name: language === 'en' ? 'No project' : 'Sin proyecto' })} className="flex min-h-[32px] items-center gap-2 rounded-lg border-0 bg-transparent px-2.5 text-left text-xs text-[#bdbdbd] hover:bg-[#1e1e1e] hover:text-[#eeeeee]"><Folder size={14} aria-hidden="true" /><span className="min-w-0 flex-1 truncate">{language === 'en' ? 'No project' : 'Sin proyecto'}</span></button>
-          {availableProjects.length === 0 ? <div className="px-3 py-2 text-[11px] text-[#999999]">{language === 'en' ? 'No indexed projects' : 'No hay proyectos indexados'}</div> : availableProjects.map((project) => <button key={project.path} type="button" role="menuitemradio" aria-checked={selectedProject?.projectPath === project.path} onClick={() => selectActiveProject(project)} className="flex min-h-[32px] items-center gap-2 rounded-lg border-0 bg-transparent px-2.5 text-left text-xs text-[#bdbdbd] hover:bg-[#1e1e1e] hover:text-[#eeeeee]"><Folder size={14} aria-hidden="true" /><span className="min-w-0 flex-1 truncate">{project.name}</span></button>)}
+          <button type="button" role="menuitemradio" aria-checked={!selectedProject?.projectPath} onClick={() => selectActiveProject({ path: '', name: translate('workspaceManager.noProject', language) })} className="flex min-h-[32px] items-center gap-2 rounded-lg border-0 bg-transparent px-2.5 text-left text-xs text-[#bdbdbd] hover:bg-[#1e1e1e] hover:text-[#eeeeee]"><Folder size={14} aria-hidden="true" /><span className="min-w-0 flex-1 truncate">{translate('workspaceManager.noProject', language)}</span></button>
+          {availableProjects.length === 0 ? <div className="px-3 py-2 text-[11px] text-[#999999]">{translate('workspaceManager.noIndexedProjects', language)}</div> : availableProjects.map((project) => <button key={project.path} type="button" role="menuitemradio" aria-checked={selectedProject?.projectPath === project.path} onClick={() => selectActiveProject(project)} className="flex min-h-[32px] items-center gap-2 rounded-lg border-0 bg-transparent px-2.5 text-left text-xs text-[#bdbdbd] hover:bg-[#1e1e1e] hover:text-[#eeeeee]"><Folder size={14} aria-hidden="true" /><span className="min-w-0 flex-1 truncate">{project.name}</span></button>)}
         </div>}
       </div>
       <div className={`workspace-pane acrylic-panel min-h-0 min-w-0 flex-1 ${showExtensions ? 'overflow-hidden bg-(--codeclub-center)' : 'overflow-visible bg-transparent'}`}>

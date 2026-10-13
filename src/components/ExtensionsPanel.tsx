@@ -2,17 +2,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Blocks, Box, Download, FileText, FileType2, Globe, LayoutTemplate, PlugZap, Presentation, Search, Table2, Trash2, WandSparkles } from 'lucide-react';
 import { getSetting, setSetting } from '../lib/persistence';
-import { browserExtensionTranslations, customizeSidebarTranslations, extensionActionTranslations, useAppLanguage, type AppLanguage } from '../lib/i18n';
+import { useAppLanguage, type AppLanguage, translate, getMessages } from '../lib/i18n';
 import SidebarCategory from './ui/SidebarCategory';
 import { loadAgentPlugins, type AgentPlugin } from '../lib/agent-plugins';
 import { nativeInvoke as invoke } from '../lib/runtime';
 
 const builtInExtensions = [
-  { id: 'documents', name: 'Documents', description: 'Create and edit document artifacts', icon: FileText, color: '#1687FF' },
-  { id: 'pdf', name: 'PDF', description: 'Read, create, and verify PDF files', icon: FileType2, color: '#ff5d62' },
-  { id: 'spreadsheets', name: 'Spreadsheets', description: 'Create and edit spreadsheet files', icon: Table2, color: '#2e9b3f' },
-  { id: 'presentations', name: 'Presentations', description: 'Create and edit presentation artifacts', icon: Presentation, color: '#e99a1a' },
-  { id: 'template-creator', name: 'Template Creator', description: 'Create or update reusable templates from reference content', icon: LayoutTemplate, color: '#17b9ef' },
+  { id: 'documents', icon: FileText, color: '#1687FF' },
+  { id: 'pdf', icon: FileType2, color: '#ff5d62' },
+  { id: 'spreadsheets', icon: Table2, color: '#2e9b3f' },
+  { id: 'presentations', icon: Presentation, color: '#e99a1a' },
+  { id: 'template-creator', icon: LayoutTemplate, color: '#17b9ef' },
 ];
 
 type Scope = 'global' | 'project';
@@ -21,15 +21,15 @@ type SkillItem = { id: string; name: string; description: string; source: string
 type McpItem = { id: string; name: string; url: string; scope: Scope };
 type BrowserManager = { id: string; name: string; installed: boolean; connected: boolean };
 
-const scopeLabel = (scope: Scope, language: AppLanguage) => scope === 'global' ? (language === 'en' ? 'Global' : 'Global') : (language === 'en' ? 'Project' : 'Proyecto');
+const scopeLabel = (scope: Scope, language: AppLanguage) => scope === 'global' ? translate('extensionsPanel.global', language) : (translate('extensionsPanel.project', language));
 
 export default function ExtensionsPanel({ selectedProject, layout = 'page' }: { selectedProject?: { projectPath: string } | null; layout?: 'page' | 'sidebar' }) {
   const sidebarLayout = layout === 'sidebar';
   const panelId = sidebarLayout ? 'codeclub-extensions-sidebar' : 'codeclub-extensions-main';
   const language = useAppLanguage();
-  const actions = extensionActionTranslations[language];
-  const browserText = browserExtensionTranslations[language];
-  const sidebarText = customizeSidebarTranslations[language];
+  const actions = getMessages('extensionAction', language);
+  const browserText = getMessages('browserExtension', language);
+  const sidebarText = getMessages('customizeSidebar', language);
   const [tab, setTab] = useState<'extensions' | 'skills' | 'mcp'>('extensions');
   const [query, setQuery] = useState('');
   const [sidebarSearchOpen, setSidebarSearchOpen] = useState(false);
@@ -47,20 +47,16 @@ export default function ExtensionsPanel({ selectedProject, layout = 'page' }: { 
   const pluginExtensions = useMemo<ExtensionItem[]>(() => plugins.map((plugin) => ({
     id: `plugin:${plugin.id}`,
     name: plugin.name,
-    description: plugin.description || 'Agent Plugin instalado',
+    description: plugin.description || translate('extensionsPanel.installedAgentPlugin', language),
     icon: Blocks,
     color: '#8BC7FF',
     scope: plugin.scope,
     protected: plugin.builtIn,
     builtIn: plugin.builtIn,
-  })), [plugins]);
-  const localizedBuiltIns = language === 'en' ? builtInExtensions : builtInExtensions.map((extension) => ({
-    ...extension,
-    name: ({ documents: 'Documentos', spreadsheets: 'Hojas de cálculo', presentations: 'Presentaciones', 'template-creator': 'Creador de plantillas' } as Record<string, string>)[extension.id] || extension.name,
-    description: ({ documents: 'Crear y editar documentos', pdf: 'Leer, crear y verificar archivos PDF', spreadsheets: 'Crear y editar hojas de cálculo', presentations: 'Crear y editar presentaciones', 'template-creator': 'Crear o actualizar plantillas reutilizables' } as Record<string, string>)[extension.id] || extension.description,
-  }));
+  })), [plugins, language]);
+  const localizedBuiltIns = builtInExtensions.map(extension => ({ ...extension, ...getMessages('extensionsPanel', language).builtIns[extension.id as keyof ReturnType<typeof getMessages<'extensionsPanel'>>['builtIns']] }));
   const allExtensions = useMemo<ExtensionItem[]>(() => [
-    { id: 'browser-control', name: 'Codeclub Browser Control', description: language === 'en' ? 'Control tabs in Chromium-based browsers' : 'Controlá pestañas de navegadores Chromium', icon: Globe, color: '#1687FF', scope: 'global', protected: true },
+    { id: 'browser-control', name: 'Codeclub Browser Control', description: translate('extensionsPanel.controlTabsInChromiumBasedBrowsers', language), icon: Globe, color: '#1687FF', scope: 'global', protected: true },
     ...localizedBuiltIns.map((extension) => ({ ...extension, scope: 'global' as const, protected: true })),
     ...pluginExtensions,
   ], [pluginExtensions, localizedBuiltIns, language]);
@@ -68,9 +64,8 @@ export default function ExtensionsPanel({ selectedProject, layout = 'page' }: { 
   const filteredSkills = useMemo(() => skills.filter((skill) => `${skill.name} ${skill.description} ${skill.source}`.toLowerCase().includes(query.toLowerCase())), [skills, query]);
   const filteredMcpServers = useMemo(() => mcpServers.filter((server) => `${server.name} ${server.url}`.toLowerCase().includes(query.toLowerCase())), [mcpServers, query]);
 
-  const text = language === 'en'
-    ? { title: sidebarLayout ? 'Customize' : 'Extensions', description: 'Manage extensions, skills, and MCP by scope.', extensions: 'Extensions', skills: 'Skills', search: 'Search', list: 'Available extensions', empty: 'No extensions found.', noSkills: 'No SKILL.md files found.', noMcp: 'No MCP servers connected.', project: 'Active project', noProject: 'No active project: only global items are shown.', categories: 'Extension categories', skillsList: 'Available skills', mcpList: 'MCP servers', deletePlugin: 'Delete plugin', disable: 'Disable', enable: 'Enable', installed: 'Installed' }
-    : { title: sidebarLayout ? 'Personalizar' : 'Extensiones', description: 'Administrá extensiones, skills y MCP por alcance.', extensions: 'Extensions', skills: 'Skills', search: 'Buscar', list: 'Extensiones disponibles', empty: 'No se encontraron extensiones.', noSkills: 'No se encontraron archivos SKILL.md.', noMcp: 'No hay servidores MCP conectados.', project: 'Proyecto activo', noProject: 'Sin proyecto activo: solo se muestran elementos globales.', categories: 'Categorías de extensiones', skillsList: 'Habilidades disponibles', mcpList: 'Servidores MCP', deletePlugin: 'Eliminar plugin', disable: 'Desactivar', enable: 'Activar', installed: 'Instalados' };
+  const messages = getMessages('extensionsPanel', language).text;
+  const text = { ...messages, title: sidebarLayout ? messages.sidebarTitle : messages.title };
 
   const refresh = () => {
     const version = ++refreshVersion.current;
@@ -102,7 +97,7 @@ export default function ExtensionsPanel({ selectedProject, layout = 'page' }: { 
       setBrowserNotice(action === 'install' ? (browser.id === 'edge' ? browserText.edgeInstall : browserText.manualInstall) : browserText.uninstall);
       refreshBrowserManagers();
     } catch (error) {
-      setBrowserError(error instanceof Error ? error.message : (language === 'en' ? 'Could not open browser extension settings.' : 'No se pudo abrir la configuración de extensiones.'));
+      setBrowserError(error instanceof Error ? error.message : (translate('extensionsPanel.couldNotOpenBrowserExtensionSettings', language)));
     } finally {
       setBrowserBusy('');
     }
@@ -244,10 +239,10 @@ export default function ExtensionsPanel({ selectedProject, layout = 'page' }: { 
           {sidebarLayout && <nav className="grid gap-0.5 text-[13px] text-[#999999]" aria-label={text.categories}>
             {([{ id: 'extensions', label: text.extensions, count: allExtensions.length, icon: Blocks }, { id: 'skills', label: text.skills, count: skills.length, icon: WandSparkles }, { id: 'mcp', label: 'MCP', count: mcpServers.length, icon: PlugZap }] as const).map(({ id, label, count, icon: Icon }) => <button key={id} type="button" onClick={() => changeTab(id)} aria-label={`${label} ${count}`} title={`${label} ${count}`} className={`extensions-category inline-flex items-center gap-2 rounded-[8px] border-0 text-left ${sidebarLayout ? 'h-8 w-full px-2 py-1' : 'px-3 py-1.5'} ${tab === id ? 'bg-[#2b2b2b] text-[#eeeeee]' : 'bg-transparent text-[#999999] hover:bg-[#202020]'}`}><Icon size={15} strokeWidth={1.8} className="shrink-0 text-[#eeeeee]" aria-hidden="true" /><span className="extensions-category-label min-w-0 flex-1">{label}</span><span className="text-[#999999]">{count}</span></button>)}
           </nav>}
-          {!sidebarLayout && <label className="flex h-9 w-full max-w-[280px] items-center gap-2 rounded-full border border-[#303030] bg-[#1e1e1e] px-3.5 text-[#a7a7a7] focus-within:border-[#666666]"><Search size={17} strokeWidth={1.7} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={language === 'en' ? 'Search extensions' : 'Buscar complementos'} aria-label={language === 'en' ? 'Search extensions' : 'Buscar complementos'} className="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[#d0d0d0] outline-none placeholder:text-[#a7a7a7]" /></label>}
+          {!sidebarLayout && <label className="flex h-9 w-full max-w-[280px] items-center gap-2 rounded-full border border-[#303030] bg-[#1e1e1e] px-3.5 text-[#a7a7a7] focus-within:border-[#666666]"><Search size={17} strokeWidth={1.7} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={translate('extensionsPanel.searchExtensions', language)} aria-label={translate('extensionsPanel.searchExtensions', language)} className="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[#d0d0d0] outline-none placeholder:text-[#a7a7a7]" /></label>}
         </div>
 
-        {sidebarLayout && sidebarSearchOpen && <label className="mt-3 flex h-9 w-full items-center gap-2 rounded-lg border border-[#303030] bg-[#171717] px-3 text-[#a7a7a7] focus-within:border-[#666666]"><Search size={16} aria-hidden="true" /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder={language === 'en' ? 'Search' : 'Buscar'} aria-label={language === 'en' ? 'Search installed items' : 'Buscar instalados'} className="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[#d0d0d0] outline-none placeholder:text-[#777777]" /></label>}
+        {sidebarLayout && sidebarSearchOpen && <label className="mt-3 flex h-9 w-full items-center gap-2 rounded-lg border border-[#303030] bg-[#171717] px-3 text-[#a7a7a7] focus-within:border-[#666666]"><Search size={16} aria-hidden="true" /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder={translate('extensionsPanel.search', language)} aria-label={translate('extensionsPanel.searchInstalledItems', language)} className="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[#d0d0d0] outline-none placeholder:text-[#777777]" /></label>}
         {sidebarLayout && <h2 className="mt-4 mb-1 px-1 text-[12px] font-semibold text-[#999999]">{text.installed}</h2>}
         {tab === 'extensions' && <section className={`${sidebarLayout ? 'mt-0' : 'mt-9'} grid min-w-0 gap-1.5`} aria-label={text.list}>
           {filteredExtensions.map(({ id, name, description, icon: Icon = Box, color, scope, protected: isProtected, builtIn }) => {
@@ -257,18 +252,18 @@ export default function ExtensionsPanel({ selectedProject, layout = 'page' }: { 
             if (id === 'browser-control') return <div id={`codeclub-extension-item-${encodeURIComponent(id)}`} tabIndex={-1} key={id} className="min-w-0 rounded-lg px-3 py-3 transition-colors hover:bg-[#202020]">
               <div className={`flex min-w-0 items-center ${sidebarLayout ? 'gap-2' : 'min-h-[44px] gap-3'}`}>
                 <div className={`grid shrink-0 place-items-center rounded-[10px] border border-[#2d2d2d] bg-[#151515] ${sidebarLayout ? 'h-8 w-8' : 'h-10 w-10'}`}><div className={`grid place-items-center rounded-[7px] bg-[#1687FF] ${sidebarLayout ? 'h-6 w-6' : 'h-7 w-7'}`}><Globe size={sidebarLayout ? 14 : 17} strokeWidth={1.8} className="text-white" /></div></div>
-                <div className="min-w-0 w-0 flex-1"><h2 className={`m-0 truncate font-semibold text-[#eeeeee] ${sidebarLayout ? 'text-[12px]' : 'text-[14px]'}`}>Codeclub Browser Control</h2>{!sidebarLayout && <p className="mt-0.5 truncate text-[13px] text-[#999999]">{language === 'en' ? 'Control tabs in Chromium-based browsers' : 'Controlá pestañas en navegadores basados en Chromium'}</p>}</div>
+                <div className="min-w-0 w-0 flex-1"><h2 className={`m-0 truncate font-semibold text-[#eeeeee] ${sidebarLayout ? 'text-[12px]' : 'text-[14px]'}`}>Codeclub Browser Control</h2>{!sidebarLayout && <p className="mt-0.5 truncate text-[13px] text-[#999999]">{translate('extensionsPanel.controlTabsInChromiumBasedBrowsers2', language)}</p>}</div>
                 {!sidebarLayout && <span className="extensions-scope shrink-0 rounded-full border border-[#303030] px-2 py-1 text-[10px] text-[#8f8f8f]">{scopeLabel('global', language)}</span>}
               </div>
               <div className={`extensions-browser-managers mt-2 grid min-w-0 gap-1.5 ${sidebarLayout ? '' : 'pl-[52px]'}`}>
                 {browserManagers.filter((browser) => browser.installed).map((browser) => <div key={browser.id} className="extensions-browser-row grid min-h-10 min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md px-2 py-1.5 hover:bg-[#252525]">
-                  <div className="min-w-0 flex-1"><p className="m-0 truncate text-[13px] text-[#d5d5d5]">{browser.name}</p><p className="m-0 text-[11px] text-[#999999]">{browser.connected ? (language === 'en' ? 'Connected' : 'Conectado') : (language === 'en' ? 'Not connected' : 'Sin conectar')}</p></div>
+                  <div className="min-w-0 flex-1"><p className="m-0 truncate text-[13px] text-[#d5d5d5]">{browser.name}</p><p className="m-0 text-[11px] text-[#999999]">{browser.connected ? (translate('extensionsPanel.connected', language)) : (translate('extensionsPanel.notConnected', language))}</p></div>
                   <div className="flex shrink-0 items-center gap-1.5">
                     <button type="button" disabled={Boolean(browserBusy)} onClick={() => void manageBrowser(browser, 'install')} aria-label={`${actions.install}: ${browser.name}`} title={`${actions.install}: ${browser.name}`} className={`extensions-browser-action inline-flex h-7 items-center justify-center gap-1 rounded-md border border-[#383838] bg-[#252525] text-[11px] text-[#d5d5d5] hover:bg-[#303030] disabled:opacity-50 ${sidebarLayout ? 'w-7 px-1' : 'px-2.5'}`}><Download size={13} className="shrink-0" aria-hidden="true" />{!sidebarLayout && <span>{actions.install}</span>}</button>
                     <button type="button" disabled={Boolean(browserBusy)} onClick={() => void manageBrowser(browser, 'uninstall')} aria-label={`${actions.uninstall}: ${browser.name}`} title={`${actions.uninstall}: ${browser.name}`} className={`extensions-browser-action inline-flex h-7 items-center justify-center gap-1 rounded-md border border-[#383838] bg-transparent text-[11px] text-[#999999] hover:bg-[#303030] hover:text-[#d5d5d5] disabled:opacity-50 ${sidebarLayout ? 'w-7 px-1' : 'px-2.5'}`}><Trash2 size={13} className="shrink-0" aria-hidden="true" />{!sidebarLayout && <span>{actions.uninstall}</span>}</button>
                   </div>
                 </div>)}
-                {browserManagers.filter((browser) => browser.installed).length === 0 && <p className="m-0 py-2 text-[12px] text-[#999999]">{language === 'en' ? 'No supported browser was detected. Supports Edge, Chrome, Brave, Opera, and Vivaldi.' : 'No se detectó un navegador compatible. Compatible con Edge, Chrome, Brave, Opera y Vivaldi.'}</p>}
+                {browserManagers.filter((browser) => browser.installed).length === 0 && <p className="m-0 py-2 text-[12px] text-[#999999]">{translate('extensionsPanel.noSupportedBrowserWasDetectedSupportsEdge', language)}</p>}
                 <p className="m-0 pt-1 text-[11px] leading-5 text-[#999999]">{browserText.help}</p>
                 {browserNotice && <p role="status" className="m-0 text-[11px] leading-5 text-[#8bc7ff]">{browserNotice}</p>}
                 {browserError && <p role="alert" className="m-0 text-[11px] leading-5 text-[#ff8a8a]">{browserError}</p>}
@@ -278,7 +273,7 @@ export default function ExtensionsPanel({ selectedProject, layout = 'page' }: { 
               <div className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] border border-[#2d2d2d] bg-[#151515]"><div className="grid h-7 w-7 place-items-center rounded-[7px]" style={{ background: color }}><Icon size={17} strokeWidth={1.8} className="text-white" /></div></div>
               <div className="min-w-0 w-0 flex-1"><h2 className="m-0 truncate text-[14px] font-semibold text-[#eeeeee]">{name}</h2><p className="mt-0.5 truncate text-[13px] text-[#999999]">{description}</p></div>
               <span className="extensions-scope shrink-0 rounded-full border border-[#303030] px-2 py-1 text-[10px] text-[#8f8f8f]">{scopeLabel(scope, language)}</span>
-              {builtIn ? <span className="extensions-included shrink-0 rounded-full border border-[#303030] px-2 py-1 text-[10px] text-[#8f8f8f]">{language === 'en' ? 'Built in' : 'Incluido'}</span> : <button type="button" role="switch" aria-checked={isEnabled} aria-label={name} title={`${isEnabled ? text.disable : text.enable} ${name}`} onClick={() => { const next = !isEnabled; setEnabled((current) => ({ ...current, [enabledKey]: next })); if (isProtected) void setSetting(`codeclub_extension_enabled_${id}`, String(next)); }} className={`relative h-6 w-10 shrink-0 rounded-full border-0 transition-colors ${isEnabled ? 'bg-[#3d9bff]' : 'bg-[#3a3a3a]'}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${isEnabled ? 'right-1' : 'left-1'}`} /></button>}
+              {builtIn ? <span className="extensions-included shrink-0 rounded-full border border-[#303030] px-2 py-1 text-[10px] text-[#8f8f8f]">{translate('extensionsPanel.builtIn', language)}</span> : <button type="button" role="switch" aria-checked={isEnabled} aria-label={name} title={`${isEnabled ? text.disable : text.enable} ${name}`} onClick={() => { const next = !isEnabled; setEnabled((current) => ({ ...current, [enabledKey]: next })); if (isProtected) void setSetting(`codeclub_extension_enabled_${id}`, String(next)); }} className={`relative h-6 w-10 shrink-0 rounded-full border-0 transition-colors ${isEnabled ? 'bg-[#3d9bff]' : 'bg-[#3a3a3a]'}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${isEnabled ? 'right-1' : 'left-1'}`} /></button>}
               {!isProtected && <button type="button" onClick={() => { void invoke('codeclub_delete_agent_plugin', { projectPath, pluginId: id.replace(/^plugin:/, ''), scope }).then(refresh).catch(() => undefined); }} className="grid h-7 w-7 shrink-0 place-items-center rounded-md border-0 bg-transparent text-[#999999] hover:bg-[#2b2b2b] hover:text-[#eeeeee]" title={text.deletePlugin} aria-label={`${text.deletePlugin}: ${name}`}><Trash2 size={14} /></button>}
             </div>;
           })}

@@ -1,0 +1,6 @@
+{
+  "edgeInstall": "In Edge, choose Get and approve adding Codeclub Browser Control.",
+  "manualInstall": "Choose Load unpacked and select the Codeclub Browser Control folder that opened.",
+  "uninstall": "Remove Codeclub Browser Control from the browser extensions page.",
+  "help": "Edge: Install opens Microsoft Edge Add-ons. Uninstall opens the extension for removal. Other browsers use manual loading. Connected confirms the companion responds to Codeclub."
+}

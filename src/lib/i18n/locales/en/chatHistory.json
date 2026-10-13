@@ -1,0 +1,8 @@
+{
+  "conflict": "History changed elsewhere. Reopen this chat before retrying.",
+  "loading": "Loading messages…",
+  "failed": "Could not load history.",
+  "retry": "Retry",
+  "latest": "Go to latest messages",
+  "tooLarge": "The message or files exceed the available context. Reduce their size or use file references."
+}

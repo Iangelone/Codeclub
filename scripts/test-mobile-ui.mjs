@@ -3,7 +3,8 @@ import { chromium } from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 const html=await readFile('android-companion/app/src/main/assets/mobile.html','utf8');
-const server=createServer((_,response)=>response.end(html));await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+const assets=new Map(await Promise.all(['i18next.min.js','en.js','es.js','runtime.js'].map(async name=>['/i18n/'+name,await readFile('android-companion/app/src/main/assets/i18n/'+name,'utf8')])));
+const server=createServer((request,response)=>{const asset=assets.get(request.url);response.setHeader('content-type',asset?'text/javascript':'text/html');response.end(asset||html);});await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const browser=await chromium.launch({channel:'msedge',headless:true});
 try{
   const page=await browser.newPage({viewport:{width:390,height:844},isMobile:true});

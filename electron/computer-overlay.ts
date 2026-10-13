@@ -2,6 +2,7 @@
 import { BrowserWindow, globalShortcut, screen } from 'electron';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
+import { nativeText } from './i18n/index.js';
 
 const COMPUTER_OVERLAY_PALETTES = [
   { orb: '#2D5FD6', accent: '#3D9BFF', bright: '#8BC7FF' },
@@ -16,8 +17,8 @@ const COMPUTER_OVERLAY_PALETTES = [
 ] as const;
 
 const computerOverlayHtml = (language: string, paletteIndex: number) => {
-  const title = language === 'en' ? 'Codeclub is using your computer' : 'Codeclub está usando tu computadora';
-  const cancel = language === 'en' ? 'Esc to cancel' : 'Esc para cancelar';
+  const title = nativeText('overlay.title', language);
+  const cancel = nativeText('overlay.cancel', language);
   const palette = COMPUTER_OVERLAY_PALETTES[paletteIndex] || COMPUTER_OVERLAY_PALETTES[0];
   return `<!doctype html><html><head><meta charset="utf-8"><style>
 *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:transparent;overflow:hidden;font-family:Segoe UI,Arial,sans-serif}
@@ -28,9 +29,7 @@ body{border:1px solid ${palette.accent};box-shadow:inset 0 0 0 1px ${palette.bri
 };
 
 const computerContextMenuHtml = (language: string, paletteIndex: number) => {
-  const items = language === 'en'
-    ? [['select', '⌖', 'Select element'], ['coordinate', '⌁', 'Use coordinate'], ['screenshot', '▣', 'Capture screen']]
-    : [['select', '⌖', 'Seleccionar elemento'], ['coordinate', '⌁', 'Usar coordenada'], ['screenshot', '▣', 'Capturar pantalla']];
+  const items = [['select', '⌖', nativeText('computerMenu.select', language)], ['coordinate', '⌁', nativeText('computerMenu.coordinate', language)], ['screenshot', '▣', nativeText('computerMenu.screenshot', language)]];
   const rows = items.map(([action, icon, label]) => `<button data-action="${action}"><span class="icon">${icon}</span><span>${label}</span></button>`).join('');
   const palette = COMPUTER_OVERLAY_PALETTES[paletteIndex] || COMPUTER_OVERLAY_PALETTES[0];
   return `<!doctype html><html><head><meta charset="utf-8"><style>

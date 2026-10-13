@@ -1,0 +1,20 @@
+{
+  "title": "Conectar Android",
+  "close": "Cerrar conexión",
+  "hint": "Escaneá este QR con la app de Codeclub. Ambos dispositivos deben estar en la misma red Wi-Fi.",
+  "loading": "Preparando conexión",
+  "qrAlt": "QR temporal para conectar Android a Codeclub",
+  "paired": "Android vinculado",
+  "expires": "Vence en",
+  "expired": "El código venció. Generá otro.",
+  "unavailable": "Conexión no disponible",
+  "copy": "Copiar código",
+  "copied": "Copiado",
+  "refresh": "Renovar",
+  "connected": "Conectado",
+  "offline": "Desconectado",
+  "forget": "Desvincular Android",
+  "private": "Conexión cifrada y local. El código se usa una sola vez.",
+  "error": "No se pudo preparar la conexión. Revisá la red Wi-Fi y volvé a intentar.",
+  "copyError": "No se pudo copiar el código."
+}

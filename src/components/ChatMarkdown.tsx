@@ -5,7 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import { copyText } from '../lib/runtime';
-import { useAppLanguage } from '../lib/i18n';
+import { useAppLanguage, translate } from '../lib/i18n';
 
 const getMarkdownLinkFavicon = (href?: string) => {
   try {
@@ -33,7 +33,7 @@ function MarkdownCodeBlock({ children }: { children?: React.ReactNode }) {
   const appLanguage = useAppLanguage();
   const [copied, setCopied] = useState(false);
   const { language, content } = getMarkdownCodeDetails(children);
-  const label = language === 'text' ? 'Texto' : language.charAt(0).toUpperCase() + language.slice(1);
+  const label = language === 'text' ? translate('chatMarkdown.texto', appLanguage) : language.charAt(0).toUpperCase() + language.slice(1);
 
   const handleCopy = async () => {
     await copyText(content);
@@ -45,11 +45,11 @@ function MarkdownCodeBlock({ children }: { children?: React.ReactNode }) {
     <div className="chat-code-card-header">
       <span className="chat-code-card-language"><Code2 size={14} strokeWidth={1.8} aria-hidden="true" />{label}</span>
       <span className="chat-code-card-actions">
-        <button type="button" className="chat-code-card-icon-button" onClick={() => window.dispatchEvent(new CustomEvent('codeclub:execute-inline-code', { detail: { code: content, language } }))} aria-label={appLanguage === 'en' ? 'Run code' : 'Ejecutar código'} title={appLanguage === 'en' ? 'Run code' : 'Ejecutar código'}><Play size={13} strokeWidth={2} aria-hidden="true" /></button>
+        <button type="button" className="chat-code-card-icon-button" onClick={() => window.dispatchEvent(new CustomEvent('codeclub:execute-inline-code', { detail: { code: content, language } }))} aria-label={translate('chatMarkdown.runCode', appLanguage)} title={translate('chatMarkdown.runCode', appLanguage)}><Play size={13} strokeWidth={2} aria-hidden="true" /></button>
         <span className="chat-code-card-divider" aria-hidden="true">|</span>
-        <button type="button" className="chat-code-card-copy" onClick={() => void handleCopy()} aria-label={copied ? (appLanguage === 'en' ? 'Code copied' : 'Código copiado') : (appLanguage === 'en' ? 'Copy code' : 'Copiar código')} title={copied ? (appLanguage === 'en' ? 'Copied' : 'Copiado') : (appLanguage === 'en' ? 'Copy' : 'Copiar')}>
+        <button type="button" className="chat-code-card-copy" onClick={() => void handleCopy()} aria-label={copied ? (translate('chatMarkdown.codeCopied', appLanguage)) : (translate('chatMarkdown.copyCode', appLanguage))} title={copied ? (translate('chatMarkdown.copied', appLanguage)) : (translate('chatMarkdown.copy', appLanguage))}>
           {copied ? <Check size={14} strokeWidth={2.2} aria-hidden="true" /> : <Copy size={14} strokeWidth={1.9} aria-hidden="true" />}
-          <span>{copied ? (appLanguage === 'en' ? 'Copied' : 'Copiado') : (appLanguage === 'en' ? 'Copy' : 'Copiar')}</span>
+          <span>{copied ? (translate('chatMarkdown.copied', appLanguage)) : (translate('chatMarkdown.copy', appLanguage))}</span>
         </button>
       </span>
     </div>

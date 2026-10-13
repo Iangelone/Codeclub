@@ -1,3 +1,4 @@
+import { nativeText, setNativeLanguage } from './i18n/index.js';
 /** Privileged desktop boundary: owns windows, filesystem, processes, and IPC handlers used by the renderer preload. */
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, powerMonitor, safeStorage, screen, shell, Tray } from 'electron';
 import { runProjectCommand } from './run-command.js';
@@ -506,13 +507,13 @@ function restoreWindowAfterFullscreen() {
 
 function updateTrayMenu() {
   tray?.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Abrir', click: showMainWindow },
-    { label: 'Widget', click: () => {
+    { label: nativeText('tray.open'), click: showMainWindow },
+    { label: nativeText('tray.widget'), click: () => {
       if (!floatingChat?.isActive()) { mainWindow?.hide(); void floatingChat?.show().catch(() => showMainWindow()); }
       else floatingChat?.hide();
     } },
     { type: 'separator' },
-    { label: 'Salir', click: () => { isQuitting = true; app.quit(); } },
+    { label: nativeText('tray.quit'), click: () => { isQuitting = true; app.quit(); } },
   ]));
 }
 
@@ -622,7 +623,7 @@ app.whenReady().then(async () => {
     if (!task.proactive) orbLearning?.observeOutcome(run.status === 'completed' ? 'task-completed' : 'task-failed');
     if (task.notifications === 'Sin notificaciones' || (task.notifications === 'Solo errores' && run.status === 'completed')) return;
     if (Notification.isSupported()) {
-      const notice = new Notification({ title: task.name, body: task.language === 'en' ? (run.status === 'completed' ? 'Task completed' : 'Task needs attention') : (run.status === 'completed' ? 'Tarea completada' : 'La tarea requiere atención') });
+      const notice = new Notification({ title: task.name, body: nativeText(run.status === 'completed' ? 'tasks.completed' : 'tasks.attention', task.language) });
       notice.on('click', () => { selectedSessionChat = { chatId: run.chatId, projectPath: task.projectPath, name: task.name }; showMainWindow(); }); notice.show();
     }
   });
@@ -680,9 +681,12 @@ app.whenReady().then(async () => {
   chatStore.migrateGlobalSettings();
   const settingsStore = new SettingsStore(path.join(app.getPath('userData'), 'settings.json'), key => {
     for (const window of BrowserWindow.getAllWindows()) if (!window.isDestroyed()) window.webContents.send('codeclub:settings-changed', { key });
+    if (key === 'codeclub-language') { setNativeLanguage(settingsStore.get(key)); updateTrayMenu(); }
     if (key === 'codeclub_orbs') orbLearning?.refresh();
     if (key === 'codeclub_orbs') for (const worker of taskWorkers.values()) if (worker.task.proactive && !orbLearningOrbs().some(orb => orb.id === worker.task.orbId && orb.maximumAutonomy === true)) worker.complete('TASK_CANCELLED');
   });
+  setNativeLanguage(settingsStore.get('codeclub-language'));
+  updateTrayMenu();
   orbLearningOrbs = () => { const saved = settingsStore.get('codeclub_orbs'); return Array.isArray(saved) ? saved.filter(orb => orb && typeof orb.id === 'string') : []; };
   const mobileSync=new MobileSync(app.getPath('userData'),chatStore,settingsStore,sessionHub,()=>projects,(chat,action,approvalId)=>{
     const command=sessionHub.command(chat,action,approvalId);if(!command)return false;

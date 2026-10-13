@@ -1,0 +1,130 @@
+{
+  "build-feature": {
+    "label": "Desarrollar funcionalidad",
+    "description": "Planificar, implementar y verificar"
+  },
+  "debug-project": {
+    "label": "Investigar y corregir",
+    "description": "Diagnosticar con tools"
+  },
+  "review-changes": {
+    "label": "Revisar el proyecto",
+    "description": "Analizar estado y próximos pasos"
+  },
+  "test-list-files": {
+    "label": "Test: listar archivos",
+    "description": "Probar exploración del workspace"
+  },
+  "test-read-file": {
+    "label": "Test: leer archivo",
+    "description": "Probar lectura de archivos"
+  },
+  "test-search-text": {
+    "label": "Test: buscar texto",
+    "description": "Probar búsqueda en el código"
+  },
+  "test-ask-user": {
+    "label": "Test: preguntar al usuario",
+    "description": "Probar pausa de aclaración"
+  },
+  "test-create-plan": {
+    "label": "Test: crear plan",
+    "description": "Probar planes persistentes"
+  },
+  "test-update-plan": {
+    "label": "Test: actualizar plan",
+    "description": "Probar cambios de estado"
+  },
+  "test-todos": {
+    "label": "Test: TODOs",
+    "description": "Probar tareas persistentes"
+  },
+  "test-task-status": {
+    "label": "Test: estado de tareas",
+    "description": "Probar lectura de planes y TODOs"
+  },
+  "test-execution-log": {
+    "label": "Test: log de ejecución",
+    "description": "Probar auditoría de tools"
+  },
+  "test-run-command": {
+    "label": "Test: ejecutar comando",
+    "description": "Probar comandos seguros"
+  },
+  "test-terminal": {
+    "label": "Test: terminal persistente",
+    "description": "Probar procesos de terminal"
+  },
+  "test-open-browser": {
+    "label": "Test: abrir navegador",
+    "description": "Probar navegador integrado"
+  },
+  "test-browser-state": {
+    "label": "Test: estado del navegador",
+    "description": "Probar observación web"
+  },
+  "test-browser-action": {
+    "label": "Test: acción en navegador",
+    "description": "Probar interacción web"
+  },
+  "test-list-windows": {
+    "label": "Test: listar ventanas",
+    "description": "Probar control de PC"
+  },
+  "test-computer-state": {
+    "label": "Test: estado de ventana",
+    "description": "Probar UI Automation"
+  },
+  "test-screenshot": {
+    "label": "Test: captura de pantalla",
+    "description": "Probar captura del escritorio"
+  },
+  "test-ocr": {
+    "label": "Test: OCR de pantalla",
+    "description": "Probar lectura visual"
+  },
+  "test-computer-action": {
+    "label": "Test: acción de PC",
+    "description": "Probar mouse y teclado"
+  },
+  "test-subagent": {
+    "label": "Test: subagente",
+    "description": "Probar delegación especializada"
+  },
+  "test-tool-discovery": {
+    "label": "Test: descubrir tools",
+    "description": "Probar búsqueda y ejecución dinámica"
+  },
+  "test-write-file": {
+    "label": "Test: escribir archivo",
+    "description": "Probar escritura controlada"
+  },
+  "test-create-skill": {
+    "label": "Test: crear skill",
+    "description": "Probar Agent Plugins"
+  },
+  "test-create-extension": {
+    "label": "Test: crear extensión",
+    "description": "Probar extensiones de agente"
+  },
+  "test-delete-extension": {
+    "label": "Test: eliminar extensión",
+    "description": "Probar limpieza de plugins"
+  },
+  "test-create-mcp": {
+    "label": "Test: crear MCP",
+    "description": "Probar configuración MCP"
+  },
+  "test-delete-mcp": {
+    "label": "Test: eliminar MCP",
+    "description": "Probar limpieza de servidores"
+  },
+  "test-switch-project": {
+    "label": "Test: cambiar proyecto",
+    "description": "Probar contexto de workspace"
+  },
+  "test-full-development-flow": {
+    "label": "Test: flujo completo",
+    "description": "Probar ciclo de desarrollo"
+  }
+}

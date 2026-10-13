@@ -1,0 +1,58 @@
+{
+  "project": "Project",
+  "controlTabsInChromiumBasedBrowsers": "Control tabs in Chromium-based browsers",
+  "couldNotOpenBrowserExtensionSettings": "Could not open browser extension settings.",
+  "searchExtensions": "Search extensions",
+  "search": "Search",
+  "searchInstalledItems": "Search installed items",
+  "controlTabsInChromiumBasedBrowsers2": "Control tabs in Chromium-based browsers",
+  "connected": "Connected",
+  "notConnected": "Not connected",
+  "noSupportedBrowserWasDetectedSupportsEdge": "No supported browser was detected. Supports Edge, Chrome, Brave, Opera, and Vivaldi.",
+  "builtIn": "Built in",
+  "builtIns": {
+    "documents": {
+      "name": "Documents",
+      "description": "Create and edit document artifacts"
+    },
+    "pdf": {
+      "name": "PDF",
+      "description": "Read, create, and verify PDF files"
+    },
+    "spreadsheets": {
+      "name": "Spreadsheets",
+      "description": "Create and edit spreadsheet files"
+    },
+    "presentations": {
+      "name": "Presentations",
+      "description": "Create and edit presentation artifacts"
+    },
+    "template-creator": {
+      "name": "Template Creator",
+      "description": "Create or update reusable templates from reference content"
+    }
+  },
+  "text": {
+    "title": "Extensions",
+    "sidebarTitle": "Customize",
+    "description": "Manage extensions, skills, and MCP by scope.",
+    "extensions": "Extensions",
+    "skills": "Skills",
+    "search": "Search",
+    "list": "Available extensions",
+    "empty": "No extensions found.",
+    "noSkills": "No SKILL.md files found.",
+    "noMcp": "No MCP servers connected.",
+    "project": "Active project",
+    "noProject": "No active project: only global items are shown.",
+    "categories": "Extension categories",
+    "skillsList": "Available skills",
+    "mcpList": "MCP servers",
+    "deletePlugin": "Delete plugin",
+    "disable": "Disable",
+    "enable": "Enable",
+    "installed": "Installed"
+  },
+  "installedAgentPlugin": "Installed Agent Plugin",
+  "global": "Global"
+}

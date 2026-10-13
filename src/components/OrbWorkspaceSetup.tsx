@@ -2,13 +2,13 @@
 
 import { useState } from 'react';
 import { Zap } from 'lucide-react';
-import { orbWorkspaceTranslations, useAppLanguage } from '../lib/i18n';
+import { useAppLanguage, getMessages } from '../lib/i18n';
 import FluidOrb from './ui/fluid-orb';
 import { useOrbPalette } from './OrbPaletteProvider';
 
 /** Configure automatic tool approval for the orb. */
 export default function OrbWorkspaceSetup({ onContinue }: { onContinue: (options: { allowComputer: boolean; maximumAutonomy: boolean; requiresAdministrator: boolean }) => void | Promise<void> }) {
-  const text = orbWorkspaceTranslations[useAppLanguage()];
+  const text = getMessages('orbWorkspace', useAppLanguage());
   const { cycleShape } = useOrbPalette();
   const [maximumAutonomy, setMaximumAutonomy] = useState(() => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('orbMaximumAutonomy') === '1');
   const [pending, setPending] = useState(false);

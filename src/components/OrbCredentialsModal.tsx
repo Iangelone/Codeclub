@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { CheckCircle2, Smartphone, X } from 'lucide-react';
-import { orbCredentialsTranslations, useAppLanguage } from '../lib/i18n';
+import { useAppLanguage, getMessages } from '../lib/i18n';
 import { nativeInvoke } from '../lib/runtime';
 import { useDialogAccessibility } from './ui/use-accessible-overlay';
 
@@ -11,7 +11,7 @@ type Device = { deviceId: string; state: string };
 
 /** Configure native secrets without exposing saved values to the renderer or model. */
 export default function OrbCredentialsModal({ onClose }: { onClose: () => void }) {
-  const text = orbCredentialsTranslations[useAppLanguage()];
+  const text = getMessages('orbCredentials', useAppLanguage());
   const dialogRef = useRef<HTMLFormElement>(null);
   const [devices, setDevices] = useState<Device[]>([]);
   const [deviceId, setDeviceId] = useState('');

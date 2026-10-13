@@ -2,7 +2,7 @@
 
 import { motion, useReducedMotion } from 'motion/react';
 /** Changes the shared orb palette and broadcasts it so every renderer stays in sync. */
-import { useAppLanguage } from '../../lib/i18n';
+import { useAppLanguage, translate } from '../../lib/i18n';
 import { useOrbPalette } from '../OrbPaletteProvider';
 import FluidOrb from './fluid-orb';
 
@@ -16,10 +16,8 @@ export default function OrbPaletteButton({ size, className = '', active }: OrbPa
   const { nextPalette, cyclePalette } = useOrbPalette();
   const language = useAppLanguage();
   const reducedMotion = useReducedMotion();
-  const targetName = language === 'en' ? nextPalette.en : nextPalette.es;
-  const label = language === 'en'
-    ? `Change all orbs to ${targetName}`
-    : `Cambiar todos los orbes a ${targetName}`;
+  const targetName = translate(`palette.${nextPalette.id}`, language);
+  const label = translate('orbPaletteButton.changeAllOrbsToValue', language, { targetName: targetName });
 
   return <motion.button
     type="button"

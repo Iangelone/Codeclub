@@ -1,0 +1,33 @@
+{
+  "title": "Nueva tarea",
+  "close": "Cerrar",
+  "name": "Nombre de la tarea",
+  "namePlaceholder": "Nombre de la tarea",
+  "prompt": "Instrucciones",
+  "promptPlaceholder": "¿Qué querés que haga esta tarea?",
+  "repeatTask": "Repetir tarea",
+  "repeat": "Repetición",
+  "time": "Hora",
+  "endRepeat": "Finalizar repetición",
+  "advanced": "Avanzado",
+  "pause": "Pausar",
+  "resume": "Reanudar",
+  "save": "Guardar",
+  "notifications": "Notificaciones",
+  "frequencies": [
+    "Diariamente",
+    "Días hábiles",
+    "Semanalmente",
+    "Mensualmente"
+  ],
+  "endOptions": [
+    "Nunca",
+    "En una fecha",
+    "Después de varias ejecuciones"
+  ],
+  "notificationOptions": [
+    "Todas las ejecuciones",
+    "Solo errores",
+    "Sin notificaciones"
+  ]
+}

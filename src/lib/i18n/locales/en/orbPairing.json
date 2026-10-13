@@ -1,0 +1,20 @@
+{
+  "title": "Connect Android",
+  "close": "Close connection",
+  "hint": "Scan this QR with the Codeclub app. Both devices must be on the same Wi-Fi network.",
+  "loading": "Preparing connection",
+  "qrAlt": "Temporary QR to connect Android to Codeclub",
+  "paired": "Android paired",
+  "expires": "Expires in",
+  "expired": "The code expired. Generate another one.",
+  "unavailable": "Connection unavailable",
+  "copy": "Copy code",
+  "copied": "Copied",
+  "refresh": "Refresh",
+  "connected": "Connected",
+  "offline": "Offline",
+  "forget": "Unpair Android",
+  "private": "Encrypted local connection. The code can only be used once.",
+  "error": "Could not prepare the connection. Check Wi-Fi and try again.",
+  "copyError": "Could not copy the code."
+}

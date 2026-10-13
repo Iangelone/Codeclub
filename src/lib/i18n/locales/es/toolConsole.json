@@ -1,0 +1,11 @@
+{
+  "title": "Consola de herramienta",
+  "input": "Entrada",
+  "output": "Salida",
+  "running": "En curso",
+  "failed": "Falló",
+  "done": "Listo",
+  "waiting": "Esperando el resultado…",
+  "empty": "Sin salida",
+  "truncated": "Salida recortada para mostrarla"
+}

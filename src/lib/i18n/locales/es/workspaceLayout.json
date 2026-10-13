@@ -1,0 +1,59 @@
+{
+  "customize": "Personalizar",
+  "hideLeftSidebar": "Ocultar sidebar izquierda",
+  "confirmClearingHistory": "Confirmar limpieza del historial",
+  "confirm": "Confirmar",
+  "cancel": "Cancelar",
+  "openGitHubChanges": "Abrir cambios de GitHub",
+  "gitHubChanges": "Cambios de GitHub",
+  "text": {
+    "title": "Dispositivos",
+    "description": "Conectá tu celular al IDE escaneando un código QR."
+  },
+  "noBranch": "Sin rama",
+  "thisFolderIsNotAGitRepository": "Esta carpeta todavía no tiene un repositorio Git.",
+  "couldNotLoadThisDiff": "No se pudo cargar este diff.",
+  "scopeLabels": {
+    "unstaged": "Sin preparar",
+    "uncommitted": "Sin confirmar",
+    "staged": "Preparados",
+    "branch": "Rama"
+  },
+  "reviewChanges": "Revisar cambios",
+  "selectChangeGroup": "Seleccionar grupo de cambios",
+  "changeGroups": "Grupos de cambios",
+  "selectComparisonBranch": "Seleccionar rama de comparación",
+  "selectBranch": "Elegir rama",
+  "searchBranches": "Buscar ramas",
+  "branches": "Ramas",
+  "noBranchesFound": "No se encontraron ramas",
+  "files": "archivos",
+  "refreshChanges": "Actualizar cambios",
+  "close": "Cerrar",
+  "changedFiles": "Archivos modificados",
+  "selectAChangedFile": "Seleccioná un archivo modificado",
+  "searchTheWebForValue": "Buscar en la web: {{query}}",
+  "searchTheWeb": "Buscar en la web",
+  "text2": {
+    "choose": "Elegí un panel",
+    "open": "Abrí una herramienta para verla en esta sidebar."
+  },
+  "descriptions": {
+    "files": "Explorá los archivos del proyecto activo.",
+    "browser": "Abrí y controlá páginas dentro de Electron.",
+    "terminals": "Gestioná terminales persistentes de la sesión."
+  },
+  "noActiveProject": "Sin proyecto activo",
+  "linkAFolderToExploreItsFiles": "Vinculá una carpeta para explorar sus archivos.",
+  "resizeLeftSidebar": "Redimensionar sidebar izquierda",
+  "resizeRightSidebar": "Redimensionar sidebar derecha",
+  "couldNotRenameTheProject": "No se pudo renombrar el proyecto",
+  "selectedElement": "Elemento seleccionado",
+  "selectionUnavailable": "Selección no disponible",
+  "previewUnavailable": "Vista previa no disponible",
+  "selectionChanged": "La selección cambió",
+  "couldNotLoadThisPage": "No se pudo cargar esta página.",
+  "actionNotImplementedInTheBrowser": "Acción no implementada en el navegador.",
+  "menuFor": "Menú de {{label}}",
+  "enterAddress": "Ingresá una dirección para empezar"
+}

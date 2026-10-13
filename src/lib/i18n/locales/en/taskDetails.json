@@ -1,0 +1,18 @@
+{
+  "active": "Active",
+  "paused": "Paused",
+  "running": "Running…",
+  "runNow": "Run now",
+  "pause": "Pause",
+  "resume": "Resume",
+  "openChat": "Open latest chat",
+  "error": "Could not update the task.",
+  "intervals": {
+    "Diario": "Daily",
+    "Días hábiles": "Weekdays",
+    "Semanal": "Weekly",
+    "Mensual": "Monthly",
+    "Personalizado": "Custom",
+    "Una vez": "Once"
+  }
+}

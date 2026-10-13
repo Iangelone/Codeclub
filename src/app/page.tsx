@@ -8,7 +8,7 @@ import FloatingChat from '../components/FloatingChat';
 import ScheduledTaskRunner from '../components/ScheduledTaskRunner';
 import { migrateScheduledTasks } from '../lib/scheduled-tasks';
 import { invalidateSettingsCache } from '../lib/persistence';
-import { useAppLanguage } from '../lib/i18n';
+import { useAppLanguage, translate } from '../lib/i18n';
 import { MotionConfig, motion } from 'motion/react';
 
 const LAYOUT_VISIBILITY_KEY = 'codeclub:layout-visibility';
@@ -58,9 +58,7 @@ export default function HomePage() {
     });
     const sync = (event: StorageEvent) => {
       if (event.key === 'codeclub:settings') invalidateSettingsCache();
-      if (event.key === 'codeclub-language' && (event.newValue === 'en' || event.newValue === 'es')) {
-        window.dispatchEvent(new CustomEvent('codeclub:language-change', { detail: { language: event.newValue } }));
-      }
+
     };
     window.addEventListener('storage', sync);
     return () => { unsubscribe?.(); tasksUnsubscribe?.(); window.removeEventListener('storage', sync); };
@@ -99,7 +97,7 @@ export default function HomePage() {
   if (scheduledRunner) return <ScheduledTaskRunner />;
   if (floating) return <MotionConfig reducedMotion="user"><FloatingChat /></MotionConfig>;
   return <MotionConfig reducedMotion="user"><motion.div animate={fullscreenAnimation} transition={fullscreenTransition} className="relative isolate grid h-screen max-h-screen grid-rows-[34px_minmax(0,1fr)] min-w-[320px] min-h-0 overflow-hidden bg-transparent text-(--codeclub-text) font-sans" data-fullscreen={isFullscreen}>
-      <a className="codeclub-skip-link" href="#codeclub-main-content">{language === 'en' ? 'Skip to workspace' : 'Saltar al espacio de trabajo'}</a>
+      <a className="codeclub-skip-link" href="#codeclub-main-content">{translate('page.skipToWorkspace', language)}</a>
       <Topbar leftOpen={leftOpen} rightOpen={rightOpen} onToggleLeft={toggleLeft} onToggleRight={toggleRight} />
       <WorkspaceLayout leftOpen={leftOpen} rightOpen={rightOpen} onToggleLeft={toggleLeft} onRightVisibilityChange={setRightOpen} />
   </motion.div></MotionConfig>;

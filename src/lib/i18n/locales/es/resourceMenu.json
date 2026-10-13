@@ -1,0 +1,19 @@
+{
+  "resources": "Recursos seleccionados",
+  "remove": "Quitar referencia",
+  "plugin": "Extensión",
+  "extension": "Extensión integrada",
+  "mcp": "MCP",
+  "orb": "Orbe",
+  "skill": "Skill",
+  "global": "Global",
+  "project": "Proyecto",
+  "readOnly": "Integrado · solo lectura",
+  "createExtension": "Crear extensión",
+  "createSkill": "Crear skill",
+  "createMcp": "Crear MCP",
+  "createOrb": "Crear orbe",
+  "createDescription": "Preparar un pedido en el chat",
+  "createPrompt": "Quiero crear un recurso de tipo",
+  "detailPrompt": "Describí su nombre y qué debe hacer."
+}

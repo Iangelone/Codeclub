@@ -1,7 +1,7 @@
 /** Turn progress, tool receipts, questions and approval presentation. */
 import React, { useEffect, useState } from 'react';
 import { ChevronDown, FileCode2, Terminal } from 'lucide-react';
-import { activityTranslations, toolConsoleTranslations, useAppLanguage, type AppLanguage } from '../lib/i18n';
+import { useAppLanguage, type AppLanguage, getMessages, translate } from '../lib/i18n';
 
 const formatProcessingDuration = (durationMs: number) => durationMs >= 60000 ? `${(durationMs / 60000).toFixed(1)}min` : `${Math.max(0, Math.round(durationMs / 1000))}s`;
 const activityValue = (value: unknown, fallback = '') => String(value ?? fallback).replace(/\s+/g, ' ').trim().slice(0, 90);
@@ -34,7 +34,6 @@ function activityConsoleText(value: unknown, truncatedLabel: string): string {
 }
 
 function toolActivityLabel(name: string, input: Record<string, any>, language: AppLanguage, completed = false) {
-  const english = language === 'en';
   const path = activityValue(input?.path || input?.filePath);
   const command = activityValue([input?.command, ...(Array.isArray(input?.args) ? input.args : [])].filter(Boolean).join(' '));
   const query = activityValue(input?.query);
@@ -42,38 +41,10 @@ function toolActivityLabel(name: string, input: Record<string, any>, language: A
   const title = activityValue(input?.title || input?.name);
   const specialist = activityValue(input?.specialist);
   const action = activityValue(input?.action);
-  const labels: Record<string, string> = english ? {
-    listFiles: 'Exploring workspace', readFile: 'Reading relevant files', searchText: 'Searching the codebase', searchTools: 'Exploring available tools', executeTool: 'Running a tool',
-    createPlan: 'Designing a plan', updatePlan: 'Updating the plan', todo: 'Organizing tasks', getTaskStatus: 'Reviewing task progress', getExecutionLog: 'Reviewing execution history',
-    writeFile: 'Applying changes', createSkill: 'Creating a skill', createExtension: 'Creating an extension', deleteExtension: 'Removing an extension', createMcpServer: 'Creating an MCP server', deleteMcpServer: 'Removing an MCP server',
-    runCommand: 'Verifying the result', terminal: 'Preparing the terminal', openBrowser: 'Opening the browser', getBrowserState: 'Inspecting the page', browserAction: 'Interacting with the browser',
-    computerListWindows: 'Exploring open windows', computerGetState: 'Inspecting the desktop', computerScreenshot: 'Capturing the screen', computerOcr: 'Reading the screen', computerAction: 'Controlling the computer',
-    subagent: 'Delegating task', swarm: 'Coordinating agents', askUser: 'Waiting for your answer', switchProject: 'Switching project',
-  } : {
-    listFiles: 'Explorando el workspace', readFile: 'Leyendo archivos relevantes', searchText: 'Buscando en el código', searchTools: 'Explorando herramientas disponibles', executeTool: 'Ejecutando una herramienta',
-    createPlan: 'Diseñando un plan', updatePlan: 'Actualizando el plan', todo: 'Organizando tareas', getTaskStatus: 'Revisando el progreso', getExecutionLog: 'Revisando el historial de ejecución',
-    writeFile: 'Aplicando cambios', createSkill: 'Creando una skill', createExtension: 'Creando una extensión', deleteExtension: 'Eliminando una extensión', createMcpServer: 'Creando un servidor MCP', deleteMcpServer: 'Eliminando un servidor MCP',
-    runCommand: 'Verificando el resultado', terminal: 'Preparando la terminal', openBrowser: 'Abriendo el navegador', getBrowserState: 'Inspeccionando la página', browserAction: 'Interactuando con el navegador',
-    computerListWindows: 'Explorando ventanas abiertas', computerGetState: 'Inspeccionando el escritorio', computerScreenshot: 'Capturando la pantalla', computerOcr: 'Leyendo la pantalla', computerAction: 'Controlando la computadora',
-    subagent: 'Delegando tarea', swarm: 'Coordinando agentes', askUser: 'Esperando tu respuesta', switchProject: 'Cambiando de proyecto',
-  };
+  const labels: Record<string, string> = getMessages('chatActivity', language).labels;
 
-  const completedLabels: Record<string, string> = english ? {
-    listFiles: 'Workspace explored', readFile: 'Relevant files read', searchText: 'Codebase searched', searchTools: 'Available tools explored', executeTool: 'Tool executed',
-    createPlan: 'Plan designed', updatePlan: 'Plan updated', todo: 'Tasks organized', getTaskStatus: 'Task progress reviewed', getExecutionLog: 'Execution history reviewed',
-    writeFile: 'Changes applied', createSkill: 'Skill created', createExtension: 'Extension created', deleteExtension: 'Extension removed', createMcpServer: 'MCP server created', deleteMcpServer: 'MCP server removed',
-    runCommand: 'Result verified', terminal: 'Terminal prepared', openBrowser: 'Browser opened', getBrowserState: 'Page inspected', browserAction: 'Browser interaction completed',
-    computerListWindows: 'Open windows explored', computerGetState: 'Desktop inspected', computerScreenshot: 'Screen captured', computerOcr: 'Screen read', computerAction: 'Computer action completed',
-    subagent: 'Task delegated', swarm: 'Agents coordinated', askUser: 'Question sent', switchProject: 'Project switched',
-  } : {
-    listFiles: 'Workspace explorado', readFile: 'Archivos relevantes leídos', searchText: 'Código buscado', searchTools: 'Herramientas disponibles exploradas', executeTool: 'Herramienta ejecutada',
-    createPlan: 'Plan diseñado', updatePlan: 'Plan actualizado', todo: 'Tareas organizadas', getTaskStatus: 'Progreso revisado', getExecutionLog: 'Historial de ejecución revisado',
-    writeFile: 'Cambios aplicados', createSkill: 'Skill creada', createExtension: 'Extensión creada', deleteExtension: 'Extensión eliminada', createMcpServer: 'Servidor MCP creado', deleteMcpServer: 'Servidor MCP eliminado',
-    runCommand: 'Resultado verificado', terminal: 'Terminal preparada', openBrowser: 'Navegador abierto', getBrowserState: 'Página inspeccionada', browserAction: 'Interacción con el navegador completada',
-    computerListWindows: 'Ventanas abiertas exploradas', computerGetState: 'Escritorio inspeccionado', computerScreenshot: 'Pantalla capturada', computerOcr: 'Pantalla leída', computerAction: 'Acción en la computadora completada',
-    subagent: 'Tarea delegada', swarm: 'Agentes coordinados', askUser: 'Pregunta enviada', switchProject: 'Proyecto cambiado',
-  };
-  const prefix = (completed ? completedLabels[name] : labels[name]) || (english ? (completed ? 'Action completed' : 'Working') : (completed ? 'Acción completada' : 'Trabajando'));
+  const completedLabels: Record<string, string> = getMessages('chatActivity', language).completedLabels;
+  const prefix = (completed ? completedLabels[name] : labels[name]) || (translate(completed ? 'chatActivity.actionCompleted' : 'chatActivity.working', language));
   const detail = name === 'runCommand' || name === 'terminal' ? command : name === 'readFile' || name === 'writeFile' ? path : name === 'searchText' ? query : name === 'openBrowser' ? url : name === 'createPlan' || name === 'todo' || name === 'createSkill' ? title : name === 'subagent' ? specialist : name === 'browserAction' || name === 'computerAction' ? action : '';
   return detail ? `${prefix} ${detail}` : prefix;
 }
@@ -140,9 +111,9 @@ export function ProcessingStatusStateFixed({ startedAt, language }: { startedAt:
     const timer = window.setInterval(() => setElapsed(Math.max(0, Date.now() - startedAt)), 1000);
     return () => window.clearInterval(timer);
   }, [startedAt]);
-  const status = language === 'en' ? 'Thinking' : 'Pensando';
+  const status = translate('chatActivity.thinking', language);
   const elapsedLabel = formatProcessingDuration(elapsed);
-  const processingLabel = language === 'en' ? `${status} for ${elapsedLabel}` : `${status} desde hace ${elapsedLabel}`;
+  const processingLabel = translate('chatActivity.valueForValue', language, { status: status, elapsedLabel: elapsedLabel });
   return <span className="chat-turn-processing" style={{ color: '#777', fontSize: '11px' }}>{processingLabel}</span>;
 }
 
@@ -152,12 +123,12 @@ export function LiveTurnProgress({ message, language }: { message: any; language
   for (const event of message.timeline || []) {
     if (event.type === 'progress') phases.push({ id: event.id, summary: event.text, tools: [] });
     if (event.type === 'tool') {
-      if (!phases.length) phases.push({ id: 'initial', summary: activityTranslations[language].thinking, tools: [] });
+      if (!phases.length) phases.push({ id: 'initial', summary: getMessages('activity', language).thinking, tools: [] });
       phases.at(-1)!.tools.push(tools.get(event.id) || event);
     }
   }
-  if (!phases.length) phases.push({ id: 'current', summary: message.progress || activityTranslations[language].thinking, tools: message.tools || [] });
-  return <div className="chat-live-progress" aria-label={activityTranslations[language].thinking}>
+  if (!phases.length) phases.push({ id: 'current', summary: message.progress || getMessages('activity', language).thinking, tools: message.tools || [] });
+  return <div className="chat-live-progress" aria-label={getMessages('activity', language).thinking}>
     {phases.map((phase, index) => <div key={phase.id} className="chat-progress-phase" data-active={index === phases.length - 1}>
       {phase.tools.length ? <TurnActivity progress={phase.summary} tools={phase.tools} active={index === phases.length - 1} language={language} /> : <p className="chat-progress-label"><span>{phase.summary}</span></p>}
     </div>)}
@@ -168,12 +139,11 @@ export function TurnActivity({ progress = '', timeline = [], tools = [], changes
   const events = tools.length ? tools : timeline.filter((event) => event.type === 'tool');
   const fileChanges = changes?.fileChanges || [];
   if (!events.length && !fileChanges.length && !(active && progress)) return null;
-  const english = language === 'en';
   const summary = progress.trim() || (active
-    ? (english ? 'Working…' : 'Trabajando…')
-    : (english ? `Activity · ${events.length + fileChanges.length} steps` : `Actividad · ${events.length + fileChanges.length} pasos`));
+    ? (translate('chatActivity.working', language))
+    : (translate('chatActivity.activityValueSteps', language, { value1: events.length + fileChanges.length })));
   const changedPathsByWrite = new Set(events.filter((event) => event.name === 'writeFile').map((event) => event.input?.path));
-  const consoleText = toolConsoleTranslations[language];
+  const consoleText = getMessages('toolConsole', language);
   return <details className="turn-activity">
     <summary className="turn-activity-summary">
       <span>{summary}</span>
@@ -186,7 +156,7 @@ export function TurnActivity({ progress = '', timeline = [], tools = [], changes
         const output = activityToolOutput(event.output);
         const isRunning = event.output?.status === 'running' || event.status === 'running';
         const isFailed = event.output?.ok === false || output?.ok === false || output?.error || output?.code > 0 || event.status === 'error';
-        const label = name.startsWith('externalBrowser') ? `${name} · ${isRunning ? consoleText.running : isFailed ? consoleText.failed : consoleText.done}` : name === 'runCommand' ? (english ? 'Command executed' : 'Comando ejecutado') : name === 'writeFile' ? (english ? 'Edited' : 'Editó') : toolActivityLabel(name, input, language, !isRunning && !isFailed);
+        const label = name.startsWith('externalBrowser') ? `${name} · ${isRunning ? consoleText.running : isFailed ? consoleText.failed : consoleText.done}` : name === 'runCommand' ? (translate('chatActivity.commandExecuted', language)) : name === 'writeFile' ? (translate('chatActivity.edited', language)) : toolActivityLabel(name, input, language, !isRunning && !isFailed);
         const pathChange = name === 'writeFile' ? fileChanges.find((item) => item.path === input.path) : null;
         const pathLabel = String(input.path || input.filePath || input.command || input.url || input.title || input.specialist || '');
         const command = [input.command, ...(Array.isArray(input.args) ? input.args : [])].filter(Boolean).join(' ');
@@ -198,7 +168,7 @@ export function TurnActivity({ progress = '', timeline = [], tools = [], changes
         return <details className="turn-activity-item" key={event.id || event.callId || `${name}-${index}`}>
           <summary>
             <ToolActivityIcon name={name} className="turn-activity-action-icon" size={14} strokeWidth={1.7} aria-hidden="true" />
-            <span className="sr-only">{isRunning ? (english ? 'Running' : 'En curso') : isFailed ? (english ? 'Failed' : 'Falló') : (english ? 'Done' : 'Listo')}</span>
+            <span className="sr-only">{isRunning ? (translate('chatActivity.running', language)) : isFailed ? (translate('chatActivity.failed', language)) : (translate('chatActivity.done', language))}</span>
             <span className={`turn-activity-item-label ${isFailed ? 'turn-activity-item-error' : ''}`}>{label}</span>
             <span className="turn-activity-item-detail" title={isCommand ? command : pathLabel}>{isCommand ? command : pathLabel}</span>
             {changedCount}
@@ -206,9 +176,9 @@ export function TurnActivity({ progress = '', timeline = [], tools = [], changes
           </summary>
           <div className="turn-activity-detail">
             {isCommand && <div className="turn-command-card">
-              <div className="turn-command-heading"><Terminal size={13} /><span>Shell</span>{typeof exitCode === 'number' && <span className={exitCode === 0 ? 'turn-command-ok' : 'turn-command-error'}>{exitCode === 0 ? (english ? 'Done' : 'Listo') : `Exit ${exitCode}`}</span>}</div>
+              <div className="turn-command-heading"><Terminal size={13} /><span>Shell</span>{typeof exitCode === 'number' && <span className={exitCode === 0 ? 'turn-command-ok' : 'turn-command-error'}>{exitCode === 0 ? (translate('chatActivity.done', language)) : `Exit ${exitCode}`}</span>}</div>
               <pre className="turn-command-code"><span aria-hidden="true">$ </span>{command}</pre>
-              {(stdout || stderr) ? <pre className={stderr ? 'turn-command-output turn-command-stderr' : 'turn-command-output'}>{[stdout, stderr].filter(Boolean).join('\n')}</pre> : <div className="turn-command-empty">{english ? 'No output' : 'Sin salida'}</div>}
+              {(stdout || stderr) ? <pre className={stderr ? 'turn-command-output turn-command-stderr' : 'turn-command-output'}>{[stdout, stderr].filter(Boolean).join('\n')}</pre> : <div className="turn-command-empty">{translate('chatActivity.noOutput', language)}</div>}
             </div>}
             {!isCommand && pathChange && <div className="turn-activity-file-delta"><FileCode2 size={13} /><span>{input.path}</span><span className="turn-activity-delta"><span>+{pathChange.additions}</span><span>−{pathChange.deletions}</span></span></div>}
             {!isCommand && !pathChange && pathLabel && <div className="turn-activity-raw-detail">{pathLabel}</div>}
@@ -226,7 +196,7 @@ export function TurnActivity({ progress = '', timeline = [], tools = [], changes
       {fileChanges.filter((change) => !changedPathsByWrite.has(change.path)).map((change) => <div className="turn-activity-item turn-activity-file-row" key={`change-${change.path}`}>
         <ToolActivityIcon name="writeFile" className="turn-activity-action-icon" size={14} />
         <FileCode2 size={13} aria-hidden="true" />
-        <span className="turn-activity-item-label">{english ? 'Edited' : 'Editó'}</span>
+        <span className="turn-activity-item-label">{translate('chatActivity.edited', language)}</span>
         <span className="turn-activity-item-detail" title={change.path}>{change.path}</span>
         <span className="turn-activity-delta"><span>+{change.additions}</span><span>−{change.deletions}</span></span>
       </div>)}
@@ -245,14 +215,14 @@ export function AskUserCards({ tools = [], onSelect, onRespondInChat }: { tools?
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '7px' }}>
         {event.output.options?.length
           ? event.output.options.map((option: string) => <button key={option} type="button" onClick={() => onSelect(option, event.id)} onMouseEnter={(event) => { event.currentTarget.style.background = '#202020'; event.currentTarget.style.borderColor = '#4a4a4a'; }} onMouseLeave={(event) => { event.currentTarget.style.background = '#151515'; event.currentTarget.style.borderColor = '#252525'; }} style={{ display: 'flex', alignItems: 'center', minHeight: '36px', padding: '5px 9px', border: '1px solid #252525', borderRadius: '8px', background: '#151515', color: '#ddd', cursor: 'pointer', textAlign: 'left', fontSize: '11px', transition: 'background 120ms ease, border-color 120ms ease' }}>{option}</button>)
-          : <button type="button" onClick={onRespondInChat} onMouseEnter={(event) => { event.currentTarget.style.background = '#202020'; event.currentTarget.style.borderColor = '#4a4a4a'; }} onMouseLeave={(event) => { event.currentTarget.style.background = '#151515'; event.currentTarget.style.borderColor = '#252525'; }} style={{ display: 'flex', alignItems: 'center', minHeight: '36px', padding: '5px 9px', border: '1px solid #252525', borderRadius: '8px', background: '#151515', color: '#ddd', cursor: 'pointer', textAlign: 'left', fontSize: '11px', transition: 'background 120ms ease, border-color 120ms ease' }}>{language === 'en' ? 'Reply in chat' : 'Responder en el chat'}</button>}
+          : <button type="button" onClick={onRespondInChat} onMouseEnter={(event) => { event.currentTarget.style.background = '#202020'; event.currentTarget.style.borderColor = '#4a4a4a'; }} onMouseLeave={(event) => { event.currentTarget.style.background = '#151515'; event.currentTarget.style.borderColor = '#252525'; }} style={{ display: 'flex', alignItems: 'center', minHeight: '36px', padding: '5px 9px', border: '1px solid #252525', borderRadius: '8px', background: '#151515', color: '#ddd', cursor: 'pointer', textAlign: 'left', fontSize: '11px', transition: 'background 120ms ease, border-color 120ms ease' }}>{translate('chatActivity.replyInChat', language)}</button>}
       </div>
     </div>)}
   </div>;
 }
 
 export function ApprovalCards({ approvals = [], onResolve }: { approvals?: any[]; onResolve: (id: string, approved: boolean) => void }) {
-  const language=useAppLanguage(),text=activityTranslations[language];
+  const language=useAppLanguage(),text=getMessages('activity', language);
   if (!approvals.length) return null;
   return <div style={{ display: 'grid', gap: '7px', width: 'min(520px, 100%)', margin: '4px 0 2px' }}>
     {approvals.map((approval) => <div key={approval.id} style={{ display: 'grid', gap: '6px', minWidth: 0, padding: '8px 10px', border: '1px solid #2b2b2b', borderRadius: '9px', background: '#151515', color: '#eee', fontSize: '11px' }}>

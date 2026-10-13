@@ -1,0 +1,3 @@
+{
+  "scheduled": "The task “{{name}}” is scheduled for {{time}}. Its runner will attempt it then and actions may require approval; would you like help preparing it?"
+}

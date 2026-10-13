@@ -17,7 +17,7 @@
     "next:dev": "next dev --hostname 127.0.0.1",
     "next:build": "next build",
     "typecheck": "next typegen && tsc --noEmit",
-    "test:core": "node scripts/test-ai-catalog.mjs && npm run test:agent-graph && node scripts/test-computer-overlay.mjs && node scripts/test-native-commands.mjs && node scripts/test-plugin-resources.mjs && node scripts/test-chat-history.mjs && node scripts/test-chat-ui.mjs && npm run test:accessibility",
+    "test:core": "npm run check:i18n && node scripts/test-i18n.mjs && node scripts/test-mobile-ui.mjs && node scripts/test-ai-catalog.mjs && npm run test:agent-graph && node scripts/test-computer-overlay.mjs && node scripts/test-native-commands.mjs && node scripts/test-plugin-resources.mjs && node scripts/test-chat-history.mjs && node scripts/test-chat-ui.mjs && npm run test:accessibility",
     "verify": "npm run typecheck && npm run desktop:build && npm run test:core",
     "electron:compile": "tsc -p tsconfig.electron.json",
     "electron:launch": "electron .",
@@ -33,7 +33,9 @@
     "test:browser-extension": "npm run electron:compile && node scripts/test-browser-extension-origins.mjs && node scripts/test-browser-extension-reconnect.mjs && node scripts/test-browser-extension.mjs",
     "test:packaged-win": "node scripts/test-packaged-win.mjs",
     "package:win": "npm run desktop:build && electron-builder --win --x64 --publish never",
-    "package:browser-extension": "node scripts/package-browser-extension.mjs"
+    "package:browser-extension": "node scripts/package-browser-extension.mjs",
+    "check:i18n": "node scripts/check-i18n.mjs",
+    "test:i18n": "npm run check:i18n && npm run electron:compile && node scripts/test-i18n.mjs && node scripts/test-mobile-ui.mjs"
   },
   "dependencies": {
     "@ai-sdk/devtools": "^1.0.2",
@@ -64,6 +66,7 @@
     "ai": "^7.0.16",
     "electron-updater": "^6.8.9",
     "highlight.js": "^11.11.1",
+    "i18next": "^26.4.4",
     "langchain": "^1.5.15",
     "lucide-react": "^1.23.0",
     "mammoth": "^1.12.0",
@@ -74,6 +77,7 @@
     "qrcode": "^1.5.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "react-i18next": "^17.0.16",
     "react-markdown": "^10.1.0",
     "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.1",
@@ -83,6 +87,7 @@
     "ws": "^8.22.0"
   },
   "devDependencies": {
+    "@babel/parser": "^8.0.7",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/qrcode": "^1.5.6",

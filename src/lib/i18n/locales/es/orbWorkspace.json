@@ -1,0 +1,14 @@
+{
+  "changeShape": "Cambiar forma de todos los orbes",
+  "title": "Elegí dónde puede trabajar tu orbe",
+  "description": "Elegí la autonomía de tu orbe.",
+  "setupError": "No se pudo iniciar el orbe.",
+  "workspace": "Máxima autonomía",
+  "workspaceDescription": "Actúa sin pedir aprobación.",
+  "thisComputer": "Acceso a PC",
+  "computerDescription": "Archivos y apps · administrador.",
+  "continue": "Continuar",
+  "requesting": "Solicitando permiso…",
+  "adminError": "No se autorizó el acceso administrador.",
+  "busy": "Detené los agentes y cerrá las terminales antes de reiniciar como administrador."
+}

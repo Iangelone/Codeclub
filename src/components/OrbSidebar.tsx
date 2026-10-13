@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { QrCode, KeyRound, CheckCircle2, ChevronRight, Circle, Laptop, Smartphone, Globe, MoreHorizontal, BrushCleaning, Wrench, LoaderCircle, Pencil, X } from 'lucide-react';
 import type { OrbDefinition } from '../lib/chat-resources';
 import type { ScheduledTask } from '../lib/scheduled-tasks';
-import { orbPairingTranslations, orbCredentialsTranslations, orbSidebarTranslations, orbWorkspaceTranslations, useAppLanguage } from '../lib/i18n';
+import { useAppLanguage, getMessages } from '../lib/i18n';
 import OrbCredentialsModal from './OrbCredentialsModal';
 import OrbPairingModal from './OrbPairingModal';
 import { models, providers } from '../lib/ai-catalog';
@@ -23,7 +23,7 @@ import { nativeInvoke } from '../lib/runtime';
 export default function OrbSidebar({ orb, onClose }: { orb?: OrbDefinition; onClose?: () => void }) {
   const language = useAppLanguage();
   const { cycleShape } = useOrbPalette();
-  const text = orbSidebarTranslations[language];
+  const text = getMessages('orbSidebar', language);
   const sessions = useSharedSessions();
   const [task, setTask] = useState<ScheduledTask>();
   const [activity, setActivity] = useState<ScheduledTask['runs']>([]);
@@ -145,10 +145,10 @@ export default function OrbSidebar({ orb, onClose }: { orb?: OrbDefinition; onCl
   return <section className="relative flex h-full min-h-0 flex-col overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden bg-(--codeclub-center) px-4 py-5 text-[11px] text-[#cccccc]" aria-label={text.sidebar}>
     {onClose && <button type="button" onClick={onClose} aria-label={text.close} title={text.close} className={`${iconButton} absolute right-2 top-2`}><X size={13} aria-hidden="true" /></button>}
     <header className="mb-7 flex flex-col items-center pt-2">
-      <div className="relative"><button type="button" onClick={cycleShape} title={orbWorkspaceTranslations[language].changeShape} aria-label={orbWorkspaceTranslations[language].changeShape} className="block cursor-pointer rounded-full focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-(--codeclub-accent)"><FluidOrb size={56} active={activeOrb} animateOnHover={false} aria-hidden="true" /></button><button type="button" onClick={configure} disabled={!orb} title={text.configure} aria-label={text.configure} className={`${iconButton} absolute -bottom-1 -right-2 h-5 w-5 bg-(--codeclub-center)`}><Pencil size={10} aria-hidden="true" /></button></div>
+      <div className="relative"><button type="button" onClick={cycleShape} title={getMessages('orbWorkspace', language).changeShape} aria-label={getMessages('orbWorkspace', language).changeShape} className="block cursor-pointer rounded-full focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-(--codeclub-accent)"><FluidOrb size={56} active={activeOrb} animateOnHover={false} aria-hidden="true" /></button><button type="button" onClick={configure} disabled={!orb} title={text.configure} aria-label={text.configure} className={`${iconButton} absolute -bottom-1 -right-2 h-5 w-5 bg-(--codeclub-center)`}><Pencil size={10} aria-hidden="true" /></button></div>
       <h1 className="mb-0 mt-3 max-w-full truncate text-[17px] font-medium text-[#eeeeee]">{orb?.name || text.orb}</h1>
       <p className="mb-0 mt-0.5 text-[11px] text-[#999999]">{currentSession?.busy ? text.working : activeOrb ? text.active : text.idle}</p>
-      <div className="mt-4 flex justify-center gap-5"><button type="button" onClick={configure} disabled={!orb} className={iconButton} title={text.settings} aria-label={text.settings}><Wrench size={15} aria-hidden="true" /></button><button type="button" onClick={() => setShowCredentials(true)} className={iconButton} title={orbCredentialsTranslations[language].title} aria-label={orbCredentialsTranslations[language].title}><KeyRound size={15} aria-hidden="true" /></button><button type="button" onClick={() => setShowPairing(true)} className={iconButton} title={orbPairingTranslations[language].title} aria-label={orbPairingTranslations[language].title}><QrCode size={16} aria-hidden="true" /></button><button type="button" onClick={() => void clearChat()} disabled={!orb || pending || currentSession?.busy || task?.status === 'active'} className={iconButton} title={text.clearChat} aria-label={text.clearChat}><BrushCleaning size={16} aria-hidden="true" /></button></div>
+      <div className="mt-4 flex justify-center gap-5"><button type="button" onClick={configure} disabled={!orb} className={iconButton} title={text.settings} aria-label={text.settings}><Wrench size={15} aria-hidden="true" /></button><button type="button" onClick={() => setShowCredentials(true)} className={iconButton} title={getMessages('orbCredentials', language).title} aria-label={getMessages('orbCredentials', language).title}><KeyRound size={15} aria-hidden="true" /></button><button type="button" onClick={() => setShowPairing(true)} className={iconButton} title={getMessages('orbPairing', language).title} aria-label={getMessages('orbPairing', language).title}><QrCode size={16} aria-hidden="true" /></button><button type="button" onClick={() => void clearChat()} disabled={!orb || pending || currentSession?.busy || task?.status === 'active'} className={iconButton} title={text.clearChat} aria-label={text.clearChat}><BrushCleaning size={16} aria-hidden="true" /></button></div>
     </header>
     <section className="mb-6" aria-label={text.configure}>
       <h2 className="mb-2 mt-0 text-[11px] font-normal text-[#888888]">{text.configure}</h2>

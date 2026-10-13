@@ -7,7 +7,7 @@ import { useDialogAccessibility } from './ui/use-accessible-overlay';
 import { Check, Copy, Play, Plus, Search, Square, X, MessageSquare, Trash2 } from 'lucide-react';
 import { getSetting, setSetting } from '../lib/persistence';
 import { ORBS_STORAGE_KEY, type OrbDefinition } from '../lib/chat-resources';
-import { orbControlTranslations, orbsTranslations, useAppLanguage } from '../lib/i18n';
+import { useAppLanguage, translate, getMessages } from '../lib/i18n';
 import { readGlobalChatHistory, writeGlobalChatHistory } from '../lib/projectManager';
 import type { ScheduledTask } from '../lib/scheduled-tasks';
 import { useSharedSessions } from '../lib/shared-sessions';
@@ -98,8 +98,8 @@ function CatalogPicker({ id, label, value, items, placeholder, noResults, autoFo
 
 export default function OrbsPanel({ createMode = false, onCreated, workspaceMode = false, selectedOrbId }: { createMode?: boolean; onCreated?: (id: string) => void; workspaceMode?: boolean; selectedOrbId?: string }) {
   const language = useAppLanguage();
-  const text = orbsTranslations[language];
-  const controls = orbControlTranslations[language];
+  const text = getMessages('orbs', language);
+  const controls = getMessages('orbControl', language);
   const sessions = useSharedSessions();
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
   const [pendingActions, setPendingActions] = useState<Record<string, boolean>>({});
@@ -215,12 +215,12 @@ export default function OrbsPanel({ createMode = false, onCreated, workspaceMode
   const startConversation = async (options: { allowComputer: boolean; maximumAutonomy: boolean; requiresAdministrator: boolean }) => {
     setControlError('');
     try {
-      const orb = { ...emptyOrb(), ...options, name: language === 'es' ? 'Tu orbe' : 'Your orb' };
+      const orb = { ...emptyOrb(), ...options, name: translate('orbsPanel.yourOrb', language) };
       const chatId = `orb-chat-${orb.id}`;
       const saved = await getSetting<Orb[]>(STORAGE_KEY, []);
       const next = [...saved, { ...orb, chatId }];
       await setSetting(STORAGE_KEY, next);
-      await writeGlobalChatHistory(chatId, [{ role: 'assistant', content: language === 'es' ? 'Hola, soy tu orbe. ¿Qué querés que haga?' : 'Hi, I’m your orb. What would you like me to do?', createdAt: Date.now(), source: 'orb-welcome' }]);
+      await writeGlobalChatHistory(chatId, [{ role: 'assistant', content: translate('orbsPanel.hiIMYourOrbWhatWould', language), createdAt: Date.now(), source: 'orb-welcome' }]);
       setOrbs(next);
       window.dispatchEvent(new CustomEvent('codeclub:orbs-changed'));
       window.dispatchEvent(new CustomEvent('codeclub:global-chat-changed'));
@@ -415,22 +415,22 @@ export default function OrbsPanel({ createMode = false, onCreated, workspaceMode
           </> : <>
             <label className="block"><span className="mb-1 block text-[11px] text-[#aaaaaa]">{text.name}</span><input autoFocus maxLength={48} value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder={text.namePlaceholder} className="h-8 w-full rounded-lg border border-[#2b2b2b] bg-[#191919] px-2.5 text-[12px] text-[#eeeeee] outline-none placeholder:text-[#666666] focus-visible:border-[#8BC7FF] focus-visible:ring-1 focus-visible:ring-[#8BC7FF]" /></label>
             <label className="block"><span className="mb-1 block text-[11px] text-[#aaaaaa]">{text.purpose}</span><textarea rows={3} maxLength={4000} value={draft.purpose} onChange={(event) => setDraft({ ...draft, purpose: event.target.value })} placeholder={text.purposePlaceholder} className="w-full resize-y border border-[#2b2b2b] bg-[#101010] px-2.5 py-2 text-[12px] leading-4 text-[#eeeeee] outline-none placeholder:text-[#666666] focus-visible:border-[#8BC7FF] focus-visible:ring-1 focus-visible:ring-[#8BC7FF]" /></label>
-            <fieldset><legend className="mb-1 text-[11px] text-[#aaaaaa]">{text.color}</legend><div className="flex flex-wrap gap-1.5">{ORB_PALETTES.map((palette) => <label key={palette.id} className="relative grid h-8 w-8 cursor-pointer place-items-center border border-transparent has-[:checked]:border-white has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-[#8BC7FF]" title={language === 'es' ? palette.es : palette.en}>
-              <input type="radio" name="orb-color" value={palette.orb} checked={draft.color === palette.orb} onChange={() => setDraft({ ...draft, color: palette.orb })} aria-label={language === 'es' ? palette.es : palette.en} className="sr-only" />
+            <fieldset><legend className="mb-1 text-[11px] text-[#aaaaaa]">{text.color}</legend><div className="flex flex-wrap gap-1.5">{ORB_PALETTES.map((palette) => <label key={palette.id} className="relative grid h-8 w-8 cursor-pointer place-items-center border border-transparent has-[:checked]:border-white has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-[#8BC7FF]" title={translate(`palette.${palette.id}`, language)}>
+              <input type="radio" name="orb-color" value={palette.orb} checked={draft.color === palette.orb} onChange={() => setDraft({ ...draft, color: palette.orb })} aria-label={translate(`palette.${palette.id}`, language)} className="sr-only" />
               <span aria-hidden="true" className="h-5 w-5" style={{ backgroundColor: palette.orb }} />
             </label>)}</div></fieldset>
           </>}
           {(flowError || error) && <p role="alert" className="m-0 text-[11px] text-red-300">{flowError || error}</p>}
         </div>
         <footer className="flex items-center justify-between gap-3 border-t border-[#252525] px-4 py-2.5 sm:px-5">
-          <div className="flex min-w-0 items-center gap-2.5" aria-live="polite" aria-label={`${text.color}: ${language === 'es' ? ORB_PALETTES.find((palette) => palette.orb === draft.color)?.es : ORB_PALETTES.find((palette) => palette.orb === draft.color)?.en}`}>
+          <div className="flex min-w-0 items-center gap-2.5" aria-live="polite" aria-label={`${text.color}: ${translate(`palette.${ORB_PALETTES.find((palette) => palette.orb === draft.color)?.id || 'blue'}`, language)}`}>
             <FluidOrb size={42} color={draft.color} active animateOnHover={false} themeTint={false} aria-hidden="true" />
-            <span className="truncate text-[11px] text-[#999999]">{draft.name.trim() || (language === 'es' ? 'Vista previa' : 'Preview')}</span>
+            <span className="truncate text-[11px] text-[#999999]">{draft.name.trim() || (translate('orbsPanel.preview', language))}</span>
           </div>
           <div className="flex shrink-0 justify-end gap-2">
             {step === 1 ? <>
               <button type="button" onClick={closeEditor} className="h-8 px-2 text-[11px] text-[#999999] hover:bg-[#222222] hover:text-[#eeeeee] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)">{text.cancel}</button>
-              <button key="orb-continue" type="button" onClick={(event) => { event.preventDefault(); void continueToDesign(); }} disabled={saving || !selectedProvider || !selectedModel || credentialLoading} className="h-8 bg-[#292929] px-3 text-[11px] text-[#eeeeee] hover:bg-[#353535] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) disabled:cursor-not-allowed disabled:opacity-40">{workspaceMode ? (language === 'es' ? 'Guardar' : 'Save') : text.continue}</button>
+              <button key="orb-continue" type="button" onClick={(event) => { event.preventDefault(); void continueToDesign(); }} disabled={saving || !selectedProvider || !selectedModel || credentialLoading} className="h-8 bg-[#292929] px-3 text-[11px] text-[#eeeeee] hover:bg-[#353535] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) disabled:cursor-not-allowed disabled:opacity-40">{workspaceMode ? (translate('orbsPanel.save', language)) : text.continue}</button>
             </> : <>
               <button type="button" onClick={() => { setFlowError(''); setStep(1); }} className="h-8 px-2 text-[11px] text-[#999999] hover:bg-[#222222] hover:text-[#eeeeee] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent)">{text.back}</button>
               <button key="orb-save" type="submit" disabled={saving || !draft.name.trim() || !draft.purpose.trim()} className="h-8 bg-[#292929] px-3 text-[11px] text-[#eeeeee] hover:bg-[#353535] focus-visible:outline-2 focus-visible:outline-(--codeclub-accent) disabled:cursor-not-allowed disabled:opacity-40">{saving ? text.saving : text.save}</button>

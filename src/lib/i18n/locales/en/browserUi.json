@@ -1,0 +1,9 @@
+{
+  "selectionReady": "Selection ready to reference",
+  "elementReady": "Element ready to reference",
+  "add": "Add",
+  "removeSelection": "Remove selection",
+  "loading": "Loading...",
+  "empty": "Enter an address to browse",
+  "pageError": "Could not load page"
+}

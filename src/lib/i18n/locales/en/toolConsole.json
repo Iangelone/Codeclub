@@ -1,0 +1,11 @@
+{
+  "title": "Tool console",
+  "input": "Input",
+  "output": "Output",
+  "running": "Running",
+  "failed": "Failed",
+  "done": "Done",
+  "waiting": "Waiting for the result…",
+  "empty": "No output",
+  "truncated": "Output truncated for display"
+}

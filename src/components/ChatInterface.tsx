@@ -1,8 +1,8 @@
+import { translate, getMessages, useAppLanguage, setAppLanguage, type AppLanguage } from '../lib/i18n';
 /** Owns composer and stream presentation; model steps use the shared engine, durable chat data uses storage APIs, and native I/O uses preload. */
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useChatHistory } from './use-chat-history';
-import { accessibilityTranslations } from '../lib/i18n';
 import { usePopupKeyboard } from './ui/use-accessible-overlay';
 import { generateTurnSummary } from '../lib/turn-summary';
 import { buildChatContext } from '../lib/chat-context';
@@ -21,9 +21,7 @@ import { appendGenerationUsage, type GenerationUsageRecord } from '../lib/usage'
 import { appendExecutionLog } from '../lib/execution-log';
 import { appendGlobalChatTranscript, getProjectChatPath, getProjectTranscriptPath, readGlobalChatHistory, readGlobalChats, readProjectIndex, readProjectMeta, writeGlobalChatHistory, writeGlobalChats, writeProjectMeta, type ProjectMeta } from '../lib/projectManager';
 import { chatResources, ORBS_STORAGE_KEY, parseOrbs, type ChatResource, type OrbDefinition } from '../lib/chat-resources';
-import { resourceMenuTranslations } from '../lib/i18n';
 import { codeclubExtensions, type CodeclubExtension } from '../lib/extensions';
-import { developmentEnglishTranslations, savedProviderTranslations, activityTranslations, aiCredentialTranslations, chatHistoryTranslations, chatActionTranslations, agentTextSelectionTranslations, LANGUAGE_STORAGE_KEY, type AppLanguage } from '../lib/i18n';
 import { connectAllAgentPluginMcp, loadAgentPlugins } from '../lib/agent-plugins';
 import OrbPaletteButton from './ui/OrbPaletteButton';
 import { ORB_PALETTES, useOrbPalette } from './OrbPaletteProvider';
@@ -49,7 +47,7 @@ const getBrowserReferenceFavicon = (reference: { title: string; url?: string }) 
 function formatChatTime(value: unknown, language: AppLanguage) {
   const date = value ? new Date(value as string | number) : new Date();
   if (Number.isNaN(date.getTime())) return '--:--';
-  return new Intl.DateTimeFormat(language === 'en' ? 'en-US' : 'es-AR', { hour: 'numeric', minute: '2-digit' }).format(date);
+  return new Intl.DateTimeFormat(translate('chatInterface.enUS', language), { hour: 'numeric', minute: '2-digit' }).format(date);
 }
 type CatalogItem = { id: string; type?: string; label?: string; name?: string; description?: string; aliases?: string[]; source?: string; [key: string]: any };
 type ProjectOption = CatalogItem & { path?: string; projectPath?: string | null; projectId?: string; isNone?: boolean };
@@ -91,56 +89,51 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
   const catalog = baseCatalog;
   const { palette } = useOrbPalette();
   const orbPaletteIndex = ORB_PALETTES.indexOf(palette);
-  const [language, setLanguage] = useState<AppLanguage>('es');
-  const chatText = language === 'en' ? { greeting: 'What are we working on today', send: 'Send', cancel: 'Cancel generation', message: 'Message', attach: 'Attach', removeFiles: 'Remove added files', activeSkills: 'Active skills', activeExtensions: 'Active extensions', removeSkill: 'Remove skill from this session', removeExtension: 'Remove extension from this session', selected: 'Selected', provider: 'provider', model: 'model', project: 'project', skill: 'skill', extension: 'extension', command: 'command', searchProvider: 'Search provider', searchModel: 'Search active provider model', searchProject: 'Search project', searchSkill: 'Search skill', searchCommand: 'Search command', noProject: 'No project', slash: { provider: 'Provider', model: 'Model', project: 'Project', skill: 'Skill', providerDescription: 'Select provider', modelDescription: 'Select model', projectDescription: 'Select project', skillDescription: 'Load skill in this session' }, status: { idle: 'Ready when you are.', connecting: 'Connecting to provider...', streaming: 'Thinking...', tool_call: 'Using tool...', approval: 'Waiting for approval...', running: 'Running...', error: 'Something went wrong.' } } : { greeting: '¿Qué toca hoy', send: 'Enviar', cancel: 'Cancelar generación', message: 'Mensaje', attach: 'Adjuntar', removeFiles: 'Quitar archivos añadidos', activeSkills: 'Habilidades activas', activeExtensions: 'Extensiones activas', removeSkill: 'Quitar habilidad de esta sesión', removeExtension: 'Quitar extensión de esta sesión', selected: 'Seleccionado', provider: 'proveedor', model: 'modelo', project: 'proyecto', skill: 'habilidad', extension: 'extensión', command: 'comando', searchProvider: 'Buscar proveedor', searchModel: 'Buscar modelo del proveedor activo', searchProject: 'Buscar proyecto', searchSkill: 'Buscar habilidad', searchCommand: 'Buscar comando', noProject: 'Sin proyecto', slash: { provider: 'Proveedor', model: 'Modelo', project: 'Proyecto', skill: 'Habilidad', providerDescription: 'Seleccionar proveedor', modelDescription: 'Seleccionar modelo', projectDescription: 'Seleccionar proyecto', skillDescription: 'Cargar habilidad en esta sesión' }, status: { idle: 'Listo cuando tú lo estés.', connecting: 'Conectando con el proveedor...', streaming: 'Pensando...', tool_call: 'Usando herramienta...', approval: 'Esperando aprobación...', running: 'Ejecutando...', error: 'Algo salió mal.' } };
-  if (language === 'es') {
-    Object.assign(chatText, { greeting: '¿Qué toca hoy', cancel: 'Cancelar generación', removeFiles: 'Quitar archivos añadidos', removeSkill: 'Quitar habilidad de esta sesión', removeExtension: 'Quitar extensión de esta sesión' });
-    chatText.slash = { ...chatText.slash, skillDescription: 'Cargar habilidad en esta sesión' };
-    chatText.status = { ...chatText.status, idle: 'Listo cuando tú lo estés.', approval: 'Esperando aprobación...', error: 'Algo salió mal.' };
-  }
+  const language = useAppLanguage();
+  const chatText = getMessages('chatInterface', language).chatText;
   const historyWindow = useChatHistory();
   const { messages, setMessages } = historyWindow;
-  const projectsSlashLabel = language === 'en' ? 'Projects' : 'Proyectos';
+  const projectsSlashLabel = translate('chatInterface.projects', language);
   const isDevelopmentBuild = process.env.NODE_ENV === 'development';
   const languageOptions = [
-    { id: 'es', label: 'Español', description: language === 'en' ? 'Use Spanish' : 'Usar español', type: 'language' },
-    { id: 'en', label: 'English', description: language === 'en' ? 'Use English' : 'Usar inglés', type: 'language' },
+    { id: 'es', label: 'Español', description: translate('chatInterface.useSpanish', language), type: 'language' },
+    { id: 'en', label: 'English', description: translate('chatInterface.useEnglish', language), type: 'language' },
   ];
   const developmentOptions = [
-    { id: 'build-feature', label: 'Desarrollar funcionalidad', description: 'Planificar, implementar y verificar', type: 'development', prompt: 'Desarrollá esta funcionalidad usando las tools necesarias. Primero inspeccioná el proyecto, proponé un plan breve, implementá los cambios y verificá que todo funcione.' },
-    { id: 'debug-project', label: 'Investigar y corregir', description: 'Diagnosticar con tools', type: 'development', prompt: 'Investigá este problema usando las tools disponibles. Revisá el proyecto, encontrá la causa raíz, aplicá una solución y verificá el resultado.' },
-    { id: 'review-changes', label: 'Revisar el proyecto', description: 'Analizar estado y próximos pasos', type: 'development', prompt: 'Revisá el estado actual del proyecto usando las tools necesarias. Señalá problemas importantes, proponé mejoras concretas y aplicá las que correspondan.' },
-    { id: 'test-list-files', label: 'Test: listar archivos', description: 'Probar exploración del workspace', type: 'development', prompt: 'Usá listFiles para inspeccionar el workspace activo. Informá la ruta, cantidad y una muestra de archivos reales; no modifiques nada.' },
-    { id: 'test-read-file', label: 'Test: leer archivo', description: 'Probar lectura de archivos', type: 'development', prompt: 'Usá listFiles para elegir un archivo de texto real y luego usá readFile para leerlo. Devolvé evidencia de ambas tools; no modifiques nada.' },
-    { id: 'test-search-text', label: 'Test: buscar texto', description: 'Probar búsqueda en el código', type: 'development', prompt: 'Usá searchText para buscar una cadena real y común del proyecto. Mostrá rutas, líneas y previews devueltos por la tool; no inventes coincidencias ni modifiques nada.' },
-    { id: 'test-ask-user', label: 'Test: preguntar al usuario', description: 'Probar pausa de aclaración', type: 'development', prompt: 'Usá askUser para preguntarme qué archivo o área del proyecto querés que inspeccione después. Esperá mi respuesta y no ejecutes acciones adicionales.' },
-    { id: 'test-create-plan', label: 'Test: crear plan', description: 'Probar planes persistentes', type: 'development', prompt: 'Creá un plan de prueba persistente con createPlan para inspeccionar el workspace, verificar una ruta y revisar el log. No edites archivos.' },
-    { id: 'test-update-plan', label: 'Test: actualizar plan', description: 'Probar cambios de estado', type: 'development', prompt: 'Usá getTaskStatus para encontrar el plan activo y luego updatePlan para marcar un paso real como in_progress. Informá los resultados y no edites archivos.' },
-    { id: 'test-todos', label: 'Test: TODOs', description: 'Probar tareas persistentes', type: 'development', prompt: 'Usá todo para agregar un TODO de prueba claramente identificado, luego listalo y finalmente actualizalo a completed. Informá cada resultado real.' },
-    { id: 'test-task-status', label: 'Test: estado de tareas', description: 'Probar lectura de planes y TODOs', type: 'development', prompt: 'Usá getTaskStatus para leer el plan y los TODOs persistentes del proyecto activo. Devolvé el estado real sin crear ni modificar nada.' },
-    { id: 'test-execution-log', label: 'Test: log de ejecución', description: 'Probar auditoría de tools', type: 'development', prompt: 'Usá getExecutionLog con un límite pequeño para leer el log estructurado de ejecución. Resumí tools, tiempos y resultados reales; no modifiques nada.' },
-    { id: 'test-run-command', label: 'Test: ejecutar comando', description: 'Probar comandos seguros', type: 'development', prompt: 'Usá runCommand para ejecutar un comando seguro y de solo lectura que confirme el sistema y la ruta del workspace. Verificá la salida real y no modifiques archivos.' },
-    { id: 'test-terminal', label: 'Test: terminal persistente', description: 'Probar procesos de terminal', type: 'development', prompt: 'Usá terminal para iniciar un proceso corto y seguro en segundo plano, observá el resultado y cerralo si corresponde. Informá el estado real sin dejar procesos innecesarios.' },
-    { id: 'test-open-browser', label: 'Test: abrir navegador', description: 'Probar navegador integrado', type: 'development', prompt: 'Usá openBrowser para abrir https://example.com dentro del navegador integrado. Confirmá la URL real y no interactúes todavía con la página.' },
-    { id: 'test-browser-state', label: 'Test: estado del navegador', description: 'Probar observación web', type: 'development', prompt: 'Usá getBrowserState para observar el navegador integrado actual. Informá URL, título y elementos visibles devueltos por la tool; no inventes datos.' },
-    { id: 'test-browser-action', label: 'Test: acción en navegador', description: 'Probar interacción web', type: 'development', prompt: 'Abrí https://example.com con openBrowser, observá con getBrowserState y ejecutá una acción segura de scroll pequeño con browserAction. Verificá cada resultado real.' },
-    { id: 'test-list-windows', label: 'Test: listar ventanas', description: 'Probar control de PC', type: 'development', prompt: 'Usá computerListWindows para listar las ventanas visibles de Windows. Informá títulos, procesos y handles reales sin interactuar ni modificar nada.' },
-    { id: 'test-computer-state', label: 'Test: estado de ventana', description: 'Probar UI Automation', type: 'development', prompt: 'Usá computerListWindows, elegí una ventana visible segura y consultá su estado con computerGetState. Devolvé evidencia real sin ejecutar acciones.' },
-    { id: 'test-screenshot', label: 'Test: captura de pantalla', description: 'Probar captura del escritorio', type: 'development', prompt: 'Usá computerScreenshot para capturar el escritorio actual. Confirmá que la evidencia fue devuelta y describí solo lo observable, sin inventar.' },
-    { id: 'test-ocr', label: 'Test: OCR de pantalla', description: 'Probar lectura visual', type: 'development', prompt: 'Usá computerScreenshot y luego computerOcr para leer el texto visible de la captura. Informá texto y coordenadas reales, sin interactuar con ventanas.' },
-    { id: 'test-computer-action', label: 'Test: acción de PC', description: 'Probar mouse y teclado', type: 'development', prompt: 'Usá computerListWindows y computerGetState para localizar una ventana segura. Luego ejecutá con computerAction únicamente una acción reversible de focus y verificá el estado posterior.' },
-    { id: 'test-subagent', label: 'Test: subagente', description: 'Probar delegación especializada', type: 'development', prompt: 'Delegá a un subagente read_only la tarea de listar y resumir la estructura del workspace. Esperá su resultado, verificá la evidencia y no modifiques archivos.' },
-    { id: 'test-tool-discovery', label: 'Test: descubrir tools', description: 'Probar búsqueda y ejecución dinámica', type: 'development', prompt: 'Usá searchTools con una consulta vacía o amplia para descubrir las tools disponibles. Luego ejecutá mediante executeTool una tool segura de lectura usando su esquema exacto y reportá ambos resultados.' },
-    { id: 'test-write-file', label: 'Test: escribir archivo', description: 'Probar escritura controlada', type: 'development', prompt: 'Creá mediante writeFile el archivo temporal __codeclub_tool_test__.txt con una línea de texto, leelo con readFile, verificá su contenido y eliminá el archivo temporal usando una tool segura. Informá cada evidencia.' },
-    { id: 'test-create-skill', label: 'Test: crear skill', description: 'Probar Agent Plugins', type: 'development', prompt: 'Creá una skill de prueba mínima y claramente identificada con createSkill en el alcance del proyecto activo. Verificá que devuelva pluginPath y skillPath; no sobrescribas plugins existentes.' },
-    { id: 'test-create-extension', label: 'Test: crear extensión', description: 'Probar extensiones de agente', type: 'development', prompt: 'Creá una extensión de prueba mínima y claramente identificada con createExtension en el alcance del proyecto activo. Verificá su resultado y no sobrescribas extensiones existentes.' },
-    { id: 'test-delete-extension', label: 'Test: eliminar extensión', description: 'Probar limpieza de plugins', type: 'development', prompt: 'Usá deleteExtension únicamente sobre una extensión de prueba creada previamente por este flujo. Verificá la respuesta real y no elimines extensiones existentes.' },
-    { id: 'test-create-mcp', label: 'Test: crear MCP', description: 'Probar configuración MCP', type: 'development', prompt: 'Creá un servidor MCP de prueba claramente identificado con createMcpServer usando una configuración segura y no ejecutable. Verificá el manifiesto generado y no conectes servicios reales.' },
-    { id: 'test-delete-mcp', label: 'Test: eliminar MCP', description: 'Probar limpieza de servidores', type: 'development', prompt: 'Usá deleteMcpServer únicamente sobre un servidor MCP de prueba creado previamente por este flujo. Verificá la respuesta real y no elimines servidores existentes.' },
-    { id: 'test-switch-project', label: 'Test: cambiar proyecto', description: 'Probar contexto de workspace', type: 'development', prompt: 'Usá switchProject para consultar o seleccionar explícitamente un proyecto disponible, verificá el proyecto activo con una lectura segura y no cambies archivos.' },
-    { id: 'test-full-development-flow', label: 'Test: flujo completo', description: 'Probar ciclo de desarrollo', type: 'development', prompt: 'Ejecutá un flujo completo y verificable: inspeccioná archivos con listFiles, buscá texto con searchText, leé un archivo con readFile, creá un plan con createPlan, agregá un TODO con todo, ejecutá un comando seguro con runCommand, consultá getExecutionLog y resumí toda la evidencia. No modifiques archivos.' },
-    { id: 'markdown-rendering', label: language === 'en' ? 'Test: Markdown rendering' : 'Test: renderizado Markdown', description: language === 'en' ? 'Render every supported Markdown element' : 'Renderizar todos los elementos Markdown compatibles', type: 'development', prompt: '[TESTING MARKDOWN] Respondé únicamente con una demostración completa en Markdown, sin tools: encabezados H1/H2/H3, texto en **negrita**, *cursiva*, ~~tachado~~, enlace, cita, listas numeradas y con viñetas, código inline, bloque de código con lenguaje, regla horizontal y una tabla con encabezados, tres filas y alineación. Incluí emojis y caracteres especiales. No describas la prueba: renderizá directamente todos los elementos.' },
-  ].map(command => language === 'en' ? { ...command, ...developmentEnglishTranslations[command.id], prompt: `${command.prompt}\n\nRespond in English.` } : command);
+    { id: 'build-feature', label: translate('development.build-feature.label', language), description: translate('development.build-feature.description', language), type: 'development', prompt: 'Desarrollá esta funcionalidad usando las tools necesarias. Primero inspeccioná el proyecto, proponé un plan breve, implementá los cambios y verificá que todo funcione.' },
+    { id: 'debug-project', label: translate('development.debug-project.label', language), description: translate('development.debug-project.description', language), type: 'development', prompt: 'Investigá este problema usando las tools disponibles. Revisá el proyecto, encontrá la causa raíz, aplicá una solución y verificá el resultado.' },
+    { id: 'review-changes', label: translate('development.review-changes.label', language), description: translate('development.review-changes.description', language), type: 'development', prompt: 'Revisá el estado actual del proyecto usando las tools necesarias. Señalá problemas importantes, proponé mejoras concretas y aplicá las que correspondan.' },
+    { id: 'test-list-files', label: translate('development.test-list-files.label', language), description: translate('development.test-list-files.description', language), type: 'development', prompt: 'Usá listFiles para inspeccionar el workspace activo. Informá la ruta, cantidad y una muestra de archivos reales; no modifiques nada.' },
+    { id: 'test-read-file', label: translate('development.test-read-file.label', language), description: translate('development.test-read-file.description', language), type: 'development', prompt: 'Usá listFiles para elegir un archivo de texto real y luego usá readFile para leerlo. Devolvé evidencia de ambas tools; no modifiques nada.' },
+    { id: 'test-search-text', label: translate('development.test-search-text.label', language), description: translate('development.test-search-text.description', language), type: 'development', prompt: 'Usá searchText para buscar una cadena real y común del proyecto. Mostrá rutas, líneas y previews devueltos por la tool; no inventes coincidencias ni modifiques nada.' },
+    { id: 'test-ask-user', label: translate('development.test-ask-user.label', language), description: translate('development.test-ask-user.description', language), type: 'development', prompt: 'Usá askUser para preguntarme qué archivo o área del proyecto querés que inspeccione después. Esperá mi respuesta y no ejecutes acciones adicionales.' },
+    { id: 'test-create-plan', label: translate('development.test-create-plan.label', language), description: translate('development.test-create-plan.description', language), type: 'development', prompt: 'Creá un plan de prueba persistente con createPlan para inspeccionar el workspace, verificar una ruta y revisar el log. No edites archivos.' },
+    { id: 'test-update-plan', label: translate('development.test-update-plan.label', language), description: translate('development.test-update-plan.description', language), type: 'development', prompt: 'Usá getTaskStatus para encontrar el plan activo y luego updatePlan para marcar un paso real como in_progress. Informá los resultados y no edites archivos.' },
+    { id: 'test-todos', label: translate('development.test-todos.label', language), description: translate('development.test-todos.description', language), type: 'development', prompt: 'Usá todo para agregar un TODO de prueba claramente identificado, luego listalo y finalmente actualizalo a completed. Informá cada resultado real.' },
+    { id: 'test-task-status', label: translate('development.test-task-status.label', language), description: translate('development.test-task-status.description', language), type: 'development', prompt: 'Usá getTaskStatus para leer el plan y los TODOs persistentes del proyecto activo. Devolvé el estado real sin crear ni modificar nada.' },
+    { id: 'test-execution-log', label: translate('development.test-execution-log.label', language), description: translate('development.test-execution-log.description', language), type: 'development', prompt: 'Usá getExecutionLog con un límite pequeño para leer el log estructurado de ejecución. Resumí tools, tiempos y resultados reales; no modifiques nada.' },
+    { id: 'test-run-command', label: translate('development.test-run-command.label', language), description: translate('development.test-run-command.description', language), type: 'development', prompt: 'Usá runCommand para ejecutar un comando seguro y de solo lectura que confirme el sistema y la ruta del workspace. Verificá la salida real y no modifiques archivos.' },
+    { id: 'test-terminal', label: translate('development.test-terminal.label', language), description: translate('development.test-terminal.description', language), type: 'development', prompt: 'Usá terminal para iniciar un proceso corto y seguro en segundo plano, observá el resultado y cerralo si corresponde. Informá el estado real sin dejar procesos innecesarios.' },
+    { id: 'test-open-browser', label: translate('development.test-open-browser.label', language), description: translate('development.test-open-browser.description', language), type: 'development', prompt: 'Usá openBrowser para abrir https://example.com dentro del navegador integrado. Confirmá la URL real y no interactúes todavía con la página.' },
+    { id: 'test-browser-state', label: translate('development.test-browser-state.label', language), description: translate('development.test-browser-state.description', language), type: 'development', prompt: 'Usá getBrowserState para observar el navegador integrado actual. Informá URL, título y elementos visibles devueltos por la tool; no inventes datos.' },
+    { id: 'test-browser-action', label: translate('development.test-browser-action.label', language), description: translate('development.test-browser-action.description', language), type: 'development', prompt: 'Abrí https://example.com con openBrowser, observá con getBrowserState y ejecutá una acción segura de scroll pequeño con browserAction. Verificá cada resultado real.' },
+    { id: 'test-list-windows', label: translate('development.test-list-windows.label', language), description: translate('development.test-list-windows.description', language), type: 'development', prompt: 'Usá computerListWindows para listar las ventanas visibles de Windows. Informá títulos, procesos y handles reales sin interactuar ni modificar nada.' },
+    { id: 'test-computer-state', label: translate('development.test-computer-state.label', language), description: translate('development.test-computer-state.description', language), type: 'development', prompt: 'Usá computerListWindows, elegí una ventana visible segura y consultá su estado con computerGetState. Devolvé evidencia real sin ejecutar acciones.' },
+    { id: 'test-screenshot', label: translate('development.test-screenshot.label', language), description: translate('development.test-screenshot.description', language), type: 'development', prompt: 'Usá computerScreenshot para capturar el escritorio actual. Confirmá que la evidencia fue devuelta y describí solo lo observable, sin inventar.' },
+    { id: 'test-ocr', label: translate('development.test-ocr.label', language), description: translate('development.test-ocr.description', language), type: 'development', prompt: 'Usá computerScreenshot y luego computerOcr para leer el texto visible de la captura. Informá texto y coordenadas reales, sin interactuar con ventanas.' },
+    { id: 'test-computer-action', label: translate('development.test-computer-action.label', language), description: translate('development.test-computer-action.description', language), type: 'development', prompt: 'Usá computerListWindows y computerGetState para localizar una ventana segura. Luego ejecutá con computerAction únicamente una acción reversible de focus y verificá el estado posterior.' },
+    { id: 'test-subagent', label: translate('development.test-subagent.label', language), description: translate('development.test-subagent.description', language), type: 'development', prompt: 'Delegá a un subagente read_only la tarea de listar y resumir la estructura del workspace. Esperá su resultado, verificá la evidencia y no modifiques archivos.' },
+    { id: 'test-tool-discovery', label: translate('development.test-tool-discovery.label', language), description: translate('development.test-tool-discovery.description', language), type: 'development', prompt: 'Usá searchTools con una consulta vacía o amplia para descubrir las tools disponibles. Luego ejecutá mediante executeTool una tool segura de lectura usando su esquema exacto y reportá ambos resultados.' },
+    { id: 'test-write-file', label: translate('development.test-write-file.label', language), description: translate('development.test-write-file.description', language), type: 'development', prompt: 'Creá mediante writeFile el archivo temporal __codeclub_tool_test__.txt con una línea de texto, leelo con readFile, verificá su contenido y eliminá el archivo temporal usando una tool segura. Informá cada evidencia.' },
+    { id: 'test-create-skill', label: translate('development.test-create-skill.label', language), description: translate('development.test-create-skill.description', language), type: 'development', prompt: 'Creá una skill de prueba mínima y claramente identificada con createSkill en el alcance del proyecto activo. Verificá que devuelva pluginPath y skillPath; no sobrescribas plugins existentes.' },
+    { id: 'test-create-extension', label: translate('development.test-create-extension.label', language), description: translate('development.test-create-extension.description', language), type: 'development', prompt: 'Creá una extensión de prueba mínima y claramente identificada con createExtension en el alcance del proyecto activo. Verificá su resultado y no sobrescribas extensiones existentes.' },
+    { id: 'test-delete-extension', label: translate('development.test-delete-extension.label', language), description: translate('development.test-delete-extension.description', language), type: 'development', prompt: 'Usá deleteExtension únicamente sobre una extensión de prueba creada previamente por este flujo. Verificá la respuesta real y no elimines extensiones existentes.' },
+    { id: 'test-create-mcp', label: translate('development.test-create-mcp.label', language), description: translate('development.test-create-mcp.description', language), type: 'development', prompt: 'Creá un servidor MCP de prueba claramente identificado con createMcpServer usando una configuración segura y no ejecutable. Verificá el manifiesto generado y no conectes servicios reales.' },
+    { id: 'test-delete-mcp', label: translate('development.test-delete-mcp.label', language), description: translate('development.test-delete-mcp.description', language), type: 'development', prompt: 'Usá deleteMcpServer únicamente sobre un servidor MCP de prueba creado previamente por este flujo. Verificá la respuesta real y no elimines servidores existentes.' },
+    { id: 'test-switch-project', label: translate('development.test-switch-project.label', language), description: translate('development.test-switch-project.description', language), type: 'development', prompt: 'Usá switchProject para consultar o seleccionar explícitamente un proyecto disponible, verificá el proyecto activo con una lectura segura y no cambies archivos.' },
+    { id: 'test-full-development-flow', label: translate('development.test-full-development-flow.label', language), description: translate('development.test-full-development-flow.description', language), type: 'development', prompt: 'Ejecutá un flujo completo y verificable: inspeccioná archivos con listFiles, buscá texto con searchText, leé un archivo con readFile, creá un plan con createPlan, agregá un TODO con todo, ejecutá un comando seguro con runCommand, consultá getExecutionLog y resumí toda la evidencia. No modifiques archivos.' },
+    { id: 'markdown-rendering', label: translate('chatInterface.testMarkdownRendering', language), description: translate('chatInterface.renderEverySupportedMarkdownElement', language), type: 'development', prompt: '[TESTING MARKDOWN] Respondé únicamente con una demostración completa en Markdown, sin tools: encabezados H1/H2/H3, texto en **negrita**, *cursiva*, ~~tachado~~, enlace, cita, listas numeradas y con viñetas, código inline, bloque de código con lenguaje, regla horizontal y una tabla con encabezados, tres filas y alineación. Incluí emojis y caracteres especiales. No describas la prueba: renderizá directamente todos los elementos.' },
+  ].map(command => language === 'en' ? { ...command, prompt: `${command.prompt}\n\nRespond in English.` } : command);
   const [copiedMessageIndex, setCopiedMessageIndex] = useState<number | null>(null);
   const [moreMenuIndex, setMoreMenuIndex] = useState<number | null>(null);
   const responseMenuRef = useRef<HTMLDivElement | null>(null);
@@ -230,20 +223,10 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
   const [composerDocked, setComposerDocked] = useState(true);
   const composerDockedRef = useRef(false);
 
-  useEffect(() => {
-    if (window.localStorage.getItem(LANGUAGE_STORAGE_KEY) === 'en') setLanguage('en');
-    const handleLanguageChange = (event: Event) => {
-      const nextLanguage = (event as CustomEvent<{ language?: AppLanguage }>).detail?.language;
-      if (nextLanguage === 'es' || nextLanguage === 'en') setLanguage(nextLanguage);
-    };
-    window.addEventListener('codeclub:language-change', handleLanguageChange);
-    return () => window.removeEventListener('codeclub:language-change', handleLanguageChange);
-  }, []);
-
   const [currentProvider, setCurrentProvider] = useState(defaultProvider);
   const [currentModel, setCurrentModel] = useState<CatalogItem | null>(defaultModel);
   const [settingsReady, setSettingsReady] = useState(false);
-  const [username, setUsername] = useState('Usuario');
+  const [username, setUsername] = useState('');
   const [showEmptyGreeting, setShowEmptyGreeting] = useState(true);
   const [credentialProvider, setCredentialProvider] = useState<CatalogItem | null>(null);
   const [credentialInput, setCredentialInput] = useState('');
@@ -254,23 +237,23 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
   const customUrlRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    void invoke<string>('codeclub_get_username').then((name) => setUsername(name || 'Usuario')).catch(() => setUsername('Usuario'));
+    void invoke<string>('codeclub_get_username').then((name) => setUsername(name || '')).catch(() => setUsername(''));
   }, []);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [commandKind, setCommandKind] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [projectOptions, setProjectOptions] = useState<ProjectOption[]>([]);
-  const resourceText = resourceMenuTranslations[language];
+  const resourceText = getMessages('resourceMenu', language);
   const resourceProjectRef = useRef<string | null>(null);
   const [resourceOptions, setResourceOptions] = useState<ChatResource[]>([]);
   const [selectedResources, setSelectedResources] = useState<ChatResource[]>([]);
   const [skillOptions, setSkillOptions] = useState<SessionSkill[]>([]);
   const [activeSkills, setActiveSkills] = useState<SessionSkill[]>([]);
   const [activeExtensions, setActiveExtensions] = useState<CodeclubExtension[]>([]);
-  const availableExtensions = codeclubExtensions;
+  const availableExtensions = codeclubExtensions.map(extension => ({ ...extension, ...getMessages('extensionsPanel', language).builtIns[extension.id as keyof ReturnType<typeof getMessages<'extensionsPanel'>>['builtIns']] }));
   const [activeCommandIndex, setActiveCommandIndex] = useState(0);
-  const [activeProject, setActiveProject] = useState<any>(() => selectedProject ? { projectPath: selectedProject.projectPath, name: selectedProject.projectName || 'Proyecto' } : null);
+  const [activeProject, setActiveProject] = useState<any>(() => selectedProject ? { projectPath: selectedProject.projectPath, name: selectedProject.projectName || translate('chatInterface.projectFallback', language) } : null);
   const [projectMeta, setProjectMeta] = useState<Record<string, any[]> | null>(null);
   const [expandedMenu, setExpandedMenu] = useState<'chat' | null>(null);
   const [artifactSearch, setArtifactSearch] = useState<Record<string, string>>({});
@@ -315,7 +298,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
   const chatLoadSequenceRef = useRef(0);
   const automaticTitleRef = useRef<string>('');
   const chatRuntimesRef = useRef(new Map<string, ChatRuntime>());
-  const lastSelectedProjectRef = useRef<{ projectPath: string; projectName: string } | null | undefined>(selectedProject ? { projectPath: selectedProject.projectPath, projectName: selectedProject.projectName || 'Proyecto' } : undefined);
+  const lastSelectedProjectRef = useRef<{ projectPath: string; projectName: string } | null | undefined>(selectedProject ? { projectPath: selectedProject.projectPath, projectName: selectedProject.projectName || translate('chatInterface.projectFallback', language) } : undefined);
   const [workspaceMode, setWorkspaceMode] = useState(floating ? 'chat' : 'blank');
 
   useEffect(() => {
@@ -357,7 +340,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
       try {
         const [plugins, orbs] = await Promise.all([loadAgentPlugins(activeProject?.projectPath || ''), getSetting<unknown>(ORBS_STORAGE_KEY, [])]);
         if (disposed || current !== revision) return;
-        const pluginSkills = plugins.flatMap(plugin => plugin.skills.map(skill => ({ ...skill, id: `${plugin.scope}:${plugin.id}:${skill.id}`, pluginId: plugin.id, skillId: skill.id, source: `${plugin.name} · ${resourceMenuTranslations[language][plugin.scope]}`, pluginRoot: plugin.root, readOnly: !!plugin.builtIn })));
+        const pluginSkills = plugins.flatMap(plugin => plugin.skills.map(skill => ({ ...skill, id: `${plugin.scope}:${plugin.id}:${skill.id}`, pluginId: plugin.id, skillId: skill.id, source: `${plugin.name} · ${getMessages('resourceMenu', language)[plugin.scope]}`, pluginRoot: plugin.root, readOnly: !!plugin.builtIn })));
         const resources = chatResources(plugins, parseOrbs(orbs));
         setSkillOptions(pluginSkills as SessionSkill[]);
         setResourceOptions(resources);
@@ -408,7 +391,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
       if (!detail?.text) return;
       const newItem = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        title: detail.title || 'Referencia',
+        title: detail.title || translate('chatInterface.referenceFallback'),
         text: detail.text,
         url: detail.url,
         markerId: detail.markerId,
@@ -537,11 +520,11 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
   }, [composerDocked]);
 
   useEffect(() => {
-    lastSelectedProjectRef.current = selectedProject ? { projectPath: selectedProject.projectPath, projectName: selectedProject.projectName || 'Proyecto' } : null;
+    lastSelectedProjectRef.current = selectedProject ? { projectPath: selectedProject.projectPath, projectName: selectedProject.projectName || translate('chatInterface.projectFallback') } : null;
     setActiveProject((current: any) => {
       if (!selectedProject) return null;
       if (current?.projectPath === selectedProject.projectPath) return current;
-      return { projectPath: selectedProject.projectPath, name: selectedProject.projectName || 'Proyecto' };
+      return { projectPath: selectedProject.projectPath, name: selectedProject.projectName || translate('chatInterface.projectFallback') };
     });
   }, [selectedProject]);
 
@@ -571,7 +554,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
       const remote = sharedSessionsRef.current.find(item=>sameSession(chat,item)&&!item.localOwner&&item.busy);
       const project = chat.projectPath ? {
         projectPath: chat.projectPath,
-        projectName: chat.projectName || 'Proyecto',
+        projectName: chat.projectName || translate('chatInterface.projectFallback'),
       } : null;
       setActiveProject(project ? { projectPath: project.projectPath, name: project.projectName } : null);
       window.dispatchEvent(new CustomEvent('codeclub:project-selection-changed', {
@@ -732,7 +715,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
           await (window as any).codeclub.chatCopy(oldPath,newPath,current.chatId);
           if(oldPath){const meta=await readProjectMeta(oldPath);if(meta){meta.chats=meta.chats.filter(item=>item.id!==current.chatId);await writeProjectMeta(oldPath,meta);}}
           else {await writeGlobalChats((await readGlobalChats()).filter(item=>item.id!==current.chatId));}
-          if(newPath){const meta: ProjectMeta=await readProjectMeta(newPath)||{name:detail.projectName||'Proyecto',path:newPath,created_at:new Date().toISOString(),chats:[]};if(!meta.chats.some(item=>item.id===current.chatId))meta.chats.push({id:current.chatId,name:chatName,customName:current.customName});await writeProjectMeta(newPath,meta);}
+          if(newPath){const meta: ProjectMeta=await readProjectMeta(newPath)||{name:detail.projectName||translate('chatInterface.projectFallback'),path:newPath,created_at:new Date().toISOString(),chats:[]};if(!meta.chats.some(item=>item.id===current.chatId))meta.chats.push({id:current.chatId,name:chatName,customName:current.customName});await writeProjectMeta(newPath,meta);}
           else {const chats=await readGlobalChats();if(!chats.some(item=>item.id===current.chatId))chats.push({id:current.chatId,name:chatName,customName:current.customName,projectPath:'',projectName:'Sin proyecto'});await writeGlobalChats(chats);}
           await (window as any).codeclub.chatDelete(oldPath,current.chatId);
           window.dispatchEvent(new CustomEvent('codeclub:project-meta-changed',{detail:{projectPath:oldPath}}));
@@ -774,7 +757,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
           const globalChats = await readGlobalChats();
           await writeGlobalChats(globalChats.filter((chat) => chat.id !== current.chatId));
         }
-        const newMeta: any = await readProjectMeta(newPath) || { name: detail.projectName || 'Proyecto', path: newPath, created_at: new Date().toISOString(), chats: [] };
+        const newMeta: any = await readProjectMeta(newPath) || { name: detail.projectName || translate('chatInterface.projectFallback'), path: newPath, created_at: new Date().toISOString(), chats: [] };
         if (!newMeta.chats.some((chat: any) => chat.id === current.chatId)) newMeta.chats.push({ id: current.chatId, name: chatName });
         await writeProjectMeta(newPath, newMeta);
         window.dispatchEvent(new CustomEvent('codeclub:project-meta-changed', { detail: { projectPath: oldPath } }));
@@ -801,7 +784,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     const selectedProject = document.querySelector<HTMLElement>('.project-card.is-selected');
     if (selectedProject) {
       const projectPath = selectedProject.dataset.path;
-      const name = selectedProject.querySelector('.project-row span')?.textContent || 'Proyecto';
+      const name = selectedProject.querySelector('.project-row span')?.textContent || translate('chatInterface.projectFallback');
       if (projectPath) setActiveProject({ projectPath, name });
     }
 
@@ -1003,17 +986,17 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     const matchesProvider = commandKind !== 'model' || Boolean(currentProvider && modelMatchesProvider(item, currentProvider));
     return matchesKind && matchesQuery && matchesProvider;
   });
-  const activeSelection: CatalogItem | null = commandKind === 'provider' ? currentProvider : commandKind === 'model' ? currentModel : commandKind === 'project' && activeProject ? { id: activeProject.projectPath, label: activeProject.name } : commandKind === 'language' ? { id: language, label: language === 'en' ? 'English' : 'Español' } : null;
+  const activeSelection: CatalogItem | null = commandKind === 'provider' ? currentProvider : commandKind === 'model' ? currentModel : commandKind === 'project' && activeProject ? { id: activeProject.projectPath, label: activeProject.name } : commandKind === 'language' ? { id: language, label: translate('chatInterface.english', language) } : null;
   const slashCommands: CatalogItem[] = [
-    { id: 'adjuntar', label: chatText.attach, description: language === 'en' ? 'Attach files to the message' : 'Adjuntar archivos al mensaje', aliases: ['adjuntar', 'attach'], type: 'command', icon: Paperclip },
+    { id: 'adjuntar', label: chatText.attach, description: translate('chatInterface.attachFilesToTheMessage', language), aliases: ['adjuntar', 'attach'], type: 'command', icon: Paperclip },
     { id: 'proveedor', label: chatText.slash.provider, description: chatText.slash.providerDescription, aliases: ['proveedor', 'provider'], type: 'command', icon: Radar },
     { id: 'modelo', label: chatText.slash.model, description: chatText.slash.modelDescription, aliases: ['modelo', 'model'], type: 'command', icon: Box },
-    { id: 'credencial', label: language === 'en' ? 'Credential' : 'Credencial', description: language === 'en' ? 'Replace the active provider credential' : 'Reemplazar la credencial del proveedor activo', aliases: ['credencial', 'credential', 'api', 'key', 'token'], type: 'command', icon: KeyRound },
+    { id: 'credencial', label: translate('chatInterface.credential', language), description: translate('chatInterface.replaceTheActiveProviderCredential', language), aliases: ['credencial', 'credential', 'api', 'key', 'token'], type: 'command', icon: KeyRound },
     { id: 'proyecto', label: projectsSlashLabel, description: chatText.slash.projectDescription, aliases: ['proyecto', 'proyectos', 'project', 'projects'], type: 'command', icon: Folder },
     { id: 'habilidad', label: chatText.slash.skill, description: chatText.slash.skillDescription, aliases: ['habilidad', 'skill'], type: 'command', icon: WandSparkles },
-    { id: 'idioma', label: language === 'en' ? 'Language' : 'Idioma', description: language === 'en' ? 'Change language' : 'Cambiar idioma', aliases: ['idioma', 'language', 'lang'], type: 'command', icon: Languages },
-    ...(isDevelopmentBuild ? [{ id: 'desarrollo', label: language === 'en' ? 'Development' : 'Desarrollo', description: language === 'en' ? 'Insert a development prompt' : 'Inyectar un prompt de desarrollo', aliases: ['desarrollo', 'desarrollar', 'development', 'develop'], type: 'command' as const, icon: Code2 }] : []),
-    { id: 'overlay', label: computerUseActive ? (language === 'en' ? 'Disable Computer Use overlay' : 'Desactivar overlay de Computer Use') : (language === 'en' ? 'Enable Computer Use overlay' : 'Activar overlay de Computer Use'), description: language === 'en' ? 'Show or hide the PC control overlay' : 'Mostrar u ocultar el overlay de control de PC', aliases: ['overlay', 'overlay-pc', 'computer-overlay'], type: 'command', icon: Monitor },
+    { id: 'idioma', label: translate('chatInterface.language', language), description: translate('chatInterface.changeLanguage', language), aliases: ['idioma', 'language', 'lang'], type: 'command', icon: Languages },
+    ...(isDevelopmentBuild ? [{ id: 'desarrollo', label: translate('chatInterface.development', language), description: translate('chatInterface.insertADevelopmentPrompt', language), aliases: ['desarrollo', 'desarrollar', 'development', 'develop'], type: 'command' as const, icon: Code2 }] : []),
+    { id: 'overlay', label: computerUseActive ? (translate('chatInterface.disableComputerUseOverlay', language)) : (translate('chatInterface.enableComputerUseOverlay', language)), description: translate('chatInterface.showOrHideThePCControlOverlay', language), aliases: ['overlay', 'overlay-pc', 'computer-overlay'], type: 'command', icon: Monitor },
     ...skillOptions.map(skill => ({ ...skill, type: 'skill', label: skill.name, aliases: [skill.name.toLowerCase(), 'skill', 'habilidad'], icon: BookOpen })),
     ...resourceOptions.map(resource => ({ id: `${resource.kind}:${resource.id}`, type: 'resource', label: resource.name, description: `${resourceText[resource.kind]} · ${resourceText[resource.scope]}`, aliases: [resource.kind, resourceText[resource.kind].toLowerCase()], icon: resource.kind === 'orb' ? PyramidMark : resource.kind === 'mcp' ? Braces : Box, resource })),
     ...(['Extension', 'Skill', 'Mcp', 'Orb'] as const).map(kind => ({ id: `create-resource-${kind}`, type: 'resource-create', label: resourceText[`create${kind}`], description: resourceText.createDescription, aliases: [`crear ${kind.toLowerCase()}`, `create ${kind.toLowerCase()}`], icon: resourceCreationIcons[kind], resourceKind: kind })),
@@ -1119,7 +1102,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
       }
       if (item.id === 'proyecto') {
         void readProjectsForCommandMenu().then((projects) => {
-          setProjectOptions([{ id: '__none__', label: language === 'en' ? 'No project' : 'Sin proyecto', type: 'project', projectPath: null, isNone: true }, ...projects.map((project: any) => ({ id: project.id || project.path, label: project.name, type: 'project', projectPath: project.path, projectId: project.id }))]);
+          setProjectOptions([{ id: '__none__', label: translate('chatInterface.noProject', language), type: 'project', projectPath: null, isNone: true }, ...projects.map((project: any) => ({ id: project.id || project.path, label: project.name, type: 'project', projectPath: project.path, projectId: project.id }))]);
           openCommandMenu('project');
         });
         return;
@@ -1174,9 +1157,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     }
     if (item.type === 'language') {
       const nextLanguage = item.id === 'en' ? 'en' : 'es';
-      setLanguage(nextLanguage);
-      window.localStorage.setItem(LANGUAGE_STORAGE_KEY, nextLanguage);
-      window.dispatchEvent(new CustomEvent('codeclub:language-change', { detail: { language: nextLanguage } }));
+      setAppLanguage(nextLanguage);
       setInput('');
       setSearchQuery('');
       setMenuOpen(false);
@@ -1328,7 +1309,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     const key=credentialKeyFor(credentialProvider);
     try {
     const credentialOrigin = key === 'ai_gateway_api_key' ? 'https://ai-gateway.vercel.sh' : credentialProvider.api;
-    if (!credentialOrigin) throw new Error('El catálogo no indica un endpoint para este proveedor.');
+    if (!credentialOrigin) throw new Error(translate('chatInterface.theCatalogDoesNotSpecifyAnEndpointForThis', language));
     if((window as any).codeclub?.credentialSet)await (window as any).codeclub.credentialSet(key,credentialInput.trim(),credentialOrigin);
     else await setSetting(key,credentialInput.trim());
     setCredentialProvider(null);
@@ -1336,7 +1317,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     setMenuOpen(false);
     setCommandKind('');
     chatInputRef.current?.focus();
-    } catch { setCustomConfigError(activityTranslations[language].failed); }
+    } catch { setCustomConfigError(getMessages('activity', language).failed); }
   };
 
   const saveCustomProviderConfig = () => {
@@ -1428,7 +1409,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
 
   const appendToTranscript = async (msg: any, chat: typeof activeChatRef.current) => {
     if (!chat || !['user', 'assistant'].includes(msg?.role) || typeof msg?.content !== 'string' || !msg.content.trim()) return;
-    const heading = msg.role === 'user' ? 'Usuario' : 'Codeclub';
+    const heading = msg.role === 'user' ? translate('chatInterface.userFallback', language) : 'Codeclub';
     const markdown = `\n## ${heading} · ${new Date().toLocaleString()}\n\n${msg.content.trim()}\n`;
     if ((window as any).codeclub?.chatTranscript) { await (window as any).codeclub.chatTranscript(chat.projectPath,chat.chatId,markdown); return; }
     if (!chat.projectPath) {
@@ -1513,18 +1494,18 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     let chat = activeChatRef.current;
     if (!chat) {
       const projectPath = activeProject?.projectPath || '';
-      const projectName = activeProject?.name || 'Proyecto';
+      const projectName = activeProject?.name || translate('chatInterface.projectFallback', language);
       chat = { chatId: `${projectPath ? 'project' : 'global'}-${Date.now()}`, projectPath, projectName };
       activeChatRef.current = chat;
       setActiveChat(chat);
       if (projectPath) {
         const projectMeta: ProjectMeta = await readProjectMeta(projectPath) || { name: projectName, path: projectPath, created_at: new Date().toISOString(), chats: [] };
-        if (!projectMeta.chats.some((item) => item.id === chat?.chatId)) projectMeta.chats.push({ id: chat.chatId, name: 'Nuevo chat', customName: false });
+        if (!projectMeta.chats.some((item) => item.id === chat?.chatId)) projectMeta.chats.push({ id: chat.chatId, name: translate('chatInterface.newChat', language), customName: false });
         await writeProjectMeta(projectPath, projectMeta);
         window.dispatchEvent(new CustomEvent('codeclub:project-meta-changed', { detail: { projectPath } }));
       } else {
         const globalChats = await readGlobalChats();
-        globalChats.push({ id: chat.chatId, name: 'Nuevo chat', customName: false, projectPath: '', projectName: 'Sin proyecto' });
+        globalChats.push({ id: chat.chatId, name: translate('chatInterface.newChat', language), customName: false, projectPath: '', projectName: 'Sin proyecto' });
         await writeGlobalChats(globalChats);
         window.dispatchEvent(new CustomEvent('codeclub:global-chat-changed'));
       }
@@ -1622,7 +1603,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     }
 
       if (!currentProvider || !currentModel) {
-        throw new Error('Elegí un proveedor y un modelo antes de enviar.');
+        throw new Error(translate('chatInterface.chooseAProviderAndModelBeforeSending', language));
       }
 
       const useGateway = usesGateway(currentProvider, currentModel);
@@ -1636,11 +1617,11 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
         setCommandKind('credential');
         setMenuOpen(true);
         window.setTimeout(() => credentialInputRef.current?.focus(), 0);
-        throw new Error(`API Key no configurada para ${useGateway ? 'AI Gateway' : currentProvider.label || currentProvider.id}. Por favor agregala en la configuración.`);
+        throw new Error(translate('chatInterface.apiKeyMissing', language, { provider: useGateway ? 'AI Gateway' : currentProvider.label || currentProvider.id }));
       }
 
       const selectedModelReference = modelIdFor(currentProvider, currentModel);
-      if (!useGateway && !currentProvider.api) throw new Error('El catálogo no indica un endpoint compatible para este proveedor.');
+      if (!useGateway && !currentProvider.api) throw new Error(translate('chatInterface.theCatalogDoesNotSpecifyACompatibleEndpointFor', language));
       const configuredHeaders = await getSetting<Record<string, string>>(`codeclub_provider_headers_${currentProvider.id}`, {});
       const requestHeaders: Record<string, string> = { 'user-agent': 'Codeclub', 'x-codeclub-session': chat.chatId };
       for (const [name, value] of Object.entries(configuredHeaders)) {
@@ -1749,7 +1730,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
         sources.push(...globalChats.map((item) => ({ id: `global:${item.id}`, title: item.name, project: item.projectName || 'Sin proyecto', chatId: item.id })));
         if (contextProjectPath) {
           const meta = await readProjectMeta(contextProjectPath);
-          sources.push(...(meta?.chats || []).map((item) => ({ id: `project:${item.id}`, title: item.customName ? item.name : item.name || 'Chat', project: meta?.name || 'Proyecto activo', projectPath: contextProjectPath, chatId: item.id })));
+          sources.push(...(meta?.chats || []).map((item) => ({ id: `project:${item.id}`, title: item.customName ? item.name : item.name || 'Chat', project: meta?.name || translate('chatInterface.activeProject', language), projectPath: contextProjectPath, chatId: item.id })));
         }
         const matches = [];
         for (const source of sources) {
@@ -2010,7 +1991,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
           if (retryStructuredSummary) assistantContent = retryStructuredSummary;
         }
       }
-      if (!assistantContent?.trim()) throw new Error('El modelo no devolvió una respuesta después de reintentar.');
+      if (!assistantContent?.trim()) throw new Error(translate('chatInterface.theModelDidNotReturnAResponseAfterRetrying', language));
 
       let lastContinuationSignature = '';
       const initialSwarmEvents = assistantTools.filter((event) => event.name === 'swarm');
@@ -2038,7 +2019,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
       const changes = contextProjectPath ? summarizeWorkspaceDelta(beforeWorkspaceSnapshot, await readWorkspaceSnapshot(toolProjectPath)) : null;
       const { summary: turnSummary } = await generateTurnSummary({ model: provider(selectedModelReference) as any, request: visibleContent || content, response: assistantContent, language, signal: abortController.signal, projectPath: contextProjectPath || '', chatId, providerId: currentProvider.id, modelId: currentModel.id });
       if (!isCurrentGeneration()) return;
-      const assistantMessage = { turnSummary, historyIndex: userMessage.historyIndex+1, role: 'assistant', content: assistantContent || 'La ejecución terminó sin texto final, pero las evidencias quedaron registradas.', progress: assistantProgress, timeline: assistantTimeline, tools: assistantTools, agentName: 'Desarrollo', meta: { modelCalls, provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt, status: 'completed', changes, usage: latestUsage ? { inputTokens: latestUsage.inputTokens, outputTokens: latestUsage.outputTokens, totalTokens: latestUsage.totalTokens, reasoningTokens: latestUsage.reasoningTokens } : null } };
+      const assistantMessage = { turnSummary, historyIndex: userMessage.historyIndex+1, role: 'assistant', content: assistantContent || translate('chatInterface.theRunFinishedWithoutFinalTextButItsEvidence', language), progress: assistantProgress, timeline: assistantTimeline, tools: assistantTools, agentName: 'Desarrollo', meta: { modelCalls, provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt, status: 'completed', changes, usage: latestUsage ? { inputTokens: latestUsage.inputTokens, outputTokens: latestUsage.outputTokens, totalTokens: latestUsage.totalTokens, reasoningTokens: latestUsage.reasoningTokens } : null } };
       if (assistantUpdateFrame !== null) {
         window.cancelAnimationFrame(assistantUpdateFrame);
         assistantUpdateFrame = null;
@@ -2078,15 +2059,15 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
         const last = updated[updated.length - 1];
         if (last?.role === 'assistant') {
           const userFacingError = wasCancelled
-            ? (language === 'en' ? 'Generation cancelled.' : 'Generación cancelada.')
+            ? (translate('chatInterface.generationCancelled', language))
             : userFacingProviderError(error, language);
           updated[updated.length - 1] = {
             ...last,
             content: last.content || userFacingError,
             meta: {
               ...last.meta,
-              provider: currentProvider?.label || currentProvider?.id || 'Proveedor',
-              model: currentModel?.label || currentModel?.id || 'Modelo',
+              provider: currentProvider?.label || currentProvider?.id || translate('chatInterface.providerFallback', language),
+              model: currentModel?.label || currentModel?.id || translate('chatInterface.modelFallback', language),
               durationMs: Date.now() - generationStartedAt,
               status: wasCancelled ? 'cancelled' : 'error',
               errorName: error instanceof Error ? error.name : 'Error',
@@ -2134,7 +2115,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     const chatId = activeChatRef.current?.chatId;
     const runtime = chatId ? chatRuntimesRef.current.get(chatId) : undefined;
     abortControllerRef.current = null;
-    if (!controller.signal.aborted) controller.abort(new DOMException('Generación cancelada por el usuario.', 'AbortError'));
+    if (!controller.signal.aborted) controller.abort(new DOMException(translate('chatInterface.generationCancelledByTheUser', language), 'AbortError'));
     if (toolStateTimerRef.current) {
       clearTimeout(toolStateTimerRef.current);
       toolStateTimerRef.current = null;
@@ -2212,7 +2193,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
   const askForMoreDetails = () => {
     if (!agentTextSelection || isAgentBusy) return;
     const selectedText = agentTextSelection.text.split(/\r?\n/).map((line) => `> ${line}`).join('\n');
-    const prompt = `${agentTextSelectionTranslations[language].detailPrompt}\n\n${selectedText}`;
+    const prompt = `${getMessages('agentTextSelection', language).detailPrompt}\n\n${selectedText}`;
     dismissAgentTextSelection();
     void sendMessage(prompt, messages, false);
   };
@@ -2399,7 +2380,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
 
   const addAttachmentPaths = async (paths: string[]) => {
     setAttachmentError(false);
-    setAttachmentProgress(`${activityTranslations[language].attaching} 0/${paths.length}`);
+    setAttachmentProgress(`${getMessages('activity', language).attaching} 0/${paths.length}`);
     let prepared=0;
     try {
     const attachments = await Promise.all(paths.map(async (path) => {
@@ -2422,7 +2403,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
           console.error(`No se pudo leer la preview de ${name}:`, error);
         }
       }
-      prepared++;setAttachmentProgress(`${activityTranslations[language].attaching} ${prepared}/${paths.length} · ${name}`);
+      prepared++;setAttachmentProgress(`${getMessages('activity', language).attaching} ${prepared}/${paths.length} · ${name}`);
       return { path, name, mediaType, previewUrl, previewText };
     }));
     setAttachedFiles((current) => {
@@ -2482,7 +2463,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
   if (workspaceMode === 'blank' && !activeProject) {
     return (
       <div style={{ width: '100%', height: '100%', minHeight: '100%', display: 'grid', placeItems: 'center', textAlign: 'center', color: 'rgba(216, 216, 216, 0.42)', fontSize: '13px' }}>
-        Seleccioná un proyecto
+        {translate('chatInterface.selectAProject', language)}
       </div>
     );
   }
@@ -2533,7 +2514,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
                       {query && (
                         <button
                           type="button"
-                          aria-label={language === 'en' ? 'Clear search' : 'Limpiar búsqueda'}
+                          aria-label={translate('chatInterface.clearSearch', language)}
                           onClick={() => setArtifactSearch((current) => ({ ...current, [kind]: '' }))}
                           className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-0 bg-transparent p-0 text-[#999999] hover:bg-[var(--color-surface-5)] hover:text-[#eeeeee]"
                         >
@@ -2602,7 +2583,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
 
     return (
       <div style={{ width: '100%', height: '100%', minHeight: '100%', display: 'grid', placeItems: 'center', textAlign: 'center', color: 'rgba(216, 216, 216, 0.42)', fontSize: '13px' }}>
-        Seleccioná un proyecto
+        {translate('chatInterface.selectAProject', language)}
       </div>
     );
   }
@@ -2610,23 +2591,23 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
   return (
     <div ref={chatPanelRef} role="region" aria-label={`Chat${activeChat?.name ? `: ${activeChat.name}` : ''}`} className={`chat-interface-container @container mx-auto flex h-full w-full max-w-[760px] min-w-0 flex-col ${floating ? 'gap-0' : 'gap-4'} overflow-visible px-3 pb-5`} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={handleComposerDrop}>
       {agentTextSelection && createPortal(<div className="chat-selection-toolbar-wrap" style={{ top: agentTextSelection.top, left: agentTextSelection.left, '--selection-accent': palette.accent } as React.CSSProperties} onPointerDown={(event) => event.preventDefault()}>
-        {!selectionCommentOpen && <div className="chat-selection-toolbar" role="toolbar" aria-label={agentTextSelectionTranslations[language].toolbar}>
-          <button type="button" onClick={() => { setSelectionCommentOpen(true); setSelectionComment(''); }}>{agentTextSelectionTranslations[language].addToChat}</button>
+        {!selectionCommentOpen && <div className="chat-selection-toolbar" role="toolbar" aria-label={getMessages('agentTextSelection', language).toolbar}>
+          <button type="button" onClick={() => { setSelectionCommentOpen(true); setSelectionComment(''); }}>{getMessages('agentTextSelection', language).addToChat}</button>
           <span className="chat-selection-toolbar-divider" aria-hidden="true" />
-          <button type="button" disabled={isAgentBusy} onClick={askForMoreDetails}>{agentTextSelectionTranslations[language].moreDetails}</button>
+          <button type="button" disabled={isAgentBusy} onClick={askForMoreDetails}>{getMessages('agentTextSelection', language).moreDetails}</button>
         </div>}
         {selectionCommentOpen && <form className="chat-selection-comment" onSubmit={(event) => { event.preventDefault(); addSelectedTextToChat(selectionComment); }}>
-          <input autoFocus type="text" value={selectionComment} onChange={(event) => setSelectionComment(event.target.value)} placeholder={agentTextSelectionTranslations[language].commentPlaceholder} aria-label={agentTextSelectionTranslations[language].commentPlaceholder} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); setSelectionCommentOpen(false); } }} />
-          <button type="submit" aria-label={agentTextSelectionTranslations[language].addToChat} title={agentTextSelectionTranslations[language].addToChat}><ArrowUp size={16} strokeWidth={2} /></button>
+          <input autoFocus type="text" value={selectionComment} onChange={(event) => setSelectionComment(event.target.value)} placeholder={getMessages('agentTextSelection', language).commentPlaceholder} aria-label={getMessages('agentTextSelection', language).commentPlaceholder} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); setSelectionCommentOpen(false); } }} />
+          <button type="submit" aria-label={getMessages('agentTextSelection', language).addToChat} title={getMessages('agentTextSelection', language).addToChat}><ArrowUp size={16} strokeWidth={2} /></button>
         </form>}
       </div>, document.body)}
       {/* Conversation messages */}
-      {historyWindow.loading && <div role="status" className="text-center text-[11px] text-(--codeclub-text-muted)">{chatHistoryTranslations[language].loading}</div>}
-      {historyWindow.error && <div role="alert" className="flex items-center justify-center gap-2 text-[11px] text-(--codeclub-text-muted)">{chatHistoryTranslations[language].failed}<button type="button" onClick={()=>{const chat=activeChatRef.current;if(chat)void historyWindow.open(chat);}} className="text-(--codeclub-accent-bright)">{chatHistoryTranslations[language].retry}</button></div>}
-      {!floating && historyWindow.range.current.start+messages.length<historyWindow.range.current.total && <button type="button" title={chatHistoryTranslations[language].latest} aria-label={chatHistoryTranslations[language].latest} className="self-end rounded-full p-1 text-(--codeclub-text-muted) hover:bg-(--codeclub-hover)" onClick={()=>{const chat=activeChatRef.current;if(chat){shouldAutoScrollMessagesRef.current=true;void historyWindow.open(chat);}}}><ChevronDown size={16}/></button>}
+      {historyWindow.loading && <div role="status" className="text-center text-[11px] text-(--codeclub-text-muted)">{getMessages('chatHistory', language).loading}</div>}
+      {historyWindow.error && <div role="alert" className="flex items-center justify-center gap-2 text-[11px] text-(--codeclub-text-muted)">{getMessages('chatHistory', language).failed}<button type="button" onClick={()=>{const chat=activeChatRef.current;if(chat)void historyWindow.open(chat);}} className="text-(--codeclub-accent-bright)">{getMessages('chatHistory', language).retry}</button></div>}
+      {!floating && historyWindow.range.current.start+messages.length<historyWindow.range.current.total && <button type="button" title={getMessages('chatHistory', language).latest} aria-label={getMessages('chatHistory', language).latest} className="self-end rounded-full p-1 text-(--codeclub-text-muted) hover:bg-(--codeclub-hover)" onClick={()=>{const chat=activeChatRef.current;if(chat){shouldAutoScrollMessagesRef.current=true;void historyWindow.open(chat);}}}><ChevronDown size={16}/></button>}
       <div className={`relative min-h-0 flex-1 ${composerDocked ? 'flex' : 'hidden'}`}>
-        {!floating && showEmptyGreeting && <div data-chat-greeting className="pointer-events-none absolute inset-0 grid place-items-center px-5 text-center text-lg font-medium tracking-[-0.02em] text-(--codeclub-text-strong)">{chatText.greeting}, {username}?</div>}
-      <motion.div ref={messagesAreaRef} initial={false} animate={chatAnimations} data-chat-transition={chatTransitionPhase} aria-busy={chatTransitionPhase !== 'idle' || historyWindow.loading || (isAgentBusy && pendingApprovals.length === 0 && agentState !== 'question')} onScroll={handleMessagesScroll} className={`messages-area relative min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain [overflow-anchor:none] bg-transparent [scrollbar-width:none] ${composerDocked ? 'flex' : 'hidden'} ${chatTransitionPhase === 'idle' ? '' : 'pointer-events-none'}`} role="log" aria-label={language === 'en' ? 'Chat messages' : 'Mensajes del chat'} aria-live="polite" aria-relevant="additions text">
+        {!floating && showEmptyGreeting && <div data-chat-greeting className="pointer-events-none absolute inset-0 grid place-items-center px-5 text-center text-lg font-medium tracking-[-0.02em] text-(--codeclub-text-strong)">{chatText.greeting}, {username || translate('chatInterface.userFallback', language)}?</div>}
+      <motion.div ref={messagesAreaRef} initial={false} animate={chatAnimations} data-chat-transition={chatTransitionPhase} aria-busy={chatTransitionPhase !== 'idle' || historyWindow.loading || (isAgentBusy && pendingApprovals.length === 0 && agentState !== 'question')} onScroll={handleMessagesScroll} className={`messages-area relative min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain [overflow-anchor:none] bg-transparent [scrollbar-width:none] ${composerDocked ? 'flex' : 'hidden'} ${chatTransitionPhase === 'idle' ? '' : 'pointer-events-none'}`} role="log" aria-label={translate('chatInterface.chatMessages', language)} aria-live="polite" aria-relevant="additions text">
         <div aria-hidden="true" className="min-h-0 flex-1" />
 
         <div className="relative w-full shrink-0" style={virtualizeTurns ? { height: totalTurnHeight } : undefined}>
@@ -2650,7 +2631,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
             {!floating&&<span className="chat-turn-time" aria-label={`Hora ${turnTime}`}>
               <span>{turnTime}</span>
               {isProcessingTurn && <ProcessingStatusStateFixed startedAt={agentStartedAtRef.current || Date.now()} language={language} />}
-              {hasErrorTurn && <span className="chat-turn-advice">{language === 'en' ? 'Check the selected provider and model.' : 'Revisá el proveedor y modelo seleccionados.'}</span>}
+              {hasErrorTurn && <span className="chat-turn-advice">{translate('chatInterface.checkTheSelectedProviderAndModel', language)}</span>}
             </span>}
 
             {turnMessages.map((turnItem, turnOffset) => {
@@ -2659,11 +2640,11 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
               const isLiveAssistant = m.role === 'assistant' && isStreaming && i === messages.length - 1;
               return <React.Fragment key={`${m.role}-${i}`}>
             {<motion.div initial={false} animate={{ opacity: 1 }} transition={{ duration: 0.2, ease: 'easeOut' }} className={`group/message ${m.role === 'assistant' ? 'chat-assistant-message' : 'chat-user-message'} ${m.meta?.status === 'error' ? 'chat-error-message' : ''}`} style={{ alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', display: 'grid', justifyItems: m.role === 'user' ? 'end' : 'start', gap: '8px', maxWidth: m.role === 'user' ? '76%' : '100%', minWidth: 0 }}>
-              {m.role === 'user' && (m.resourceReferences?.length > 0 || m.artifactReferences?.length > 0 || m.browserReferences?.length > 0 || m.selectedTextReferences?.length > 0 || m.attachments?.length > 0) && <div className="chat-reference-row" aria-label={language === 'en' ? 'References and files' : 'Referencias y archivos'}>
+              {m.role === 'user' && (m.resourceReferences?.length > 0 || m.artifactReferences?.length > 0 || m.browserReferences?.length > 0 || m.selectedTextReferences?.length > 0 || m.attachments?.length > 0) && <div className="chat-reference-row" aria-label={translate('chatInterface.referencesAndFiles', language)}>
                 {m.resourceReferences?.map((resource: ChatResource) => <div key={`${resource.kind}:${resource.id}`} className="chat-reference-card" title={`${resourceText[resource.kind]} · ${resourceText[resource.scope]}`}><span className="chat-reference-title">{resource.name}</span></div>)}
                 {m.artifactReferences?.map((ref: { kind: 'plan' | 'todo'; id: string; title: string }) => <div key={`${ref.kind}-${ref.id}`} className="chat-reference-card chat-artifact-reference-card" title={`@${ref.kind} · ${ref.title}`}><span className="chat-reference-kind">@{ref.kind}</span><span className="chat-reference-title">{ref.title}</span></div>)}
                 {m.browserReferences?.map((ref: { id: string; title: string; text: string; url?: string }, referenceIndex: number) => <div key={ref.id || `${ref.title}-${referenceIndex}`} className="chat-reference-card chat-browser-reference-card" title={ref.title}><span className="chat-browser-reference-number">{referenceIndex + 1}</span>{getBrowserReferenceFavicon(ref) ? <img src={getBrowserReferenceFavicon(ref)} alt="" className="chat-reference-favicon" /> : <Globe size={16} className="chat-reference-favicon chat-reference-fallback-icon" aria-hidden="true" />}<span className="chat-reference-title">{ref.title}</span></div>)}
-                {m.selectedTextReferences?.map((ref: { id: string; text: string; comment?: string }) => <div key={ref.id} className="chat-reference-card chat-selected-text-reference-card" title={ref.comment ? `${ref.comment}\n\n${ref.text}` : ref.text}><span className="chat-selected-text-content">{ref.text}</span><span className="chat-selected-text-label">{agentTextSelectionTranslations[language].selectedReference}</span></div>)}
+                {m.selectedTextReferences?.map((ref: { id: string; text: string; comment?: string }) => <div key={ref.id} className="chat-reference-card chat-selected-text-reference-card" title={ref.comment ? `${ref.comment}\n\n${ref.text}` : ref.text}><span className="chat-selected-text-content">{ref.text}</span><span className="chat-selected-text-label">{getMessages('agentTextSelection', language).selectedReference}</span></div>)}
                 {m.attachments?.map((file: ChatAttachment) => file.mediaType?.startsWith('image/') ? <div key={file.path || file.name} className="chat-reference-card chat-attachment-card" title={file.name}><img src={file.previewUrl || convertFileSrc(file.path)} alt={file.name} /></div> : <div key={file.path || file.name} className="chat-reference-card chat-attachment-card chat-attachment-file" title={file.name}>{file.previewText ? <pre className="chat-attachment-preview-text">{file.previewText}</pre> : <span>{file.name.split('.').pop()?.toUpperCase().slice(0, 6) || 'FILE'}</span>}</div>)}
               </div>}
               {isLiveAssistant && agentState !== 'error' && <LiveTurnProgress message={m} language={language} />}
@@ -2674,7 +2655,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
                   animate={{ opacity: 1 }}
                   transition={{ duration: 0.24, ease: 'easeOut' }}
                 >
-                <MemoizedChatMarkdown content={normalizeChatContent(m.role === 'user' ? getVisibleUserContent(m) : (m.meta?.status === 'error' ? (m.meta.errorMessage || (language === 'en' ? 'No response' : 'Sin respuesta')) : (m.displayContent || m.content)))} />
+                <MemoizedChatMarkdown content={normalizeChatContent(m.role === 'user' ? getVisibleUserContent(m) : (m.meta?.status === 'error' ? (m.meta.errorMessage || (translate('chatInterface.noResponse', language))) : (m.displayContent || m.content)))} />
                 </motion.div>
               </div>}
               {m.role === 'assistant' && <AskUserCards tools={m.tools} onSelect={(answer, questionId) => void sendMessage(answer, messages, false, false, [], questionId)} onRespondInChat={() => {
@@ -2686,11 +2667,11 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
               }} disabled={isAgentBusy} />}
               {m.role === 'assistant' && i === messages.length - 1 && <ApprovalCards approvals={pendingApprovals} onResolve={resolveToolApproval} />}
               {!floating && m.role === 'assistant' && (!liveTurn || m.meta?.status === 'error') && <div data-message-actions={i} className="message-actions relative flex items-center gap-1 self-start">
-                <button type="button" aria-label={copiedMessageIndex === i ? chatActionTranslations[language].copied : chatActionTranslations[language].copy} title={copiedMessageIndex === i ? chatActionTranslations[language].copied : chatActionTranslations[language].copy} onClick={() => void handleCopyMessage(m.content, i)} className={`grid h-6 w-6 place-items-center rounded-md border-0 bg-transparent transition-colors hover:bg-white/[0.06] ${copiedMessageIndex === i ? 'text-(--codeclub-accent-bright)' : 'text-(--codeclub-text-muted)'}`}>{copiedMessageIndex === i ? <Check size={12} strokeWidth={1.8} /> : <Copy size={12} strokeWidth={1.8} />}</button>
-                <button type="button" aria-label={chatActionTranslations[language].more} title={chatActionTranslations[language].more} aria-haspopup="menu" aria-expanded={moreMenuIndex === i} onClick={() => setMoreMenuIndex((current) => current === i ? null : i)} className="grid h-6 w-6 place-items-center rounded-md border-0 bg-transparent text-(--codeclub-text-muted) transition-colors hover:bg-white/[0.06] hover:text-(--codeclub-text-strong)"><MoreHorizontal size={13} strokeWidth={1.8} /></button>
-                <AnimatePresence>{moreMenuIndex === i && <motion.div ref={responseMenuRef} role="menu" aria-label={chatActionTranslations[language].more} initial={{ opacity: 0, y: 6, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 6, scale: 0.96 }} transition={{ duration: 0.14, ease: 'easeOut' }} className="absolute bottom-[calc(100%+8px)] left-0 z-30 grid w-[184px] max-w-[calc(100vw-16px)] gap-0.5 rounded-xl border border-[#333333] bg-[#2B2B2B] p-1 shadow-2xl">
-                  {previousUserMessageIndex(i) >= 0 && <button type="button" role="menuitem" disabled={isAgentBusy} onClick={() => { handleRetryMessage(previousUserMessageIndex(i)); setMoreMenuIndex(null); }} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] text-(--codeclub-text-strong) hover:bg-white/[0.06] disabled:opacity-40"><RotateCcw size={12} />{chatActionTranslations[language].regenerate}</button>}
-                  <button type="button" role="menuitem" onClick={() => { void handleCopyTrace(); setMoreMenuIndex(null); }} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] text-(--codeclub-text-strong) hover:bg-white/[0.06]"><ScrollText size={12} />{chatActionTranslations[language].trace}</button>
+                <button type="button" aria-label={copiedMessageIndex === i ? getMessages('chatAction', language).copied : getMessages('chatAction', language).copy} title={copiedMessageIndex === i ? getMessages('chatAction', language).copied : getMessages('chatAction', language).copy} onClick={() => void handleCopyMessage(m.content, i)} className={`grid h-6 w-6 place-items-center rounded-md border-0 bg-transparent transition-colors hover:bg-white/[0.06] ${copiedMessageIndex === i ? 'text-(--codeclub-accent-bright)' : 'text-(--codeclub-text-muted)'}`}>{copiedMessageIndex === i ? <Check size={12} strokeWidth={1.8} /> : <Copy size={12} strokeWidth={1.8} />}</button>
+                <button type="button" aria-label={getMessages('chatAction', language).more} title={getMessages('chatAction', language).more} aria-haspopup="menu" aria-expanded={moreMenuIndex === i} onClick={() => setMoreMenuIndex((current) => current === i ? null : i)} className="grid h-6 w-6 place-items-center rounded-md border-0 bg-transparent text-(--codeclub-text-muted) transition-colors hover:bg-white/[0.06] hover:text-(--codeclub-text-strong)"><MoreHorizontal size={13} strokeWidth={1.8} /></button>
+                <AnimatePresence>{moreMenuIndex === i && <motion.div ref={responseMenuRef} role="menu" aria-label={getMessages('chatAction', language).more} initial={{ opacity: 0, y: 6, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 6, scale: 0.96 }} transition={{ duration: 0.14, ease: 'easeOut' }} className="absolute bottom-[calc(100%+8px)] left-0 z-30 grid w-[184px] max-w-[calc(100vw-16px)] gap-0.5 rounded-xl border border-[#333333] bg-[#2B2B2B] p-1 shadow-2xl">
+                  {previousUserMessageIndex(i) >= 0 && <button type="button" role="menuitem" disabled={isAgentBusy} onClick={() => { handleRetryMessage(previousUserMessageIndex(i)); setMoreMenuIndex(null); }} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] text-(--codeclub-text-strong) hover:bg-white/[0.06] disabled:opacity-40"><RotateCcw size={12} />{getMessages('chatAction', language).regenerate}</button>}
+                  <button type="button" role="menuitem" onClick={() => { void handleCopyTrace(); setMoreMenuIndex(null); }} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] text-(--codeclub-text-strong) hover:bg-white/[0.06]"><ScrollText size={12} />{getMessages('chatAction', language).trace}</button>
                 </motion.div>}</AnimatePresence>
               </div>}
               </motion.div>}
@@ -2705,21 +2686,21 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
 
       <div className="chat-composer composer-row flex w-full min-w-0 shrink-0 items-center gap-2 bg-transparent">
           <div className="composer-box relative min-h-10 min-w-0 flex-1 overflow-visible rounded-[22px] border border-(--codeclub-border-soft) bg-(--codeclub-surface-raised) p-0 shadow-none">
-          {computerContext && <div className="flex min-h-[28px] items-center gap-2 border-b border-[#202020] px-4 py-1.5" aria-label={language === 'en' ? 'Computer Use context' : 'Contexto de Computer Use'}><span className="shrink-0 rounded-full border border-[#3D9BFF]/60 bg-[#1687FF]/10 px-2 py-0.5 text-[10px] font-medium text-[#8BC7FF]">PC</span><span className="min-w-0 flex-1 truncate text-[10px] text-[#bdbdbd]">{computerContext.title || (language === 'en' ? 'Unknown window' : 'Ventana desconocida')} · ({computerContext.x}, {computerContext.y})</span><button type="button" onClick={() => setComputerContext(null)} className="grid h-5 w-5 shrink-0 place-items-center rounded-full text-[#999999] hover:bg-white/[0.08] hover:text-[#eee]" title={language === 'en' ? 'Remove Computer Use context' : 'Quitar contexto de Computer Use'} aria-label={language === 'en' ? 'Remove Computer Use context' : 'Quitar contexto de Computer Use'}><X size={12} /></button></div>}
+          {computerContext && <div className="flex min-h-[28px] items-center gap-2 border-b border-[#202020] px-4 py-1.5" aria-label={translate('chatInterface.computerUseContext', language)}><span className="shrink-0 rounded-full border border-[#3D9BFF]/60 bg-[#1687FF]/10 px-2 py-0.5 text-[10px] font-medium text-[#8BC7FF]">PC</span><span className="min-w-0 flex-1 truncate text-[10px] text-[#bdbdbd]">{computerContext.title || (translate('chatInterface.unknownWindow', language))} · ({computerContext.x}, {computerContext.y})</span><button type="button" onClick={() => setComputerContext(null)} className="grid h-5 w-5 shrink-0 place-items-center rounded-full text-[#999999] hover:bg-white/[0.08] hover:text-[#eee]" title={translate('chatInterface.removeComputerUseContext', language)} aria-label={translate('chatInterface.removeComputerUseContext', language)}><X size={12} /></button></div>}
           {attachmentProgress&&<p className="m-0 truncate py-1 text-[10px] text-[#8bc7ff]" role="status">{attachmentProgress}</p>}
-          {attachmentError&&<p className="m-0 py-1 text-[10px] text-[#aaa]" role="alert">{activityTranslations[language].attachmentFailed}</p>}
+          {attachmentError&&<p className="m-0 py-1 text-[10px] text-[#aaa]" role="alert">{getMessages('activity', language).attachmentFailed}</p>}
           {(artifactReferences.length > 0 || browserReferences.length > 0 || selectedTextReferences.length > 0 || attachedFiles.length > 0) && (
-            <div ref={browserRefContainerRef} className="file-preview-scrollbar flex min-h-[76px] w-full min-w-0 max-w-full flex-nowrap items-center gap-2 overflow-x-auto overflow-y-hidden border-b-0 px-3 py-1.5" aria-label={language === 'en' ? 'References and files' : 'Referencias y archivos'}>
-              {artifactReferences.map((reference) => <button key={`${reference.kind}-${reference.id}`} type="button" onClick={() => setArtifactReferences((current) => current.filter((item) => item.kind !== reference.kind || item.id !== reference.id))} className="attachment-artifact-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] text-left text-[#cfcfcf]" aria-label={`${accessibilityTranslations[language].remove}: ${reference.title}`} title={`${accessibilityTranslations[language].remove}: ${reference.title}`}><span className="absolute left-1 top-1 text-[8px] uppercase tracking-[0.04em] text-[#858585]">@{reference.kind}</span><span className="absolute inset-x-1 bottom-1 line-clamp-2 text-center text-[8px] leading-[10px] text-[#d6d6d6]">{reference.title}</span><span aria-hidden="true" className="attachment-artifact-remove pointer-events-none absolute inset-0 z-10 grid place-items-center bg-[#161616]/80 text-[#eeeeee]"><span className="grid h-6 w-6 place-items-center rounded-full bg-[#252525] text-[#bdbdbd]"><X size={13} strokeWidth={2} /></span></span></button>)}
-              {browserReferences.map((ref, index) => <button key={ref.id} type="button" onClick={() => { setBrowserReferences((current) => current.filter((item) => item.id !== ref.id)); if (ref.markerId) window.dispatchEvent(new CustomEvent('codeclub:remove-browser-marker', { detail: { markerId: ref.markerId } })); }} className="browser-reference-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] px-1 text-left text-[#cfcfcf]" aria-label={`${accessibilityTranslations[language].remove}: ${ref.title}`} title={`${accessibilityTranslations[language].remove}: ${ref.title}`}>
+            <div ref={browserRefContainerRef} className="file-preview-scrollbar flex min-h-[76px] w-full min-w-0 max-w-full flex-nowrap items-center gap-2 overflow-x-auto overflow-y-hidden border-b-0 px-3 py-1.5" aria-label={translate('chatInterface.referencesAndFiles', language)}>
+              {artifactReferences.map((reference) => <button key={`${reference.kind}-${reference.id}`} type="button" onClick={() => setArtifactReferences((current) => current.filter((item) => item.kind !== reference.kind || item.id !== reference.id))} className="attachment-artifact-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] text-left text-[#cfcfcf]" aria-label={`${getMessages('accessibility', language).remove}: ${reference.title}`} title={`${getMessages('accessibility', language).remove}: ${reference.title}`}><span className="absolute left-1 top-1 text-[8px] uppercase tracking-[0.04em] text-[#858585]">@{reference.kind}</span><span className="absolute inset-x-1 bottom-1 line-clamp-2 text-center text-[8px] leading-[10px] text-[#d6d6d6]">{reference.title}</span><span aria-hidden="true" className="attachment-artifact-remove pointer-events-none absolute inset-0 z-10 grid place-items-center bg-[#161616]/80 text-[#eeeeee]"><span className="grid h-6 w-6 place-items-center rounded-full bg-[#252525] text-[#bdbdbd]"><X size={13} strokeWidth={2} /></span></span></button>)}
+              {browserReferences.map((ref, index) => <button key={ref.id} type="button" onClick={() => { setBrowserReferences((current) => current.filter((item) => item.id !== ref.id)); if (ref.markerId) window.dispatchEvent(new CustomEvent('codeclub:remove-browser-marker', { detail: { markerId: ref.markerId } })); }} className="browser-reference-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] px-1 text-left text-[#cfcfcf]" aria-label={`${getMessages('accessibility', language).remove}: ${ref.title}`} title={`${getMessages('accessibility', language).remove}: ${ref.title}`}>
                 <span className="absolute left-1 top-1 z-[1] grid h-4 w-4 place-items-center rounded-full bg-(--codeclub-accent) text-[9px] font-semibold text-[#111111]">{index + 1}</span>
                 {getBrowserReferenceFavicon(ref) ? <img src={getBrowserReferenceFavicon(ref)} alt="" className="h-7 w-7 rounded-md object-contain" /> : <span className="grid h-7 w-7 place-items-center rounded-md bg-[#202020] text-[#8BC7FF]"><Globe size={14} /></span>}
                 <span className="absolute inset-x-1 bottom-1 truncate text-center text-[9px] text-[#d6d6d6]">{ref.title}</span>
                 <span aria-hidden="true" className="browser-reference-remove pointer-events-none absolute inset-0 grid place-items-center bg-[#161616]/80 text-[#eeeeee]"><span className="grid h-6 w-6 place-items-center rounded-full bg-[#252525] text-[#bdbdbd]"><X size={13} strokeWidth={2} /></span></span>
               </button>)}
-              {selectedTextReferences.map((ref) => <button key={ref.id} type="button" aria-label={`${agentTextSelectionTranslations[language].removeReference}: ${ref.text}`} onClick={() => setSelectedTextReferences((current) => current.filter((item) => item.id !== ref.id))} className="browser-reference-preview chat-selected-text-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] px-1 text-left text-[#cfcfcf]" title={`${agentTextSelectionTranslations[language].removeReference}: ${ref.comment ? `${ref.comment} · ` : ''}${ref.text}`}>
+              {selectedTextReferences.map((ref) => <button key={ref.id} type="button" aria-label={`${getMessages('agentTextSelection', language).removeReference}: ${ref.text}`} onClick={() => setSelectedTextReferences((current) => current.filter((item) => item.id !== ref.id))} className="browser-reference-preview chat-selected-text-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] px-1 text-left text-[#cfcfcf]" title={`${getMessages('agentTextSelection', language).removeReference}: ${ref.comment ? `${ref.comment} · ` : ''}${ref.text}`}>
                 <span className="chat-selected-text-content">{ref.text}</span>
-                <span className="chat-selected-text-label">{agentTextSelectionTranslations[language].selectedReference}</span>
+                <span className="chat-selected-text-label">{getMessages('agentTextSelection', language).selectedReference}</span>
                 <span aria-hidden="true" className="browser-reference-remove pointer-events-none absolute inset-0 grid place-items-center bg-[#161616]/80 text-[#eeeeee]"><span className="grid h-6 w-6 place-items-center rounded-full bg-[#252525] text-[#bdbdbd]"><X size={13} strokeWidth={2} /></span></span>
               </button>)}
               {false && browserReferences.length > maxVisibleBrowserRefs && (
@@ -2728,12 +2709,12 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
                   onClick={() => setBrowserReferences([])}
                   className="shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-medium transition-[filter] hover:brightness-105"
                   style={{ borderColor: '#F8EAD8', color: '#111111', background: 'linear-gradient(135deg, #1687FF 0%, #67BAFF 38%, #F8EAD8 72%, #FFF3DF 100%)' }}
-                  title={language === 'en' ? 'Remove all references' : 'Quitar todas las referencias'}
+                  title={translate('chatInterface.removeAllReferences', language)}
                 >
-                  +{browserReferences.length - maxVisibleBrowserRefs} referencias
+                  +{browserReferences.length - maxVisibleBrowserRefs} {translate('chatInterface.references', language)}
                 </button>
               )}
-           {attachedFiles.length > 0 && <div className="contents" aria-label={language === 'en' ? 'Attached files' : 'Archivos adjuntos'}>{attachedFiles.map((file, index) => file.mediaType.startsWith('image/') ? <motion.button key={file.path} type="button" aria-label={`${accessibilityTranslations[language].remove}: ${file.name}`} onClick={() => setAttachedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} transition={{ type: 'spring', stiffness: 420, damping: 28 }} className="attachment-image-preview relative h-16 w-16 shrink-0 overflow-hidden rounded-[10px] border-0 bg-[#161616]" title={`${language === 'en' ? 'Remove' : 'Quitar'} ${file.name}`}><img src={file.previewUrl} alt={file.name} onError={(event) => { event.currentTarget.style.display = 'none'; }} className="attachment-image-preview-image h-full w-full object-cover" /><span className="attachment-image-preview-name absolute inset-x-1 bottom-1 truncate text-center text-[9px] text-white/75">{file.name}</span><span aria-hidden="true" className="attachment-image-preview-close pointer-events-none absolute inset-0 grid place-items-center text-white"><X size={18} strokeWidth={2.2} /></span></motion.button> : <motion.button key={file.path} type="button" onClick={() => setAttachedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} transition={{ type: 'spring', stiffness: 420, damping: 28 }} className="attachment-file-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] text-[10px] font-semibold uppercase tracking-[0.04em] text-[#cfcfcf]" title={`${language === 'en' ? 'Remove' : 'Quitar'} ${file.name}`}>{file.previewText ? <pre className="attachment-file-preview-text">{file.previewText}</pre> : <span className="attachment-file-preview-name" title={file.name}>{file.name}</span>}<span aria-hidden="true" className="attachment-file-preview-close pointer-events-none absolute inset-0 grid place-items-center text-white"><X size={18} strokeWidth={2.2} /></span></motion.button>)}</div>}
+           {attachedFiles.length > 0 && <div className="contents" aria-label={translate('chatInterface.attachedFiles', language)}>{attachedFiles.map((file, index) => file.mediaType.startsWith('image/') ? <motion.button key={file.path} type="button" aria-label={`${getMessages('accessibility', language).remove}: ${file.name}`} onClick={() => setAttachedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} transition={{ type: 'spring', stiffness: 420, damping: 28 }} className="attachment-image-preview relative h-16 w-16 shrink-0 overflow-hidden rounded-[10px] border-0 bg-[#161616]" title={`${translate('chatInterface.remove', language)} ${file.name}`}><img src={file.previewUrl} alt={file.name} onError={(event) => { event.currentTarget.style.display = 'none'; }} className="attachment-image-preview-image h-full w-full object-cover" /><span className="attachment-image-preview-name absolute inset-x-1 bottom-1 truncate text-center text-[9px] text-white/75">{file.name}</span><span aria-hidden="true" className="attachment-image-preview-close pointer-events-none absolute inset-0 grid place-items-center text-white"><X size={18} strokeWidth={2.2} /></span></motion.button> : <motion.button key={file.path} type="button" onClick={() => setAttachedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} transition={{ type: 'spring', stiffness: 420, damping: 28 }} className="attachment-file-preview relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-[10px] border-0 bg-[#161616] text-[10px] font-semibold uppercase tracking-[0.04em] text-[#cfcfcf]" title={`${translate('chatInterface.remove', language)} ${file.name}`}>{file.previewText ? <pre className="attachment-file-preview-text">{file.previewText}</pre> : <span className="attachment-file-preview-name" title={file.name}>{file.name}</span>}<span aria-hidden="true" className="attachment-file-preview-close pointer-events-none absolute inset-0 grid place-items-center text-white"><X size={18} strokeWidth={2.2} /></span></motion.button>)}</div>}
             </div>
           )}
           {selectedResources.length > 0 && <div className="flex min-h-[28px] flex-wrap items-center gap-1.5 border-b border-[#202020] px-3 py-1.5" aria-label={resourceText.resources}>
@@ -2748,9 +2729,9 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
             {activeExtensions.map((extension) => { const Icon = extensionIcons[extension.id] || Box; return <button key={extension.id} type="button" onClick={() => setActiveExtensions((current) => current.filter((item) => item.id !== extension.id))} className="flex shrink-0 items-center gap-1 rounded-full border border-[#3d9bff]/50 bg-[#1687ff]/10 px-2.5 py-1 text-[10px] text-[#b9dcff] hover:bg-[#1687ff]/20" aria-label={`${chatText.removeExtension}: ${extension.name}`} title={chatText.removeExtension}><Icon size={11} /><span>{extension.name}</span><span className="text-[#8bc7ff]/70">×</span></button>; })}
           </div>}
           <div ref={commandMenuHostRef} className="absolute inset-x-0 bottom-full z-40 mb-2" />
-          <form onSubmit={handleSubmit} aria-label={language === 'en' ? 'Message composer' : 'Compositor de mensaje'} className="composer-box-inner relative flex min-h-[44px] w-full min-w-0 flex-col items-stretch gap-0 rounded-none border-0 bg-transparent px-1.5 pb-3 pl-4 pr-3 pt-3 @max-[520px]:pl-3 @max-[520px]:pr-2 [&>button.absolute]:hidden">
+          <form onSubmit={handleSubmit} aria-label={translate('chatInterface.messageComposer', language)} className="composer-box-inner relative flex min-h-[44px] w-full min-w-0 flex-col items-stretch gap-0 rounded-none border-0 bg-transparent px-1.5 pb-3 pl-4 pr-3 pt-3 @max-[520px]:pl-3 @max-[520px]:pr-2 [&>button.absolute]:hidden">
            {false && (
-          <button type="button" onClick={handleAttachFiles} className="text-white/40 hover:text-white transition-colors" aria-label={language === 'en' ? 'Add files' : 'Añadir archivos'} style={{ flex: '0 0 28px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, background: 'transparent', cursor: 'pointer' }}>
+          <button type="button" onClick={handleAttachFiles} className="text-white/40 hover:text-white transition-colors" aria-label={translate('chatInterface.addFiles', language)} style={{ flex: '0 0 28px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: 0, background: 'transparent', cursor: 'pointer' }}>
             <Paperclip size={16} strokeWidth={1.8} />
           </button>
           )}
@@ -2763,10 +2744,10 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
               title={chatText.removeFiles}
               style={{ minHeight: '24px', display: 'flex', alignItems: 'center', padding: '0 9px', border: '1px solid var(--color-surface-8, #2b2b2b)', borderRadius: '999px', fontSize: '11px', cursor: 'pointer' }}
             >
-              Añadido {attachedFiles.length}
+              {translate('chatInterface.added', language)} {attachedFiles.length}
             </button>
           )}
-          <span id="chat-input-help" className="sr-only">{language === 'en' ? 'Write a message. Use Shift+Enter for a new line and / to open commands.' : 'Escribí un mensaje. Usá Shift+Enter para una nueva línea y / para abrir comandos.'}</span>
+          <span id="chat-input-help" className="sr-only">{translate('chatInterface.writeAMessageUseShiftEnterFor', language)}</span>
           <span className="chat-input-orb absolute left-3 top-3 z-10 grid h-[22px] w-[22px] place-items-center rounded-full">
             {composerLeading || <OrbPaletteButton size={22} className="h-[22px] w-[22px]" />}
           </span>
@@ -2815,7 +2796,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
             placeholder={agentStatusText}
           />
           <div className="absolute right-3 top-2 z-20 flex min-h-[30px] min-w-0 items-center justify-end gap-3 @max-[520px]:gap-1.5">
-            <motion.button type={isAgentBusy ? 'button' : 'submit'} onPointerDown={(event) => { if (!isAgentBusy) return; event.preventDefault(); event.stopPropagation(); cancelGeneration(); }} onClick={isAgentBusy ? cancelGeneration : undefined} disabled={!sendButtonActive} animate={{ scale: sendButtonActive ? 1 : 0.94, opacity: sendButtonActive ? 1 : 0.62 }} whileHover={{ scale: sendButtonActive ? 1.06 : 0.98 }} whileTap={{ scale: 0.9 }} transition={{ type: 'spring', stiffness: 460, damping: 28 }} className={`send-button ml-auto flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full text-(--codeclub-text-strong) shadow-none transition-colors disabled:cursor-not-allowed ${sendButtonActive ? 'send-button-shine border border-(--codeclub-border-soft) bg-(--codeclub-send-active-radial)' : 'border border-transparent bg-(--codeclub-surface-raised)'}`} aria-label={isAgentBusy ? chatText.cancel : credentialProvider ? (language === 'en' ? 'Save credential' : 'Guardar credencial') : chatText.send} title={isAgentBusy ? chatText.cancel : credentialProvider ? (language === 'en' ? 'Save credential' : 'Guardar credencial') : chatText.send}>
+            <motion.button type={isAgentBusy ? 'button' : 'submit'} onPointerDown={(event) => { if (!isAgentBusy) return; event.preventDefault(); event.stopPropagation(); cancelGeneration(); }} onClick={isAgentBusy ? cancelGeneration : undefined} disabled={!sendButtonActive} animate={{ scale: sendButtonActive ? 1 : 0.94, opacity: sendButtonActive ? 1 : 0.62 }} whileHover={{ scale: sendButtonActive ? 1.06 : 0.98 }} whileTap={{ scale: 0.9 }} transition={{ type: 'spring', stiffness: 460, damping: 28 }} className={`send-button ml-auto flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full text-(--codeclub-text-strong) shadow-none transition-colors disabled:cursor-not-allowed ${sendButtonActive ? 'send-button-shine border border-(--codeclub-border-soft) bg-(--codeclub-send-active-radial)' : 'border border-transparent bg-(--codeclub-surface-raised)'}`} aria-label={isAgentBusy ? chatText.cancel : credentialProvider ? (translate('chatInterface.saveCredential', language)) : chatText.send} title={isAgentBusy ? chatText.cancel : credentialProvider ? (translate('chatInterface.saveCredential', language)) : chatText.send}>
             {isAgentBusy ? <Square size={13} strokeWidth={2.4} fill="currentColor" /> : <ArrowUp size={15} strokeWidth={2.2} />}
             </motion.button>
           </div>
@@ -2826,7 +2807,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
           tabIndex={-1}
           onKeyDown={handleCommandMenuKeyDown}
           role="listbox"
-          aria-label={language === 'en' ? 'Available commands' : 'Comandos disponibles'}
+          aria-label={translate('chatInterface.availableCommands', language)}
           aria-activedescendant={activeCommandIndex >= 0 ? `command-option-${activeCommandIndex}` : undefined}
           className={`command-menu ${menuOpen ? 'is-open' : ''}`}
           initial={false}
@@ -2855,7 +2836,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
                 value={credentialInput}
                 onChange={(event) => {setCredentialInput(event.target.value);setCustomConfigError('');}}
                 onKeyDown={(event) => { if (event.key !== 'Enter' && event.key !== 'Escape') return; event.preventDefault(); event.stopPropagation(); if (event.key === 'Enter' && credentialInput.trim()) { saveCredential(); return; } setCredentialProvider(null); setCredentialInput(''); setMenuOpen(false); setCommandKind(''); chatInputRef.current?.focus(); }}
-                placeholder={`${aiCredentialTranslations[language].enter} ${credentialProvider?.gatewayOnly ? 'Vercel AI Gateway' : credentialProvider?.label || credentialProvider?.id}`}
+                placeholder={`${getMessages('aiCredential', language).enter} ${credentialProvider?.gatewayOnly ? 'Vercel AI Gateway' : credentialProvider?.label || credentialProvider?.id}`}
                 className="credential-menu-input"
                 style={{ boxSizing: 'border-box', width: '100%', height: '34px', padding: '0 32px 0 10px', border: 0, borderRadius: '8px', background: 'transparent', color: '#eeeeee', fontSize: '12px', outline: 'none' }}
               />
@@ -2864,11 +2845,11 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
           ) : commandKind === 'custom-config' ? (
             <div style={{ display: 'grid', gap: '8px' }}>
               <div style={{ position: 'relative', minHeight: '34px' }}>
-                {customUrl.trim() ? <button type="button" onClick={saveCustomProviderConfig} aria-label={language === 'en' ? 'Save URL' : 'Guardar URL'} style={{ position: 'absolute', right: '4px', top: '50%', width: '26px', height: '26px', display: 'grid', placeItems: 'center', transform: 'translateY(-50%)', border: 0, borderRadius: '6px', background: 'transparent', color: '#d6d6d6', cursor: 'pointer' }}><Check size={15} strokeWidth={1.8} /></button> : <Globe size={15} strokeWidth={1.8} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: '#d6d6d6', pointerEvents: 'none' }} />}
-                <input ref={customUrlRef} value={customUrl} onChange={(event) => { setCustomUrl(event.target.value); setCustomConfigError(''); }} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); saveCustomProviderConfig(); } }} placeholder={language === 'en' ? 'Provider URL' : 'URL del proveedor'} style={{ boxSizing: 'border-box', width: '100%', height: '34px', padding: '0 32px 0 10px', border: 0, borderRadius: '8px', background: 'transparent', color: '#eeeeee', fontSize: '12px', outline: 'none' }} />
+                {customUrl.trim() ? <button type="button" onClick={saveCustomProviderConfig} aria-label={translate('chatInterface.saveURL', language)} style={{ position: 'absolute', right: '4px', top: '50%', width: '26px', height: '26px', display: 'grid', placeItems: 'center', transform: 'translateY(-50%)', border: 0, borderRadius: '6px', background: 'transparent', color: '#d6d6d6', cursor: 'pointer' }}><Check size={15} strokeWidth={1.8} /></button> : <Globe size={15} strokeWidth={1.8} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: '#d6d6d6', pointerEvents: 'none' }} />}
+                <input ref={customUrlRef} value={customUrl} onChange={(event) => { setCustomUrl(event.target.value); setCustomConfigError(''); }} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); saveCustomProviderConfig(); } }} placeholder={translate('chatInterface.providerURL', language)} style={{ boxSizing: 'border-box', width: '100%', height: '34px', padding: '0 32px 0 10px', border: 0, borderRadius: '8px', background: 'transparent', color: '#eeeeee', fontSize: '12px', outline: 'none' }} />
               </div>
               <div style={{ display: 'grid', gap: '5px', color: '#999999', fontSize: '11px' }}>
-                {language === 'en' ? 'Tool format' : 'Formato de herramientas'}
+                {translate('chatInterface.toolFormat', language)}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px' }}>
                   {(['json', 'xml'] as const).map((format) => <button key={format} type="button" onClick={() => setCustomToolsFormat(format)} style={{ height: '30px', border: '1px solid #2b2b2b', borderRadius: '7px', background: customToolsFormat === format ? '#1E1E1E' : 'transparent', color: customToolsFormat === format ? '#eeeeee' : '#777777', fontSize: '11px' }}>{format.toUpperCase()}</button>)}
                 </div>
@@ -2882,7 +2863,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
                 <small style={{ color: 'var(--codeclub-accent)', fontSize: '11px', opacity: 0.88 }}>{chatText.selected}</small>
               </div>
             )}
-            {!hasCommandMenuResults && <div role="status" style={{ minHeight: '32px', display: 'grid', placeItems: 'center', padding: '8px 9px', color: 'rgba(216, 216, 216, 0.48)', fontSize: '11px' }}>{language === 'en' ? 'No results found' : 'No se encontraron resultados'}</div>}
+            {!hasCommandMenuResults && <div role="status" style={{ minHeight: '32px', display: 'grid', placeItems: 'center', padding: '8px 9px', color: 'rgba(216, 216, 216, 0.48)', fontSize: '11px' }}>{translate('chatInterface.noResultsFound', language)}</div>}
             {commandMenuItems.map((item, index) => (
               <motion.button
                 key={item.gatewayId || item.id}
@@ -2903,7 +2884,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
                 <motion.span aria-hidden="true" animate={{ opacity: index === activeCommandIndex ? 1 : 0 }} transition={{ duration: 0.12, ease: 'easeOut' }} style={{ position: 'absolute', inset: 0, borderRadius: '7px', background: '#2F2F2F', zIndex: 0, pointerEvents: 'none' }} />
                 <span className="relative z-[1] flex min-w-0 items-center gap-2">{item.icon && React.createElement(item.icon, { size: 14, strokeWidth: 1.8 })}<span className="truncate">{item.label}</span></span>
                 <small className="relative z-[1]" style={{ color: 'rgba(216, 216, 216, 0.36)', fontSize: '11px' }}>
-                  {compactCommandDescription(item.type === 'command' ? item.description : item.type === 'language' ? item.description : item.type === 'development' ? item.description : item.type === 'provider' ? (isSavedProvider(item) ? savedProviderTranslations[language].recent : chatText.provider) : item.type === 'project' ? chatText.project : item.type === 'skill' ? item.source : item.type === 'extension' ? chatText.extension : ['resource', 'resource-create'].includes(item.type || '') ? item.description : chatText.model)}
+                  {compactCommandDescription(item.type === 'command' ? item.description : item.type === 'language' ? item.description : item.type === 'development' ? item.description : item.type === 'provider' ? (isSavedProvider(item) ? getMessages('savedProvider', language).recent : chatText.provider) : item.type === 'project' ? chatText.project : item.type === 'skill' ? item.source : item.type === 'extension' ? chatText.extension : ['resource', 'resource-create'].includes(item.type || '') ? item.description : chatText.model)}
                 </small>
               </motion.button>
             ))}

@@ -7,7 +7,7 @@ import { motion, useAnimationControls, useReducedMotion } from 'motion/react';
 import ChatInterface from './ChatInterface';
 import OrbPaletteButton from './ui/OrbPaletteButton';
 import { models, providers } from '../lib/ai-catalog';
-import { activityTranslations, floatingChatTranslations, useAppLanguage } from '../lib/i18n';
+import { useAppLanguage, getMessages } from '../lib/i18n';
 import { useSharedSessions } from '../lib/shared-sessions';
 import { idleWidgetMode, type WidgetMode } from '../lib/widget-state';
 import './floating-chat.css';
@@ -34,8 +34,8 @@ export default function FloatingChat() {
   const shell = useRef<HTMLElement>(null);
   const [dropping,setDropping] = useState(false);
   const language = useAppLanguage();
-  const text = floatingChatTranslations[language];
-  const activityText = activityTranslations[language];
+  const text = getMessages('floatingChat', language);
+  const activityText = getMessages('activity', language);
   const bridge = () => (window as any).codeclub;
   const resize = useCallback((next: boolean | WidgetMode) => {
     const state=typeof next==='boolean'?(next?'expanded':'compact'):next;

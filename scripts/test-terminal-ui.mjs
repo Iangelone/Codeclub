@@ -24,7 +24,7 @@ try {
     import {FitAddon} from '@xterm/addon-fit';
     import '@xterm/xterm/css/xterm.css';
     import {nativeInvoke,onTerminalOutput} from ${JSON.stringify(path.join(repo, 'src/lib/runtime.ts'))};
-    import {useAppLanguage,rightSidebarTranslations} from ${JSON.stringify(path.join(repo, 'src/lib/i18n.ts'))};
+    import {useAppLanguage,getMessages} from ${JSON.stringify(path.join(repo, 'src/lib/i18n.ts'))};
     ${panel}
     function Fixture() {
       const [visible,setVisible]=useState(true);

@@ -1,0 +1,30 @@
+{
+  "edit": "Editar elemento",
+  "pickColor": "Elegir color",
+  "description": "Describe estos cambios...",
+  "content": "Texto",
+  "color": "Color del texto",
+  "background": "Fondo",
+  "opacity": "Opacidad",
+  "fontFamily": "Fuente",
+  "fontSize": "Tamaño de fuente",
+  "fontWeight": "Grosor de fuente",
+  "borderRadius": "Radio del borde",
+  "borderColor": "Color del borde",
+  "borderWidth": "Ancho del borde",
+  "width": "Ancho",
+  "height": "Altura",
+  "padding": "Relleno",
+  "margin": "Margen",
+  "sides": [
+    "Arriba",
+    "Derecha",
+    "Abajo",
+    "Izquierda"
+  ],
+  "cancel": "Cancelar",
+  "confirm": "Añadir cambios al chat",
+  "invalidValue": "Valor CSS inválido",
+  "previewUnavailable": "El elemento ya no está disponible. Volvé a seleccionarlo.",
+  "changesTitle": "Cambios de estilo"
+}

@@ -4,7 +4,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { usePopupKeyboard } from './use-accessible-overlay';
 import { ChevronDown } from 'lucide-react';
-import { useAppLanguage } from '../../lib/i18n';
+import { useAppLanguage, translate } from '../../lib/i18n';
 
 export default function ScheduledSelect({ value, options, onChange, label, searchable = false, optionSearchText, variant = 'default' }: { value: string; options: string[]; onChange: (value: string) => void; label: string; searchable?: boolean; optionSearchText?: (option: string) => string; variant?: 'default' | 'modal' | 'compact' }) {
   const language = useAppLanguage();
@@ -46,7 +46,7 @@ export default function ScheduledSelect({ value, options, onChange, label, searc
       <span className="truncate">{value}</span><ChevronDown size={15} aria-hidden="true" className={`shrink-0 text-[#999999] transition-transform ${open ? 'rotate-180' : ''}`} />
     </button>
     {open && <div ref={menuRef} style={floating ? position : undefined} className={`z-30 flex flex-col overflow-hidden border p-1.5 shadow-2xl shadow-black/40 ${floating ? `fixed ${variant === 'compact' ? 'rounded-lg' : 'rounded-none'} border-[#2B2B2B] bg-[#111111]` : 'absolute right-0 top-[calc(100%+4px)] max-h-72 min-w-[220px] rounded-xl border-white/[0.1] bg-[#292929]'}`}>
-      {searchable && <input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`${language === 'en' ? 'Search' : 'Buscar'} ${label.toLowerCase()}`} className={`mb-1.5 h-9 w-full shrink-0 border border-[#2B2B2B] bg-[#161616] px-2.5 py-2 text-[12px] text-[#eeeeee] outline-none placeholder:text-[#777777] focus:border-(--codeclub-accent) ${variant === 'modal' ? 'rounded-none' : 'rounded-lg'}`} />}
+      {searchable && <input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`${translate('scheduledSelect.search', language)} ${label.toLowerCase()}`} className={`mb-1.5 h-9 w-full shrink-0 border border-[#2B2B2B] bg-[#161616] px-2.5 py-2 text-[12px] text-[#eeeeee] outline-none placeholder:text-[#777777] focus:border-(--codeclub-accent) ${variant === 'modal' ? 'rounded-none' : 'rounded-lg'}`} />}
       <div id={menuId} role="listbox" aria-label={label} className="project-files-modal-scroll min-h-0 overflow-y-auto overscroll-contain">
       {options.filter((option) => `${option} ${optionSearchText?.(option) || ''}`.toLowerCase().includes(query.toLowerCase())).map((option) => <button key={option} type="button" role="option" aria-selected={option === value} onClick={() => { onChange(option); setQuery(''); setOpen(false); }} className={`flex w-full items-center rounded-lg px-3 py-2 text-left text-[13px] transition-colors ${option === value ? 'bg-[#333333] text-(--codeclub-accent-bright)' : 'text-[#cccccc] hover:bg-white/[0.07] hover:text-white'}`}>{option}</button>)}
       </div>

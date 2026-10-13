@@ -5,12 +5,12 @@ import { createPortal } from 'react-dom';
 import { ChevronDown, X } from 'lucide-react';
 import ScheduledSelect from './ui/ScheduledSelect';
 import { useDialogAccessibility } from './ui/use-accessible-overlay';
-import { taskEditorTranslations, useAppLanguage } from '../lib/i18n';
+import { useAppLanguage, translate, getMessages } from '../lib/i18n';
 
 /** Visual task editor. Values remain local until task creation is connected to the native scheduler. */
 export default function TaskEditorModal({ onClose }: { onClose: () => void }) {
   const language = useAppLanguage();
-  const text = taskEditorTranslations[language];
+  const text = getMessages('taskEditor', language);
   const [name, setName] = useState('');
   const [prompt, setPrompt] = useState('');
   const [repeat, setRepeat] = useState(true);
@@ -18,7 +18,7 @@ export default function TaskEditorModal({ onClose }: { onClose: () => void }) {
   const timeOptions = Array.from({ length: 48 }, (_, index) => {
     const date = new Date();
     date.setHours(Math.floor(index / 2), index % 2 * 30, 0, 0);
-    return new Intl.DateTimeFormat(language === 'en' ? 'en-US' : 'es-AR', { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(date);
+    return new Intl.DateTimeFormat(translate('taskEditorModal.enUS', language), { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(date);
   });
   const [time, setTime] = useState(timeOptions[18]);
   const [endRepeat, setEndRepeat] = useState<string>(text.endOptions[0]);

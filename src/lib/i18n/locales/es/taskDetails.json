@@ -1,0 +1,18 @@
+{
+  "active": "Activa",
+  "paused": "Pausada",
+  "running": "Ejecutando…",
+  "runNow": "Ejecutar ahora",
+  "pause": "Pausar",
+  "resume": "Reanudar",
+  "openChat": "Abrir último chat",
+  "error": "No se pudo actualizar la tarea.",
+  "intervals": {
+    "Diario": "Diario",
+    "Días hábiles": "Días hábiles",
+    "Semanal": "Semanal",
+    "Mensual": "Mensual",
+    "Personalizado": "Personalizado",
+    "Una vez": "Una vez"
+  }
+}

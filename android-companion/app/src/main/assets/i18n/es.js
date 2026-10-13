@@ -1,0 +1,28 @@
+globalThis.codeclubMessages ??= {};
+globalThis.codeclubMessages.es = {
+  "welcome": "Tu orbe, donde estés",
+  "hint": "Escaneá el QR en Codeclub. Mantené el teléfono y la computadora en la misma red Wi-Fi.",
+  "scan": "Escanear QR",
+  "paste": "Ingresar código",
+  "connected": "Conectado",
+  "connecting": "Conectando…",
+  "offline": "Reconectando…",
+  "paused": "Control del teléfono pausado",
+  "chats": "Chats",
+  "settings": "Conexión y permisos",
+  "input": "Escribile a tu agente…",
+  "send": "Enviar mensaje",
+  "empty": "Empezá una conversación",
+  "noChats": "Tus chats aparecerán acá",
+  "older": "Mensajes anteriores",
+  "queue": "Esperando a la computadora",
+  "failed": "No se pudo iniciar este mensaje en la computadora",
+  "permissions": "Activá Accesibilidad en el menú de conexión para permitir el control del teléfono",
+  "syncError": "No se pudo sincronizar. Revisá la conexión con la PC.",
+  "working": "Trabajando…",
+  "close": "Cerrar",
+  "cancelRun": "Detener agente",
+  "approve": "Permitir",
+  "deny": "Rechazar",
+  "retry": "Reintentar"
+};

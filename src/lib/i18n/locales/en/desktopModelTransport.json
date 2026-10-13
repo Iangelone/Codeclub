@@ -1,0 +1,7 @@
+{
+  "theProviderIsNotMakingThisModel": "The provider is not making this model available right now. Choose another model or try again later.",
+  "theProviderRejectedTheAPIKeyCheck": "The provider rejected the API key. Check the key and the selected provider.",
+  "theProviderReachedItsRequestLimitWait": "The provider reached its request limit. Wait a moment and try again.",
+  "theProviderCouldNotBeReachedCheck": "The provider could not be reached. Check the connection and try again.",
+  "theProviderCouldNotGenerateAResponseValue": "The provider could not generate a response{{value1}}"
+}

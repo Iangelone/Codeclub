@@ -1,0 +1,59 @@
+{
+  "customize": "Customize",
+  "hideLeftSidebar": "Hide left sidebar",
+  "confirmClearingHistory": "Confirm clearing history",
+  "confirm": "Confirm",
+  "cancel": "Cancel",
+  "openGitHubChanges": "Open GitHub changes",
+  "gitHubChanges": "GitHub changes",
+  "text": {
+    "title": "Devices",
+    "description": "Connect your phone to the IDE by scanning a QR code."
+  },
+  "noBranch": "No branch",
+  "thisFolderIsNotAGitRepository": "This folder is not a Git repository yet.",
+  "couldNotLoadThisDiff": "Could not load this diff.",
+  "scopeLabels": {
+    "unstaged": "Unstaged",
+    "uncommitted": "Uncommitted",
+    "staged": "Staged",
+    "branch": "Branch"
+  },
+  "reviewChanges": "Review changes",
+  "selectChangeGroup": "Select change group",
+  "changeGroups": "Change groups",
+  "selectComparisonBranch": "Select comparison branch",
+  "selectBranch": "Select branch",
+  "searchBranches": "Search branches",
+  "branches": "Branches",
+  "noBranchesFound": "No branches found",
+  "files": "files",
+  "refreshChanges": "Refresh changes",
+  "close": "Close",
+  "changedFiles": "Changed files",
+  "selectAChangedFile": "Select a changed file",
+  "searchTheWebForValue": "Search the web for: {{query}}",
+  "searchTheWeb": "Search the web",
+  "text2": {
+    "choose": "Choose a panel",
+    "open": "Open a tool to view it in this sidebar."
+  },
+  "descriptions": {
+    "files": "Explore files from the active project.",
+    "browser": "Open and control pages inside Electron.",
+    "terminals": "Manage persistent session terminals."
+  },
+  "noActiveProject": "No active project",
+  "linkAFolderToExploreItsFiles": "Link a folder to explore its files.",
+  "resizeLeftSidebar": "Resize left sidebar",
+  "resizeRightSidebar": "Resize right sidebar",
+  "couldNotRenameTheProject": "Could not rename the project",
+  "selectedElement": "Selected element",
+  "selectionUnavailable": "Selection unavailable",
+  "previewUnavailable": "Preview unavailable",
+  "selectionChanged": "Selection changed",
+  "couldNotLoadThisPage": "Could not load this page.",
+  "actionNotImplementedInTheBrowser": "Action not implemented in the browser.",
+  "menuFor": "Menu for {{label}}",
+  "enterAddress": "Enter an address to get started"
+}

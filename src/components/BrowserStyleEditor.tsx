@@ -3,7 +3,7 @@
 /** Edits CSS/text on a selected live DOM node and tracks reversible preview changes. */
 import { useEffect, useState } from 'react';
 import { Check, SlidersHorizontal } from 'lucide-react';
-import { browserStyleTranslations, type AppLanguage } from '../lib/i18n';
+import { type AppLanguage, getMessages } from '../lib/i18n';
 
 export type BrowserElementSelection = {
   title: string; text: string; html: string; x: number; y: number; markerId: string;
@@ -28,7 +28,7 @@ export default function BrowserStyleEditor({ element, language, onCancel, onConf
   onConfirm: (changes: BrowserElementChanges, description: string) => Promise<void>;
   onPreview: (markerId: string, changes: BrowserElementChanges) => Promise<boolean>;
 }) {
-  const text = browserStyleTranslations[language];
+  const text = getMessages('browserStyle', language);
   const [values, setValues] = useState(element.styles);
   const [content, setContent] = useState(element.originalText);
   const [description, setDescription] = useState('');
