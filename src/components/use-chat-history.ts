@@ -1,4 +1,6 @@
 'use client';
+import { getDesktopBridge } from '../lib/runtime';
+
 /** Loads complete turns into a bounded window and rejects stale pages when the active chat changes. */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { boundChatWindow } from '../lib/chat-window';
@@ -36,7 +38,7 @@ export function useChatHistory() {
     const request=++epoch.current; current.current=chat;busy.current=true;
     commit([],0,0);setLoading(true);setError(false);
     try {
-      const bridge=(window as any).codeclub;
+      const bridge=getDesktopBridge();
       const page=bridge?.chatTurns?await bridge.chatTurns(chat.projectPath,chat.chatId,undefined,PAGE_TURN_COUNT):await (async()=>{const all=await fallback?.()||[];const users=all.flatMap((message,index)=>message.role==='user'?[index]:[]);const start=users[Math.max(0,users.length-PAGE_TURN_COUNT)]??Math.max(0,all.length-PAGE_TURN_COUNT*2);return {messages:all.slice(start),start,total:all.length};})();
       if(request!==epoch.current) return false;
       const bounded=boundChatWindow(page.messages,'newer',WINDOW_SIZE);
@@ -45,7 +47,7 @@ export function useChatHistory() {
     finally {if(request===epoch.current){busy.current=false;setLoading(false);}}
   },[commit]);
   const adjacent = useCallback(async (direction:'older'|'newer') => {
-    const chat=current.current,bridge=(window as any).codeclub;
+    const chat=current.current,bridge=getDesktopBridge();
     if(!chat||busy.current||!bridge?.chatTurns) return;
     const {start,total}=range.current,end=start+messagesRef.current.length;
     if(direction==='older'?start===0:end>=total)return;

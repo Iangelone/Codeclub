@@ -31,6 +31,7 @@ The October 8 browser audit supersedes the older companion connection notes belo
 
 ```text
 ChatInterface / ScheduledTaskRunner
+  -> application services in src/lib/agent/
   -> catalog + selection + credential store
   -> native tools + plugins/MCP + skill discovery
   -> runStream -> LangGraph prepare -> model -> finish
@@ -41,7 +42,7 @@ ChatInterface / ScheduledTaskRunner
   -> response, history, tokens, and execution evidence
 ```
 
-React configures and presents execution; Electron performs system operations. Remote MCP servers connect through `@ai-sdk/mcp`; stdio runs in Electron. An external server has its own environment and permissions and must not be assumed to be automatically restricted to the project.
+React presents execution and approvals through typed ports. Application services own provider construction, credential readiness, tool selection and execution; Electron performs system operations through authorized IPC handlers. Chat and scheduled runs share model clients and native HTTP transport. Remote MCP servers connect through `@ai-sdk/mcp`; stdio runs in Electron. An external server has its own environment and permissions and must not be assumed to be automatically restricted to the project.
 
 ## LangGraph and LangChain: active integration
 

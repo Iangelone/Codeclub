@@ -1,4 +1,6 @@
 'use client';
+import { getDesktopBridge, requireDesktopBridge } from '../lib/runtime';
+
 
 /** Lists and edits autonomous or scheduled agents; run status and history are authoritative in Electron. */
 import { useEffect, useRef, useState, type FormEvent } from 'react';
@@ -118,7 +120,7 @@ export default function OrbsPanel({ createMode = false, onCreated, workspaceMode
   const openerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    const api = (window as any).codeclub;
+    const api = requireDesktopBridge();
     if (!api?.tasksList) return;
     let mounted = true;
     const refresh = () => { void api.tasksList('').then((items: ScheduledTask[]) => { if (mounted) setTasks(items); }).catch(() => { if (mounted) setControlError(controls.actionError); }); };
@@ -133,7 +135,7 @@ export default function OrbsPanel({ createMode = false, onCreated, workspaceMode
     if (pendingActions[orb.id]) return;
     setPendingActions((previous) => ({ ...previous, [orb.id]: true }));
     setControlError('');
-    const api = (window as any).codeclub;
+    const api = requireDesktopBridge();
     const taskId = `orb_${orb.id}`;
     try {
       if (!api?.tasksList) throw new Error('ORB_RUNTIME_UNAVAILABLE');
@@ -168,7 +170,7 @@ export default function OrbsPanel({ createMode = false, onCreated, workspaceMode
     setPendingActions(previous => ({ ...previous, [orb.id]: true }));
     setControlError('');
     try {
-      const api = (window as any).codeclub;
+      const api = requireDesktopBridge();
       const currentTasks: ScheduledTask[] = await api.tasksList('');
       if (currentTasks.some(task => task.id === `orb_${orb.id}`)) {
         await api.tasksDelete('', `orb_${orb.id}`);
@@ -282,7 +284,7 @@ export default function OrbsPanel({ createMode = false, onCreated, workspaceMode
       await setSetting(STORAGE_KEY, next);
       window.dispatchEvent(new CustomEvent('codeclub:orbs-changed'));
       const task = tasks.find((item) => item.id === `orb_${draft.id}`);
-      if (task) await (window as any).codeclub.tasksSave('', { ...task, name: draft.name.trim(), prompt: draft.purpose.trim(), provider: draft.providerId, model: draft.modelId, allowComputer: draft.allowComputer !== false, maximumAutonomy: draft.maximumAutonomy !== false, requiresAdministrator: draft.requiresAdministrator === true, language });
+      if (task) await requireDesktopBridge().tasksSave('', { ...task, name: draft.name.trim(), prompt: draft.purpose.trim(), provider: draft.providerId, model: draft.modelId, allowComputer: draft.allowComputer !== false, maximumAutonomy: draft.maximumAutonomy !== false, requiresAdministrator: draft.requiresAdministrator === true, language });
       setOrbs(next);
       closeEditor();
       onCreated?.(draft.id);
@@ -302,7 +304,7 @@ export default function OrbsPanel({ createMode = false, onCreated, workspaceMode
       const origin = key === 'ai_gateway_api_key' ? 'https://ai-gateway.vercel.sh' : selectedProvider.api;
       if (!origin) { setFlowError(text.providerEndpointMissing); return; }
       try {
-        const bridge = (window as any).codeclub;
+        const bridge = getDesktopBridge();
         if (bridge?.credentialSet) await bridge.credentialSet(key, apiKey.trim(), origin);
         else await setSetting(key, apiKey.trim());
         setCredentialSaved(true);
@@ -320,7 +322,7 @@ export default function OrbsPanel({ createMode = false, onCreated, workspaceMode
         const next = saved.map(orb => orb.id === draft.id ? updated : orb);
         await setSetting(STORAGE_KEY, next);
         const task = tasks.find(item => item.id === `orb_${draft.id}`);
-        if (task) await (window as any).codeclub.tasksSave('', { ...task, allowComputer: updated.allowComputer, provider: updated.providerId, model: updated.modelId });
+        if (task) await requireDesktopBridge().tasksSave('', { ...task, allowComputer: updated.allowComputer, provider: updated.providerId, model: updated.modelId });
         setOrbs(next);
         window.dispatchEvent(new CustomEvent('codeclub:orbs-changed'));
         closeEditor();

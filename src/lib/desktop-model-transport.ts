@@ -1,9 +1,10 @@
+import { getDesktopBridge } from './runtime';
 /** Native model transport, custom XML tool formatting and provider error presentation. */
-import { nativeInvoke as invoke } from './runtime';
+import { createNativeModelFetch, type ModelFetchDebug } from './agent/native-model-fetch';
 import { credentialKeyFor } from './ai-routing';
 import { type AppLanguage, translate, getMessages } from './i18n';
 
-export type ModelFetchDebug = { method: string; url: string; requestBody?: string; status?: number; statusText?: string; responseHeaders?: unknown; responseBody?: unknown; transportError?: string };
+export type { ModelFetchDebug } from './agent/native-model-fetch';
 type TransportOptions = {
   currentProvider: { id?: string; gatewayOnly?: boolean } | null;
   currentModel: { id?: string; gatewayOnly?: boolean } | null;
@@ -105,63 +106,19 @@ export function createDesktopModelTransport({ currentProvider, currentModel, cus
     return translate('desktopModelTransport.theProviderCouldNotGenerateAResponseValue', language, { value1: cleanDetail ? `: ${cleanDetail}` : '.' });
   };
 
-  const desktopModelFetch = async (input: RequestInfo | URL, init: RequestInit = {}) => {
-    const request = input instanceof Request ? new Request(input, init) : new Request(input, init);
-    let requestBody = ['GET', 'HEAD'].includes(request.method) ? undefined : await request.clone().text();
-    if (requestBody && currentProvider?.id === 'custom' && customToolsFormat === 'xml') {
-      try {
-        const payload = JSON.parse(requestBody);
-        if (Array.isArray(payload.tools)) {
-          payload.tools = toolsAsXml(payload.tools);
-          requestBody = JSON.stringify(payload);
-        }
-      } catch {
-        // Pass non-JSON response bodies through unchanged.
+  const desktopModelFetch = createNativeModelFetch({
+    credentialKey: () => getDesktopBridge()?.credentialPresent && currentProvider ? credentialKeyFor(currentProvider, currentModel) : undefined,
+    onFetch: debug => { lastModelFetchRef.current = debug; },
+    prepareBody: body => {
+      if (body && currentProvider?.id === 'custom' && customToolsFormat === 'xml') {
+        try {
+          const payload = JSON.parse(body);
+          if (Array.isArray(payload.tools)) { payload.tools = toolsAsXml(payload.tools); return JSON.stringify(payload); }
+        } catch { /* Non-JSON bodies pass through unchanged. */ }
       }
-    }
-    const fetchDebug = {
-      method: request.method,
-      url: request.url,
-      requestBody,
-    };
-    lastModelFetchRef.current = fetchDebug;
-    const requestId=crypto.randomUUID();
-    const cancelRequest=()=>{void invoke('codeclub_http_abort',{requestId}).catch(()=>undefined);};
-    if(request.signal.aborted)throw request.signal.reason || new DOMException('Cancelled','AbortError');
-    request.signal.addEventListener('abort',cancelRequest,{once:true});
-
-    try {
-      const response = await invoke<{ body: string; status: number; status_text?: string; headers?: Array<{ name: string; value: string }> }>('codeclub_http_fetch', {
-        request: {
-          url: request.url,
-          method: request.method,
-          headers: Array.from(request.headers.entries()).map(([name, value]) => ({ name, value })),
-          body: requestBody || null,
-          requestId,
-          credentialKey: (window as any).codeclub?.credentialPresent && currentProvider ? credentialKeyFor(currentProvider,currentModel) : undefined,
-        },
-      });
-      const headers = new Headers((response.headers || []).map((header) => [header.name, header.value] as [string, string]));
-      lastModelFetchRef.current = {
-        ...fetchDebug,
-        status: response.status,
-        statusText: response.status_text,
-        responseHeaders: response.headers,
-        responseBody: response.body,
-      };
-      return new Response(response.body, {
-        status: response.status,
-        statusText: response.status_text,
-        headers,
-      });
-    } catch (error) {
-      lastModelFetchRef.current = {
-        ...fetchDebug,
-        transportError: error instanceof Error ? error.message : String(error),
-      };
-      throw error;
-    } finally {request.signal.removeEventListener('abort',cancelRequest);}
-  };
+      return body;
+    },
+  });
 
   return { desktopModelFetch, formatDebugError, userFacingProviderError };
 }

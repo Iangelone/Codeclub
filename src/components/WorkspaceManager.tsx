@@ -1,3 +1,4 @@
+import { getDesktopBridge } from '../lib/runtime';
 /** Creates, selects, renames, and indexes local projects; project files stay behind the Electron bridge. */
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Folder } from 'lucide-react';
@@ -38,14 +39,14 @@ function WorkspaceManager({ catalog, defaultProvider, defaultModel }: { catalog:
   useEffect(()=>{
     let active=true,polling=false,lastId='';
     // Open the next eligible mobile conversation; ChatInterface owns claiming and execution.
-    const poll=async()=>{if(polling)return;polling=true;try{const next=await (window as any).codeclub?.mobileNext?.();if(active&&next&&next.id!==lastId){lastId=next.id;window.dispatchEvent(new CustomEvent('codeclub:open-chat',{detail:next.chat}));}if(!next)lastId='';}catch{/* Reconnect on the next poll. */}finally{polling=false;}};
+    const poll=async()=>{if(polling)return;polling=true;try{const next=await getDesktopBridge()?.mobileNext?.();if(active&&next&&next.id!==lastId){lastId=next.id;window.dispatchEvent(new CustomEvent('codeclub:open-chat',{detail:next.chat}));}if(!next)lastId='';}catch{/* Reconnect on the next poll. */}finally{polling=false;}};
     const timer=window.setInterval(()=>void poll(),1000);void poll();
     return()=>{active=false;window.clearInterval(timer);};
   },[]);
 
   useEffect(() => {
     const open = (chat: any) => { if (chat?.chatId) window.dispatchEvent(new CustomEvent('codeclub:open-chat', { detail: chat })); };
-    const bridge = (window as any).codeclub;
+    const bridge = getDesktopBridge();
     const unsubscribe = bridge?.onSessionOpen?.(open);
     const shown = bridge?.onMainShow?.(() => { void bridge.sessionSelected?.().then(open); });
     return () => { unsubscribe?.(); shown?.(); };

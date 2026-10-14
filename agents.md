@@ -36,7 +36,9 @@ There is no active Supabase integration or Codeclub account/login flow. Chats an
 | Layout | src/components/Topbar.tsx, WorkspaceLayout.tsx |
 | Workspace | src/components/WorkspaceManager.tsx, ChatPanel.tsx, ChatInterface.tsx |
 | Extensions | src/components/ExtensionsPanel.tsx |
+| Execution services | src/lib/agent/chat-execution.ts, scheduled-execution.ts, model-client.ts, native-model-fetch.ts |
 | Engine | src/lib/engine/ |
+| Shared bridge contracts | shared/desktop-contracts.d.ts, src/lib/desktop-bridge.ts, electron/ipc/ |
 | Agent integration guide | docs/agent.md |
 | Projects | src/lib/projectManager.ts |
 | Runtime | src/lib/runtime.ts and electron/preload.cjs |
@@ -73,11 +75,11 @@ These are different responsibilities: Vercel **AI SDK** is the client framework;
 
 Both remote catalogs load concurrently with independent failures and bounded fetches. Preserve deduplication and direct metadata when a model also exists in Gateway. Unknown cost is not zero; capability flags and context windows must come from metadata rather than assumptions. Do not add fixed models to normal selection; the explicit Google recovery fallback above is existing behavior.
 
-Chat constructs providers in `src/components/ChatInterface.tsx` using `desktopModelFetch`. Preserve the native transport and encrypted credential path. Direct requests carry Codeclub/session identification; additional headers come from `codeclub_provider_headers_<id>` with `${chatId}` substitution. Configurable Authorization, Cookie and Host headers are rejected. Keep transport errors meaningful, including payment, subscription and client restrictions; an HTTP 403 is not always an invalid key. See [catalog and routing](docs/catalog.md).
+Application services construct providers through `src/lib/agent/model-client.ts`; chat and scheduled runs share `native-model-fetch.ts`. Chat keeps custom XML formatting and error presentation in `desktop-model-transport.ts`. Preserve the native transport and encrypted credential path. Direct requests carry Codeclub/session identification; additional headers come from `codeclub_provider_headers_<id>` with `${chatId}` substitution. Configurable Authorization, Cookie and Host headers are rejected. Keep transport errors meaningful, including payment, subscription and client restrictions; an HTTP 403 is not always an invalid key. See [catalog and routing](docs/catalog.md).
 
 ## Agent execution and extensions
 
-The shared flow is `ChatInterface / ScheduledTaskRunner -> selected route and credentials -> runStream -> LangGraph prepare/model/finish -> ToolLoopAgent -> tool -> native IPC or MCP -> history, usage and audit`.
+The shared flow is `ChatInterface / ScheduledTaskRunner -> application execution services -> selected route and credentials -> runStream -> LangGraph prepare/model/finish -> ToolLoopAgent -> tool -> native IPC or MCP -> history, usage and audit`. UI components may not import model SDKs or engine executors. Chat execution publishes snapshots, state, tool activity and credential readiness through typed ports; React owns presentation, approval dialogs and visual frame scheduling. ScheduledTaskRunner only mounts its isolated browser and starts its execution service.
 
 - LangGraph controls continuation and context preparation. Each model node runs one AI SDK `ToolLoopAgent` step; LangChain validates local tool inputs before executing them. Follow installed v7 conventions such as `instructions` and `fullStream`.
 - `src/lib/engine/tools.ts` owns tool schemas/executors; `tool-discovery.ts` exposes discovery and schema reuse; `resource-tools.ts` and `android-tools.ts` own specialized resources. Use actual returned tool names/schemas, never invented capabilities.
@@ -108,7 +110,7 @@ Android companion/control and orb pairing have implemented modules; do not infer
          -> event or IPC -> Electron / Windows -> result and audit
          -> chat, artifact, or side panel
 
-The renderer never uses Node.js directly. Native work goes through nativeInvoke and the preload bridge.
+The renderer never uses Node.js directly. Native work goes through nativeInvoke and the preload bridge. Only src/lib/desktop-bridge.ts may read window.codeclub; consumers use getDesktopBridge for optional features or requireDesktopBridge for required native operations. Shared DTOs and DesktopBridge are declared in shared/desktop-contracts.d.ts, with no native/renderer runtime imports. Electron registers requests through electron/ipc/register.ts to authorize the sender before dispatch; store, path and task ownership checks remain in their owning subsystem. Dynamic tool/MCP invocation stays extensible. Run npm run check:architecture and npm run test:boundaries after boundary changes.
 
 ## Current product surface
 

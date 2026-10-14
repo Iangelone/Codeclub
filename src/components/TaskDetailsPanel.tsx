@@ -1,4 +1,7 @@
 'use client';
+import { requireDesktopBridge, getDesktopBridge } from '../lib/runtime';
+
+
 
 import { useEffect, useState } from 'react';
 import { Clock, MessageSquare, Pause, Play } from 'lucide-react';
@@ -17,7 +20,7 @@ export default function TaskDetailsPanel({ task }: { task?: ScheduledTask }) {
     setPending(true);
     setError('');
     try {
-      const api = (window as any).codeclub;
+      const api = requireDesktopBridge();
       if (action === 'run') await api.tasksRun(task.projectPath, task.id);
       else await api.tasksSave(task.projectPath, { ...task, status: task.status === 'active' ? 'paused' : 'active' });
     } catch (cause) { setError(cause instanceof Error ? cause.message : text.error); }

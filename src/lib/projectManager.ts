@@ -1,5 +1,6 @@
+import { getDesktopBridge, appConfigDir, fileExists as exists, makeDirectory as mkdir, readDesktopText as readTextFile, writeDesktopText as writeTextFile } from './runtime';
 /** Project metadata and global-chat index; project chat contents use Electron's ChatStore when available. */
-import { appConfigDir, fileExists as exists, makeDirectory as mkdir, readDesktopText as readTextFile, writeDesktopText as writeTextFile } from './runtime';
+
 import { getAppConfigFilePath, getProjectFilePath, getSetting, logPersistence, setSetting } from "./persistence.ts";
 
 const PROJECTS_INDEX = "projects.json";
@@ -39,20 +40,20 @@ export const readGlobalChats = async (): Promise<GlobalChatEntry[]> => {
 };
 export const writeGlobalChats = async (chats: GlobalChatEntry[]) => setSetting(GLOBAL_CHATS_SETTING, chats);
 export const readGlobalChatHistory = async (chatId: string): Promise<any[]> => {
-  const bridge = typeof window === 'undefined' ? undefined : (window as any).codeclub;
+  const bridge = typeof window === 'undefined' ? undefined : getDesktopBridge();
   if (bridge?.chatAll) return bridge.chatAll('', chatId);
   const histories = await getSetting<Record<string, any[]>>(GLOBAL_CHAT_HISTORIES_SETTING, {});
   return Array.isArray(histories[chatId]) ? histories[chatId] : [];
 };
 export const writeGlobalChatHistory = async (chatId: string, messages: any[], start = 0) => {
-  const bridge = typeof window === 'undefined' ? undefined : (window as any).codeclub;
+  const bridge = typeof window === 'undefined' ? undefined : getDesktopBridge();
   if (bridge?.chatSaveTail) { await bridge.chatSaveTail('', chatId, start, messages); return; }
   const histories = await getSetting<Record<string, any[]>>(GLOBAL_CHAT_HISTORIES_SETTING, {});
   histories[chatId] = [...(histories[chatId] || []).slice(0, start), ...messages];
   await setSetting(GLOBAL_CHAT_HISTORIES_SETTING, histories);
 };
 export const appendGlobalChatTranscript = async (chatId: string, markdown: string) => {
-  const bridge = typeof window === 'undefined' ? undefined : (window as any).codeclub;
+  const bridge = typeof window === 'undefined' ? undefined : getDesktopBridge();
   if (bridge?.chatTranscript) { await bridge.chatTranscript('', chatId, markdown); return; }
   const transcripts = await getSetting<Record<string, string>>(GLOBAL_CHAT_TRANSCRIPTS_SETTING, {});
   transcripts[chatId] = `${transcripts[chatId] || ''}${markdown}`;

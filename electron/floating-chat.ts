@@ -1,9 +1,11 @@
+import { createAppIpcRegistrar } from './ipc/register.js';
 /** Owns the always-on-top floating renderer, persisted placement, and visibility/resize lifecycle. */
 import { app, BrowserWindow, ipcMain, screen } from 'electron';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 export function createFloatingChat(root: string, openMain: () => void, onVisibilityChange: () => void) {
+  const handle = createAppIpcRegistrar(ipcMain, event => { if (event.sender !== window?.webContents) throw new Error('Unauthorized floating renderer'); });
   let window: BrowserWindow | null = null;
   let expanded = false;
   let retracted = false;
@@ -102,9 +104,9 @@ export function createFloatingChat(root: string, openMain: () => void, onVisibil
       hideTimer = setTimeout(() => finishHide(revision), 250);
     } else finishHide(revision);
   }
-  ipcMain.handle('codeclub:floating-close', event => { if (event.sender === window?.webContents) hide(); });
-  ipcMain.handle('codeclub:floating-hidden', (event, revision: number) => { if (event.sender === window?.webContents) finishHide(revision); });
-  ipcMain.handle('codeclub:floating-drag', (event, phase: string, point: Electron.Point) => {
+  handle('codeclub:floating-close', event => { if (event.sender === window?.webContents) hide(); });
+  handle('codeclub:floating-hidden', (event, revision: number) => { if (event.sender === window?.webContents) finishHide(revision); });
+  handle('codeclub:floating-drag', (event, phase: string, point: Electron.Point) => {
     if (!window || event.sender !== window.webContents) return;
     if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
     if (phase === 'start') {
@@ -121,7 +123,7 @@ export function createFloatingChat(root: string, openMain: () => void, onVisibil
     window.setPosition(Math.round(x), Math.round(y));
     if (phase === 'end') { drag = null; fit(true); }
   });
-  ipcMain.handle('codeclub:floating-resize', (event, value: boolean | string, animate = true) => {
+  handle('codeclub:floating-resize', (event, value: boolean | string, animate = true) => {
     if (event.sender !== window?.webContents) return;
     const nextExpanded = value === true || value === 'expanded';
     const nextRetracted = value === 'retracted';
@@ -130,11 +132,11 @@ export function createFloatingChat(root: string, openMain: () => void, onVisibil
     retracted = value === 'retracted';
     fit(false, animate === true);
   });
-  ipcMain.handle('codeclub:floating-pointer', (event, inside: boolean) => {
+  handle('codeclub:floating-pointer', (event, inside: boolean) => {
     if(event.sender!==window?.webContents || drag)return;
     window?.setIgnoreMouseEvents(!inside,{forward:true});
   });
-  ipcMain.handle('codeclub:floating-open-main', event => { if (event.sender === window?.webContents) openMain(); });
+  handle('codeclub:floating-open-main', event => { if (event.sender === window?.webContents) openMain(); });
   const displayChanged = () => fit();
   screen.on('display-metrics-changed', displayChanged);
   screen.on('display-removed', displayChanged);

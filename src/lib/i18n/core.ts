@@ -1,3 +1,4 @@
+import { getDesktopBridge } from '../runtime';
 import i18next from 'i18next';
 import { initReactI18next, useTranslation } from 'react-i18next';
 import { useEffect } from 'react';
@@ -10,7 +11,7 @@ type LanguageBridge = {
   settingsSet?: (key: string, value: unknown) => Promise<unknown>;
   onSettingsChanged?: (listener: (detail: { key: string }) => void) => (() => void);
 };
-const languageBridge = () => (window as unknown as { codeclub?: LanguageBridge }).codeclub;
+const languageBridge = (): LanguageBridge | undefined => getDesktopBridge();
 let revision = 0;
 export const i18n = i18next.createInstance();
 void i18n.use(initReactI18next).init({

@@ -1,4 +1,5 @@
-import type { ScheduledTask, TaskRun } from '../../electron/task-scheduler';
+import { getDesktopBridge } from './runtime';
+import type { ScheduledTask, TaskRun } from '../../shared/desktop-contracts';
 import { models, providers } from './ai-catalog';
 import { credentialKeyFor, modelMatchesProvider, usesGateway } from './ai-routing';
 import { getProjectSetting, getSetting, setProjectSetting, setSetting } from './persistence';
@@ -9,7 +10,7 @@ let migration: Promise<void> | undefined;
 /** Import all scopes once, moving legacy credentials to the native vault before clearing old arrays. */
 export function migrateScheduledTasks() {
   return migration ||= (async () => {
-    const api = (window as any).codeclub;
+    const api = getDesktopBridge();
     if (!api?.tasksList) return;
     const projects = await api.listProjects();
     for (const projectPath of ['', ...projects.map((project: any) => project.path)]) {

@@ -17,7 +17,7 @@
     "next:dev": "next dev --hostname 127.0.0.1",
     "next:build": "next build",
     "typecheck": "next typegen && tsc --noEmit",
-    "test:core": "npm run check:i18n && node scripts/test-i18n.mjs && node scripts/test-mobile-ui.mjs && node scripts/test-ai-catalog.mjs && npm run test:agent-graph && node scripts/test-computer-overlay.mjs && node scripts/test-native-commands.mjs && node scripts/test-plugin-resources.mjs && node scripts/test-chat-history.mjs && node scripts/test-chat-ui.mjs && npm run test:accessibility",
+    "test:core": "npm run check:architecture && node scripts/test-ipc-boundaries.mjs && node scripts/test-execution-boundaries.mjs && npm run check:i18n && node scripts/test-i18n.mjs && node scripts/test-mobile-ui.mjs && node scripts/test-ai-catalog.mjs && npm run test:agent-graph && node scripts/test-computer-overlay.mjs && node scripts/test-native-commands.mjs && node scripts/test-plugin-resources.mjs && node scripts/test-chat-history.mjs && node scripts/test-chat-ui.mjs && npm run test:accessibility",
     "verify": "npm run typecheck && npm run desktop:build && npm run test:core",
     "electron:compile": "tsc -p tsconfig.electron.json",
     "electron:launch": "electron .",
@@ -35,7 +35,9 @@
     "package:win": "npm run desktop:build && electron-builder --win --x64 --publish never",
     "package:browser-extension": "node scripts/package-browser-extension.mjs",
     "check:i18n": "node scripts/check-i18n.mjs",
-    "test:i18n": "npm run check:i18n && npm run electron:compile && node scripts/test-i18n.mjs && node scripts/test-mobile-ui.mjs"
+    "test:i18n": "npm run check:i18n && npm run electron:compile && node scripts/test-i18n.mjs && node scripts/test-mobile-ui.mjs",
+    "check:architecture": "node scripts/check-architecture.mjs",
+    "test:boundaries": "npm run check:architecture && npm run electron:compile && node scripts/test-ipc-boundaries.mjs && node scripts/test-execution-boundaries.mjs"
   },
   "dependencies": {
     "@ai-sdk/devtools": "^1.0.2",

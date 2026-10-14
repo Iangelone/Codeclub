@@ -1,3 +1,7 @@
+import { createAppIpcRegistrar } from './ipc/register.js';
+import { registerSettingsIpc } from './ipc/settings.js';
+import { registerChatIpc } from './ipc/chats.js';
+import { registerFileIpc } from './ipc/files.js';
 import { nativeText, setNativeLanguage } from './i18n/index.js';
 /** Privileged desktop boundary: owns windows, filesystem, processes, and IPC handlers used by the renderer preload. */
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, powerMonitor, safeStorage, screen, shell, Tray } from 'electron';
@@ -106,6 +110,7 @@ const sessionHub = new SessionHub(() => {
 function requireAppSender(event: Electron.IpcMainInvokeEvent) {
   if (event.sender !== mainWindow?.webContents && !floatingChat?.owns(event.sender) && !taskWorkers.has(event.sender.id)) throw new Error('Unauthorized renderer');
 }
+const handleApp = createAppIpcRegistrar(ipcMain, requireAppSender);
 function requireTaskUi(event: Electron.IpcMainInvokeEvent) {
   requireAppSender(event);
   if (taskWorkers.has(event.sender.id)) throw new Error('Unauthorized scheduler management');
@@ -627,15 +632,15 @@ app.whenReady().then(async () => {
       notice.on('click', () => { selectedSessionChat = { chatId: run.chatId, projectPath: task.projectPath, name: task.name }; showMainWindow(); }); notice.show();
     }
   });
-  ipcMain.handle('codeclub:tasks-list', (event, projectPath: string) => { requireTaskUi(event); return taskScheduler!.list(String(projectPath || '')); });
-  ipcMain.handle('codeclub:tasks-save', async (event, projectPath: string, task: ScheduledTask) => {
+  handleApp('codeclub:tasks-list', (event, projectPath: string) => { requireTaskUi(event); return taskScheduler!.list(String(projectPath || '')); });
+  handleApp('codeclub:tasks-save', async (event, projectPath: string, task: ScheduledTask) => {
     requireTaskUi(event);
     if (projectPath && !(await fs.stat(path.resolve(projectPath))).isDirectory()) throw new Error('TASK_INVALID_PROJECT');
     return taskScheduler!.save(String(projectPath || ''), task);
   });
-  ipcMain.handle('codeclub:tasks-delete', (event, projectPath: string, id: string) => { requireTaskUi(event); return taskScheduler!.remove(String(projectPath || ''), id); });
-  ipcMain.handle('codeclub:tasks-run', (event, projectPath: string, id: string) => { requireTaskUi(event); return taskScheduler!.run(String(projectPath || ''), id); });
-  ipcMain.handle('codeclub:tasks-cancel', (event, projectPath: string, id: string) => {
+  handleApp('codeclub:tasks-delete', (event, projectPath: string, id: string) => { requireTaskUi(event); return taskScheduler!.remove(String(projectPath || ''), id); });
+  handleApp('codeclub:tasks-run', (event, projectPath: string, id: string) => { requireTaskUi(event); return taskScheduler!.run(String(projectPath || ''), id); });
+  handleApp('codeclub:tasks-cancel', (event, projectPath: string, id: string) => {
     requireTaskUi(event);
     if (taskScheduler!.cancelQueued(projectPath, id)) return true;
     const task = taskScheduler!.list(projectPath).find(task => task.id === id);
@@ -648,35 +653,35 @@ app.whenReady().then(async () => {
     else for (const worker of taskWorkers.values()) if (worker.run.id === run.id) worker.complete('TASK_CANCELLED');
     return true;
   });
-  ipcMain.handle('codeclub:task-assignment', event => { const worker = taskWorkers.get(event.sender.id); return worker ? { task: worker.task, run: worker.run } : null; });
-  ipcMain.handle('codeclub:task-finish', (event, error?: string) => { const worker = taskWorkers.get(event.sender.id); if (!worker) throw new Error('Unauthorized task runner'); worker.complete(error); });
+  handleApp('codeclub:task-assignment', event => { const worker = taskWorkers.get(event.sender.id); return worker ? { task: worker.task, run: worker.run } : null; });
+  handleApp('codeclub:task-finish', (event, error?: string) => { const worker = taskWorkers.get(event.sender.id); if (!worker) throw new Error('Unauthorized task runner'); worker.complete(error); });
   const integrations=new ActivityIntegrations(path.join(app.getPath('userData'),'activity-integrations.json'),credentialVault,sessionHub);
   const relayHelper=app.isPackaged?path.join(process.resourcesPath,'agent-relay.ps1'):path.join(root,'..','electron','agent-relay.ps1');
   const relay=new AgentRelay(app.getPath('userData'),relayHelper,sessionHub);
   const updateRelay=()=>{if(integrations.getConfig().externalAgents&&!integrations.getConfig().paused)void relay.start().catch(()=>sessionHub.external('relay-status','External agents','error'));else relay.stop();};
-  ipcMain.handle('codeclub:integration-config',event=>{requireAppSender(event);return integrations.getConfig();});
-  ipcMain.handle('codeclub:integration-save',(event,config)=>{requireAppSender(event);const saved=integrations.save(config);updateRelay();return saved;});
-  ipcMain.handle('codeclub:hooks-preview',async event=>{requireAppSender(event);const result=await dialog.showOpenDialog({properties:['openDirectory']});if(result.canceled||!result.filePaths[0])return null;return relay.preview(result.filePaths[0]);});
-  ipcMain.handle('codeclub:hooks-install',(event,id:string)=>{requireAppSender(event);return relay.install(id);});
+  handleApp('codeclub:integration-config',event=>{requireAppSender(event);return integrations.getConfig();});
+  handleApp('codeclub:integration-save',(event,config)=>{requireAppSender(event);const saved=integrations.save(config);updateRelay();return saved;});
+  handleApp('codeclub:hooks-preview',async event=>{requireAppSender(event);const result=await dialog.showOpenDialog({properties:['openDirectory']});if(result.canceled||!result.filePaths[0])return null;return relay.preview(result.filePaths[0]);});
+  handleApp('codeclub:hooks-install',(event,id:string)=>{requireAppSender(event);return relay.install(id);});
   updateRelay();app.once('will-quit',()=>relay.stop());
   integrations.start();
   app.once('will-quit',()=>integrations.stop());
-  ipcMain.handle('codeclub:credential-present',(event,key:string)=>{requireAppSender(event);return credentialVault.present(key);});
-  ipcMain.handle('codeclub:credential-set',(event,key:string,value:string,origin?:string)=>{requireAppSender(event);credentialVault.set(key,value,origin);});
-  ipcMain.handle('codeclub:external-open',(event,url:string)=>{requireAppSender(event);const target=new URL(url);if(target.protocol!=='https:')throw new Error('Invalid external URL');return shell.openExternal(target.href);});
-  ipcMain.handle('codeclub:sessions-list', event => { requireAppSender(event); return sessionHub.list().map(session=>({...session,localOwner:session.owner===event.sender.id})); });
-  ipcMain.handle('codeclub:session-select', (event, chat: SessionChat) => { requireAppSender(event); if(chat?.chatId&&typeof chat.projectPath==='string')selectedSessionChat={chatId:chat.chatId,projectPath:chat.projectPath,name:chat.name,projectName:chat.projectName}; });
-  ipcMain.handle('codeclub:session-selected', event => { requireAppSender(event);return selectedSessionChat; });
-  ipcMain.handle('codeclub:session-claim', (event, chat: SessionChat) => { requireAppSender(event); return sessionHub.claim(event.sender.id,chat); });
-  ipcMain.handle('codeclub:session-publish', (event, chat: SessionChat, runId: string, update: any) => { requireAppSender(event); return sessionHub.publish(event.sender.id,chat,runId,update); });
-  ipcMain.handle('codeclub:session-command', (event, chat: SessionChat, action: string, approvalId?: string) => {
+  handleApp('codeclub:credential-present',(event,key:string)=>{requireAppSender(event);return credentialVault.present(key);});
+  handleApp('codeclub:credential-set',(event,key:string,value:string,origin?:string)=>{requireAppSender(event);credentialVault.set(key,value,origin);});
+  handleApp('codeclub:external-open',(event,url:string)=>{requireAppSender(event);const target=new URL(url);if(target.protocol!=='https:')throw new Error('Invalid external URL');return shell.openExternal(target.href);});
+  handleApp('codeclub:sessions-list', event => { requireAppSender(event); return sessionHub.list().map(session=>({...session,localOwner:session.owner===event.sender.id})); });
+  handleApp('codeclub:session-select', (event, chat: SessionChat) => { requireAppSender(event); if(chat?.chatId&&typeof chat.projectPath==='string')selectedSessionChat={chatId:chat.chatId,projectPath:chat.projectPath,name:chat.name,projectName:chat.projectName}; });
+  handleApp('codeclub:session-selected', event => { requireAppSender(event);return selectedSessionChat; });
+  handleApp('codeclub:session-claim', (event, chat: SessionChat) => { requireAppSender(event); return sessionHub.claim(event.sender.id,chat); });
+  handleApp('codeclub:session-publish', (event, chat: SessionChat, runId: string, update: any) => { requireAppSender(event); return sessionHub.publish(event.sender.id,chat,runId,update); });
+  handleApp('codeclub:session-command', (event, chat: SessionChat, action: string, approvalId?: string) => {
     requireAppSender(event);const command=sessionHub.command(chat,action,approvalId);if(!command)return false;
     const owner=BrowserWindow.getAllWindows().find(win=>!win.isDestroyed()&&!win.webContents.isDestroyed()&&win.webContents.id===command.owner);
     if(!owner){sessionHub.disconnect(command.owner);return false;}
     if (action === 'cancel') taskWorkers.get(command.owner)?.controller.abort();
     owner.webContents.send('codeclub:session-command',command);return true;
   });
-  ipcMain.handle('codeclub:session-open', (event, chat: SessionChat) => { requireAppSender(event);if(!chat?.chatId||typeof chat.projectPath!=='string')return;selectedSessionChat={chatId:chat.chatId,projectPath:chat.projectPath,name:chat.name,projectName:chat.projectName};showMainWindow(); });
+  handleApp('codeclub:session-open', (event, chat: SessionChat) => { requireAppSender(event);if(!chat?.chatId||typeof chat.projectPath!=='string')return;selectedSessionChat={chatId:chat.chatId,projectPath:chat.projectPath,name:chat.name,projectName:chat.projectName};showMainWindow(); });
   const chatStore = new ChatStore(app.getPath('userData'));
   chatStore.migrateGlobalSettings();
   const settingsStore = new SettingsStore(path.join(app.getPath('userData'), 'settings.json'), key => {
@@ -694,9 +699,9 @@ app.whenReady().then(async () => {
     if(action==='cancel')taskWorkers.get(command.owner)?.controller.abort();owner.webContents.send('codeclub:session-command',command);return true;
   });
   androidCompanion.applicationRequest=(device,request)=>mobileSync.request(device,request);
-  ipcMain.handle('codeclub:mobile-next',async event=>{requireTaskUi(event);if(event.sender!==mainWindow?.webContents)return null;return mobileSync.next();});
-  ipcMain.handle('codeclub:mobile-take',async(event,chat)=>{requireTaskUi(event);if(event.sender!==mainWindow?.webContents)return null;return mobileSync.take(event.sender.id,chat);});
-  ipcMain.handle('codeclub:mobile-release',(event,id:string)=>{requireTaskUi(event);mobileSync.release(event.sender.id,id);});
+  handleApp('codeclub:mobile-next',async event=>{requireTaskUi(event);if(event.sender!==mainWindow?.webContents)return null;return mobileSync.next();});
+  handleApp('codeclub:mobile-take',async(event,chat)=>{requireTaskUi(event);if(event.sender!==mainWindow?.webContents)return null;return mobileSync.take(event.sender.id,chat);});
+  handleApp('codeclub:mobile-release',(event,id:string)=>{requireTaskUi(event);mobileSync.release(event.sender.id,id);});
   app.once('will-quit',()=>mobileSync.close());
   orbLearning = new OrbLearning(path.join(app.getPath('userData'), 'orb-learning.json'), {
     active: orbLearningActive,
@@ -712,10 +717,7 @@ app.whenReady().then(async () => {
     },
   });
   orbLearning.start();
-  ipcMain.handle('codeclub:settings-get', (event, key: string) => { requireAppSender(event); return settingsStore.get(key); });
-  ipcMain.handle('codeclub:settings-set', (event, key: string, value: unknown) => { requireAppSender(event); settingsStore.set(key, value); });
-  ipcMain.handle('codeclub:settings-remove', (event, key: string) => { requireAppSender(event); settingsStore.set(key, undefined, true); });
-  ipcMain.handle('codeclub:global-chat-upsert', (event, chat: { id: string; name: string; customName?: boolean }) => { requireAppSender(event); settingsStore.upsertGlobalChat(chat); });
+  registerSettingsIpc(ipcMain, requireAppSender, settingsStore);
   // Recover orphaned orb conversations once, preserving explicitly deleted histories.
   if (!settingsStore.get('codeclub_orb_chat_index_repaired_v1')) {
     const indexed = settingsStore.get('codeclub_global_chats');
@@ -728,56 +730,25 @@ app.whenReady().then(async () => {
     settingsStore.set('codeclub_orb_chat_index_repaired_v1', true);
   }
 
-  ipcMain.handle('chats:page', (_event, project: string, id: string, before?: number, limit?: number) => chatStore.page(project, id, before, limit));
-  ipcMain.handle('chats:turn-page', (_event, project: string, id: string, before?: number, limit?: number, direction?: 'before'|'after') => chatStore.turnPage(project, id, before, limit, direction));
-  ipcMain.handle('chats:context', (_event, project: string, id: string) => chatStore.context(project,id));
-  ipcMain.handle('chats:tail', (_event, project: string, id: string, start: number, messages: any[], expectedTotal?:number) => chatStore.saveTail(project, id, start, messages,expectedTotal));
-  ipcMain.handle('chats:append', async (_event, project: string, id: string, message: any) => {
-    const result = await chatStore.append(project, id, message);
-    if(typeof message?.mobileRequestId==='string')mobileSync.accept(message.mobileRequestId);
+  registerChatIpc(ipcMain, requireAppSender, chatStore, (project, id, message) => {
+    if (typeof message?.mobileRequestId === 'string') mobileSync.accept(message.mobileRequestId);
     if (!project && message?.role === 'user' && !message.hidden) orbLearning?.respond(id);
-    return result;
   });
-  ipcMain.handle('chats:all', (_event, project: string, id: string) => chatStore.all(project, id));
-  ipcMain.handle('chats:search', (_event, project: string, id: string, query: string) => chatStore.search(project, id, query));
-  ipcMain.handle('chats:copy', (_event, from: string, to: string, id: string) => chatStore.copy(from, to, id));
-  ipcMain.handle('chats:delete', (_event, project: string, id: string) => chatStore.delete(project, id));
-  ipcMain.handle('chats:transcript', (_event, project: string, id: string, markdown: string) => chatStore.transcript(project, id, markdown));
   app.once('will-quit', () => chatStore.close());
   await loadProjects();
-  ipcMain.handle('projects:list', async () => {
+  handleApp('projects:list', async () => {
     const available = await Promise.all(projects.map(async (project) => {
       try { return (await fs.stat(project.path)).isDirectory() ? project : null; } catch { return null; }
     }));
     return available.filter((project) => project !== null);
   });
-  ipcMain.handle('projects:select-folder', async () => { const result = await dialog.showOpenDialog({ properties: ['openDirectory'] }); if (result.canceled || !result.filePaths[0]) return null; const project = registerProject(result.filePaths[0]); await saveProjects(); return project; });
-  ipcMain.handle('files:select', async () => { const result = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] }); return result.canceled ? [] : result.filePaths; });
-  ipcMain.handle('files:read', async (_event, filePath: string) => Array.from(await fs.readFile(filePath)));
-  ipcMain.handle('files:read-text', async (_event, filePath: string) => fs.readFile(filePath, 'utf8'));
-  ipcMain.handle('files:exists', async (_event, filePath: string) => { try { await fs.access(filePath); return true; } catch { return false; } });
-  ipcMain.handle('files:mkdir', async (_event, directory: string) => { await fs.mkdir(directory, { recursive: true }); return true; });
-  ipcMain.handle('files:write-text', async (_event, filePath: string, content: string) => { await fs.mkdir(path.dirname(filePath), { recursive: true }); await fs.writeFile(filePath, String(content ?? ''), 'utf8'); return true; });
-  const logWrites = new Map<string, Promise<void>>();
-  ipcMain.handle('codeclub:append-log', async (event, filePath: string, content: string) => {
-    requireAppSender(event);
-    if (typeof filePath !== 'string' || typeof content !== 'string' || !['execution.jsonl', 'usage.jsonl', 'persistence-log.jsonl'].includes(path.basename(filePath))) throw new Error('INVALID_LOG');
-    const target = await resolveProjectFile(app.getPath('userData'), filePath, true);
-    const key = target.toLowerCase();
-    const operation = (logWrites.get(key) || Promise.resolve()).catch(() => undefined).then(async () => {
-      await fs.mkdir(path.dirname(target), { recursive: true });
-      const checked = await resolveProjectFile(app.getPath('userData'), target, true);
-      await fs.appendFile(checked, content, 'utf8');
-    });
-    logWrites.set(key, operation);
-    try { await operation; } finally { if (logWrites.get(key) === operation) logWrites.delete(key); }
-    return true;
+  handleApp('projects:select-folder', async () => { const result = await dialog.showOpenDialog({ properties: ['openDirectory'] }); if (result.canceled || !result.filePaths[0]) return null; const project = registerProject(result.filePaths[0]); await saveProjects(); return project; });
+  registerFileIpc(ipcMain, requireAppSender, app.getPath('userData'), async () => {
+    const result = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] });
+    return result.canceled ? [] : result.filePaths;
   });
-  ipcMain.handle('files:remove', async (_event, filePath: string) => { await fs.rm(filePath, { recursive: true, force: true }); return true; });
-  ipcMain.handle('path:join', (_event, parts: string[]) => path.join(...(Array.isArray(parts) ? parts : [])));
-  ipcMain.handle('path:app-config', () => app.getPath('userData'));
-  ipcMain.handle('path:app-cache', () => path.join(app.getPath('userData'), 'cache'));
-  ipcMain.handle('native:invoke', async (event, payload: { command: string; args?: Record<string, unknown> }) => {
+  handleApp('native:invoke', async (event, payload: { command: string; args?: Record<string, unknown> }) => {
+    if (!payload || typeof payload.command !== 'string' || (payload.args !== undefined && (!payload.args || typeof payload.args !== 'object' || Array.isArray(payload.args)))) throw new Error('INVALID_NATIVE_REQUEST');
     if (payload.command === 'codeclub_orb_observe') {
       requireTaskUi(event);
       orbLearningLanguage = payload.args?.language === 'en' ? 'en' : 'es';
@@ -904,15 +875,8 @@ app.whenReady().then(async () => {
     if (worker && payload.command === 'codeclub_terminal_list') return (result as any[]).filter(terminal => worker.terminals.has(String(terminal.id)));
     return result;
   });
-  ipcMain.handle('chats:read-project', async (_event, projectPath: string, chatId: string) => {
-    return (await chatStore.all(projectPath, chatId)).map(message => JSON.stringify(message)).join('\n');
-  });
-  ipcMain.handle('chats:write-project', async (_event, projectPath: string, chatId: string, content: string) => {
-    await chatStore.saveTail(projectPath, chatId, 0, content.split('\n').filter(line => line.trim()).map(line => JSON.parse(line)));
-    return true;
-  });
-  ipcMain.handle('projects:switch', async (_event, id: string) => { const project = projects.find((item) => item.id === id); if (!project) throw new Error('Proyecto no encontrado.'); if (!(await fs.stat(project.path).catch(() => null))?.isDirectory()) throw new Error('La carpeta del proyecto ya no está disponible.'); project.lastOpenedAt = new Date().toISOString(); await saveProjects(); return project; });
-  ipcMain.handle('projects:rename', async (_event, id: string, name: string) => {
+  handleApp('projects:switch', async (_event, id: string) => { const project = projects.find((item) => item.id === id); if (!project) throw new Error('Proyecto no encontrado.'); if (!(await fs.stat(project.path).catch(() => null))?.isDirectory()) throw new Error('La carpeta del proyecto ya no está disponible.'); project.lastOpenedAt = new Date().toISOString(); await saveProjects(); return project; });
+  handleApp('projects:rename', async (_event, id: string, name: string) => {
     const project = projects.find((item) => item.id === id);
     const nextName = name.trim();
     if (!project) throw new Error('Proyecto no encontrado.');
@@ -937,19 +901,19 @@ app.whenReady().then(async () => {
       }
     }
   });
-  ipcMain.handle('window:minimize', (event) => BrowserWindow.fromWebContents(event.sender)?.minimize());
-  ipcMain.handle('window:maximize', (event) => { const window = BrowserWindow.fromWebContents(event.sender); if (window?.isMaximized()) window.unmaximize(); else window?.maximize(); });
-  ipcMain.handle('window:is-full-screen', (event) => BrowserWindow.fromWebContents(event.sender)?.isFullScreen() ?? false);
-  ipcMain.handle('window:close', (event) => BrowserWindow.fromWebContents(event.sender)?.close());
-  ipcMain.handle('app:reload', (event) => BrowserWindow.fromWebContents(event.sender)?.webContents.reload());
-  ipcMain.handle('app:update-status', () => autoUpdateState);
-  ipcMain.handle('app:check-for-updates', async () => {
+  handleApp('window:minimize', (event) => BrowserWindow.fromWebContents(event.sender)?.minimize());
+  handleApp('window:maximize', (event) => { const window = BrowserWindow.fromWebContents(event.sender); if (window?.isMaximized()) window.unmaximize(); else window?.maximize(); });
+  handleApp('window:is-full-screen', (event) => BrowserWindow.fromWebContents(event.sender)?.isFullScreen() ?? false);
+  handleApp('window:close', (event) => BrowserWindow.fromWebContents(event.sender)?.close());
+  handleApp('app:reload', (event) => BrowserWindow.fromWebContents(event.sender)?.webContents.reload());
+  handleApp('app:update-status', () => autoUpdateState);
+  handleApp('app:check-for-updates', async () => {
     if (!app.isPackaged) return { state: 'not-available' } satisfies AutoUpdateState;
     if (['checking', 'downloading', 'downloaded'].includes(autoUpdateState.state)) return autoUpdateState;
     try { await autoUpdater.checkForUpdates(); return autoUpdateState; } catch (error) { const state = { state: 'error', error: error instanceof Error ? error.message : String(error) } satisfies AutoUpdateState; publishAutoUpdate(state); return state; }
   });
-  ipcMain.handle('app:install-update', () => { if (autoUpdateState.state === 'downloaded') autoUpdater.quitAndInstall(); return autoUpdateState; });
-  ipcMain.handle('computer:overlay', (_event, payload: { active?: boolean; language?: string; paletteIndex?: number }) => setComputerOverlay(Boolean(payload?.active), payload?.language === 'en' ? 'en' : 'es', payload?.paletteIndex));
+  handleApp('app:install-update', () => { if (autoUpdateState.state === 'downloaded') autoUpdater.quitAndInstall(); return autoUpdateState; });
+  handleApp('computer:overlay', (_event, payload: { active?: boolean; language?: string; paletteIndex?: number }) => setComputerOverlay(Boolean(payload?.active), payload?.language === 'en' ? 'en' : 'es', payload?.paletteIndex));
   ipcMain.on('computer:menu-action', (_event, action: string) => handleComputerMenuAction(action));
   floatingChat = createFloatingChat(root, showMainWindow, updateTrayMenu);
   createWindow();

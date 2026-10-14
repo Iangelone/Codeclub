@@ -21,7 +21,8 @@ The preload exposes `chatTurns` (project, chat, cursor, count, direction),
 `chatPage` (bounded messages), `chatContext`, `chatAppend`, `chatSaveTail`,
 `chatSearch`, `chatCopy`, `chatDelete`, and `chatTranscript`. Consumers are the
 history hook, ChatInterface, and projectManager; `chats:*` handlers live in
-main.ts. No internal events were added. Tail writes check the expected total to
+`electron/ipc/chats.ts`, registered through the authorized IPC registrar by
+`main.ts`. No internal events were added. Tail writes check the expected total to
 reject concurrent changes; retries preserve the unloaded prefix. Transcripts
 are individual append-only files outside settings.
 

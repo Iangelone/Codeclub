@@ -1,19 +1,20 @@
+import { getDesktopBridge, fileExists as exists, makeDirectory as mkdir, readDesktopBytes as readFile, readDesktopText as readTextFile, writeDesktopText as writeTextFile } from './runtime';
 /** Attachment encoding and legacy history adapters used by the chat controller. */
-import { fileExists as exists, makeDirectory as mkdir, readDesktopBytes as readFile, readDesktopText as readTextFile, writeDesktopText as writeTextFile } from './runtime';
+
 import { getProjectFilePath } from './persistence';
 
 export type ChatAttachment = { path: string; name: string; mediaType: string; size?: number; previewUrl?: string; previewText?: string };
 export const getAttachmentName = (path: string) => path.split(/[\\/]/).pop() || path;
 export const readDesktopFile = async (path: string) => {
-  const reader = (window as any).codeclub?.readFile;
+  const reader = getDesktopBridge()?.readFile;
   return reader ? new Uint8Array(await reader(path)) : readFile(path);
 };
 export const readDesktopTextFile = async (path: string) => {
-  const reader = (window as any).codeclub?.readTextFile;
+  const reader = getDesktopBridge()?.readTextFile;
   return reader ? String(await reader(path)) : readTextFile(path);
 };
 export const readProjectChatHistory = async (projectPath: string, chatId: string) => {
-  const desktopReader = (window as any).codeclub?.readProjectChat;
+  const desktopReader = getDesktopBridge()?.readProjectChat;
   if (desktopReader) {
     const content = String(await desktopReader(projectPath, chatId) || '');
     return content.split('\n').filter((line) => line.trim()).map((line) => JSON.parse(line));
@@ -25,7 +26,7 @@ export const readProjectChatHistory = async (projectPath: string, chatId: string
 };
 export const writeProjectChatHistory = async (projectPath: string, chatId: string, messages: any[]) => {
   const content = messages.map((message) => JSON.stringify(message)).join('\n') + (messages.length ? '\n' : '');
-  const desktopWriter = (window as any).codeclub?.writeProjectChat;
+  const desktopWriter = getDesktopBridge()?.writeProjectChat;
   if (desktopWriter) {
     await desktopWriter(projectPath, chatId, content);
     return;

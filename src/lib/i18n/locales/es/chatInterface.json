@@ -98,5 +98,6 @@
   "userFallback": "Usuario",
   "referenceFallback": "Referencia",
   "providerFallback": "Proveedor",
-  "modelFallback": "Modelo"
+  "modelFallback": "Modelo",
+  "urlRequired": "La URL es obligatoria."
 }

@@ -1,4 +1,5 @@
-import { appCacheDir, appConfigDir, fileExists as exists, joinPath as join, makeDirectory as mkdir, readDesktopText as readTextFile, writeDesktopText as writeTextFile, appendDesktopLog } from './runtime';
+import { getDesktopBridge, requireDesktopBridge, appCacheDir, appConfigDir, fileExists as exists, joinPath as join, makeDirectory as mkdir, readDesktopText as readTextFile, writeDesktopText as writeTextFile, appendDesktopLog } from './runtime';
+
 
 const PERSISTENCE_LOG = "persistence-log.jsonl";
 const SETTINGS_FILE = "settings.json";
@@ -82,21 +83,21 @@ const loadSettings = async (): Promise<Record<string, unknown>> => {
 };
 
 export const getSetting = async <T>(key: string, fallback: T): Promise<T> => {
-  if(/^[a-z0-9][a-z0-9_.-]*_api_key$/i.test(key)&&(window as any).codeclub?.credentialPresent) {
-    const bridge=(window as any).codeclub;
+  if(/^[a-z0-9][a-z0-9_.-]*_api_key$/i.test(key)&&getDesktopBridge()?.credentialPresent) {
+    const bridge=requireDesktopBridge();
     if(await bridge.credentialPresent(key)){await removeSetting(key);return 'codeclub-native-credential' as T;}
     const legacy=(await loadSettings())[key];
     if(typeof legacy==='string'&&legacy){await bridge.credentialSet(key,legacy);await removeSetting(key);return 'codeclub-native-credential' as T;}
     return fallback;
   }
-  const nativeSettings = (window as any).codeclub?.settingsGet;
+  const nativeSettings = getDesktopBridge()?.settingsGet;
   if (nativeSettings) return (await nativeSettings(key)) ?? fallback;
   const settings = await loadSettings();
   return (settings[key] as T | undefined) ?? fallback;
 };
 
 const removeSetting = async (key: string) => {
-  if ((window as any).codeclub?.settingsRemove) { await (window as any).codeclub.settingsRemove(key); invalidateSettingsCache(); return; }
+  if (getDesktopBridge()?.settingsRemove) { await requireDesktopBridge().settingsRemove(key); invalidateSettingsCache(); return; }
   const operation = settingsWriteQueue.then(async () => {
     const settings = { ...await loadSettings() };
     let browserSettings = {} as Record<string, unknown>;
@@ -112,10 +113,10 @@ const removeSetting = async (key: string) => {
 };
 
 export const setSetting = async (key: string, value: unknown) => {
-  if(/^[a-z0-9][a-z0-9_.-]*_api_key$/i.test(key)&&(window as any).codeclub?.credentialSet) {
-    await (window as any).codeclub.credentialSet(key,String(value||''));await removeSetting(key);return;
+  if(/^[a-z0-9][a-z0-9_.-]*_api_key$/i.test(key)&&getDesktopBridge()?.credentialSet) {
+    await requireDesktopBridge().credentialSet(key,String(value||''));await removeSetting(key);return;
   }
-  if ((window as any).codeclub?.settingsSet) { await (window as any).codeclub.settingsSet(key, value); invalidateSettingsCache(); return; }
+  if (getDesktopBridge()?.settingsSet) { await requireDesktopBridge().settingsSet(key, value); invalidateSettingsCache(); return; }
   const operation = settingsWriteQueue.then(async () => {
     const settings = { ...await loadSettings() };
     settings[key] = value;

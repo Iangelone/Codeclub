@@ -1,4 +1,6 @@
 'use client';
+import { requireDesktopBridge, getDesktopBridge } from '../lib/runtime';
+
 
 /** Compact renderer for the Electron-owned widget; conversation data remains in the shared app stores. */
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
@@ -36,10 +38,10 @@ export default function FloatingChat() {
   const language = useAppLanguage();
   const text = getMessages('floatingChat', language);
   const activityText = getMessages('activity', language);
-  const bridge = () => (window as any).codeclub;
+  const bridge = () => requireDesktopBridge();
   const resize = useCallback((next: boolean | WidgetMode) => {
     const state=typeof next==='boolean'?(next?'expanded':'compact'):next;
-    setMode(state); void (window as any).codeclub?.floatingResize(state, !reducedMotion);
+    setMode(state); void getDesktopBridge()?.floatingResize(state, !reducedMotion);
   }, [reducedMotion]);
   const onDraft = useCallback((value:string) => {draft.current=value;lastActivity.current=Date.now();if(value)resize(true);},[resize]);
   const dragProps = {

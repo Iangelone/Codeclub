@@ -1,4 +1,6 @@
 'use client';
+import { getDesktopBridge } from '../lib/runtime';
+
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
@@ -75,7 +77,7 @@ export default function OrbPaletteProvider({ children }: { children: ReactNode }
     void refresh();
     // settingsSet broadcasts { key } through preload to all renderer windows.
     // This provider consumes orb-shape changes and removes its subscription on cleanup.
-    const unsubscribe = (window as any).codeclub?.onSettingsChanged?.((detail: { key: string }) => { if (detail.key === ORB_SHAPE_SETTING) void refresh(); });
+    const unsubscribe = getDesktopBridge()?.onSettingsChanged?.((detail: { key: string }) => { if (detail.key === ORB_SHAPE_SETTING) void refresh(); });
     return () => { mounted = false; unsubscribe?.(); };
   }, []);
   const cycleShape = useCallback(() => {
@@ -105,7 +107,7 @@ export default function OrbPaletteProvider({ children }: { children: ReactNode }
     const onNativePaletteChange = (value: number) => {
       window.dispatchEvent(new CustomEvent(ORB_PALETTE_EVENT, { detail: { index: value } }));
     };
-    const unsubscribeNative = (window as any).codeclub?.onOrbPaletteChange?.(onNativePaletteChange);
+    const unsubscribeNative = getDesktopBridge()?.onOrbPaletteChange?.(onNativePaletteChange);
     window.addEventListener(ORB_PALETTE_EVENT, onPaletteChange);
     window.addEventListener('storage', onStorage);
     return () => {
@@ -121,7 +123,7 @@ export default function OrbPaletteProvider({ children }: { children: ReactNode }
     setIndex(nextIndex);
     try { window.localStorage.setItem(ORB_PALETTE_STORAGE_KEY, String(nextIndex)); } catch { /* Native synchronization remains available when local storage fails. */ }
     window.dispatchEvent(new CustomEvent(ORB_PALETTE_EVENT, { detail: { index: nextIndex } }));
-    (window as any).codeclub?.broadcastOrbPalette?.(nextIndex);
+    getDesktopBridge()?.broadcastOrbPalette?.(nextIndex);
   }, []);
 
   const palette = ORB_PALETTES[index];

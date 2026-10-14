@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
-export type SessionChat = { chatId: string; projectPath: string; name?: string; projectName?: string };
+import type { SessionChat } from '../shared/desktop-contracts.js';
+export type { SessionChat } from '../shared/desktop-contracts.js';
 export type SharedSession = SessionChat & { key: string; runId: string; owner: number; state: string; tool: string; busy: boolean; startedAt: number; updatedAt: number; messages: any[]; approvals: any[]; external?: boolean; url?: string };
 export const sessionKey = (chat: SessionChat) => `${chat.projectPath.replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase()}\n${chat.chatId}`;
 

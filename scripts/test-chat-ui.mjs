@@ -311,6 +311,25 @@ try {
   await page.getByRole('option',{name:/Crear orbe/}).waitFor();
   await page.getByRole('textbox',{name:'Mensaje',exact:true}).fill('');
   assert.deepEqual(pageErrors,[]);
+  // A delayed credential check must not reopen its dialog or clear a newer composer draft.
+  await selectProvider('QA saved');
+  await page.getByRole('textbox',{name:'Buscar proveedor',exact:true}).waitFor({state:'hidden'});
+  await page.evaluate(()=>{
+    window.qaOriginalCredentialPresent=window.codeclub.credentialPresent;
+    window.qaHeldCredentialChecks=[];
+    window.codeclub.credentialPresent=key=>key==='qa-missing_api_key'
+      ? new Promise(resolve=>window.qaHeldCredentialChecks.push(resolve))
+      : window.qaOriginalCredentialPresent(key);
+  });
+  await selectProvider('QA missing');
+  await page.waitForFunction(()=>window.qaHeldCredentialChecks.length>=2);
+  await page.getByRole('textbox',{name:'Mensaje',exact:true}).fill('Draft while credential lookup is pending');
+  await page.evaluate(()=>window.qaHeldCredentialChecks.splice(0).forEach(resolve=>resolve(false)));
+  await page.waitForTimeout(100);
+  assert.equal(await page.getByRole('textbox',{name:'Mensaje',exact:true}).inputValue(),'Draft while credential lookup is pending');
+  assert.equal(await page.getByPlaceholder(/Escribí tu credencial/).count(),0,'A superseded selection cannot reopen its credential dialog');
+  await page.evaluate(()=>{window.codeclub.credentialPresent=window.qaOriginalCredentialPresent;});
+  await page.getByRole('textbox',{name:'Mensaje',exact:true}).fill('');
   let pendingImageRoute;
   await page.route('**/qa-stalled.png', route => { pendingImageRoute = route; });
   await open('stalled-image');

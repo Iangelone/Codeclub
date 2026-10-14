@@ -1,4 +1,6 @@
 'use client';
+import { getDesktopBridge } from '../lib/runtime';
+
 /** Composes the renderer shell and selects normal, floating, or scheduled-run mode from the URL. */
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -28,7 +30,7 @@ export default function HomePage() {
     if (!runner) void migrateScheduledTasks().catch(() => undefined);
   }, []);
   useEffect(() => {
-    const api = (window as any).codeclub;
+    const api = getDesktopBridge();
     const unsubscribe = api?.onFullscreenChange?.((next: boolean) => {
       fullscreenEventVersion.current += 1;
       setIsFullscreen(next);
@@ -49,8 +51,8 @@ export default function HomePage() {
       window.dispatchEvent(new CustomEvent('codeclub:settings-changed'));
       window.dispatchEvent(new CustomEvent('codeclub:global-chat-changed'));
     };
-    const unsubscribe = (window as any).codeclub?.onMainShow(refresh);
-    const tasksUnsubscribe = (window as any).codeclub?.onTasksChanged?.(() => {
+    const unsubscribe = getDesktopBridge()?.onMainShow(refresh);
+    const tasksUnsubscribe = getDesktopBridge()?.onTasksChanged?.(() => {
       invalidateSettingsCache();
       window.dispatchEvent(new CustomEvent('codeclub:global-chat-changed'));
       window.dispatchEvent(new CustomEvent('codeclub:project-meta-changed'));

@@ -1,4 +1,6 @@
 'use client';
+import { getDesktopBridge } from '../lib/runtime';
+
 
 /** Navigation, layout toggles, and native window controls. */
 import { useEffect, useState } from 'react';
@@ -31,7 +33,7 @@ export default function Topbar({ leftOpen, rightOpen, onToggleLeft, onToggleRigh
       window.removeEventListener('codeclub:left-panel-navigation-state', handlePanelNavigation);
     };
   }, []);
-  const nativeWindow = (action: 'windowMinimize' | 'windowMaximize' | 'windowClose') => { const api = (window as any).codeclub; if (!api?.[action]) { console.error(`Electron bridge no disponible: ${action}`); return; } void Promise.resolve(api[action]()).catch((error) => console.error(`Falló ${action}`, error)); };
+  const nativeWindow = (action: 'windowMinimize' | 'windowMaximize' | 'windowClose') => { const api = getDesktopBridge(); if (!api?.[action]) { console.error(`Electron bridge no disponible: ${action}`); return; } void Promise.resolve(api[action]()).catch((error) => console.error(`Falló ${action}`, error)); };
   return <header role="banner" aria-label="Codeclub" className="codeclub-widget-chrome relative z-[100] col-span-full flex h-[34px] min-w-0 items-center select-none">
     <div className="flex h-full items-center gap-1 pl-2" role="toolbar" aria-orientation="horizontal" aria-label={t.windowControls}>
       <motion.button type="button" disabled={!panelNavigation.back} onClick={() => window.dispatchEvent(new CustomEvent('codeclub:left-panel-back'))} title={t.back} aria-label={t.back} className="grid h-7 w-7 shrink-0 place-items-center rounded-md border-0 bg-transparent text-(--codeclub-icon) transition-colors hover:bg-transparent hover:text-(--codeclub-text-strong) disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--codeclub-accent)" whileHover={panelNavigation.back ? { scale: 1.06 } : undefined} whileTap={panelNavigation.back ? { scale: 0.92 } : undefined} transition={{ type: 'spring', stiffness: 420, damping: 26 }}><ArrowLeft size={17} strokeWidth={1.7} aria-hidden="true" /></motion.button>

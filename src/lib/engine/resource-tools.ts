@@ -1,5 +1,6 @@
+import { requireDesktopBridge, nativeInvoke as invoke } from '../runtime';
 import { jsonSchema, tool } from 'ai';
-import { nativeInvoke as invoke } from '../runtime';
+
 import { loadAgentPlugins } from '../agent-plugins';
 import { codeclubExtensions } from '../extensions';
 import { getSetting, setSetting } from '../persistence';
@@ -126,7 +127,7 @@ export function createResourceTools(ctx: ToolContext) {
             return invoke('codeclub_scheduled_run', { projectPath: '', id: `orb_${old!.id}` });
           }
           if (task) await invoke('codeclub_scheduled_status', { projectPath: '', id: task.id, paused: true });
-          if (task) await (window as any).codeclub.tasksCancel('', task.id);
+          if (task) await requireDesktopBridge().tasksCancel('', task.id);
           return { ok: true };
         }
         let next: OrbDefinition[];

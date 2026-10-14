@@ -1,38 +1,32 @@
+import { resolveCredentialRequirement } from '../lib/agent/model-selection';
+import { isMissingModelCredential } from '../lib/agent/errors';
+import { getDesktopBridge, requireDesktopBridge, copyText, safeListen, desktopFileUrl as convertFileSrc, nativeInvoke as invoke, fileExists as exists, makeDirectory as mkdir, readDesktopBytes as readFile, readDesktopText as readTextFile, removeDesktopFile as remove, writeDesktopText as writeTextFile, selectDesktopFiles as open } from '../lib/runtime';
+import { executeChatRun } from '../lib/agent/chat-execution';
 import { translate, getMessages, useAppLanguage, setAppLanguage, type AppLanguage } from '../lib/i18n';
 /** Owns composer and stream presentation; model steps use the shared engine, durable chat data uses storage APIs, and native I/O uses preload. */
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useChatHistory } from './use-chat-history';
 import { usePopupKeyboard } from './ui/use-accessible-overlay';
-import { generateTurnSummary } from '../lib/turn-summary';
-import { buildChatContext } from '../lib/chat-context';
 import { sameSession, useSharedSessions, type SharedSession } from '../lib/shared-sessions';
 import { ArrowUp, BookOpen, BookPlus, Box, Braces, Orbit, PackagePlus, PlugZap, Check, ChevronDown, Code2, Copy, FileText, FileType2, Globe, KeyRound, Languages, LayoutTemplate, MessageSquare, Monitor, MoreHorizontal, Paperclip, Presentation, Radar, RotateCcw, Search, ScrollText, Square, Table2, Terminal, Folder, WandSparkles, X } from 'lucide-react';
-import { copyText, safeListen, desktopFileUrl as convertFileSrc, nativeInvoke as invoke, fileExists as exists, makeDirectory as mkdir, readDesktopBytes as readFile, readDesktopText as readTextFile, removeDesktopFile as remove, writeDesktopText as writeTextFile, selectDesktopFiles as open } from '../lib/runtime';
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { createGoogle } from '@ai-sdk/google';
-import { createGateway, jsonSchema, tool } from 'ai';
+
 import { AnimatePresence, motion, useAnimationControls, useReducedMotion } from 'motion/react';
 import { createPortal } from 'react-dom';
-import { createDynamicToolAccess, createTools, inferAgentSpecialist, selectToolsForPrompt, resolveToolsWithAI, type AgentMode, type AgentSpecialist } from '../lib/engine/tools';
-import { runStream } from '../lib/engine/run';
 import { getProjectFilePath, getSetting, logPersistence, setSetting } from '../lib/persistence';
-import { appendGenerationUsage, type GenerationUsageRecord } from '../lib/usage';
 import { appendExecutionLog } from '../lib/execution-log';
 import { appendGlobalChatTranscript, getProjectChatPath, getProjectTranscriptPath, readGlobalChatHistory, readGlobalChats, readProjectIndex, readProjectMeta, writeGlobalChatHistory, writeGlobalChats, writeProjectMeta, type ProjectMeta } from '../lib/projectManager';
 import { chatResources, ORBS_STORAGE_KEY, parseOrbs, type ChatResource, type OrbDefinition } from '../lib/chat-resources';
 import { codeclubExtensions, type CodeclubExtension } from '../lib/extensions';
-import { connectAllAgentPluginMcp, loadAgentPlugins } from '../lib/agent-plugins';
+import { loadAgentPlugins } from '../lib/agent-plugins';
 import OrbPaletteButton from './ui/OrbPaletteButton';
 import { ORB_PALETTES, useOrbPalette } from './OrbPaletteProvider';
 import { credentialKeyFor, credentialTargetFor, modelIdFor, modelMatchesProvider, usesGateway } from '../lib/ai-routing';
 
 import { MemoizedChatMarkdown } from './ChatMarkdown';
 import { ApprovalCards, AskUserCards, LiveTurnProgress, ProcessingStatusStateFixed, PyramidMark, TurnActivity } from './ChatActivity';
-import { readWorkspaceSnapshot, summarizeWorkspaceDelta, type WorkspaceSnapshot } from '../lib/workspace-changes';
 import { bytesToBase64, getAttachmentName, getAttachmentMediaType, readAttachmentParts, readDesktopFile, readDesktopTextFile, readProjectChatHistory, writeProjectChatHistory, type ChatAttachment } from '../lib/chat-files';
 import { createDesktopModelTransport, type ModelFetchDebug } from '../lib/desktop-model-transport';
-import { getArtifactOutputConfig, formatArtifactOutput, formatToolExecutionFallback } from '../lib/chat-artifacts';
 
 const getBrowserReferenceFavicon = (reference: { title: string; url?: string }) => {
   try {
@@ -242,6 +236,8 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [commandKind, setCommandKind] = useState('');
+  const selectionRevision = useRef(0);
+  useEffect(() => () => { selectionRevision.current++; }, []);
   const [searchQuery, setSearchQuery] = useState('');
   const [projectOptions, setProjectOptions] = useState<ProjectOption[]>([]);
   const resourceText = getMessages('resourceMenu', language);
@@ -275,7 +271,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     setPendingApprovals(session.approvals);
   }, [sharedSessions, activeChat?.chatId, activeChat?.projectPath]);
   useEffect(() => {
-    const unsubscribe = (window as any).codeclub?.onSessionCommand?.((command: any) => {
+    const unsubscribe = getDesktopBridge()?.onSessionCommand?.((command: any) => {
       const runtime = chatRuntimesRef.current.get(command.chat.chatId);
       if (!runtime || runtime.runId !== command.runId) return;
       if (command.action === 'cancel') {
@@ -549,7 +545,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
       setWorkspaceMode('chat');
       setActiveChat(chat);
       activeChatRef.current = chat;
-      void (window as any).codeclub?.sessionSelect?.(chat);
+      void getDesktopBridge()?.sessionSelect?.(chat);
       const runtime = chatRuntimesRef.current.get(chat.chatId);
       const remote = sharedSessionsRef.current.find(item=>sameSession(chat,item)&&!item.localOwner&&item.busy);
       const project = chat.projectPath ? {
@@ -711,13 +707,13 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
       activeChatRef.current = { ...current, projectPath: newPath, projectName: detail.projectName, name: chatName };
       setActiveChat(activeChatRef.current);
       try {
-        if ((window as any).codeclub?.chatCopy) {
-          await (window as any).codeclub.chatCopy(oldPath,newPath,current.chatId);
+        if (getDesktopBridge()?.chatCopy) {
+          await requireDesktopBridge().chatCopy(oldPath,newPath,current.chatId);
           if(oldPath){const meta=await readProjectMeta(oldPath);if(meta){meta.chats=meta.chats.filter(item=>item.id!==current.chatId);await writeProjectMeta(oldPath,meta);}}
           else {await writeGlobalChats((await readGlobalChats()).filter(item=>item.id!==current.chatId));}
           if(newPath){const meta: ProjectMeta=await readProjectMeta(newPath)||{name:detail.projectName||translate('chatInterface.projectFallback'),path:newPath,created_at:new Date().toISOString(),chats:[]};if(!meta.chats.some(item=>item.id===current.chatId))meta.chats.push({id:current.chatId,name:chatName,customName:current.customName});await writeProjectMeta(newPath,meta);}
           else {const chats=await readGlobalChats();if(!chats.some(item=>item.id===current.chatId))chats.push({id:current.chatId,name:chatName,customName:current.customName,projectPath:'',projectName:'Sin proyecto'});await writeGlobalChats(chats);}
-          await (window as any).codeclub.chatDelete(oldPath,current.chatId);
+          await requireDesktopBridge().chatDelete(oldPath,current.chatId);
           window.dispatchEvent(new CustomEvent('codeclub:project-meta-changed',{detail:{projectPath:oldPath}}));
           window.dispatchEvent(new CustomEvent('codeclub:project-meta-changed',{detail:{projectPath:newPath}}));
           window.dispatchEvent(new CustomEvent('codeclub:global-chat-changed'));
@@ -866,6 +862,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
   }, [catalog, currentModel, currentProvider]);
 
   const openCommandMenu = (kind: string) => {
+    selectionRevision.current++;
     if (agentOrb && ['provider', 'model', 'credential'].includes(kind)) return;
     setCommandKind(kind);
     setMenuOpen(true);
@@ -894,7 +891,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
   }, [menuOpen]);
 
   const readProjectsForCommandMenu = async () => {
-    const bridge = (window as any).codeclub;
+    const bridge = getDesktopBridge();
     if (typeof bridge?.listProjects === 'function') {
       const projects = await bridge.listProjects();
       const normalized = (projects || []).map((project: any) => ({ id: project.id, path: project.path, name: project.name }));
@@ -961,7 +958,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     if (!menuOpen || commandKind !== 'provider') return;
     let active = true;
     const keys = [...new Set(catalog.filter(item => item.type === 'provider' && (!item.gatewayOnly || item.id === 'ai-gateway')).map(item => credentialKeyFor(item)))];
-    const bridge = (window as any).codeclub;
+    const bridge = getDesktopBridge();
     void Promise.all(keys.map(async key => {
       try {
         // Ask only whether the vault contains the credential; never read its value.
@@ -1022,6 +1019,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
 
   useEffect(() => {
     if (!menuOpen) {
+      selectionRevision.current++;
       setCredentialProvider(null);
       setCredentialInput('');
       setCommandKind((kind) => kind === 'credential' ? '' : kind);
@@ -1064,6 +1062,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
       const button = target?.closest('button') as HTMLButtonElement | null;
       const isCommandDockButton = ['provider', 'model', 'project'].includes(button?.dataset.commandMenuKind || '') || /^(Proveedor|Modelo|Proyecto):/.test(button?.getAttribute('aria-label') || '');
       if (commandMenuRef.current?.contains(event.target as Node) || button?.title === 'Proveedor, modelo y proyecto' || isCommandDockButton) return;
+      selectionRevision.current++;
       setMenuOpen(false);
     };
 
@@ -1072,6 +1071,8 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
   }, [menuOpen]);
 
   const handleItemClick = async (item: CatalogItem) => {
+    const revision = ++selectionRevision.current;
+    const isSelectionCurrent = () => revision === selectionRevision.current;
     if (item.type === 'command') {
       if (item.id === 'adjuntar') {
         setInput('');
@@ -1195,7 +1196,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
         window.dispatchEvent(new CustomEvent('codeclub:project-selection-changed', { detail: { selected: true, projectPath: item.projectPath, projectName: item.label } }));
         window.dispatchEvent(new CustomEvent('codeclub:active-project', { detail: { projectPath: item.projectPath, projectName: item.label } }));
         window.dispatchEvent(new CustomEvent('codeclub:project-switch', { detail: { id: item.projectId || item.projectPath, name: item.label, path: item.projectPath } }));
-        void (window as any).codeclub?.switchProject?.(item.projectId || item.projectPath);
+        void getDesktopBridge()?.switchProject?.(item.projectId || item.projectPath);
         window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
       }
       setMenuOpen(false);
@@ -1204,16 +1205,16 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     }
     let needsProviderCredential = false;
     if (item.type === 'provider') {
-      setCurrentProvider(item);
       const isCustomProvider = item.id === 'custom';
       const providerModels = catalog.filter((candidate) => candidate.type === 'model' && modelMatchesProvider(candidate, item));
       const nextModel = providerModels[0] || (isCustomProvider ? defaultModel : null);
-      const requiresCredential = !isCustomProvider && (usesGateway(item, nextModel) || item.requiresApiKey !== false);
-      const savedCredential = requiresCredential ? await getSetting(credentialKeyFor(item, nextModel), '') : '';
-      const needsCredential = requiresCredential && (!savedCredential || savedCredential === 'dummy-key');
+      const readiness = await resolveCredentialRequirement(item, nextModel);
+      if (!isSelectionCurrent()) return;
+      const needsCredential = readiness.missing;
+      setCurrentProvider(item);
       needsProviderCredential = needsCredential;
       setCurrentModel(nextModel);
-      setCredentialProvider(needsCredential ? credentialTargetFor(item, nextModel) : null);
+      setCredentialProvider(needsCredential ? readiness.target : null);
       setCredentialInput('');
       setInput('');
       setCommandKind(isCustomProvider ? 'custom-config' : needsCredential ? 'credential' : '');
@@ -1223,18 +1224,19 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
           getSetting<'json' | 'xml'>('codeclub_custom_tools_format', 'json'),
           getSetting('codeclub_custom_url', ''),
         ]).then(([format, url]) => {
+          if (!isSelectionCurrent()) return;
           setCustomToolsFormat(format === 'xml' ? 'xml' : 'json');
           setCustomUrl(url);
           setCurrentProvider((current) => current ? { ...current, api: url } : current);
         });
       }
     } else if (item.type === 'model') {
+      const selectedProvider = currentProvider || defaultProvider;
+      const readiness = await resolveCredentialRequirement(selectedProvider, item);
+      if (!isSelectionCurrent()) return;
       setCurrentModel(item);
       setCredentialProvider(null);
-      const selectedProvider = currentProvider || defaultProvider;
-      const requiresCredential = selectedProvider.id !== 'custom' && (usesGateway(selectedProvider, item) || selectedProvider.requiresApiKey !== false);
-      const savedCredential = requiresCredential ? await getSetting(credentialKeyFor(selectedProvider, item), '') : '';
-      if (requiresCredential && (!savedCredential || savedCredential === 'dummy-key')) {
+      if (readiness.missing) {
         setCredentialProvider(credentialTargetFor(selectedProvider, item));
         setCredentialInput('');
         setInput('');
@@ -1310,7 +1312,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     try {
     const credentialOrigin = key === 'ai_gateway_api_key' ? 'https://ai-gateway.vercel.sh' : credentialProvider.api;
     if (!credentialOrigin) throw new Error(translate('chatInterface.theCatalogDoesNotSpecifyAnEndpointForThis', language));
-    if((window as any).codeclub?.credentialSet)await (window as any).codeclub.credentialSet(key,credentialInput.trim(),credentialOrigin);
+    if(getDesktopBridge()?.credentialSet)await requireDesktopBridge().credentialSet(key,credentialInput.trim(),credentialOrigin);
     else await setSetting(key,credentialInput.trim());
     setCredentialProvider(null);
     setCredentialInput('');
@@ -1322,7 +1324,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
 
   const saveCustomProviderConfig = () => {
     if (!customUrl.trim()) {
-      setCustomConfigError('La URL es obligatoria.');
+      setCustomConfigError(translate('chatInterface.urlRequired', language));
       return;
     }
     void Promise.all([
@@ -1348,7 +1350,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
 
   const resolveToolApproval = (approvalId: string, approved: boolean) => {
     const resolver = approvalResolversRef.current.get(approvalId);
-    if (!resolver) { const chat=activeChatRef.current;if(chat)void (window as any).codeclub?.sessionCommand?.(chat,approved?'approve':'deny',approvalId);return; }
+    if (!resolver) { const chat=activeChatRef.current;if(chat)void getDesktopBridge()?.sessionCommand?.(chat,approved?'approve':'deny',approvalId);return; }
     approvalResolversRef.current.delete(approvalId);
     const runtime=chatRuntimesRef.current.get(activeChatRef.current?.chatId||'');
     if(runtime){runtime.pendingApprovals=runtime.pendingApprovals.filter(item=>item.id!==approvalId);clearTimeout(runtime.approvalTimers?.get(approvalId));runtime.approvalTimers?.delete(approvalId);runtime.publish?.();}
@@ -1359,8 +1361,8 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
   const appendToJsonl = async (msg: any, chatOverride = activeChatRef.current) => {
     const chat = chatOverride;
     if (!chat) return;
-    if ((window as any).codeclub?.chatAppend) {
-      const total = await (window as any).codeclub.chatAppend(chat.projectPath,chat.chatId,msg);
+    if (getDesktopBridge()?.chatAppend) {
+      const total = await requireDesktopBridge().chatAppend(chat.projectPath,chat.chatId,msg);
       const runtime=chatRuntimesRef.current.get(chat.chatId);if(runtime)runtime.expectedTotal=total;
       await appendToTranscript(msg,chat);
       return;
@@ -1372,7 +1374,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
       return;
     }
     try {
-      const desktopWriter = (window as any).codeclub?.writeProjectChat;
+      const desktopWriter = getDesktopBridge()?.writeProjectChat;
       if (desktopWriter) {
         const current = await readProjectChatHistory(chat.projectPath, chat.chatId);
         await writeProjectChatHistory(chat.projectPath, chat.chatId, [...current, msg]);
@@ -1411,7 +1413,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     if (!chat || !['user', 'assistant'].includes(msg?.role) || typeof msg?.content !== 'string' || !msg.content.trim()) return;
     const heading = msg.role === 'user' ? translate('chatInterface.userFallback', language) : 'Codeclub';
     const markdown = `\n## ${heading} · ${new Date().toLocaleString()}\n\n${msg.content.trim()}\n`;
-    if ((window as any).codeclub?.chatTranscript) { await (window as any).codeclub.chatTranscript(chat.projectPath,chat.chatId,markdown); return; }
+    if (getDesktopBridge()?.chatTranscript) { await requireDesktopBridge().chatTranscript(chat.projectPath,chat.chatId,markdown); return; }
     if (!chat.projectPath) {
       await appendGlobalChatTranscript(chat.chatId, markdown);
       return;
@@ -1426,9 +1428,9 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
   const writeChatJsonl = async (nextMessages: any[], chatOverride = activeChatRef.current) => {
     const chat = chatOverride;
     if (!chat) return;
-    if ((window as any).codeclub?.chatSaveTail) {
+    if (getDesktopBridge()?.chatSaveTail) {
       const runtime=chatRuntimesRef.current.get(chat.chatId);
-      const total=await (window as any).codeclub.chatSaveTail(chat.projectPath,chat.chatId,nextMessages[0]?.historyIndex??0,nextMessages,runtime?.expectedTotal);
+      const total=await requireDesktopBridge().chatSaveTail(chat.projectPath,chat.chatId,nextMessages[0]?.historyIndex??0,nextMessages,runtime?.expectedTotal);
       if(runtime)runtime.expectedTotal=total;
       return;
     }
@@ -1489,7 +1491,6 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
       setSelectedTextReferences([]);
     }
     const abortController = new AbortController();
-    let pluginMcpClose: (() => Promise<unknown>) | undefined;
     const generationStartedAt = Date.now();
     let chat = activeChatRef.current;
     if (!chat) {
@@ -1511,13 +1512,13 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
       }
     }
     const chatId = chat.chatId;
-    if (!replaceHistory && (window as any).codeclub?.chatPage) {
-      const latest = await (window as any).codeclub.chatPage(chat.projectPath,chatId,undefined,80);
+    if (!replaceHistory && getDesktopBridge()?.chatPage) {
+      const latest = await requireDesktopBridge().chatPage(chat.projectPath,chatId,undefined,80);
       baseMessages=latest.messages;
       if(activeChatRef.current?.chatId===chatId&&activeChatRef.current?.projectPath===chat.projectPath) historyWindow.restore(chat,baseMessages);
     }
     let runId: string | undefined;
-    try { await (window as any).codeclub?.sessionSelect?.(chat);runId=await (window as any).codeclub?.sessionClaim?.(chat); }
+    try { await getDesktopBridge()?.sessionSelect?.(chat);runId=await getDesktopBridge()?.sessionClaim?.(chat); }
     catch { if(!mobileRequestId)setInput(visibleContent); return; }
     const runtime: ChatRuntime = { runId, controller: abortController, state: 'connecting', tool: '', startedAt: generationStartedAt, messages: [], pendingApprovals: [], approvalResolvers: new Map(), approvalTimers:new Map() };
     chatRuntimesRef.current.set(chatId, runtime);
@@ -1532,7 +1533,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
       window.dispatchEvent(new CustomEvent('codeclub:agent-activity', { detail: { chatId, state: runtime.state, tool: runtime.tool, agent: 'Desarrollo' } }));
       const status=`${runtime.state}|${runtime.tool}|${runtime.pendingApprovals.map(item=>item.id).join(',')}`;
       if(runId && (status!==lastStatus || Date.now()-lastPublish>=100)){
-        lastStatus=status;lastPublish=Date.now();void (window as any).codeclub?.sessionPublish?.(chat,runId,{state:runtime.state,tool:runtime.tool,busy:true,messages:runtime.messages,approvals:runtime.pendingApprovals})?.catch(()=>undefined);
+        lastStatus=status;lastPublish=Date.now();void getDesktopBridge()?.sessionPublish?.(chat,runId,{state:runtime.state,tool:runtime.tool,busy:true,messages:runtime.messages,approvals:runtime.pendingApprovals})?.catch(()=>undefined);
       }
     };
     runtime.publish=publishRuntime;
@@ -1571,7 +1572,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     catch {
       chatRuntimesRef.current.delete(chatId);abortControllerRef.current=null;
       if(!mobileRequestId)setInput(visibleContent);setAttachmentError(true);setIsStreaming(false);
-      if(runId)await (window as any).codeclub?.sessionPublish?.(chat,runId,{state:'error',tool:'',busy:false,messages:baseMessages,approvals:[]})?.catch(()=>undefined);
+      if(runId)await getDesktopBridge()?.sessionPublish?.(chat,runId,{state:'error',tool:'',busy:false,messages:baseMessages,approvals:[]})?.catch(()=>undefined);
       return;
     }
     const pendingAskUser = [...baseMessages].reverse().flatMap((message) => message.role === 'assistant' ? (message.tools || []) : []).find((event: any) => event.name === 'askUser' && event.output?.status === 'awaiting_user' && !event.answer);
@@ -1602,431 +1603,29 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
       await appendToJsonl(userMessage, chat);
     }
 
-      if (!currentProvider || !currentModel) {
-        throw new Error(translate('chatInterface.chooseAProviderAndModelBeforeSending', language));
-      }
-
-      const useGateway = usesGateway(currentProvider, currentModel);
-      const credentialKey = credentialKeyFor(currentProvider, currentModel);
-      let apiKey = await getSetting(credentialKey, '');
-
-      const requiresCredential = useGateway || currentProvider.requiresApiKey !== false;
-      if ((!apiKey || apiKey === 'dummy-key') && currentProvider.id !== 'custom' && requiresCredential) {
-        setCredentialProvider(credentialTargetFor(currentProvider, currentModel));
-        setCredentialInput('');
-        setCommandKind('credential');
-        setMenuOpen(true);
-        window.setTimeout(() => credentialInputRef.current?.focus(), 0);
-        throw new Error(translate('chatInterface.apiKeyMissing', language, { provider: useGateway ? 'AI Gateway' : currentProvider.label || currentProvider.id }));
-      }
-
-      const selectedModelReference = modelIdFor(currentProvider, currentModel);
-      if (!useGateway && !currentProvider.api) throw new Error(translate('chatInterface.theCatalogDoesNotSpecifyACompatibleEndpointFor', language));
-      const configuredHeaders = await getSetting<Record<string, string>>(`codeclub_provider_headers_${currentProvider.id}`, {});
-      const requestHeaders: Record<string, string> = { 'user-agent': 'Codeclub', 'x-codeclub-session': chat.chatId };
-      for (const [name, value] of Object.entries(configuredHeaders)) {
-        if (typeof value === 'string' && /^[a-z0-9-]+$/i.test(name) && !['authorization', 'cookie', 'host'].includes(name.toLowerCase())) requestHeaders[name] = value.replaceAll('${chatId}', chat.chatId);
-      }
-      const provider = useGateway ? createGateway({ apiKey: apiKey || undefined, fetch:desktopModelFetch }) : currentProvider.id === 'google' ? createGoogle({
-        name: 'google',
-        baseURL: currentProvider.api,
-        apiKey,
-        headers: requestHeaders,
-        fetch: desktopModelFetch,
-      }) : createOpenAICompatible({
-        name: currentProvider.id,
-        baseURL: currentProvider.api,
-        apiKey,
-        headers: requestHeaders,
-        fetch: desktopModelFetch,
+      const execution = await executeChatRun({
+        chat, projectPath: activeProject?.projectPath || '', currentProvider, currentModel, language,
+        content, visibleContent, newMessages, userMessage, attachmentParts, activeSkills, activeExtensions,
+        agentOrb, abortController, desktopModelFetch,
+        ports: {
+          isCurrent: isCurrentGeneration,
+          onMessages: next => { if (!isCurrentGeneration()) return; runtime.messages = next; if (isVisibleGeneration()) setMessages(next); publishRuntime(); },
+          onState: guardedSetAgentState,
+          onTool: name => { runtime.tool = name; publishRuntime(); },
+          onDisplayTool: name => { if (isVisibleGeneration()) setActiveToolName(name); },
+          onComputerUse: () => setComputerUseActive(true),
+          onAbort: () => { runtime.pendingApprovals = []; if (isVisibleGeneration()) setPendingApprovals([]); },
+          onCredentialRequired: target => { setCredentialProvider(target); setCredentialInput(''); setCommandKind('credential'); setMenuOpen(true); window.setTimeout(() => credentialInputRef.current?.focus(), 0); },
+          requestApproval: guardedRequestToolApproval,
+          requestFrame: callback => window.requestAnimationFrame(callback),
+          cancelFrame: id => window.cancelAnimationFrame(id),
+        },
       });
-      const contextProjectPath = activeProject?.projectPath || '';
-      const runMode: AgentMode = 'development';
-      let routeSpecialist: AgentSpecialist = 'primary';
-      let assistantContent = '';
-      const assistantBoundaries: number[] = [];
-      const assistantBubbles = (message: any) => {
-        const offsets = [...new Set([0, ...assistantBoundaries])].filter(offset => offset < message.content.length);
-        return offsets.length < 2 ? [message] : offsets.map((offset, index) => ({ ...message, content: message.content.slice(offset, offsets[index + 1]).trim(), ...(index < offsets.length - 1 ? { tools: [], timeline: [], reasoning: '', progress: '', meta: undefined } : {}) }))
-          .filter((bubble, index, bubbles) => index === bubbles.length - 1 || bubble.content.length > 0)
-          .map((bubble, index) => ({ ...bubble, historyIndex: userMessage.historyIndex + 1 + index }));
-      };
-      let assistantReasoning = '';
-      let assistantProgress = '';
-      let assistantTools: any[] = [];
-      let assistantTimeline: any[] = [];
-      let executionStartedAt = Date.now();
-      let latestUsage: any = null;
-      let modelCalls: any[] = [];
-      let executionSequence = 0;
-      const executionCallQueues = new Map<string, string[]>();
-      let assistantUpdateFrame: number | null = null;
-      const updateAssistantMessage = () => {
-        runtime.messages = [...newMessages, ...assistantBubbles({ role: 'assistant', content: assistantContent, reasoning: assistantReasoning, progress: assistantProgress, timeline: assistantTimeline, tools: assistantTools, agentName: 'Desarrollo', meta: { modelCalls } })];
-        if (isVisibleGeneration()) setMessages(runtime.messages);
-        publishRuntime();
-      };
-      const scheduleAssistantMessageUpdate = () => {
-        if (assistantUpdateFrame !== null) return;
-        assistantUpdateFrame = window.requestAnimationFrame(() => {
-          assistantUpdateFrame = null;
-          updateAssistantMessage();
-        });
-      };
-      const recordToolEvent = (name: string, input: any, output: any) => {
-        runtime.tool = name;
-        publishRuntime();
-        if (isVisibleGeneration()) setActiveToolName(name);
-        const runningIndex = [...assistantTools].map((event, index) => ({ event, index })).reverse().find(({ event }) => event.name === name && event.output?.status === 'running')?.index;
-        const runningEvent = runningIndex === undefined ? null : assistantTools[runningIndex];
-        const completedEvent = { ...runningEvent, id: runningIndex === undefined ? (crypto.randomUUID?.() || `${Date.now()}-${assistantTools.length}`) : assistantTools[runningIndex].id, name, input, output, at: new Date().toISOString(), durationMs: runningEvent?.durationMs ?? (runningEvent?.startedAt ? Date.now() - runningEvent.startedAt : null) };
-        assistantTools = runningIndex === undefined ? [...assistantTools, completedEvent] : assistantTools.map((event, index) => index === runningIndex ? completedEvent : event);
-        updateAssistantMessage();
-        void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: name, input, output });
-        if (['writeFile', 'runCommand', 'terminal'].includes(name)) window.dispatchEvent(new CustomEvent('codeclub:workspace-changed', { detail: { projectPath: contextProjectPath, tool: name } }));
-        if (['todo', 'createPlan', 'updatePlan'].includes(name)) {
-          window.dispatchEvent(new CustomEvent('codeclub:artifacts-changed', { detail: { projectPath: contextProjectPath } }));
-        }
-      };
-      const orbBrowserOnly = Boolean(agentOrb && agentOrb.allowComputer === false);
-      if (agentOrb?.requiresAdministrator && !orbBrowserOnly && !(await invoke<{ elevated: boolean }>('codeclub_admin_status')).elevated) throw new Error('TASK_ADMIN_REQUIRED');
-      const toolProjectPath = contextProjectPath || await invoke<string>('codeclub_get_system_root');
-      const developmentTools = createTools({
-        chatId,
-        projectPath: toolProjectPath,
-        projectScoped: Boolean(contextProjectPath),
-        recordToolEvent,
-        setAgentState: guardedSetAgentState,
-        // Orb tool approval is enforced by the outer wrapper below.
-        requestToolApproval: agentOrb ? () => Promise.resolve(true) : guardedRequestToolApproval,
-        provider,
-        modelId: selectedModelReference,
-        providerId: currentProvider.id,
-      });
-      const externalMcpTools: Record<string, any> = {};
-      let loadedPlugins: Awaited<ReturnType<typeof loadAgentPlugins>> = [];
-      try {
-        loadedPlugins = orbBrowserOnly ? [] : await loadAgentPlugins(contextProjectPath);
-        const pluginMcp = await connectAllAgentPluginMcp(loadedPlugins);
-        Object.assign(externalMcpTools, pluginMcp.tools);
-        pluginMcpClose = pluginMcp.close;
-      } catch (error) {
-        console.warn('No se pudieron cargar los plugins Agent Plugins:', error);
-      }
-      let tools: Record<string, any> = {};
-      let beforeWorkspaceSnapshot: WorkspaceSnapshot = new Map();
-      routeSpecialist = inferAgentSpecialist(content, runMode);
-      const selectedToolset = Object.fromEntries(Object.entries(developmentTools).filter(([name]) => !['swarm', 'subagent', 'listAvailableTools'].includes(name)));
-      const browserTools = new Set(['openBrowser', 'getBrowserState', 'browserAction', 'askUser']);
-      const readOnlyTools = new Set(['listFiles', 'readFile', 'searchText', 'getTaskStatus', 'getExecutionLog', 'getBrowserState', 'androidListDevices', 'androidGetState', 'androidScreenshot', 'askUser']);
-      const availableToolset = Object.fromEntries(Object.entries({ ...selectedToolset, ...externalMcpTools }).filter(([name]) => !orbBrowserOnly || browserTools.has(name)).map(([name, definition]: [string, any]) => [name, !agentOrb ? definition : { ...definition, execute: async (input: any, options: any) => {
-        if (!agentOrb.maximumAutonomy && !readOnlyTools.has(name) && !await guardedRequestToolApproval({ toolName: name, input, summary: name })) return { cancelled: true };
-        return definition.execute(input, options);
-      } }]));
-      const searchChatContext = async (query: string, page: number, pageSize: number) => {
-        const normalized = query.toLowerCase().trim();
-        const sources: Array<{ id: string; title: string; project: string; projectPath?: string; chatId: string }> = [];
-        const globalChats = await readGlobalChats();
-        sources.push(...globalChats.map((item) => ({ id: `global:${item.id}`, title: item.name, project: item.projectName || 'Sin proyecto', chatId: item.id })));
-        if (contextProjectPath) {
-          const meta = await readProjectMeta(contextProjectPath);
-          sources.push(...(meta?.chats || []).map((item) => ({ id: `project:${item.id}`, title: item.customName ? item.name : item.name || 'Chat', project: meta?.name || translate('chatInterface.activeProject', language), projectPath: contextProjectPath, chatId: item.id })));
-        }
-        const matches = [];
-        for (const source of sources) {
-          const messages = (window as any).codeclub?.chatSearch ? (await (window as any).codeclub.chatSearch(source.projectPath||'',source.chatId,normalized)).map((content:string)=>({content})) : source.projectPath ? await readProjectChatHistory(source.projectPath, source.chatId) : await readGlobalChatHistory(source.chatId);
-          const excerpts = messages.map((message: any) => String(message?.displayContent || message?.content || '')).filter((text: string) => !normalized || text.toLowerCase().includes(normalized));
-          if (normalized && !source.title.toLowerCase().includes(normalized) && excerpts.length === 0) continue;
-          matches.push({ id: source.id, title: source.title, project: source.project, excerpts: excerpts.slice(-2).map((text: string) => text.slice(0, 500)) });
-        }
-        const start = (Math.max(page, 1) - 1) * pageSize;
-        return { query, page: Math.max(page, 1), pageSize, total: matches.length, hasMore: start + pageSize < matches.length, results: matches.slice(start, start + pageSize) };
-      };
-      const dynamicToolAccess = createDynamicToolAccess(availableToolset, recordToolEvent, { plugins: loadedPlugins, searchChatContext });
-      const artifactNames = ['createPlan', 'updatePlan', 'todo', 'getTaskStatus', 'switchProject'];
-      const artifactTools = Object.fromEntries(artifactNames.filter((name) => availableToolset[name]).map((name) => [name, availableToolset[name]]));
-      // MCP definitions stay in the searchable catalog and become callable only after discovery.
-      tools = { ...dynamicToolAccess, ...artifactTools };
-      const routedToolset = tools;
-      window.dispatchEvent(new CustomEvent('codeclub:agent-route', { detail: { mode: runMode, specialist: routeSpecialist, confidence: 1, reason: 'Una única IA ejecuta directamente las tools necesarias.' } }));
-      try {
-        const routing = await resolveToolsWithAI({
-          model: provider(selectedModelReference),
-          mode: runMode,
-          prompt: content,
-          toolset: routedToolset,
-          signal: abortController.signal,
-          onUsage: async (usage) => {
-            await appendGenerationUsage({
-              id: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
-              at: new Date().toISOString(),
-              projectPath: contextProjectPath,
-              chatId: chat?.chatId || '',
-              mode: `${runMode}-tool-router`,
-              provider: currentProvider.id,
-              model: usage.model || currentModel.id,
-              inputTokens: usage.inputTokens ?? null,
-              outputTokens: usage.outputTokens ?? null,
-              totalTokens: usage.totalTokens ?? null,
-              reasoningTokens: usage.reasoningTokens ?? null,
-              durationMs: usage.durationMs,
-              status: 'completed',
-            });
-          },
-        });
-        tools = {
-          ...routing.tools,
-          searchTools: dynamicToolAccess.searchTools,
-          executeTool: dynamicToolAccess.executeTool,
-        };
-        void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'tool-router', input: { mode: runMode, specialist: routeSpecialist, prompt: content }, output: { confidence: routing.confidence, reason: routing.reason, requiresAction: routing.requiresAction, tools: Object.keys(tools) } });
-      } catch (error) {
-        const fallbackTools = selectToolsForPrompt(routedToolset, runMode, content);
-        tools = {
-          ...fallbackTools,
-          searchTools: dynamicToolAccess.searchTools,
-          executeTool: dynamicToolAccess.executeTool,
-        };
-        void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'tool-router', input: { mode: runMode, specialist: routeSpecialist, prompt: content }, output: { status: 'fallback-deterministic', error: String(error), tools: Object.keys(tools) } });
-      }
-      tools = {
-        ...tools,
-        reportProgress: tool({
-          description: 'Show a short, user-facing status of the current task or phase. Call before substantial work and when the phase changes. This is a concise progress label, not private reasoning.',
-          inputSchema: jsonSchema<any>({ type: 'object', properties: { summary: { type: 'string', minLength: 2, maxLength: 120, description: 'A brief natural-language phrase describing what you are doing, in the user\'s language.' } }, required: ['summary'], additionalProperties: false }),
-          execute: async ({ summary }: { summary: string }) => {
-            assistantProgress = String(summary || '').replace(/\s+/g, ' ').trim().slice(0, 120);
-            assistantTimeline = [...assistantTimeline, { type: 'progress', id: crypto.randomUUID(), text: assistantProgress }];
-            updateAssistantMessage();
-            return { ok: true, summary: assistantProgress };
-          },
-        }),
-      };
-      beforeWorkspaceSnapshot = orbBrowserOnly ? new Map() : await readWorkspaceSnapshot(toolProjectPath);
-      updateAssistantMessage();
-      const system = [
-        'You are Codeclub\'s coding agent. Think and operate internally in English. On demand, discover and use tools, skills, plugins, and prior chat context. Before substantial coding tasks, search for a relevant engineering skill and load it when it clearly applies. Verify real results; never invent. Reply in the user\'s language.',
-        activeSkills.length ? `The user activated these skills for this session. Follow their relevant workflow while respecting the user's request and project instructions:\n\n${activeSkills.map((skill) => `## ${skill.name}\n\n${skill.content}`).join('\n\n')}` : '',
-        'For substantial work, call reportProgress before starting and when moving to a new phase. Use one brief user-facing phrase in the user\'s language (for example, "Inspecting the project" or "Implementing the selected text actions"). These are progress updates, not chain-of-thought; never reveal private reasoning. Do not call it for routine short answers.',
-        activeExtensions.length ? `The user selected these built-in extensions for this session: ${activeExtensions.map(extension => `${extension.name}: ${extension.instruction}`).join('\n')}` : '',
-        'Codeclub resource management: discover exact targets with listResources. Use createExtension/createSkill/createMcpServer for new packages; editPluginResource for existing manifests or skills; deleteSkill removes only a skill; manageMcpServer updates/removes only the named server; manageOrb handles global orbs. Preserve unrelated resources and scopes. Built-in resources are read-only; create a personal copy when needed. Selected references identify targets but are not requests to mutate them.',
-      ].filter(Boolean).join(' ');
-      // Some compatible providers reject response_format when tools are enabled.
-      // Artifact tools already validate and persist their output, so require JSON
-      // only for responses that do not execute tools.
-      const structuredOutput = Object.keys(tools).length === 0 ? getArtifactOutputConfig(content) : null;
-      let structuredArtifactOutput: any = null;
-
-      const runAssistant = async (retryInstruction = '') => {
-        assistantBoundaries.length = 0;
-        assistantContent = '';
-        assistantReasoning = '';
-        assistantTools = [];
-        if (!retryInstruction) assistantTimeline = [];
-        structuredArtifactOutput = null;
-        executionStartedAt = Date.now();
-        guardedSetAgentState('streaming');
-        updateAssistantMessage();
-        const storedContext = (window as any).codeclub?.chatContext ? await (window as any).codeclub.chatContext(chat.projectPath,chatId) : null;
-        const contextualMessages = buildChatContext(storedContext?.messages || newMessages,storedContext?.summary||'',currentModel.contextWindow);
-        const executionMessages: any[] = retryInstruction ? [...contextualMessages, { role: 'user', content: `${retryInstruction}\n\nUse a different strategy or tool sequence; do not repeat the same failed call.` }] : contextualMessages;
-        return runStream({
-          maxSteps: 128,
-          model: provider(selectedModelReference),
-          contextWindow:currentModel.contextWindow,
-          system,
-          messages: executionMessages.map((message, index) => ({
-            role: message.role,
-            content: index === executionMessages.length - 1 && attachmentParts.length > 0 && !retryInstruction
-              ? [{ type: 'text', text: message.content || 'Analizá los archivos adjuntos.' }, ...attachmentParts]
-              : message.content,
-          })),
-          tools,
-          structuredOutput,
-          signal: abortController.signal,
-          callbacks: {
-            onAssistantMessageStart: offset => { assistantBoundaries.push(offset); },
-            onTextDelta: (content) => {
-              if (!isCurrentGeneration()) return;
-              assistantContent = content;
-              scheduleAssistantMessageUpdate();
-            },
-            onReasoningDelta: (content) => {
-              if (!isCurrentGeneration()) return;
-              assistantReasoning = content;
-              const last = assistantTimeline[assistantTimeline.length - 1];
-              assistantTimeline = last?.type === 'thinking'
-                ? assistantTimeline.map((item, index) => index === assistantTimeline.length - 1 ? { ...item, text: content } : item)
-                : [...assistantTimeline, { type: 'thinking', id: crypto.randomUUID?.() || `${Date.now()}-thinking`, text: content }];
-              updateAssistantMessage();
-            },
-            onStructuredOutput: (output) => {
-              structuredArtifactOutput = output;
-            },
-            onAbort: ({ steps }) => {
-              if (!isCurrentGeneration()) return;
-              runtime.pendingApprovals = [];
-              runtime.tool = '';
-              guardedSetAgentState('idle');
-              if (isVisibleGeneration()) setPendingApprovals([]);
-              void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'generation.abort', input: { steps: steps.length }, output: { status: 'aborted' } });
-            },
-            onEnd: () => {
-              if (!isCurrentGeneration()) return;
-              runtime.tool = '';
-              publishRuntime();
-              if (isVisibleGeneration()) setActiveToolName('');
-            },
-            onModelCall: (metrics) => {
-              if (!isCurrentGeneration()) return;
-              modelCalls = [...modelCalls.filter(call => call.callId !== metrics.callId), metrics];
-              void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: `generation.model.${metrics.status}`, input: { callId: metrics.callId, stepNumber: metrics.stepNumber, attempt: metrics.attempt }, output: metrics });
-              updateAssistantMessage();
-            },
-            onStepEnd: ({ stepNumber, finishReason, toolCalls, usage, performance }) => {
-              if (!isCurrentGeneration()) return;
-              void appendExecutionLog({
-                projectPath: contextProjectPath,
-                chatId: chat?.chatId,
-                tool: 'generation.step',
-                input: { stepNumber, tools: (toolCalls || []).map((toolCall: any) => toolCall.toolName) },
-                output: { finishReason, usage, performance: { stepTimeMs: performance?.stepTimeMs, responseTimeMs: performance?.responseTimeMs, timeToFirstOutputMs: performance?.timeToFirstOutputMs, toolExecutionMs: performance?.toolExecutionMs, outputTokensPerSecond: performance?.outputTokensPerSecond } },
-              });
-            },
-            onToolExecutionStart: ({ callId, toolCall }) => {
-              if (!isCurrentGeneration()) return;
-              const name = toolCall?.toolName || 'tool';
-              if (name === 'reportProgress') {
-                runtime.tool = '';
-                publishRuntime();
-                if (isVisibleGeneration()) setActiveToolName('');
-                return;
-              }
-              const innerToolName = name === 'executeTool' ? toolCall?.input?.name : name;
-              if (String(innerToolName || '').startsWith('computer')) setComputerUseActive(true);
-              const sourceCallId = callId || toolCall?.toolCallId || '';
-              const eventKey = `${sourceCallId || 'tool'}:${++executionSequence}`;
-              const queueKey = `${sourceCallId}|${name}`;
-              executionCallQueues.set(queueKey, [...(executionCallQueues.get(queueKey) || []), eventKey]);
-              const nextEvent = { id: eventKey, callId: eventKey, sourceCallId, name, input: toolCall?.input || {}, output: { status: 'running' }, startedAt: Date.now(), durationMs: null, at: new Date().toISOString() };
-              assistantTools = [...assistantTools, nextEvent];
-              assistantTimeline = [...assistantTimeline, { type: 'tool', id: nextEvent.id, name, input: nextEvent.input, status: 'running' }];
-              runtime.tool = name;
-              publishRuntime();
-              if (isVisibleGeneration()) setActiveToolName(String(innerToolName || name));
-              updateAssistantMessage();
-              void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'tool.execution.start', input: { callId: eventKey, sourceCallId, toolCallId: toolCall?.toolCallId, toolName: toolCall?.toolName, input: toolCall?.input }, output: { status: 'started' } });
-            },
-            onToolExecutionEnd: ({ callId, toolCall, toolExecutionMs, toolOutput }) => {
-              if (!isCurrentGeneration()) return;
-              if (toolCall?.toolName === 'reportProgress') return;
-              const toolResult = toolOutput?.output ?? toolOutput?.result ?? toolOutput;
-              const toolStatus = toolOutput?.type === 'tool-result' && toolResult?.ok !== false ? 'completed' : 'error';
-              const sourceCallId = callId || toolCall?.toolCallId || '';
-              const name = toolCall?.toolName || 'tool';
-              const queueKey = `${sourceCallId}|${name}`;
-              const queuedKeys = executionCallQueues.get(queueKey) || [];
-              const eventKey = queuedKeys.shift() || '';
-              if (queuedKeys.length) executionCallQueues.set(queueKey, queuedKeys); else executionCallQueues.delete(queueKey);
-              if (eventKey) {
-                const output = toolOutput?.type === 'tool-result' ? toolResult : { ok: false, error: String(toolOutput?.error?.message || toolOutput?.error || 'TOOL_EXECUTION_FAILED').slice(0, 4000), errorType: toolOutput?.error?.name || 'Error' };
-                assistantTools = assistantTools.map((event) => event.callId === eventKey ? { ...event, output, durationMs: toolExecutionMs } : event);
-                const toolEvent = assistantTools.find((event) => event.callId === eventKey);
-                if (toolEvent) assistantTimeline = assistantTimeline.map((event) => event.id === toolEvent.id ? { ...event, status: toolStatus, output, durationMs: toolExecutionMs } : event);
-              }
-              updateAssistantMessage();
-              void appendExecutionLog({ projectPath: contextProjectPath, chatId: chat?.chatId, tool: 'tool.execution.end', input: { callId: eventKey || `${sourceCallId}:unmatched`, sourceCallId, toolCallId: toolCall?.toolCallId, toolName: toolCall?.toolName }, output: { durationMs: toolExecutionMs, status: toolStatus } });
-            },
-            onToolCall: () => {
-              if (!isCurrentGeneration()) return;
-              if (toolStateTimerRef.current) clearTimeout(toolStateTimerRef.current);
-              guardedSetAgentState('tool_call');
-            },
-            onToolResult: () => {
-              if (!isCurrentGeneration()) return;
-              if (toolStateTimerRef.current) clearTimeout(toolStateTimerRef.current);
-              toolStateTimerRef.current = setTimeout(() => {
-                toolStateTimerRef.current = null;
-                if (!isCurrentGeneration() || abortController.signal.aborted) return;
-                guardedSetAgentState('streaming');
-                if (isVisibleGeneration()) setActiveToolName('');
-              }, 2000);
-            },
-            onUsage: async (usage) => {
-              const record: GenerationUsageRecord = {
-                id: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
-                at: new Date().toISOString(),
-                projectPath: contextProjectPath,
-                chatId: chat?.chatId || '',
-                mode: runMode,
-                provider: currentProvider.label || currentProvider.id,
-                model: usage.model || currentModel.label || currentModel.id,
-                inputTokens: usage.inputTokens ?? null,
-                outputTokens: usage.outputTokens ?? null,
-                totalTokens: usage.totalTokens ?? null,
-                reasoningTokens: usage.reasoningTokens ?? null,
-                inputCostPerMillion: Number.isFinite(Number(currentModel.cost?.input)) ? Number(currentModel.cost.input) : null,
-                outputCostPerMillion: Number.isFinite(Number(currentModel.cost?.output)) ? Number(currentModel.cost.output) : null,
-                durationMs: usage.durationMs,
-                status: 'completed',
-              };
-              if (isCurrentGeneration()) latestUsage = record;
-              void appendGenerationUsage(record).catch((error) => {
-                console.error('No se pudo guardar el uso de tokens:', error);
-              });
-            },
-          },
-        });
-      };
-      assistantContent = await runAssistant();
-      const structuredSummary = formatArtifactOutput(structuredArtifactOutput);
-      if (structuredSummary) assistantContent = structuredSummary;
-      if (!abortController.signal.aborted && !assistantContent?.trim()) {
-        const toolFallback = formatToolExecutionFallback(runMode, routeSpecialist, assistantTools);
-        if (toolFallback) assistantContent = toolFallback;
-        else {
-          guardedSetAgentState('streaming');
-          assistantContent = await runAssistant();
-          const retryStructuredSummary = formatArtifactOutput(structuredArtifactOutput);
-          if (retryStructuredSummary) assistantContent = retryStructuredSummary;
-        }
-      }
-      if (!assistantContent?.trim()) throw new Error(translate('chatInterface.theModelDidNotReturnAResponseAfterRetrying', language));
-
-      let lastContinuationSignature = '';
-      const initialSwarmEvents = assistantTools.filter((event) => event.name === 'swarm');
-      const initialSwarmActions = initialSwarmEvents.map((event) => event.input?.action).filter(Boolean);
-      const activeSwarmName = initialSwarmEvents.map((event) => event.output?.swarmName || event.input?.swarmName).find(Boolean) || '';
-      const activeChildNames = initialSwarmEvents.map((event) => event.output?.childName || event.input?.childName).filter(Boolean);
-      let swarmOpen = initialSwarmActions.includes('spawn') && !initialSwarmActions.includes('merge') && !initialSwarmActions.includes('stop');
-      while (!abortController.signal.aborted) {
-        const swarmEvents = assistantTools.filter((event) => event.name === 'swarm');
-        const actions = swarmEvents.map((event) => event.input?.action).filter(Boolean);
-        if (!swarmOpen || actions.includes('merge') || actions.includes('stop')) break;
-        const signature = actions.join('|');
-        const hasProgressAction = actions.some((action) => ['sendMessage', 'broadcast', 'wait'].includes(action));
-        if ((signature && signature === lastContinuationSignature) || actions.includes('spawn') || !hasProgressAction) break;
-        const evidence = swarmEvents.slice(-8).map((event) => ({ input: event.input, output: event.output })).filter((event) => event.output?.status !== 'running');
-        lastContinuationSignature = signature;
-        assistantContent = await runAssistant(`Continuá el swarm ${activeSwarmName || 'activo'} existente con los hijos ${JSON.stringify(activeChildNames)}. No uses spawn: comunicá, esperá y luego ejecutá merge o stop. Evidencias: ${JSON.stringify(evidence).slice(0, 3000)}`);
-        const retryStructuredSummary = formatArtifactOutput(structuredArtifactOutput);
-        if (retryStructuredSummary) assistantContent = retryStructuredSummary;
-        const continuationActions = assistantTools.filter((event) => event.name === 'swarm').map((event) => event.input?.action).filter(Boolean);
-        if (continuationActions.includes('merge') || continuationActions.includes('stop')) swarmOpen = false;
-      }
-
-      if (!isCurrentGeneration() || abortController.signal.aborted) return;
-      const changes = contextProjectPath ? summarizeWorkspaceDelta(beforeWorkspaceSnapshot, await readWorkspaceSnapshot(toolProjectPath)) : null;
-      const { summary: turnSummary } = await generateTurnSummary({ model: provider(selectedModelReference) as any, request: visibleContent || content, response: assistantContent, language, signal: abortController.signal, projectPath: contextProjectPath || '', chatId, providerId: currentProvider.id, modelId: currentModel.id });
-      if (!isCurrentGeneration()) return;
-      const assistantMessage = { turnSummary, historyIndex: userMessage.historyIndex+1, role: 'assistant', content: assistantContent || translate('chatInterface.theRunFinishedWithoutFinalTextButItsEvidence', language), progress: assistantProgress, timeline: assistantTimeline, tools: assistantTools, agentName: 'Desarrollo', meta: { modelCalls, provider: currentProvider.label || currentProvider.id, model: currentModel.label || currentModel.id, durationMs: Date.now() - executionStartedAt, status: 'completed', changes, usage: latestUsage ? { inputTokens: latestUsage.inputTokens, outputTokens: latestUsage.outputTokens, totalTokens: latestUsage.totalTokens, reasoningTokens: latestUsage.reasoningTokens } : null } };
-      if (assistantUpdateFrame !== null) {
-        window.cancelAnimationFrame(assistantUpdateFrame);
-        assistantUpdateFrame = null;
-      }
+      if (!execution || !isCurrentGeneration()) return;
+      const { assistantMessages, turnSummary } = execution;
       // The stream already displays the response progressively. Keep its final
       // content so a state change cannot leave an empty bubble if animation stops.
-      runtime.messages = [...newMessages, ...assistantBubbles(assistantMessage)];
+      runtime.messages = [...newMessages, ...assistantMessages];
       if (isVisibleGeneration()) setMessages(runtime.messages);
       if (toolStateTimerRef.current) {
         clearTimeout(toolStateTimerRef.current);
@@ -2039,8 +1638,8 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
         setActiveToolName('');
       }
       const persistencePromise = replaceHistory
-        ? writeChatJsonl([...newMessages, ...assistantBubbles(assistantMessage)], chat)
-        : (async () => { for (const bubble of assistantBubbles(assistantMessage)) await appendToJsonl(bubble, chat); })();
+        ? writeChatJsonl([...newMessages, ...assistantMessages], chat)
+        : (async () => { for (const bubble of assistantMessages) await appendToJsonl(bubble, chat); })();
       await persistencePromise;
       if (turnSummary) window.dispatchEvent(new CustomEvent('codeclub:rename-chat', { detail: { chatId: chat.chatId, projectPath: chat.projectPath, newName: turnSummary, automatic: true } }));
     } catch (error) {
@@ -2048,7 +1647,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
       const wasCancelled = abortController.signal.aborted;
       if (!wasCancelled) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        const isConfigurationError = errorMessage.includes('API Key no configurada');
+        const isConfigurationError = isMissingModelCredential(error);
         if (!isConfigurationError) console.error(formatDebugError(error));
         runtime.state = 'error';
         publishRuntime();
@@ -2071,7 +1670,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
               durationMs: Date.now() - generationStartedAt,
               status: wasCancelled ? 'cancelled' : 'error',
               errorName: error instanceof Error ? error.name : 'Error',
-              configuration: (error instanceof Error ? error.message : String(error)).includes('API Key no configurada'),
+              configuration: isMissingModelCredential(error),
               errorMessage: userFacingError,
             },
           };
@@ -2086,7 +1685,6 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
         console.error('No se pudo guardar el error del proveedor en el historial:', persistenceError);
       }
     } finally {
-      if (pluginMcpClose) await pluginMcpClose().catch(() => undefined);
       if (chatRuntimesRef.current.get(chatId)?.controller !== abortController) return;
       if (toolStateTimerRef.current) {
         clearTimeout(toolStateTimerRef.current);
@@ -2098,7 +1696,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
       runtime.approvalTimers?.clear();
       runtime.approvalResolvers.clear();
       const awaitingAnswer=runtime.messages.some(message=>message.tools?.some((tool:any)=>tool.name==='askUser'&&tool.output?.status==='awaiting_user'&&!tool.answer));
-      if(runId)await (window as any).codeclub?.sessionPublish?.(chat,runId,{state:abortController.signal.aborted?'cancelled':runtime.state==='error'?'error':awaitingAnswer?'question':'finished',tool:'',busy:false,messages:runtime.messages,approvals:[]})?.catch(()=>undefined);
+      if(runId)await getDesktopBridge()?.sessionPublish?.(chat,runId,{state:abortController.signal.aborted?'cancelled':runtime.state==='error'?'error':awaitingAnswer?'question':'finished',tool:'',busy:false,messages:runtime.messages,approvals:[]})?.catch(()=>undefined);
       if (activeChatRef.current?.chatId === chatId) {
         setIsStreaming(false);
         setActiveToolName('');
@@ -2111,7 +1709,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
 
   const cancelGeneration = () => {
     const controller = abortControllerRef.current;
-    if (!controller) {const chat=activeChatRef.current;if(chat)void (window as any).codeclub?.sessionCommand?.(chat,'cancel');return;}
+    if (!controller) {const chat=activeChatRef.current;if(chat)void getDesktopBridge()?.sessionCommand?.(chat,'cancel');return;}
     const chatId = activeChatRef.current?.chatId;
     const runtime = chatId ? chatRuntimesRef.current.get(chatId) : undefined;
     abortControllerRef.current = null;
@@ -2146,7 +1744,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     void safeListen('codeclub-computer-escape', () => {
       if (computerUseActive) cancelGeneration();
     }).then((dispose) => { unlisten = dispose; });
-    const nativeEscape = (window as any).codeclub?.onComputerEscape;
+    const nativeEscape = getDesktopBridge()?.onComputerEscape;
     if (typeof nativeEscape === 'function') unlistenNative = nativeEscape(() => { if (computerUseActive) cancelGeneration(); });
     window.addEventListener('keydown', handleComputerEscape);
     return () => {
@@ -2158,7 +1756,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
 
   useEffect(() => {
     const listener = (payload: any) => setComputerContext(payload?.action ? payload : null);
-    const subscribe = (window as any).codeclub?.onComputerContext;
+    const subscribe = getDesktopBridge()?.onComputerContext;
     if (typeof subscribe !== 'function') return undefined;
     return subscribe(listener);
   }, []);
@@ -2170,7 +1768,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
       language,
     };
     window.dispatchEvent(new CustomEvent('codeclub:computer-overlay-set', { detail }));
-    void (window as any).codeclub?.setComputerOverlay?.({ active: computerUseActive, language, paletteIndex: orbPaletteIndex });
+    void getDesktopBridge()?.setComputerOverlay?.({ active: computerUseActive, language, paletteIndex: orbPaletteIndex });
   }, [computerUseActive, currentProvider, defaultProvider, language, orbPaletteIndex]);
 
   useEffect(() => () => {
@@ -2203,7 +1801,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     if(!activeChat||isAgentBusy||chatTransitionPhase!=='idle')return;
     let active=true,polling=false;
     // Claim mobile sends through the normal engine without replacing the desktop composer draft.
-    const poll=async()=>{if(polling)return;polling=true;let item:any;try{item=await (window as any).codeclub?.mobileTake?.(activeChat);if(item&&active&&activeChatRef.current?.chatId===item.chat.chatId&&activeChatRef.current?.projectPath===item.chat.projectPath){await mobileSendRef.current(item.text,undefined,false,false,[],undefined,item.id);}}finally{if(item)await (window as any).codeclub?.mobileRelease?.(item.id);polling=false;}};
+    const poll=async()=>{if(polling)return;polling=true;let item:any;try{item=await getDesktopBridge()?.mobileTake?.(activeChat);if(item&&active&&activeChatRef.current?.chatId===item.chat.chatId&&activeChatRef.current?.projectPath===item.chat.projectPath){await mobileSendRef.current(item.text,undefined,false,false,[],undefined,item.id);}}finally{if(item)await getDesktopBridge()?.mobileRelease?.(item.id);polling=false;}};
     const timer=window.setInterval(()=>void poll().catch(()=>undefined),1000);void poll().catch(()=>undefined);
     return()=>{active=false;window.clearInterval(timer);};
   },[activeChat,isAgentBusy,chatTransitionPhase]);
@@ -2331,7 +1929,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
     const visibleMessages = [...messages];
     const rangeStart = historyWindow.range.current.start;
     try {
-      const bridge = (window as any).codeclub;
+      const bridge = getDesktopBridge();
       // Load the whole persisted chat on demand; the mounted window is bounded.
       const completeMessages = bridge?.chatAll ? await bridge.chatAll(chat.projectPath, chat.chatId)
         : chat.projectPath ? await readProjectChatHistory(chat.projectPath, chat.chatId) : await readGlobalChatHistory(chat.chatId);
@@ -2426,7 +2024,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
 
   const handleAttachFiles = async () => {
     try {
-      const desktopPicker = (window as any).codeclub?.selectFiles;
+      const desktopPicker = getDesktopBridge()?.selectFiles;
       if (desktopPicker) {
         const files = await desktopPicker();
         if (files?.length) await addAttachmentPaths(files);
@@ -2456,7 +2054,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
       }
     }
     const droppedFiles = Array.from(event.dataTransfer.files || []) as (File & { path?: string })[];
-    const paths = droppedFiles.map((file) => (window as any).codeclub?.getPathForFile?.(file) || file.path).filter(Boolean) as string[];
+    const paths = droppedFiles.map((file) => getDesktopBridge()?.getPathForFile?.(file) || file.path).filter(Boolean) as string[];
     if (paths.length > 0) void addAttachmentPaths(paths);
   };
 
@@ -2760,6 +2358,7 @@ export default function ChatInterface({ catalog: baseCatalog, defaultProvider, d
             value={input}
             onChange={(e) => {
               const value = e.target.value;
+              selectionRevision.current++;
               setInput(value);
               if (!value.trim()) setArtifactReferences([]);
               if (value === '/' || (value.startsWith('/') && !value.includes(' '))) {

@@ -1,11 +1,13 @@
 'use client';
+import { getDesktopBridge, requireDesktopBridge, nativeInvoke, onTerminalOutput } from '../lib/runtime';
+
 
 /** Main workspace shell: coordinates project/chat-scoped panels, persisted layouts, browser, files, review, and terminals. */
 import { createElement, memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, Check, ChevronDown, Circle, CircleCheck, Clock, Copy, CopyX, Download, EllipsisVertical, ExternalLink, FileWarning, FolderOpen, FolderPen, FolderTree, Grid2X2, Home, Hourglass, Info, MessageSquare, MoreHorizontal, MousePointerClick, PanelLeft, Pencil, Pin, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, X } from 'lucide-react';
+import { AppWindowMac, ArrowLeft, ArrowRight, ArrowRightToLine, ArrowUp, Check, ChevronDown, Circle, CircleCheck, Clock, Copy, CopyX, Download, EllipsisVertical, ExternalLink, FileWarning, FolderOpen, FolderPen, FolderTree, Grid2X2, Home, Hourglass, Info, MessageSquare, MoreHorizontal, MousePointerClick, PanelLeft, Pencil, Pin, Play, Plus, RotateCw, Search, SquareTerminal, Trash2, X, GlobeCheck } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { GlobeCheck } from 'lucide-react';
+
 import { Terminal as XtermTerminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
@@ -26,7 +28,7 @@ import OrbPaletteButton from './ui/OrbPaletteButton';
 import FluidOrb from './ui/fluid-orb';
 import SidebarCategory from './ui/SidebarCategory';
 import { readGlobalChats, readProjectMeta, writeGlobalChats, writeProjectMeta } from '../lib/projectManager';
-import { nativeInvoke, onTerminalOutput } from '../lib/runtime';
+
 import { parseGitNumstat, parseGitStatus } from '../lib/git-output';
 import { getSetting, setSetting } from '../lib/persistence';
 import { useAppLanguage, type AppLanguage, translate, getMessages } from '../lib/i18n';
@@ -136,20 +138,20 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
     let version = 0;
     const refresh = async () => {
       const request = ++version;
-      const api = (window as any).codeclub;
+      const api = getDesktopBridge();
       if (!api?.tasksList) return;
       const results = await Promise.allSettled(['', ...sidebarProjects.map(project => project.path)].map(path => api.tasksList(path) as Promise<ScheduledTask[]>));
       if (mounted && request === version) setSidebarTasks(results.flatMap(result => result.status === 'fulfilled' ? result.value : []).filter(task => !task.autonomous && !task.id.startsWith('orb_')));
     };
     void refresh();
     // Electron emits task changes through the preload subscription; refresh all registered scopes and unsubscribe on cleanup.
-    const unsubscribe = (window as any).codeclub?.onTasksChanged?.(() => void refresh());
+    const unsubscribe = getDesktopBridge()?.onTasksChanged?.(() => void refresh());
     return () => { mounted = false; unsubscribe?.(); };
   }, [sidebarProjects]);
   const [projectSelectionError, setProjectSelectionError] = useState('');
   useEffect(() => {
     let mounted = true;
-    const refresh = () => { void (window as any).codeclub?.listProjects?.().then((items: SidebarProject[]) => { if (mounted && Array.isArray(items)) setSidebarProjects(items); }).catch(() => undefined); };
+    const refresh = () => { void getDesktopBridge()?.listProjects?.().then((items: SidebarProject[]) => { if (mounted && Array.isArray(items)) setSidebarProjects(items); }).catch(() => undefined); };
     // Project selection/rename emit these existing events; this sidebar refreshes the native index and removes listeners on cleanup.
     refresh();
     window.addEventListener('codeclub:project-switch', refresh);
@@ -436,7 +438,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
       try {
         const saved = JSON.parse(window.localStorage.getItem('codeclub:active-project') || 'null') as { id?: string; name?: string; path?: string } | null;
         if (!saved?.id || !saved.path) return;
-        const projects = await (window as any).codeclub?.listProjects?.() as SidebarProject[] | undefined;
+        const projects = await getDesktopBridge()?.listProjects?.() as SidebarProject[] | undefined;
         if (cancelled) return;
         const project = projects?.find(item => item.id === saved.id && item.path === saved.path);
         if (!project) {
@@ -464,8 +466,8 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
     };
     void loadRecentChats();
     const refresh = () => void loadRecentChats();
-    const unsubscribe = (window as any).codeclub?.onTasksChanged?.(refresh);
-    const unsubscribeSettings = (window as any).codeclub?.onSettingsChanged?.((detail: { key: string }) => { if (detail.key === 'codeclub_global_chats') refresh(); });
+    const unsubscribe = getDesktopBridge()?.onTasksChanged?.(refresh);
+    const unsubscribeSettings = getDesktopBridge()?.onSettingsChanged?.((detail: { key: string }) => { if (detail.key === 'codeclub_global_chats') refresh(); });
     window.addEventListener('codeclub:global-chat-changed', refresh);
     window.addEventListener('codeclub:project-meta-changed', refresh);
     return () => {
@@ -672,7 +674,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
     const onChange = () => void refresh();
     window.addEventListener('codeclub:global-chat-changed', onChange);
     window.addEventListener('codeclub:project-meta-changed', onChange);
-    const unsubscribe = (window as any).codeclub?.onTasksChanged?.(onChange);
+    const unsubscribe = getDesktopBridge()?.onTasksChanged?.(onChange);
     return () => { mounted = false; window.removeEventListener('codeclub:global-chat-changed', onChange); window.removeEventListener('codeclub:project-meta-changed', onChange); unsubscribe?.(); };
   }, [sidebarProjects]);
 
@@ -701,14 +703,14 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
   const selectSidebarProject = async (project?: SidebarProject) => {
     setProjectSelectionError('');
     try {
-      const api = (window as any).codeclub;
+      const api = getDesktopBridge();
       const selected = project || await api?.selectProjectFolder?.();
       if (!selected) return;
       if (selected.id === 'home') {
         window.dispatchEvent(new CustomEvent('codeclub:project-switch', { detail: { id: 'home', name: 'Home' } }));
         return;
       }
-      if (project) await api.switchProject(project.id);
+      if (project) await requireDesktopBridge().switchProject(project.id);
       const next = [...sidebarProjects.filter(item => item.id !== selected.id), selected];
       setSidebarProjects(next);
       window.localStorage.setItem('codeclub:open-projects', JSON.stringify(next.map(item => item.id)));
@@ -749,7 +751,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
     const chat = chatContextMenu?.chat;
     if (!chat) return;
     setChatContextMenu(null);
-    await (window as any).codeclub?.chatDelete?.(chat.projectPath||'',chat.id);
+    await getDesktopBridge()?.chatDelete?.(chat.projectPath||'',chat.id);
     if (chat.projectPath) {
       const meta = await readProjectMeta(chat.projectPath);
       if (!meta) return;
@@ -774,12 +776,12 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
     if (activeProjectPath) {
       const meta = await readProjectMeta(activeProjectPath);
       if (!meta) return;
-      for(const chat of meta.chats)await (window as any).codeclub?.chatDelete?.(activeProjectPath,chat.id);
+      for(const chat of meta.chats)await getDesktopBridge()?.chatDelete?.(activeProjectPath,chat.id);
       meta.chats = [];
       await writeProjectMeta(activeProjectPath, meta);
       window.dispatchEvent(new CustomEvent('codeclub:project-meta-changed', { detail: { projectPath: activeProjectPath } }));
     } else {
-      for(const chat of await readGlobalChats())await (window as any).codeclub?.chatDelete?.('',chat.id);
+      for(const chat of await readGlobalChats())await getDesktopBridge()?.chatDelete?.('',chat.id);
       await writeGlobalChats([]);
       window.dispatchEvent(new CustomEvent('codeclub:global-chat-changed'));
     }
@@ -1026,7 +1028,7 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
       return;
     }
     try {
-      const project = await (window as any).codeclub?.renameProject?.(activeProjectId, nextName);
+      const project = await getDesktopBridge()?.renameProject?.(activeProjectId, nextName);
       if (!project) throw new Error('Project rename returned no project');
       window.dispatchEvent(new CustomEvent('codeclub:project-renamed', { detail: { id: activeProjectId, name: project.name, path: project.path } }));
       if (projectNameEdit.current.token !== token) return;

@@ -1,9 +1,12 @@
 'use client';
+import { requireDesktopBridge, getDesktopBridge, nativeInvoke } from '../lib/runtime';
+
+
 
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { QrCode, KeyRound, CheckCircle2, ChevronRight, Circle, Laptop, Smartphone, Globe, MoreHorizontal, BrushCleaning, Wrench, LoaderCircle, Pencil, X } from 'lucide-react';
-import type { OrbDefinition } from '../lib/chat-resources';
+import { OrbDefinition, ORBS_STORAGE_KEY } from '../lib/chat-resources';
 import type { ScheduledTask } from '../lib/scheduled-tasks';
 import { useAppLanguage, getMessages } from '../lib/i18n';
 import OrbCredentialsModal from './OrbCredentialsModal';
@@ -16,8 +19,8 @@ import { usePopupKeyboard } from './ui/use-accessible-overlay';
 import FluidOrb from './ui/fluid-orb';
 import { useOrbPalette } from './OrbPaletteProvider';
 import { getSetting, setSetting } from '../lib/persistence';
-import { ORBS_STORAGE_KEY } from '../lib/chat-resources';
-import { nativeInvoke } from '../lib/runtime';
+
+
 
 /** Show real orb configuration and native run activity; never synthesize connections or tasks. */
 export default function OrbSidebar({ orb, onClose }: { orb?: OrbDefinition; onClose?: () => void }) {
@@ -58,9 +61,9 @@ export default function OrbSidebar({ orb, onClose }: { orb?: OrbDefinition; onCl
   }, [orb?.id]);
   useEffect(() => {
     let active = true;
-    const refresh = () => { void (window as any).codeclub?.tasksList?.('')?.then((items: ScheduledTask[]) => { if (active) { setTask(items.find(item => item.id === `orb_${orb?.id}`)); setActivity(items.filter(item => item.id === `orb_${orb?.id}` || item.id === `orb_proactive_${orb?.id}`).flatMap(item => item.runs).sort((a, b) => a.startedAt.localeCompare(b.startedAt))); setError(''); } }).catch(() => { if (active) setError(text.activityError); }); };
+    const refresh = () => { void getDesktopBridge()?.tasksList?.('')?.then((items: ScheduledTask[]) => { if (active) { setTask(items.find(item => item.id === `orb_${orb?.id}`)); setActivity(items.filter(item => item.id === `orb_${orb?.id}` || item.id === `orb_proactive_${orb?.id}`).flatMap(item => item.runs).sort((a, b) => a.startedAt.localeCompare(b.startedAt))); setError(''); } }).catch(() => { if (active) setError(text.activityError); }); };
     setTask(undefined); setActivity([]); refresh();
-    const unsubscribe = (window as any).codeclub?.onTasksChanged?.(refresh);
+    const unsubscribe = getDesktopBridge()?.onTasksChanged?.(refresh);
     return () => { active = false; unsubscribe?.(); };
   }, [orb?.id, text.activityError]);
   useEffect(() => {
@@ -68,7 +71,7 @@ export default function OrbSidebar({ orb, onClose }: { orb?: OrbDefinition; onCl
     setCredential(false);
     if (provider && model) {
       const needsKey = provider.id !== 'custom' && (usesGateway(provider, model) || provider.requiresApiKey !== false);
-      void (needsKey ? (window as any).codeclub?.credentialPresent(credentialKeyFor(provider, model)) : Promise.resolve(true))?.then((present: boolean) => { if (active) setCredential(Boolean(present)); }).catch(() => { if (active) setCredential(false); });
+      void (needsKey ? getDesktopBridge()?.credentialPresent(credentialKeyFor(provider, model)) : Promise.resolve(true))?.then((present: boolean) => { if (active) setCredential(Boolean(present)); }).catch(() => { if (active) setCredential(false); });
     }
     return () => { active = false; };
   }, [orb, provider, model]);
@@ -82,7 +85,7 @@ export default function OrbSidebar({ orb, onClose }: { orb?: OrbDefinition; onCl
     if (!orb || pending) return;
     setMenu(false); setPending(true); setError('');
     try {
-      const api = (window as any).codeclub;
+      const api = requireDesktopBridge();
       if (task?.status === 'active') {
         await api.tasksSave('', { ...task, status: 'paused' });
         await api.tasksCancel('', task.id);
@@ -102,7 +105,7 @@ export default function OrbSidebar({ orb, onClose }: { orb?: OrbDefinition; onCl
     let active = true;
     const refresh = () => { if (orb) void readGlobalChatHistory(chatId).then(messages => { if (active) setHistory(messages); }).catch(() => undefined); };
     setHistory([]); setClearedAt(0); setShowActivity(false); refresh();
-    const unsubscribe = (window as any).codeclub?.onSessions?.((items: { chatId: string; busy: boolean }[]) => { if (items.some(item => item.chatId === chatId && !item.busy)) refresh(); });
+    const unsubscribe = getDesktopBridge()?.onSessions?.((items: { chatId: string; busy: boolean }[]) => { if (items.some(item => item.chatId === chatId && !item.busy)) refresh(); });
     return () => { active = false; unsubscribe?.(); };
   }, [chatId, orb?.id]);
   const messages = currentSession?.messages?.length && (!clearedAt || currentSession.updatedAt > clearedAt) ? currentSession.messages : history;

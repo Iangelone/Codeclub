@@ -1,11 +1,13 @@
 'use client';
+import { getDesktopBridge, nativeInvoke } from '../lib/runtime';
+
 
 import { useEffect } from 'react';
 import { getSetting } from '../lib/persistence';
 import { ORBS_STORAGE_KEY, parseOrbs } from '../lib/chat-resources';
 import { models, providers } from '../lib/ai-catalog';
 import { credentialKeyFor, modelIdFor, modelMatchesProvider, usesGateway } from '../lib/ai-routing';
-import { nativeInvoke } from '../lib/runtime';
+
 import { useAppLanguage } from '../lib/i18n';
 
 /** Send fixed surface identifiers and credential readiness; never inspect editable controls. */
@@ -25,7 +27,7 @@ export default function OrbActivityObserver() {
           const model = provider && models.find(item => modelMatchesProvider(item, provider) && modelIdFor(provider, item) === orb.modelId);
           if (!provider || !model) continue;
           const needsKey = provider.id !== 'custom' && (usesGateway(provider, model) || provider.requiresApiKey !== false);
-          if (!needsKey || await (window as any).codeclub?.credentialPresent(credentialKeyFor(provider, model))) ready.push(orb.id);
+          if (!needsKey || await getDesktopBridge()?.credentialPresent(credentialKeyFor(provider, model))) ready.push(orb.id);
         }
         const section = document.getElementById('codeclub-main-content')?.getAttribute('data-surface');
         const surface = section === 'orbs' ? 'orb' : section === 'extensions' ? 'extensions' : section === 'tasks' ? 'tasks' : section === 'new-chat' ? 'chat' : 'home';

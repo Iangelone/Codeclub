@@ -2,22 +2,8 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-export type TaskRun = { id: string; chatId: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted' | 'blocked' | 'unverified'; startedAt: string; finishedAt?: string; error?: string };
-export type ScheduledTask = {
-  id: string; name: string; prompt: string; projectPath: string; provider: string; model: string;
-  interval: string; every: string; time: string; timeZone: string; weekday: number;
-  status: 'active' | 'paused'; notifications: string; reasoning: string;
-  language?: 'es' | 'en';
-  autonomous?: boolean;
-  allowComputer?: boolean;
-  maximumAutonomy?: boolean;
-  requiresAdministrator?: boolean;
-  proactive?: boolean;
-  deliveryChatId?: string;
-  orbId?: string;
-  nextRun?: string; lastRun?: string; runs: TaskRun[];
-  runAt?: string;
-};
+import type { ScheduledTask, TaskRun } from '../shared/desktop-contracts.js';
+export type { ScheduledTask, TaskRun } from '../shared/desktop-contracts.js';
 const keyFor = (project: string, id: string) => `${project ? path.resolve(project).toLowerCase() : ''}\0${id}`;
 const cadence: Record<string, number> = { '15 min': 15, '30 min': 30, '1 hora': 60, '1 hour': 60, '2 horas': 120, '2 hours': 120, '1 día': 1440, '1 day': 1440 };
 const formatters = new Map<string, Intl.DateTimeFormat>();
