@@ -735,7 +735,10 @@ export default function WorkspaceLayout({ leftOpen, rightOpen, onToggleLeft, onR
 
   const selectSidebarSection = (section: SidebarSection) => {
     setActiveSection(section);
-    if (section === 'new-chat') window.dispatchEvent(new CustomEvent('codeclub:project-switch', { detail: { id: 'home', name: 'Home' } }));
+    if (section === 'new-chat') {
+      window.dispatchEvent(new CustomEvent('codeclub:navigate-new-chat'));
+      if (activeSection === 'new-chat') window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
+    }
     else if (section === 'extensions') window.dispatchEvent(new CustomEvent('codeclub:open-extensions'));
     else window.dispatchEvent(new CustomEvent('codeclub:close-extensions', { detail: { preserveSection: true } }));
   };

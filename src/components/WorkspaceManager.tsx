@@ -144,15 +144,18 @@ function WorkspaceManager({ catalog, defaultProvider, defaultModel }: { catalog:
     };
     const handleNavigateNewChat = () => {
       pendingChatRef.current = null;
-      updateSelectedProject(null);
       setShowExtensions(false);
-      window.dispatchEvent(new CustomEvent('codeclub:project-switch', { detail: { id: 'home', name: 'Home' } }));
+      const project = selectedProjectRef.current;
+      const key = project?.projectPath ? `draft:${project.projectPath}` : 'new-chat';
+      visit(key, { projectPath: project?.projectPath || '', projectName: project?.projectName || 'Home' });
+      window.dispatchEvent(new CustomEvent('codeclub:open-empty-chat'));
     };
     const handleOpenEmptyChat = () => {
       pendingChatRef.current = null;
       setShowExtensions(false);
       const project = selectedProjectRef.current;
-      visit(`draft:${project?.projectPath || ''}`, { projectPath: project?.projectPath || '', projectName: project?.projectName || 'Home' });
+      const key = project?.projectPath ? `draft:${project.projectPath}` : 'new-chat';
+      visit(key, { projectPath: project?.projectPath || '', projectName: project?.projectName || 'Home' });
     };
     const move = (direction: -1 | 1) => {
       const navigation = panelNavigation.current;
